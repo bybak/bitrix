@@ -1,0 +1,107 @@
+.bx-im-message-sign__scope {
+	--im-message-sign__background-color_self: #fafded;
+	--im-message-sign__font-color_title: #151515;
+	--im-message-sign__font-color_description: var(--im-color-palette-gray-70);
+	--im-message-sign__border-radius_container: 16px;
+	--im-message-sign__background-color_container: var(--im-message-base__background-color);
+	--im-message-sign__color_document: var(--im-color-palette-gray-90);
+	--im-message-sign__color_link: var(--im-color-palette-gray-90);
+	--im-message-sign__border-color_link: var(--im-color-palette-black-solid);
+}
+
+.bx-im-message-sign__container {
+	position: relative;
+	display: flex;
+	width: 673px;
+	max-width: 100%;
+	min-width: 620px;
+	min-height: 154px;
+	overflow: hidden;
+	border-radius: var(--im-message-sign__border-radius_container);
+	background: var(--im-message-sign__background-color_container);
+}
+
+.bx-im-message-sign__container.--self {
+	background: var(--im-message-sign__background-color_self);
+}
+
+.bx-im-message-sign__content {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	max-width: calc(100% - 166px);
+	padding: 14px 17px;
+}
+
+.bx-im-message-sign__title {
+	font-size: var(--im-font-size-2xl);
+	color: var(--im-message-sign__font-color_title);
+	font-weight: var(--im-font-weight-bold);
+	margin-bottom: 8px;
+	user-select: none;
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+
+.bx-im-message-sign__description {
+	padding-bottom: 3px;
+	max-width: 100%;
+	margin-bottom: 13px;
+	font-size: var(--im-font-size-md);
+	color: var(--im-message-sign__font-color_description);
+	word-break: break-word;
+}
+
+.bx-im-message-sign__document {
+	color: var(--im-message-sign__color_document);
+}
+
+.bx-im-message-sign__link {
+	cursor: pointer;
+	color: var(--im-message-sign__color_link);
+	border-bottom: 1px solid var(--im-message-sign__border-color_link);
+	transition: border-bottom-color 0s;
+}
+
+.bx-im-message-sign__link:hover {
+	border-bottom-color: currentcolor;
+}
+
+.bx-im-message-sign__buttons_container {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.bx-im-message-sign__status_container {
+	position: absolute;
+	right: 9px;
+	bottom: 6px;
+}
+
+.bx-im-message-base__wrap + .bx-im-message-sign__scope,
+.bx-im-message-sign__scope + .bx-im-message-base__wrap {
+	margin-top: 24px;
+}
+
+.bx-im-message-sign__image {
+	position: relative;
+	width: 166px;
+	background-repeat: no-repeat;
+	background-position: top right;
+}
+
+.--await .bx-im-message-sign__image {
+	background-image: url("./images/await.svg");
+}
+
+.--success .bx-im-message-sign__image {
+	background-image: url("images/success.svg");
+}
+
+.--failure .bx-im-message-sign__image {
+	background-image: url("images/failure.svg");
+}

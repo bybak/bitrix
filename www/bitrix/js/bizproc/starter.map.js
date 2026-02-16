@@ -1,0 +1,1 @@
+{"version":3,"file":"starter.map.js","names":["BX","namespace","Bizproc","Starter","Workflow"],"sources":["starter.js"],"mappings":"CAAC,WAEA,aAEAA,GAAGC,UAAU,cAEb,GAAID,GAAGE,QAAQC,QACf,CACC,MACD,CAEAH,GAAGE,QAAQC,QAAUH,GAAGE,QAAQE,SAASD,OACzC,EAZA","ignoreList":[]}

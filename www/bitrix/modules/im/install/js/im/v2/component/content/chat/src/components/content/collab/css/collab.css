@@ -1,0 +1,17 @@
+.bx-im-collab-header__add-people-icon {
+	width: 22px;
+	height: 22px;
+	margin-right: 12px;
+	background-image: url('./images/add-people.svg');
+	background-position: center;
+	background-repeat: no-repeat;
+	cursor: pointer;
+}
+
+.bx-im-collab-header__add-people-icon:hover {
+	background-image: url('./images/add-people-hover.svg');
+}
+
+.bx-im-collab-header__add-people-icon.--active {
+	background-image: url('./images/add-people-active.svg');
+}

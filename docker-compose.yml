@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: bitrix_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./www:/var/www/html
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - php
+    networks:
+      - bitrix
+
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile.php
+    container_name: bitrix_php
+    restart: unless-stopped
+    working_dir: /var/www/html
+    user: www-data
+    environment:
+      TZ: Europe/Moscow
+    volumes:
+      - ./www:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - bitrix
+
+  mysql:
+    image: mysql:8.0
+    container_name: bitrix_mysql
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Moscow
+      MYSQL_ROOT_PASSWORD: levampass
+      MYSQL_DATABASE: bitrix_motor_force
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/my.cnf:/etc/mysql/conf.d/bitrix.cnf:ro
+    command: --default-authentication-plugin=mysql_native_password --sql_mode="NO_ENGINE_SUBSTITUTION"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-plevampass"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - bitrix
+
+networks:
+  bitrix:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
+

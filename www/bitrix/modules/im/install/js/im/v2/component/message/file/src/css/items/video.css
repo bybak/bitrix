@@ -1,0 +1,15 @@
+.bx-im-video-item__scope {
+	--im-video-item__background-color_container: #f1f4f6
+}
+
+.bx-im-video-item__container {
+	overflow: hidden;
+	border-radius: 6px;
+	position: relative;
+	background-color: var(--im-video-item__background-color_container);
+}
+
+.bx-im-video-item__container.--with-forward {
+	border-top-right-radius: 0;
+	border-top-left-radius: 0;
+}

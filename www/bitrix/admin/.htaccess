@@ -1,0 +1,12 @@
+# Настройки для обмена с 1С
+<Files "1c_exchange.php">
+  # Разрешаем доступ для 1С
+  Allow from all
+  Satisfy Any
+</Files>
+
+# Включаем HTTP авторизацию для 1С
+SetEnvIf User-Agent "1C" allow_1c
+Order Deny,Allow
+Deny from all
+Allow from env=allow_1c

@@ -1,0 +1,170 @@
+.bx-im-upload-preview__scope {
+	--im-upload-preview__color_title: var(--im-color-palette-gray-90);
+	--im-upload-preview__border-color_delimeter: #f1f2f3;
+	--im-upload-preview__border-color_message-input: var(--im-color-palette-gray-10);
+	--im-upload-preview__border-color_message-input-focused: #00ace3;
+	--im-textarea__background-color_send-button: var(--im-color-accent-blue);
+	--ui-alert-background: #FFF5E3;
+	--ui-alert-color: #7A5100;
+}
+
+.bx-im-upload-preview__container {
+	display: flex;
+	flex-direction: column;
+	box-sizing: border-box;
+	overflow: hidden;
+	width: 400px;
+}
+
+.bx-im-upload-preview__container * {
+	box-sizing: border-box;
+}
+
+.bx-im-upload-preview__items-container {
+	max-height: 361px;
+	overflow: hidden scroll;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0 6px 0 12px;
+}
+
+.bx-im-upload-preview__upper-delimiter {
+	border-top: 1px solid var(--im-upload-preview__border-color_delimeter);
+	margin: 5px 20px 11px
+}
+
+.bx-im-upload-preview__bottom-delimiter {
+	border-bottom: 1px solid var(--im-upload-preview__border-color_delimeter);
+	margin: 11px 20px 0;
+}
+
+.bx-im-upload-preview__control-form {
+	display: flex;
+	align-items: flex-end;
+	margin-top: 23px;
+	margin-bottom: 3px;
+}
+
+.bx-im-upload-preview__control-compress-image + .bx-im-upload-preview__control-form {
+	margin-top: 15px;
+}
+
+.bx-im-upload-preview__controls-files-limit-message {
+	margin-top: 24px;
+	margin-bottom: 0;
+}
+
+.bx-im-upload-preview__message-text {
+	flex-grow: 1;
+	height: 46px;
+	min-height: 46px;
+	max-height: 208px;
+	border-radius: 8px;
+	border: 1px solid var(--im-upload-preview__border-color_message-input);
+	padding: 13px;
+	margin-right: 8px;
+	font: var(--im-font-size-lg)/var(--im-font-line-height-3xs) var(--im-font-family-system);
+	color: var(--im-textarea__font-color_primary);
+	outline: none;
+	resize: none;
+}
+
+.bx-im-upload-preview__message-text:focus {
+	border-color: var(--im-upload-preview__border-color_message-input-focused);
+}
+
+.bx-im-upload-preview__controls-container {
+	display: flex;
+	flex-direction: column;
+	margin: 0 12px;
+}
+
+.bx-im-upload-preview__control-compress-image {
+	display: inline-flex;
+	align-items: center;
+	margin: 23px 0 0 2px;
+	font: var(--im-font-size-md) var(--im-font-family-system);
+	color: var(--im-color-palette-gray-80);
+	max-width: 360px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.bx-im-upload-preview__control-compress-image-checkbox {
+	margin-right: 8px;
+	margin-bottom: 1px;
+}
+
+.bx-im-upload-preview__controls-buttons {
+	display: flex;
+	justify-content: center;
+	margin-bottom: 23px;
+}
+
+.bx-im-upload-preview__container *::-webkit-scrollbar {
+	width: 6px;
+}
+
+.bx-im-upload-preview__container *::-webkit-scrollbar-thumb {
+	background-color: transparent;
+	border-radius: 32px;
+}
+
+.bx-im-upload-preview__container *:hover::-webkit-scrollbar-thumb {
+	background-color: rgb(82 92 105 / 20%);
+	border-radius: 32px;
+}
+
+.bx-im-upload-preview__scope .popup-window-titlebar {
+	height: 72px;
+	padding-top: 5px;
+}
+
+.bx-im-upload-preview__scope .popup-window-titlebar-text {
+	font-size: var(--ui-font-size-xl);
+	font-weight: var(--im-font-weight-semi-bold);
+	color: var(--im-upload-preview__color_title);
+	width: 100%;
+	padding-left: 20px;
+	text-align: center;
+}
+
+.bx-im-upload-preview__container .bx-im-elements-spinner__spinner {
+	margin-bottom: 0;
+}
+
+.bx-im-upload-preview__controls-buttons .bx-im-button__container + .bx-im-button__container {
+	margin-left: 12px;
+}
+
+.bx-im-upload-preview__drag-handle {
+	margin: 0 auto;
+	width: 17px;
+	height: 10px;
+	background-image: url("../images/resize.svg");
+	background-repeat: no-repeat;
+	background-position: center;
+	cursor: ns-resize;
+}
+
+.bx-im-upload-preview__drag-handle:hover {
+	background-image: url("../images/resize-active.svg");
+}
+
+
+.bx-im-upload-preview__container .bx-im-send-panel__button_container.--channel,
+.bx-im-upload-preview__container .bx-im-send-panel__button_container.--openChannel,
+.bx-im-upload-preview__container .bx-im-send-panel__button_container.--generalChannel {
+	background-color: var(--im-textarea__background-color_send-button);
+}
+
+.bx-im-upload-preview__container .bx-im-message-media-content__single-image,
+.bx-im-upload-preview__container .bx-im-message-media-content__single-video {
+	min-height: 344px;
+}
+
+.bx-im-upload-preview__container .bx-im-message-media-content__single-video {
+	background-color: rgba(var(--im-color-palette-gray-04-rgb), 0.8);
+}

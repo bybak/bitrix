@@ -1,0 +1,23 @@
+.bx-im-message-search-detail__container {
+	display: flex;
+	flex-direction: column;
+	overflow-y: scroll;
+}
+
+.bx-im-message-search-detail__date-group_container {
+	display: flex;
+	flex-direction: column;
+}
+
+.bx-im-message-search-detail__loader {
+	height: 7px;
+	top: 110px;
+}
+
+.bx-im-message-search-detail__container .bx-im-sidebar-detail-empty-state__container {
+	margin-top: 82px;
+}
+
+.bx-im-message-search-detail__tariff-limit-container {
+	margin: 6px 12px 0 15px;
+}
