@@ -112,6 +112,10 @@ require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 	"LINK_IBLOCK_ID" => "",
 	"LINK_PROPERTY_SID" => "",
 	"LINK_ELEMENTS_URL" => "link.php?PARENT_ELEMENT_ID=#ELEMENT_ID#",
+	// Disable "Gifts" blocks (sale.products.gift / sale.gift.main.products).
+	"USE_GIFTS_DETAIL" => "N",
+	"USE_GIFTS_SECTION" => "N",
+	"USE_GIFTS_MAIN_PR_SECTION_LIST" => "N",
 	"USE_ALSO_BUY" => "Y",
 	"ALSO_BUY_ELEMENT_COUNT" => "4",
 	"ALSO_BUY_MIN_BUYES" => "1",

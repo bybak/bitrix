@@ -1,46 +1,95 @@
 <?if(!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)die();
 $aMenuLinks = Array(
 	Array(
-		"Как купить", 
-		"about/howto/", 
-		Array(), 
-		Array(), 
-		"" 
-	),
-	Array(
-		"Доставка", 
-		"about/delivery/", 
-		Array(), 
-		Array(), 
-		"" 
-	),
-	Array(
-		"О магазине", 
-		"about/", 
-		Array(), 
-		Array(), 
-		"" 
-	),	
-	Array(
-		"Гарантия", 
-		"about/guaranty/", 
-		Array(), 
-		Array(), 
-		"" 
-	),
-	Array(
-		"Контакты",
-		"about/contacts/",
+		"Магазин",
+		"/products/",
 		Array(),
 		Array(),
 		""
 	),
 	Array(
-		"Мой кабинет",
-		"personal/",
+		"Новости",
+		"/news/",
 		Array(),
 		Array(),
-		"\$USER->IsAuthorized()"
+		""
+	),
+	Array(
+		"Оплата",
+		"/oplata/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Доставка",
+		"/delivery/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Договор Оферты",
+		"/dogovor-oferti/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Ремонт моторов",
+		"/remont_motorov/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Выкуп мототехники",
+		"/vikup_mototehniki/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Прокат техники",
+		"/prokat/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"ДОКУМЕНТЫ",
+		"/documents/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Сотрудничество",
+		"/sotrudnichestvo/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Оптовый сайт",
+		"https://opt.motor-force.ru/",
+		Array(),
+		Array("TARGET" => "_blank", "REL" => "nofollow noopener"),
+		""
+	),
+	Array(
+		"FAQ",
+		"/faq/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Контакты",
+		"/contacts/",
+		Array(),
+		Array(),
+		""
 	),
 );
 ?>

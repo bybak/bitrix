@@ -169,9 +169,10 @@ $APPLICATION->SetTitle("Каталог запчастей Motor Force");
 		"LINK_IBLOCK_ID" => "",
 		"LINK_PROPERTY_SID" => "",
 		"LINK_ELEMENTS_URL" => "link.php?PARENT_ELEMENT_ID=#ELEMENT_ID#",
-		"USE_GIFTS_DETAIL" => "Y",
-		"USE_GIFTS_SECTION" => "Y",
-		"USE_GIFTS_MAIN_PR_SECTION_LIST" => "Y",
+		// Disable "Gifts" blocks (sale.products.gift / sale.gift.main.products).
+		"USE_GIFTS_DETAIL" => "N",
+		"USE_GIFTS_SECTION" => "N",
+		"USE_GIFTS_MAIN_PR_SECTION_LIST" => "N",
 		"GIFTS_DETAIL_PAGE_ELEMENT_COUNT" => "4",
 		"GIFTS_DETAIL_HIDE_BLOCK_TITLE" => "N",
 		"GIFTS_DETAIL_BLOCK_TITLE" => "Выберите один из подарков",

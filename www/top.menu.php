@@ -13,6 +13,76 @@ $aMenuLinks = Array(
         Array(), 
         Array(), 
         "" 
+    ),
+    Array(
+        "Оплата",
+        "/oplata/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Доставка",
+        "/delivery/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Договор оферты",
+        "/dogovor-oferti/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "FAQ",
+        "/faq/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Контакты",
+        "/contacts/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Документы",
+        "/documents/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Прокат",
+        "/prokat/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Ремонт моторов",
+        "/remont_motorov/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Выкуп мототехники",
+        "/vikup_mototehniki/",
+        Array(),
+        Array(),
+        ""
+    ),
+    Array(
+        "Сотрудничество",
+        "/sotrudnichestvo/",
+        Array(),
+        Array(),
+        ""
     )
 );
 ?>

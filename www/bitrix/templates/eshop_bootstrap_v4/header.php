@@ -23,11 +23,6 @@ $curPage = $APPLICATION->GetCurPage(true);
 </head>
 <body class="bx-background-image bx-theme-<?=$theme?>" <?$APPLICATION->ShowProperty("backgroundImage");?>>
 <div id="panel"><? $APPLICATION->ShowPanel(); ?></div>
-<?$APPLICATION->IncludeComponent(
-	"bitrix:eshop.banner",
-	"",
-	array()
-);?>
 <div class="bx-wrapper" id="bx_eshop_wrap">
 	<header class="bx-header">
 		<div class="bx-header-section container">
@@ -126,15 +121,16 @@ $curPage = $APPLICATION->GetCurPage(true);
 						"bootstrap_v4",
 						array(
 							"ROOT_MENU_TYPE" => "left",
-							"MENU_CACHE_TYPE" => "A",
-							"MENU_CACHE_TIME" => "36000000",
+							// During development keep menus uncached to see changes immediately.
+							"MENU_CACHE_TYPE" => "N",
+							"MENU_CACHE_TIME" => "0",
 							"MENU_CACHE_USE_GROUPS" => "Y",
 							"MENU_THEME" => "site",
 							"CACHE_SELECTED_ITEMS" => "N",
 							"MENU_CACHE_GET_VARS" => array(),
-							"MAX_LEVEL" => "3",
+							"MAX_LEVEL" => "1",
 							"CHILD_MENU_TYPE" => "left",
-							"USE_EXT" => "Y",
+							"USE_EXT" => "N",
 							"DELAY" => "N",
 							"ALLOW_MULTI_SELECT" => "N",
 							"COMPONENT_TEMPLATE" => "bootstrap_v4"
@@ -216,5 +212,4 @@ $curPage = $APPLICATION->GetCurPage(true);
 	<div class="workarea">
 		<div class="container bx-content-section">
 			<div class="row">
-			<?$needSidebar = preg_match("~^".SITE_DIR."(catalog|personal\/cart|personal\/order\/make)/~", $curPage);?>
-				<div class="bx-content <?=($needSidebar ? "col" : "col-md-9 col-sm-8")?>">
+				<div class="bx-content col">

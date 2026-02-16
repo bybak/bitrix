@@ -1,11 +1,88 @@
 <?
 $aMenuLinks = Array(
 	Array(
-		"каталог запчастей", 
+		"Главная",
+		"/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Каталог запчастей", 
 		"/products/", 
 		Array(), 
 		Array(), 
 		"" 
+	),
+	Array(
+		"Оплата",
+		"/oplata/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Доставка",
+		"/delivery/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Договоры / документы",
+		"/documents/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Договор оферты",
+		"/dogovor-oferti/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Ремонт моторов",
+		"/remont_motorov/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Выкуп мототехники",
+		"/vikup_mototehniki/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Прокат",
+		"/prokat/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Сотрудничество",
+		"/sotrudnichestvo/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"FAQ",
+		"/faq/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Контакты",
+		"/contacts/",
+		Array(),
+		Array(),
+		""
 	)
 );
 ?>

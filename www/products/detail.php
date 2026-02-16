@@ -43,10 +43,20 @@ $arParams = [
     "SET_META_KEYWORDS" => "Y",
     "SET_META_DESCRIPTION" => "Y",
     "SET_STATUS_404" => "Y",
+
+    // Title is already shown by site template (<h1> via ShowTitle()).
+    // Disable component's internal H1 to avoid duplicate titles.
+    "DISPLAY_NAME" => "N",
     
     // Картинки
     "DETAIL_PICTURE_MODE" => array("POPUP"),
     "ADD_DETAIL_TO_SLIDER" => "Y",
+
+    // Disable "Gifts" blocks (sale.products.gift / sale.gift.main.products).
+    "USE_GIFTS_DETAIL" => "N",
+    "USE_GIFTS_MAIN_PR_SECTION_LIST" => "N",
+    // Some templates/components use this flag for section gifts too.
+    "USE_GIFTS_SECTION" => "N",
     
     // Кэширование
     "CACHE_TYPE" => "A",

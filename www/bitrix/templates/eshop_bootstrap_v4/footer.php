@@ -1,25 +1,6 @@
 <?if(!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)die();?>
 				</div><!--end .bx-content -->
 
-				<!-- region Sidebar -->
-				<?if (!$needSidebar):?>
-					<div class="sidebar col-md-3 col-sm-4">
-						<?$APPLICATION->IncludeComponent(
-							"bitrix:main.include",
-							"",
-							Array(
-								"AREA_FILE_SHOW" => "sect",
-								"AREA_FILE_SUFFIX" => "sidebar",
-								"AREA_FILE_RECURSIVE" => "Y",
-								"EDIT_MODE" => "html",
-							),
-							false,
-							Array('HIDE_ICONS' => 'Y')
-						);?>
-					</div>
-				<?endif?>
-				<!--endregion -->
-
 			</div><!--end row-->
 			<?$APPLICATION->IncludeComponent(
 				"bitrix:main.include",
@@ -37,22 +18,6 @@
 	</div><!--end .workarea-->
 
 	<footer class="bx-footer">
-		<div class="bx-footer-section bx-footer-bg">
-			<div class="container">
-				<?$APPLICATION->IncludeComponent(
-					"bitrix:main.include",
-					"",
-					Array(
-						"AREA_FILE_SHOW" => "file",
-						"PATH" => SITE_DIR."include/socnet_footer.php",
-						"AREA_FILE_RECURSIVE" => "N",
-						"EDIT_MODE" => "html",
-					),
-					false,
-					Array('HIDE_ICONS' => 'Y')
-				);?>
-			</div>
-		</div>
 		<div class="bx-footer-section py-5 bg-dark">
 			<div class="container">
 				<div class="row">
@@ -74,9 +39,10 @@
 							array(
 								"ROOT_MENU_TYPE" => "bottom",
 								"MAX_LEVEL" => "1",
-								"MENU_CACHE_TYPE" => "A",
+								// During development keep menus uncached to see changes immediately.
+								"MENU_CACHE_TYPE" => "N",
 								"CACHE_SELECTED_ITEMS" => "N",
-								"MENU_CACHE_TIME" => "36000000",
+								"MENU_CACHE_TIME" => "0",
 								"MENU_CACHE_USE_GROUPS" => "Y",
 								"MENU_CACHE_GET_VARS" => array(),
 							),
@@ -100,13 +66,14 @@
 							"bottom_menu",
 							array(
 								"ROOT_MENU_TYPE" => "left",
-								"MENU_CACHE_TYPE" => "A",
-								"MENU_CACHE_TIME" => "36000000",
+							// During development keep menus uncached to see changes immediately.
+							"MENU_CACHE_TYPE" => "N",
+							"MENU_CACHE_TIME" => "0",
 								"MENU_CACHE_USE_GROUPS" => "Y",
 								"MENU_CACHE_GET_VARS" => array(),
 								"CACHE_SELECTED_ITEMS" => "N",
 								"MAX_LEVEL" => "1",
-								"USE_EXT" => "Y",
+								"USE_EXT" => "N",
 								"DELAY" => "N",
 								"ALLOW_MULTI_SELECT" => "N"
 							),
@@ -114,20 +81,6 @@
 						);?>
 					</div>
 					<div class="col-sm-6 col-lg-3 order-lg-4 order-3">
-						<div style="padding: 20px;background:#eaeaeb">
-							<? $APPLICATION->IncludeComponent(
-								"bitrix:main.include",
-								"",
-								array(
-									"AREA_FILE_SHOW" => "file",
-									"PATH" => SITE_DIR."include/sender.php",
-									"AREA_FILE_RECURSIVE" => "N",
-									"EDIT_MODE" => "html",
-								),
-								false,
-								array('HIDE_ICONS' => 'Y')
-							);?>
-						</div>
 						<div id="bx-composite-banner" style="padding-top: 20px"></div>
 					</div>
 					<div class="col-sm-6 col-lg-3 order-lg-1 order-4">
