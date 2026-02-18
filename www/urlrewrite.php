@@ -27,6 +27,24 @@ $arUrlRewrite=array (
     'PATH' => '/products/index.php',
     'SORT' => 300,
   ),
+  // Новости: /posts/year/{YYYY|all}/{page}
+  7 =>
+  array (
+    'CONDITION' => '#^/posts/year/(all|\\d{4})/(\\d+)/?$#',
+    'RULE' => 'POSTS_YEAR=$1&POSTS_PAGE=$2',
+    'ID' => NULL,
+    'PATH' => '/posts/index.php',
+    'SORT' => 310,
+  ),
+  // Новости (детальная): /posts/{code}/
+  8 =>
+  array (
+    'CONDITION' => '#^/posts/([^/]+)/?$#',
+    'RULE' => 'ELEMENT_CODE=$1',
+    'ID' => NULL,
+    'PATH' => '/posts/detail.php',
+    'SORT' => 320,
+  ),
   1 => 
   array (
     'CONDITION' => '#^\\/?\\/mobileapp/jn\\/(.*)\\/.*#',

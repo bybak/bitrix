@@ -28,6 +28,11 @@
   background: rgb(235, 189, 47);
 }
 
+/* Homepage: show slider background under fixed header */
+.mf-home .workarea {
+  padding-top: 0;
+}
+
 .mf-header a { color: inherit; }
 .mf-header a:hover { text-decoration: none; }
 
@@ -403,5 +408,99 @@ html.mf-menu-open .bx-aside-nav {
   font-weight: 900;
 }
 
-.mf-breadcrumbs { margin-top: 18px; }
+.mf-breadcrumbs {
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Prevent bootstrap .row negative margins from overflowing container */
+.mf-breadcrumbs.row {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  max-width: 100%;
+}
+.mf-breadcrumbs.row > .col {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  min-width: 0;
+}
+
+.mf-breadcrumbs #navigation {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Bitrix breadcrumbs markup (.bx-breadcrumb) */
+.mf-breadcrumbs .bx-breadcrumb {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: .5rem;
+  margin: 0;
+  padding: .75rem 0;
+  max-width: 100% !important;
+  width: 100% !important;
+  min-width: 0;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+}
+
+.mf-breadcrumbs .bx-breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 0 auto;
+  height: auto !important;
+}
+
+.mf-breadcrumbs .bx-breadcrumb-item:last-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mf-breadcrumbs .bx-breadcrumb-item-link {
+  color: #000;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2 !important;
+  height: auto;
+}
+
+.mf-breadcrumbs .bx-breadcrumb-item-text {
+  color: #000;
+  font-size: .875rem;
+  line-height: 1.2 !important;
+  font-weight: 600;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap !important;
+}
+
+.mf-breadcrumbs a.bx-breadcrumb-item-link:hover .bx-breadcrumb-item-text {
+  text-decoration: underline;
+}
+
+.mf-breadcrumbs .bx-breadcrumb-item-angle {
+  color: #647886;
+  font-size: 1rem;
+  line-height: 1;
+  margin: 0 .25rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Current page crumb */
+.mf-breadcrumbs .bx-breadcrumb-item:last-of-type .bx-breadcrumb-item-text {
+  color: #647886;
+  font-weight: 600;
+}
 

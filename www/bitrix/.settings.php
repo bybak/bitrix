@@ -1,5 +1,6 @@
 <?php
-return array (
+
+return array (
   'cache_flags' => 
   array (
     'value' => 

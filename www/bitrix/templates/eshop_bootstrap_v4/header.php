@@ -11,15 +11,21 @@ if (isset($_GET["theme"]) && in_array($_GET["theme"], array("blue", "green", "ye
 $theme = COption::GetOptionString("main", "wizard_eshop_bootstrap_theme_id", "green", SITE_ID);
 
 $curPage = $APPLICATION->GetCurPage(true);
+$isHome = ($curPage === SITE_DIR."index.php");
+$isPosts = (strpos($curPage, SITE_DIR."posts/") === 0);
 
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-header.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-footer.css");
 $APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-header.js");
 
-if ($curPage === SITE_DIR."index.php")
+if ($isHome)
 {
 	$APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-mainpage.css");
 	$APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-mainpage.js");
+}
+if ($isPosts)
+{
+	$APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-posts.css");
 }
 
 ?><!DOCTYPE html>
@@ -31,7 +37,7 @@ if ($curPage === SITE_DIR."index.php")
 	<link rel="shortcut icon" type="image/x-icon" href="<?=SITE_DIR?>favicon.ico" />
 	<? $APPLICATION->ShowHead(); ?>
 </head>
-<body class="bx-background-image bx-theme-<?=$theme?>" <?$APPLICATION->ShowProperty("backgroundImage");?>>
+<body class="bx-background-image bx-theme-<?=$theme?><?if($isHome):?> mf-home<?endif?><?if($isPosts):?> mf-posts-page<?endif?>" <?$APPLICATION->ShowProperty("backgroundImage");?>>
 <div id="panel"><? $APPLICATION->ShowPanel(); ?></div>
 <div class="bx-wrapper" id="bx_eshop_wrap">
 	<header class="mf-header">
@@ -163,7 +169,14 @@ if ($curPage === SITE_DIR."index.php")
 	</header>
 
 	<div class="workarea">
-		<?if ($curPage != SITE_DIR."index.php"):?>
+		<?$mfHideTitlebar =
+			($APPLICATION->GetPageProperty("MF_HIDE_TITLEBAR") === "Y")
+			|| (defined("MF_HIDE_TITLEBAR") && (MF_HIDE_TITLEBAR === true || MF_HIDE_TITLEBAR === "Y"));?>
+		<?$mfHideBreadcrumbs =
+			($APPLICATION->GetPageProperty("MF_HIDE_BREADCRUMBS") === "Y")
+			|| (defined("MF_HIDE_BREADCRUMBS") && (MF_HIDE_BREADCRUMBS === true || MF_HIDE_BREADCRUMBS === "Y"));?>
+
+		<?if ($curPage != SITE_DIR."index.php" && !$mfHideTitlebar):?>
 			<div class="mf-titlebar" role="presentation">
 				<div class="mf-titlebar-inner">
 					<h1 id="pagetitle" class="mf-pagetitle"><?$APPLICATION->ShowTitle(false);?></h1>
@@ -174,7 +187,7 @@ if ($curPage === SITE_DIR."index.php")
 		<div class="bx-content-section mf-content-section">
 			<div class="container">
 			<!--region breadcrumb-->
-			<?if ($curPage != SITE_DIR."index.php"):?>
+			<?if ($curPage != SITE_DIR."index.php" && !$mfHideBreadcrumbs):?>
 				<div class="mf-breadcrumbs row mb-3">
 					<div class="col" id="navigation">
 						<?$APPLICATION->IncludeComponent(
