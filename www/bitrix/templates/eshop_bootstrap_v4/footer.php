@@ -14,143 +14,132 @@
 				false,
 				Array('HIDE_ICONS' => 'Y')
 			);?>
-		</div><!--end .container.bx-content-section-->
+			</div><!--end .container-->
+		</div><!--end .bx-content-section-->
 	</div><!--end .workarea-->
 
-	<footer class="bx-footer">
-		<div class="bx-footer-section py-5 bg-dark">
-			<div class="container">
-				<div class="row">
-					<div class="col-sm-6 col-lg-3 order-lg-2 order-1 mb-4 mb-lg-0">
-						<h4 class="bx-block-title text-light">
-							<? $APPLICATION->IncludeComponent(
-								"bitrix:main.include",
-								"",
-								array(
-									"AREA_FILE_SHOW" => "file",
-									"PATH" => SITE_DIR."include/about_title.php"
-								),
-								false
-							);?>
-						</h4>
-						<? $APPLICATION->IncludeComponent(
-							"bitrix:menu",
-							"bottom_menu",
-							array(
-								"ROOT_MENU_TYPE" => "bottom",
-								"MAX_LEVEL" => "1",
-								// During development keep menus uncached to see changes immediately.
-								"MENU_CACHE_TYPE" => "N",
-								"CACHE_SELECTED_ITEMS" => "N",
-								"MENU_CACHE_TIME" => "0",
-								"MENU_CACHE_USE_GROUPS" => "Y",
-								"MENU_CACHE_GET_VARS" => array(),
-							),
-							false
-						);?>
-					</div>
-					<div class="col-sm-6 col-lg-3 order-lg-3 order-2 mb-4 mb-lg-0">
-						<h4 class="bx-block-title text-light">
-							<? $APPLICATION->IncludeComponent(
-								"bitrix:main.include",
-								"",
-								array(
-									"AREA_FILE_SHOW" => "file",
-									"PATH" => SITE_DIR."include/catalog_title.php"
-								),
-								false
-							);?>
-						</h4>
-						<?$APPLICATION->IncludeComponent(
-							"bitrix:menu",
-							"bottom_menu",
-							array(
-								"ROOT_MENU_TYPE" => "left",
-							// During development keep menus uncached to see changes immediately.
-							"MENU_CACHE_TYPE" => "N",
-							"MENU_CACHE_TIME" => "0",
-								"MENU_CACHE_USE_GROUPS" => "Y",
-								"MENU_CACHE_GET_VARS" => array(),
-								"CACHE_SELECTED_ITEMS" => "N",
-								"MAX_LEVEL" => "1",
-								"USE_EXT" => "N",
-								"DELAY" => "N",
-								"ALLOW_MULTI_SELECT" => "N"
-							),
-							false
-						);?>
-					</div>
-					<div class="col-sm-6 col-lg-3 order-lg-4 order-3">
-						<div id="bx-composite-banner" style="padding-top: 20px"></div>
-					</div>
-					<div class="col-sm-6 col-lg-3 order-lg-1 order-4">
-						<div class="mb-3">
-							<a class="bx-footer-logo" href="<?=SITE_DIR?>">
-								<? $APPLICATION->IncludeComponent(
-									"bitrix:main.include",
-									"",
-									array(
-										"AREA_FILE_SHOW" => "file",
-										"PATH" => SITE_DIR."include/company_logo_mobile.php"
-									),
-								false
-								);?>
-							</a>
+	<footer id="footer" class="site-footer site-footer_dark">
+		<div data-widget-store-list="footer" data-region="2" data-module="2">
+
+			<section data-widget-store-item id="footer-columns-29" class="nh-footer-columns widget-block nh-editor-panel lazyload js-indent">
+				<div data-widget-replaceable-content="29"
+					 data-ng-non-bindable
+					 class="nh-footer-columns__wrapper lazyload nh-footer-columns--indent-top-m nh-footer-columns--indent-bottom-m"
+					 style="background-position: center;background-repeat: no-repeat;background-size: cover;background-color: rgba(0,0,0, 1);"
+				>
+					<div class="js-indent-add"></div>
+					<div class="nh-footer-columns__inner nh-footer-columns__container" style="grid-template-columns: repeat( 4, 1fr);">
+						<div class="nh-footer-columns__column">
+							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
+								<div class="nh-footer-columns__title-container">
+									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">Покупателям</div>
+									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
+								</div>
+								<ul class="nh-footer-columns__links-list">
+									<li class="nh-footer-columns__links-item">
+										<a href="/oplata" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Способы оплаты</a>
+									</li>
+									<li class="nh-footer-columns__links-item">
+										<a href="/delivery" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Доставка</a>
+									</li>
+								</ul>
+							</div>
 						</div>
-						<div class="mb-3 d-flex align-items-center">
-							<i class="fa fa-phone pr-3 text-white" style="font-size: 25px;"></i>
-							<span class="text-white">
-								<? $APPLICATION->IncludeComponent(
-									"bitrix:main.include",
-									"", array(
-										"AREA_FILE_SHOW" => "file",
-										"PATH" => SITE_DIR."include/telephone.php"
-									),
-									false
-								);?>
-							</span>
+
+						<div class="nh-footer-columns__column">
+							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
+								<div class="nh-footer-columns__title-container">
+									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">Бизнесу</div>
+									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
+								</div>
+								<ul class="nh-footer-columns__links-list">
+									<li class="nh-footer-columns__links-item">
+										<a href="/sotrudnichestvo" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #ffffff;">Сотрудничество</a>
+									</li>
+								</ul>
+							</div>
 						</div>
-						<div class="mb-3 text-white">
-							<? $APPLICATION->IncludeComponent(
-								"bitrix:main.include",
-								"",
-								array(
-									"AREA_FILE_SHOW" => "file",
-									"PATH" => SITE_DIR."include/schedule.php"
-								),
-								false
-							);?>
+
+						<div class="nh-footer-columns__column">
+							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
+								<div class="nh-footer-columns__title-container">
+									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">О компании</div>
+									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
+								</div>
+								<ul class="nh-footer-columns__links-list">
+									<li class="nh-footer-columns__links-item">
+										<a href="/contacts" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Контакты</a>
+									</li>
+								</ul>
+							</div>
+
+							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
+								<div class="nh-footer-columns__title-container">
+									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">Мы в соцсетях</div>
+									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
+								</div>
+								<ul class="nh-footer-columns__links-list">
+									<li class="nh-footer-columns__links-item">
+										<a href="https://vk.com/motor_force" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">ВКонтакте</a>
+									</li>
+									<li class="nh-footer-columns__links-item">
+										<a href="https://t.me/motor_force" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Telegram</a>
+									</li>
+									<li class="nh-footer-columns__links-item">
+										<a href="https://www.instagram.com/motor_force.ru/" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #ffffff;">Instagram</a>
+									</li>
+								</ul>
+							</div>
 						</div>
-						<div class="mb-3 text-white">
-							<? $APPLICATION->IncludeComponent(
-								"bitrix:main.include",
-								"",
-								array(
-									"AREA_FILE_SHOW" => "file",
-									"PATH" => SITE_DIR."include/personal.php"
-								),
-								false
-							);?>
+
+						<div class="nh-footer-columns__column">
+							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #ffffff;">
+								<div class="nh-footer-columns__title-container">
+									<div class="nh-footer-columns__section-title" style="--title-color: #ffffff;">Услуги</div>
+									<div class="nh-footer-columns__title-svg" style="--title-color: #ffffff;"></div>
+								</div>
+								<ul class="nh-footer-columns__links-list">
+									<li class="nh-footer-columns__links-item">
+										<a href="/prokat" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Прокат техники</a>
+									</li>
+									<li class="nh-footer-columns__links-item">
+										<a href="/remont_motorov" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Ремонт моторов</a>
+									</li>
+									<li class="nh-footer-columns__links-item">
+										<a href="/vikup_mototehniki" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Выкуп мототехники</a>
+									</li>
+								</ul>
+							</div>
 						</div>
 					</div>
 				</div>
+			</section>
+		</div>
+
+		<div class="site-footer__inner">
+			<div class="row">
+				<section class="small-12 column">
+					<div class="-inline-group">
+						<div class="small-12 large-8 text-center medium-text-left">
+							<div id="footer-text" class="footer-text client nh-editor-panel" style="min-height: 22px;">
+								<div id="footertext1" class="footer-text__about">2015 © Motor-Force</div>
+								<div id="footertext2" class="footer-text__desc">Запчасти для Мототехники</div>
+							</div>
+						</div>
+						<!-- intentionally omitted: .text-center.large-text-right.site-footer__logo -->
+					</div>
+					<div class="row column site-footer_indent">
+						<div class="small-12 large-6 small-centered site-footer__statcounters">
+							<section id="statcounters-left" data-block-id="19" class="block-19 statcounters widget-left widget-block -nt-widget nh-editor-panel">
+								<div id="statcounters-left-show" class="content-block">
+									<div class="statcounters-list text-center"></div>
+								</div>
+							</section>
+						</div>
+					</div>
+				</section>
 			</div>
 		</div>
-		<div class="bx-footer-section py-2 bg-secondary">
-				<div class="container">
-					<div class="row">
-						<div class="col-sm-6 bx-up">
-							<a href="javascript:void(0)" data-role="eshopUpButton" class="text-white"><i class="fa fa-caret-up"></i> <?=GetMessage("FOOTER_UP_BUTTON")?></a>
-						</div>
-						<div class="col-sm-6 text-white text-right">
-							<? $APPLICATION->IncludeComponent("bitrix:main.include", "", array(
-								"AREA_FILE_SHOW" => "file",
-								"PATH" => SITE_DIR."include/copyright.php"
-							), false);?>
-						</div>
-					</div>
-				</div>
-			</div>
 	</footer>
 	<div class="col d-sm-none">
 		<?$APPLICATION->IncludeComponent("bitrix:sale.basket.basket.line", "bootstrap_v4", array(
@@ -172,26 +161,5 @@
 		);?>
 	</div>
 </div> <!-- //bx-wrapper -->
-
-
-<script>
-	BX.ready(function(){
-		var upButton = document.querySelector('[data-role="eshopUpButton"]');
-		BX.bind(upButton, "click", function(){
-			var windowScroll = BX.GetWindowScrollPos();
-			(new BX.easing({
-				duration : 500,
-				start : { scroll : windowScroll.scrollTop },
-				finish : { scroll : 0 },
-				transition : BX.easing.makeEaseOut(BX.easing.transitions.quart),
-				step : function(state){
-					window.scrollTo(0, state.scroll);
-				},
-				complete: function() {
-				}
-			})).animate();
-		})
-	});
-</script>
 </body>
 </html>

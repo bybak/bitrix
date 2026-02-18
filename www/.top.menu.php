@@ -1,6 +1,13 @@
 <?if(!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)die();
 $aMenuLinks = Array(
 	Array(
+		"Главная",
+		"/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
 		"Магазин",
 		"/products/",
 		Array(),
@@ -59,6 +66,13 @@ $aMenuLinks = Array(
 	Array(
 		"ДОКУМЕНТЫ",
 		"/documents/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
+		"Блог",
+		"/blog/",
 		Array(),
 		Array(),
 		""

@@ -1,4 +1,4 @@
-2026-Feb-16 21:15:58 Наличие необходимых модулей php (check_php_modules): Ok
+2026-Feb-18 09:25:30 Наличие необходимых модулей php (check_php_modules): Ok
 Все необходимые модули установлены
-2026-Feb-16 21:15:58 Обязательные параметры PHP (check_php_settings): Fail
+2026-Feb-18 09:25:30 Обязательные параметры PHP (check_php_settings): Fail
 Ошибка! Параметр opcache.revalidate_freq = 2, требуется 0
