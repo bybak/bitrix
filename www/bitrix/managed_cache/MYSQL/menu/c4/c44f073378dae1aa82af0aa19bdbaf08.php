@@ -1,7 +1,7 @@
 <?
 if($INCLUDE_FROM_CACHE!='Y')return false;
-$datecreate = '001771454647';
-$dateexpire = '001771458247';
+$datecreate = '001771474176';
+$dateexpire = '001771477776';
 $ser_content = 'a:2:{s:7:"CONTENT";s:0:"";s:4:"VARS";a:15:{i:0;a:3:{s:4:"LINK";s:1:"/";s:5:"LINKS";a:1:{i:0;s:1:"/";}s:4:"PERM";s:1:"R";}i:1;a:3:{s:4:"LINK";s:10:"/products/";s:5:"LINKS";a:1:{i:0;s:10:"/products/";}s:4:"PERM";s:1:"R";}i:2;a:3:{s:4:"LINK";s:7:"/posts/";s:5:"LINKS";a:1:{i:0;s:7:"/posts/";}s:4:"PERM";s:1:"R";}i:3;a:3:{s:4:"LINK";s:8:"/oplata/";s:5:"LINKS";a:1:{i:0;s:8:"/oplata/";}s:4:"PERM";s:1:"R";}i:4;a:3:{s:4:"LINK";s:10:"/delivery/";s:5:"LINKS";a:1:{i:0;s:10:"/delivery/";}s:4:"PERM";s:1:"R";}i:5;a:3:{s:4:"LINK";s:16:"/dogovor-oferti/";s:5:"LINKS";a:1:{i:0;s:16:"/dogovor-oferti/";}s:4:"PERM";s:1:"R";}i:6;a:3:{s:4:"LINK";s:16:"/remont_motorov/";s:5:"LINKS";a:1:{i:0;s:16:"/remont_motorov/";}s:4:"PERM";s:1:"R";}i:7;a:3:{s:4:"LINK";s:19:"/vikup_mototehniki/";s:5:"LINKS";a:1:{i:0;s:19:"/vikup_mototehniki/";}s:4:"PERM";s:1:"R";}i:8;a:3:{s:4:"LINK";s:8:"/prokat/";s:5:"LINKS";a:1:{i:0;s:8:"/prokat/";}s:4:"PERM";s:1:"R";}i:9;a:3:{s:4:"LINK";s:11:"/documents/";s:5:"LINKS";a:1:{i:0;s:11:"/documents/";}s:4:"PERM";s:1:"R";}i:10;a:3:{s:4:"LINK";s:6:"/blog/";s:5:"LINKS";a:1:{i:0;s:6:"/blog/";}s:4:"PERM";s:1:"R";}i:11;a:3:{s:4:"LINK";s:17:"/sotrudnichestvo/";s:5:"LINKS";a:1:{i:0;s:17:"/sotrudnichestvo/";}s:4:"PERM";s:1:"R";}i:12;a:2:{s:4:"LINK";s:27:"https://opt.motor-force.ru/";s:5:"LINKS";a:1:{i:0;s:27:"https://opt.motor-force.ru/";}}i:13;a:3:{s:4:"LINK";s:5:"/faq/";s:5:"LINKS";a:1:{i:0;s:5:"/faq/";}s:4:"PERM";s:1:"R";}i:14;a:3:{s:4:"LINK";s:10:"/contacts/";s:5:"LINKS";a:1:{i:0;s:10:"/contacts/";}s:4:"PERM";s:1:"R";}}}';
 return true;
 ?>
