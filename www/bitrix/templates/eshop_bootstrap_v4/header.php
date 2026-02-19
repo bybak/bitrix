@@ -13,9 +13,11 @@ $theme = COption::GetOptionString("main", "wizard_eshop_bootstrap_theme_id", "gr
 $curPage = $APPLICATION->GetCurPage(true);
 $isHome = ($curPage === SITE_DIR."index.php");
 $isPosts = (strpos($curPage, SITE_DIR."posts/") === 0);
+$isContacts = ($curPage === SITE_DIR."contacts/index.php");
 
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-header.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-footer.css");
+$APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-text-page.css");
 $APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-header.js");
 
 if ($isHome)
@@ -26,6 +28,10 @@ if ($isHome)
 if ($isPosts)
 {
 	$APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-posts.css");
+}
+if ($isContacts)
+{
+	$APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-contacts.css");
 }
 
 ?><!DOCTYPE html>

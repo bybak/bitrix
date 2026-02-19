@@ -1,5 +1,9 @@
 /* Motor-Force-like header (recreated) */
 
+:root{
+  --fallback-font-paragraph: "ProximaNova-Bold", Futura, Avenir, Helvetica, -apple-system, BlinkMacSystemFont, Roboto, Arial, "Droid Sans", sans-serif;
+}
+
 .mf-header {
   /* Fixed header */
   position: fixed;
@@ -397,7 +401,11 @@ html.mf-menu-open .bx-aside-nav {
 .mf-titlebar-inner {
   width: 100%;
   max-width: none;
-  padding: 5rem 20px;
+  padding: 0 20px;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .mf-pagetitle {
@@ -406,6 +414,12 @@ html.mf-menu-open .bx-aside-nav {
   margin: 0;
   padding: 0;
   font-weight: 900;
+}
+
+#pagetitle { margin-bottom: 0 !important; }
+
+@media (max-width: 576px) {
+  .mf-titlebar-inner { min-height: 170px; }
 }
 
 .mf-breadcrumbs {

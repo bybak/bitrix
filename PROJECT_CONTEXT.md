@@ -7,14 +7,18 @@
 В проекте используется Docker.
 
 ```bash
-cd /Users/andrey/cursor_projects/bitrix/www
+cd /path/to/bitrix  # корень репозитория (где лежит docker-compose.yml)
 docker compose up -d
 ```
 
-Контейнеры (из `www/docker-compose.yml`):
+Контейнеры (из `docker-compose.yml` в корне репозитория):
 - `bitrix_nginx`
 - `bitrix_php`
 - `bitrix_mysql`
+
+Проверка в браузере:
+- `http://localhost/` — главная
+- `http://localhost/contacts/` — контакты
 
 ## Главная цель
 
@@ -32,6 +36,7 @@ docker compose up -d
     - `mf-footer.css`
     - `mf-mainpage.css`, `mf-mainpage.js` только на главной
     - `mf-posts.css` на `/posts/*`
+    - `mf-contacts.css` на `/contacts/`
 
 - `www/bitrix/templates/eshop_bootstrap_v4/footer.php`
   - футер сверстан под оригинал motor-force.ru (без лишних старых блоков)
@@ -48,6 +53,9 @@ docker compose up -d
     - “Мы в социальных сетях”
     - “Рассылка” (`bitrix:sender.subscribe` кастомный шаблон)
     - “Новости” (слайдер 5 последних)
+
+**Важно (фикс бага):** стили `mr-block/mrb-*` из `mf-text-page.css` теперь **заскоуплены внутрь `.mf-text-page`**,
+чтобы они не ломали главный слайдер на главной (у слайдера тоже используются `mr-block/mrb-*`).
 
 ### 3) Блок “Новости” на главной (слайдер)
 
@@ -98,6 +106,18 @@ docker compose up -d
   - gap между колонками без паддингов (учтено, чтобы правая колонка не переносилась)
   - пагинация и календарь лет стилизованы под оригинал
 
+### 5) Страница “Контакты” `/contacts/` (пересобрана 1‑в‑1)
+
+Сделана новая страница контактов, максимально близкая к `motor-force.ru/contacts/`:
+
+- `www/contacts/index.php`
+  - разметка секций `contactsmain` / `contactsdetails` / `contactssocnet` приведена к оригиналу
+  - добавлена обёртка `<div class="mf-contacts-page">` для безопасного скоупинга
+
+- `www/bitrix/templates/eshop_bootstrap_v4/mf-contacts.css`
+  - локальные стили сетки/виджетов + CSS для контактов/реквизитов/соцсетей (чтобы не зависеть от CDN)
+  - все “foundation‑like grid” правила **зажаты внутрь `.mf-contacts-page`**, чтобы не конфликтовать с Bootstrap v4
+
 ## Хлебные крошки (Bitrix `.bx-breadcrumb`)
 
 Хлебные крошки выводятся в `header.php` компонентом `bitrix:breadcrumb` шаблон `universal`.
@@ -112,7 +132,9 @@ docker compose up -d
 - в одну линию (nowrap + ellipsis)
 - вертикальное выравнивание текста в ссылке (inline-flex + line-height)
 
-Если визуально “не меняется”, обычно причина — кеш CSS. Нужно очистить кеш Bitrix или принудительно обновить ассеты в браузере.
+Если визуально “не меняется”:
+- проверь кеш Bitrix (`/bitrix/cache`, `/bitrix/managed_cache`, `/bitrix/cache/css/...`)
+- проверь заголовки кеширования nginx (см. ниже)
 
 ## Импорт новостей с motor-force.ru в Bitrix (152 шт.)
 
@@ -158,6 +180,20 @@ docker exec bitrix_php php /var/www/html/mf_import_posts.php --apply
 - JS главной: `www/bitrix/templates/eshop_bootstrap_v4/mf-mainpage.js`
 - Стили шапки/крошек: `www/bitrix/templates/eshop_bootstrap_v4/mf-header.css`
 - Стили постов: `www/bitrix/templates/eshop_bootstrap_v4/mf-posts.css`
+- Стили страницы контактов: `www/bitrix/templates/eshop_bootstrap_v4/mf-contacts.css`
+- Разметка страницы контактов: `www/contacts/index.php`
+- Стили “текстовых страниц”: `www/bitrix/templates/eshop_bootstrap_v4/mf-text-page.css` (важно: `mrb-*` теперь только внутри `.mf-text-page`)
+
+## nginx: кеширование статики (dev-настройка)
+
+Файл:
+- `nginx/conf.d/default.conf`
+
+Текущее поведение (для удобства разработки):
+- `.css/.js`: `Cache-Control: no-cache` (чтобы правки подхватывались сразу)
+- остальная статика (картинки/шрифты): `Cache-Control: public, immutable` + `expires 30d`
+
+Если будут странные “не обновляются стили/скрипты” — это первая точка проверки.
 
 ## Дальше (если продолжать улучшение “1 в 1”)
 

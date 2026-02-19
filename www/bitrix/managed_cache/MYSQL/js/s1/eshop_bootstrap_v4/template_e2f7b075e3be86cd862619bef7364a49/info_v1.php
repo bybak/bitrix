@@ -1,1 +1,0 @@
-<?php $filesInfo = ["/bitrix/components/bitrix/main.coupon.activation/templates/.default/script.js" => "176200931422450",]; ?>
