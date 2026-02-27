@@ -2,13 +2,18 @@
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 $APPLICATION->SetTitle("Доставка");
 $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
+$APPLICATION->AddChainItem("Доставка", "/delivery/");
 ?>
 
-<div class="mf-text-page user-inner mb-4">
+<div class="mf-delivery mf-text-page user-inner mb-4">
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;"><span style="font-weight: bold;">Доставка</span></h2>
 	<p style="text-align: left;" data-start="324" data-end="489">Мы доставляем заказы по всей России и миру. Стоимость и сроки зависят от габаритов, веса, типа товара и адреса получателя. Доставка оплачивается клиентом отдельно.</p>
 	<p style="text-align: left;" data-start="491" data-end="649">Даже если вы не нашли нужный вариант в списке &mdash; мы почти всегда сможем его организовать. Просто уточните при заказе &mdash; мы подберём для вас оптимальное решение!</p>
 	<p style="text-align: left;"><br /></p>
+	</section>
+
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;"><span style="font-weight: bold;">Самовывоз</span></h2>
 	<p style="text-align: left;" data-start="673" data-end="747">Вы можете самостоятельно забрать заказ из нашего офиса в Санкт-Петербурге.</p>
 	<p style="text-align: left;" data-start="673" data-end="747"><span style="font-weight: bold;">Адрес:</span><br data-start="759" data-end="762" /> Россия, Санкт-Петербург, ул. Салова, д. 57, к. 1, Литера Ч, 2-й этаж, Офис № 1Н (Motor-Force)</p>
@@ -28,9 +33,14 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 		</li>
 	</ul>
 	<p style="text-align: left;" data-start="962" data-end="1010"><span style="font-style: italic;">В праздничные дни режим работы может меняться.</span></p>
-	<h4 style="text-align: left;">Схема проезда</h4>
-	<p style="text-align: left;"><img src="//i.siteapi.org/KkXI67E_5GCGC-S33tGsV8SbBhg=/0x0:917x657/s.siteapi.org/ccdb0156d66a088.ru/img/8hnyinr6a7ksg084s0ck88g0c8owoo" class="fancy-img-post" data-eval="//i.siteapi.org/vQ1mGyycm7iKBBed0e81wc53I9Y=/s.siteapi.org/ccdb0156d66a088.ru/img/8hnyinr6a7ksg084s0ck88g0c8owoo" data-origin="s.siteapi.org/ccdb0156d66a088.ru/img/8hnyinr6a7ksg084s0ck88g0c8owoo" /></p>
+	<div class="mf-delivery-media">
+		<h4 style="text-align: left;">Схема проезда</h4>
+		<p style="text-align: left;"><img src="//i.siteapi.org/KkXI67E_5GCGC-S33tGsV8SbBhg=/0x0:917x657/s.siteapi.org/ccdb0156d66a088.ru/img/8hnyinr6a7ksg084s0ck88g0c8owoo" class="fancy-img-post" data-eval="//i.siteapi.org/vQ1mGyycm7iKBBed0e81wc53I9Y=/s.siteapi.org/ccdb0156d66a088.ru/img/8hnyinr6a7ksg084s0ck88g0c8owoo" data-origin="s.siteapi.org/ccdb0156d66a088.ru/img/8hnyinr6a7ksg084s0ck88g0c8owoo" /></p>
+	</div>
 	<h2 style="text-align: left;"></h2>
+	</section>
+
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;">Доставка по Санкт-Петербургу</h2>
 	<ul style="text-align: left;" data-start="1053" data-end="1281">
 		<li data-start="1053" data-end="1073">
@@ -50,6 +60,9 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 		</li>
 	</ul>
 	<p><br/></p>
+	</section>
+
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;" data-start="1288" data-end="1318">Доставка в Москву и регионы России</h2>
 	<h4 style="text-align: left;" data-start="1320" data-end="1336">Почта России</h4>
 	<ul style="text-align: left;" data-start="1338" data-end="1550">
@@ -84,6 +97,9 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 		<li data-start="1744" data-end="1786"><p data-start="1746" data-end="1786">И другие варианты &mdash; по согласованию</p></li>
 	</ul>
 	<p><br/></p>
+	</section>
+
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;" data-start="1793" data-end="1819">Доставка в другие страны</h2>
 	<ul style="text-align: left;" data-start="1821" data-end="1938">
 		<li data-start="1821" data-end="1824"><p data-start="1823" data-end="1824">DHL</p></li>
@@ -97,6 +113,9 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 		<li data-start="1875" data-end="1938"><p data-start="1877" data-end="1938">И другие варианты &mdash; по согласованию</p></li>
 	</ul>
 	<p><br/></p>
+	</section>
+
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;" data-start="1945" data-end="1968">Наложенный платёж</h2>
 	<p style="text-align: left;" data-start="1970" data-end="2019">Вы можете оплатить заказ наложенным платежом:</p>
 	<ul style="text-align: left;" data-start="2021" data-end="2161">
@@ -107,6 +126,9 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 	</ul>
 	<p style="text-align: left;" data-start="2163" data-end="2292">Другие ТК и прочие варианты доставки в основном доступны только по предоплате.</p>
 	<p><br/></p>
+	</section>
+
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;" data-start="2299" data-end="2308">Важно знать</h2>
 	<ul style="text-align: left;" data-start="2299" data-end="2603">
 		<li data-start="2299" data-end="2372"><p data-start="2301" data-end="2372">Доставка всегда оплачивается отдельно и рассчитывается индивидуально</p></li>
@@ -115,6 +137,9 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 		<li data-start="2537" data-end="2603"><p data-start="2539" data-end="2603">При необходимости можем предложить несколько вариантов на выбор</p></li>
 	</ul>
 	<p><br/></p>
+	</section>
+
+	<section class="mf-delivery-section">
 	<h2 style="text-align: left;" data-start="2610" data-end="2632">Остались вопросы?</h2>
 	<p style="text-align: left;" data-start="2634" data-end="2763">Свяжитесь с нами &mdash; поможем выбрать лучший способ доставки и рассчитаем стоимость:</p>
 	<ul>
@@ -122,6 +147,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 		<li style="text-align: left;" data-start="2634" data-end="2763">andrey@motor-force.ru</li>
 		<li style="text-align: left;" data-start="2634" data-end="2763">Чат Jivosite справа</li>
 	</ul>
+	</section>
 </div>
 
 <?php require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php"); ?>

@@ -19,7 +19,7 @@ $mfForm = mf_handle_static_form(
 );
 ?>
 
-<div class="mf-text-page user-inner mb-4">
+<div class="mf-buyout mf-text-page user-inner mb-4">
 	<h2 style="text-align: center;"><span style="font-weight: bold;">Выкупим Вашу Мототехнику</span></h2>
 	<p><br /></p>
 	<p style="text-align: left;"><span style="font-size: 18px;">Осуществляем выкуп любой мототехники в любом состоянии. </span><span style="font-size: 18px;">Мотоциклы, квадроциклы, багги, снегохды, гидроциклы, подвесные моторы, </span><span style="font-size: 18px;">стационарные моторы - готовы выкупить быстро и в любой точке РФ.&nbsp;Битые, некомплектные, с проблемами - рассмотрим любые предложения. </span></p>

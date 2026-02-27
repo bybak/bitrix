@@ -4,8 +4,13 @@ require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 // ID вашего каталога
 $IBLOCK_ID = 4; // Каталог из 1С
 
+// Breadcrumbs: Home (link) -> Shop -> Sections...
+$APPLICATION->AddChainItem("Магазин", SITE_DIR."products/");
+
 // Получаем код раздела из URL
 $sectionCode = $_REQUEST["SECTION_CODE"];
+// Force correct SEF basepath for controls (sorting/view links)
+$GLOBALS['MF_SHOP_BASEPATH'] = SITE_DIR . "products/category/" . $sectionCode . "/";
 
 // Получаем информацию о разделе
 CModule::IncludeModule("iblock");
@@ -34,44 +39,148 @@ if ($arSection = $rsSection->Fetch()) {
     exit();
 }
 
-// Сначала показываем подкатегории (если есть)
-$APPLICATION->IncludeComponent(
-    "bitrix:catalog.section.list",
-    "",
-    array(
-        "IBLOCK_TYPE" => "catalog",
-        "IBLOCK_ID" => $IBLOCK_ID,
-        
-        // Показываем подразделы текущей категории
-        "SECTION_ID" => $SECTION_ID,
-        "COUNT_ELEMENTS" => "Y",
-        
-        // URL
-        "SECTION_URL" => "/products/category/#SECTION_CODE#/",
-        
-        // Отображение
-        "TOP_DEPTH" => "1",
-        "VIEW_MODE" => "LIST",
-        "SHOW_PARENT_NAME" => "N",
-        
-        // Кэш
-        "CACHE_TYPE" => "A",
-        "CACHE_TIME" => "36000000",
-        "CACHE_GROUPS" => "Y",
-        
-        "ADD_SECTIONS_CHAIN" => "N",
-    ),
-    false
-);
+// If category has child sections -> keep "categories" view (cards + tree).
+$hasChildSections = (bool)CIBlockSection::GetList(
+	[],
+	[
+		'IBLOCK_ID' => $IBLOCK_ID,
+		'SECTION_ID' => $SECTION_ID,
+		'GLOBAL_ACTIVE' => 'Y',
+	],
+	false,
+	['nTopCount' => 1],
+	['ID']
+)->Fetch();
+
+if ($hasChildSections)
+{
+	// Breadcrumbs for category pages when we don't render catalog.section (it would normally add chain).
+	$nav = CIBlockSection::GetNavChain($IBLOCK_ID, $SECTION_ID, ['NAME', 'SECTION_PAGE_URL']);
+	while ($n = $nav->Fetch())
+	{
+		$APPLICATION->AddChainItem($n['NAME'], $n['SECTION_PAGE_URL']);
+	}
+	?>
+	<div class="mf-shop">
+		<div class="mf-shop-layout">
+			<section class="mf-shop-main" aria-label="Подкатегории (карточки)">
+				<?include($_SERVER["DOCUMENT_ROOT"]."/include/mf_catalog_search.php");?>
+				<?$APPLICATION->IncludeComponent(
+					"bitrix:catalog.section.list",
+					"mf_shop_cards",
+					array(
+						"IBLOCK_TYPE" => "catalog",
+						"IBLOCK_ID" => $IBLOCK_ID,
+						"SECTION_ID" => $SECTION_ID,
+						"COUNT_ELEMENTS" => "N",
+						"SECTION_URL" => "/products/category/#SECTION_CODE#/",
+						// Need pictures for mf_shop_cards
+						"SECTION_FIELDS" => array("PICTURE", "DETAIL_PICTURE"),
+						"TOP_DEPTH" => "1",
+						"VIEW_MODE" => "LIST",
+						"SHOW_PARENT_NAME" => "N",
+						"ADD_SECTIONS_CHAIN" => "N",
+						"CACHE_TYPE" => "A",
+						"CACHE_TIME" => "36000000",
+						"CACHE_GROUPS" => "Y",
+					),
+					false
+				);?>
+			</section>
+
+			<aside class="mf-shop-sidebar" aria-label="Подкатегории (дерево)">
+				<?$APPLICATION->IncludeComponent(
+					"bitrix:catalog.section.list",
+					"mf_shop_tree",
+					array(
+						"IBLOCK_TYPE" => "catalog",
+						"IBLOCK_ID" => $IBLOCK_ID,
+						// render full tree, but open current branch
+						"SECTION_ID" => 0,
+						"MF_CURRENT_SECTION_ID" => $SECTION_ID,
+						"COUNT_ELEMENTS" => "N",
+						"SECTION_URL" => "/products/category/#SECTION_CODE#/",
+						"TOP_DEPTH" => "6",
+						"VIEW_MODE" => "LIST",
+						"SHOW_PARENT_NAME" => "N",
+						"ADD_SECTIONS_CHAIN" => "N",
+						"CACHE_TYPE" => "A",
+						"CACHE_TIME" => "36000000",
+						"CACHE_GROUPS" => "Y",
+					),
+					false
+				);?>
+			</aside>
+		</div>
+	</div>
+	<?php
+
+	require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");
+	exit;
+}
 
 // Затем показываем товары текущей категории
+$GLOBALS['mfCatalogFilter'] = [
+	'!PROPERTY_MF_IS_REDIRECT' => 'Y',
+];
+
+$mfView = (string)($_GET['mf_view'] ?? 'grid');
+if (!in_array($mfView, ['grid', 'tiles', 'list'], true)) $mfView = 'grid';
+
+$productRowVariants = '[{"VARIANT":3,"BIG_DATA":false}]'; // 4-cols cards
+if ($mfView === 'tiles')
+{
+	$productRowVariants = '[{"VARIANT":1,"BIG_DATA":false}]'; // 2-cols cards
+}
+if ($mfView === 'list')
+{
+	$productRowVariants = '[{"VARIANT":9,"BIG_DATA":false}]'; // line view (different card template)
+}
+
+$mfSort = (string)($_GET['mf_sort'] ?? 'default');
+$sortField = 'sort';
+$sortOrder = 'asc';
+$sortField2 = 'name';
+$sortOrder2 = 'asc';
+switch ($mfSort)
+{
+	case 'name_asc':
+		$sortField = 'name';
+		$sortOrder = 'asc';
+		$sortField2 = 'sort';
+		$sortOrder2 = 'asc';
+		break;
+	case 'name_desc':
+		$sortField = 'name';
+		$sortOrder = 'desc';
+		$sortField2 = 'sort';
+		$sortOrder2 = 'asc';
+		break;
+	case 'price_asc':
+		// Bitrix supports sorting by catalog price using catalog_PRICE_<PRICE_TYPE_ID> in many configurations.
+		$sortField = 'catalog_PRICE_1';
+		$sortOrder = 'asc';
+		$sortField2 = 'name';
+		$sortOrder2 = 'asc';
+		break;
+	case 'price_desc':
+		$sortField = 'catalog_PRICE_1';
+		$sortOrder = 'desc';
+		$sortField2 = 'name';
+		$sortOrder2 = 'asc';
+		break;
+	case 'default':
+	default:
+		break;
+}
+
 $arParams = array(
     "IBLOCK_TYPE" => "catalog",
     "IBLOCK_ID" => $IBLOCK_ID,
     
     // ID текущего раздела
     "SECTION_ID" => $SECTION_ID,
-    "SECTION_CODE" => $lastCode,
+    "SECTION_CODE" => $sectionCode,
     
     // URL шаблоны - категории с префиксом, товары без
     "SECTION_URL" => "/products/category/#SECTION_CODE#/",
@@ -84,12 +193,15 @@ $arParams = array(
     // Количество элементов
     "PAGE_ELEMENT_COUNT" => 30,
     "LINE_ELEMENT_COUNT" => 3,
+
+	// View (affects CARD vs LINE and columns)
+	"PRODUCT_ROW_VARIANTS" => $productRowVariants,
     
     // Сортировка
-    "ELEMENT_SORT_FIELD" => "sort",
-    "ELEMENT_SORT_ORDER" => "asc",
-    "ELEMENT_SORT_FIELD2" => "name",
-    "ELEMENT_SORT_ORDER2" => "asc",
+    "ELEMENT_SORT_FIELD" => $sortField,
+    "ELEMENT_SORT_ORDER" => $sortOrder,
+    "ELEMENT_SORT_FIELD2" => $sortField2,
+    "ELEMENT_SORT_ORDER2" => $sortOrder2,
     
     // Свойства
     "PROPERTY_CODE" => array(""),
@@ -108,6 +220,9 @@ $arParams = array(
     "CACHE_TIME" => "36000000",
     "CACHE_FILTER" => "Y",
     "CACHE_GROUPS" => "Y",
+
+	// Hide redirect-elements from lists
+	"FILTER_NAME" => "mfCatalogFilter",
     
     // SEO
     "SET_TITLE" => "Y",
@@ -139,13 +254,45 @@ $arParams = array(
     "MESS_NOT_AVAILABLE" => "Нет в наличии",
 );
 
-// Подключаем компонент каталога
-$APPLICATION->IncludeComponent(
-    "bitrix:catalog.section",
-    "",
-    $arParams,
-    false
-);
+?>
+<div class="mf-shop mf-view-<?=$mfView?>">
+	<div class="mf-shop-layout">
+		<section class="mf-shop-main" aria-label="Товары">
+			<?include($_SERVER["DOCUMENT_ROOT"]."/include/mf_catalog_search.php");?>
+			<?include($_SERVER["DOCUMENT_ROOT"]."/include/mf_catalog_controls.php");?>
+			<?$APPLICATION->IncludeComponent(
+				"bitrix:catalog.section",
+				"",
+				$arParams,
+				false
+			);?>
+		</section>
+
+		<aside class="mf-shop-sidebar" aria-label="Категории (дерево)">
+			<?$APPLICATION->IncludeComponent(
+				"bitrix:catalog.section.list",
+				"mf_shop_tree",
+				array(
+					"IBLOCK_TYPE" => "catalog",
+					"IBLOCK_ID" => $IBLOCK_ID,
+					"SECTION_ID" => 0,
+					"MF_CURRENT_SECTION_ID" => $SECTION_ID,
+					"COUNT_ELEMENTS" => "N",
+					"SECTION_URL" => "/products/category/#SECTION_CODE#/",
+					"TOP_DEPTH" => "6",
+					"VIEW_MODE" => "LIST",
+					"SHOW_PARENT_NAME" => "N",
+					"ADD_SECTIONS_CHAIN" => "N",
+					"CACHE_TYPE" => "A",
+					"CACHE_TIME" => "36000000",
+					"CACHE_GROUPS" => "Y",
+				),
+				false
+			);?>
+		</aside>
+	</div>
+</div>
+<?php
 
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");
 

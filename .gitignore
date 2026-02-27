@@ -1,3 +1,7 @@
 # Local dumps
 dump.sql
-
+www/upload/mf_sync_src/
+www/upload/resize_cache/iblock/
+www/upload/iblock/
+www/bitrix/managed_cache/
+www/upload/resize_cache/

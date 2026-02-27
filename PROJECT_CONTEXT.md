@@ -166,6 +166,37 @@ docker exec bitrix_php php /var/www/html/mf_import_posts.php --dry-run
 docker exec bitrix_php php /var/www/html/mf_import_posts.php --apply
 ```
 
+## Playwright: визуальное сравнение “1в1” (скрин + HTML + diff)
+
+Инструменты лежат в:
+- `tools/playwright/`
+
+Что умеет:
+- снимает скрин элемента по CSS‑селектору на **оригинале** и **локалке**
+- сохраняет HTML элемента
+- строит `diff.png` (pixelmatch), чтобы быстро видеть несовпадения
+- автоматически прячет мешающие оверлеи (Jivo/cookies) перед снимком
+
+Сборка образа (один раз):
+
+```bash
+tools/playwright/run.sh build
+```
+
+Пример сравнения (мобильный нижний блок с иконками, как в оригинале):
+
+```bash
+tools/playwright/run.sh compare \
+  --a "https://motor-force.ru/contacts" \
+  --b "http://host.docker.internal/contacts/" \
+  --selector ".top-contacts__forms" \
+  --out "/out/top-contacts-forms-mobile" \
+  --viewport 390x844
+```
+
+Артефакты сохраняются в:
+- `tools/playwright/out/...` (`a.png/.html`, `b.png/.html`, `diff.png`)
+
 ## Что было важно по требованиям верстки
 
 - “1 в 1” с `motor-force.ru`

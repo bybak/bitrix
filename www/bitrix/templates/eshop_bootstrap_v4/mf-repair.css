@@ -1,0 +1,139 @@
+.mf-repair{
+  --mf-radius: 16px;
+  --mf-border: 1px solid rgba(0,0,0,.08);
+  --mf-shadow: 0 14px 30px rgba(0,0,0,.08);
+  --mf-yellow: #ebbd2f;
+  --mf-muted: rgba(0,0,0,.55);
+  --mf-muted2: rgba(0,0,0,.45);
+}
+
+/* Cards for each nethouse "row" block */
+.mf-repair .mrb-row__content{
+  border: var(--mf-border);
+  border-radius: var(--mf-radius);
+  background: #fff;
+  box-shadow: var(--mf-shadow);
+  padding: 16px;
+  margin: 0 0 14px 0;
+}
+@media (min-width: 992px){
+  .mf-repair .mrb-row__content{
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+}
+
+/* Improve readability without touching text */
+.mf-repair .user-inner p{
+  color: rgba(0,0,0,.74);
+  line-height: 1.65;
+}
+.mf-repair .user-inner h2,
+.mf-repair .user-inner h4{
+  color: #000;
+  font-weight: 900;
+}
+.mf-repair .user-inner h2{
+  line-height: 1.15;
+}
+
+/* Images */
+.mf-repair .mrb-image img{
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,.06);
+  box-shadow: 0 10px 22px rgba(0,0,0,.10);
+}
+
+/* Table: keep content, make it responsive & nicer */
+.mf-repair .mf-repair-table{
+  margin-top: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: #fff;
+}
+.mf-repair table.bordered{
+  width: 100% !important; /* overrides inline width */
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.mf-repair table.bordered td,
+.mf-repair table.bordered th{
+  border: 0;
+  border-bottom: 1px solid rgba(0,0,0,.10);
+  border-right: 1px solid rgba(0,0,0,.08);
+  padding: 10px 12px;
+  vertical-align: top;
+  background: #fff;
+}
+.mf-repair table.bordered tr > :last-child{
+  border-right: 0;
+}
+.mf-repair table.bordered tr:last-child td{
+  border-bottom: 0;
+}
+
+/* Sticky header row (first row is styled inline with yellow already) */
+.mf-repair table.bordered tr:first-child td{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* Triggers block: keep but align to our spacing */
+.mf-repair #mrb-triggers{
+  border: var(--mf-border);
+  border-radius: var(--mf-radius);
+  background: #fff;
+  box-shadow: var(--mf-shadow);
+  padding: 16px;
+  margin: 0 0 14px 0;
+}
+@media (min-width: 992px){
+  .mf-repair #mrb-triggers{ padding: 18px; margin-bottom: 18px; }
+}
+
+/* Feedback form card */
+.mf-repair .mf-feedback{
+  border: var(--mf-border);
+  border-radius: var(--mf-radius);
+  background: #fff;
+  box-shadow: var(--mf-shadow);
+  padding: 16px;
+  margin-top: 18px;
+}
+.mf-repair .mf-feedback__title{
+  margin: 0 0 12px 0;
+  font-weight: 900;
+  color: #000;
+}
+.mf-repair .mf-feedback .form-control{
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.14);
+  box-shadow: none !important;
+}
+.mf-repair .mf-feedback textarea.form-control{
+  height: auto;
+  min-height: 140px;
+}
+.mf-repair .mf-feedback .form-control:focus{
+  border-color: rgba(0,0,0,.35);
+  box-shadow: 0 0 0 3px rgba(235,189,47,.25) !important;
+}
+
+/* Keep button semantics, but make it our primary */
+.mf-repair .mf-feedback .btn.btn-success{
+  border-radius: 12px;
+  background: var(--mf-yellow) !important;
+  border: 0 !important;
+  color: #000 !important;
+  font-weight: 900 !important;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+}
+.mf-repair .mf-feedback .btn.btn-success:hover{ opacity: .92; }
+.mf-repair .mf-feedback .btn.btn-success:active{ opacity: .85; }
+

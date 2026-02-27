@@ -3,7 +3,9 @@ $arUrlRewrite=array (
   // Правило для категории: /products/category/{категория}/ (должно быть ПЕРВЫМ!)
   4 => 
   array (
-    'CONDITION' => '#^/products/category/([^/]+)/?$#',
+    // Bitrix checks CONDITION against REQUEST_URI which may include query string.
+    // Allow optional "?..." so view/sort switches don't cause 404.
+    'CONDITION' => '#^/products/category/([^/]+)/?(\\?.*)?$#',
     'RULE' => 'SECTION_CODE=$1',
     'ID' => NULL,
     'PATH' => '/products/section.php',
@@ -12,7 +14,7 @@ $arUrlRewrite=array (
   // Правило для товара: /products/{товар}/ (БЕЗ category)
   5 => 
   array (
-    'CONDITION' => '#^/products/([^/]+)/?$#',
+    'CONDITION' => '#^/products/([^/]+)/?(\\?.*)?$#',
     'RULE' => 'ELEMENT_CODE=$1',
     'ID' => NULL,
     'PATH' => '/products/detail.php',
@@ -21,7 +23,7 @@ $arUrlRewrite=array (
   // Правило для корня каталога: /products/
   6 => 
   array (
-    'CONDITION' => '#^/products/?$#',
+    'CONDITION' => '#^/products/?(\\?.*)?$#',
     'RULE' => '',
     'ID' => NULL,
     'PATH' => '/products/index.php',
@@ -44,6 +46,51 @@ $arUrlRewrite=array (
     'ID' => NULL,
     'PATH' => '/posts/detail.php',
     'SORT' => 320,
+  ),
+  // Блог: /blog/page/{page}
+  9 =>
+  array (
+    'CONDITION' => '#^/blog/page/(\\d+)/?$#',
+    'RULE' => 'BLOG_PAGE=$1',
+    'ID' => NULL,
+    'PATH' => '/blog/index.php',
+    'SORT' => 330,
+  ),
+  // Блог: /blog/tag/{tag}/page/{page}
+  11 =>
+  array (
+    'CONDITION' => '#^/blog/tag/([^/]+)/page/(\\d+)/?$#',
+    'RULE' => 'BLOG_TAG=$1&BLOG_PAGE=$2',
+    'ID' => NULL,
+    'PATH' => '/blog/index.php',
+    'SORT' => 331,
+  ),
+  // Блог: /blog/tag/{tag}
+  12 =>
+  array (
+    'CONDITION' => '#^/blog/tag/([^/]+)/?$#',
+    'RULE' => 'BLOG_TAG=$1',
+    'ID' => NULL,
+    'PATH' => '/blog/index.php',
+    'SORT' => 332,
+  ),
+  // Блог RSS: /blog/rss/
+  13 =>
+  array (
+    'CONDITION' => '#^/blog/rss/?$#',
+    'RULE' => '',
+    'ID' => NULL,
+    'PATH' => '/blog/rss/index.php',
+    'SORT' => 333,
+  ),
+  // Блог (детальная): /blog/{code}/
+  10 =>
+  array (
+    'CONDITION' => '#^/blog/([^/]+)/?$#',
+    'RULE' => 'ELEMENT_CODE=$1',
+    'ID' => NULL,
+    'PATH' => '/blog/detail.php',
+    'SORT' => 340,
   ),
   1 => 
   array (

@@ -8,6 +8,10 @@
     if (!header) return;
     var h = header.offsetHeight || 0;
     document.documentElement.style.setProperty('--mf-header-h', h + 'px');
+
+    var nav = qs('.mf-nav');
+    var nh = nav ? (nav.offsetHeight || 0) : 0;
+    document.documentElement.style.setProperty('--mf-nav-h', nh + 'px');
   }
 
   function initFooterAccordion() {
@@ -38,6 +42,14 @@
   }
 
   document.addEventListener('click', function (e) {
+    var up = e.target.closest && e.target.closest('.js-scroll-up');
+    if (up) {
+      e.preventDefault();
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      catch (_) { window.scrollTo(0, 0); }
+      return;
+    }
+
     var openBtn = e.target.closest && e.target.closest('[data-mf="menu-open"]');
     if (openBtn) { e.preventDefault(); openMenu(); return; }
 

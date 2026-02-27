@@ -19,7 +19,7 @@ $mfForm = mf_handle_static_form(
 );
 ?>
 
-<div class="mf-text-page mb-4">
+<div class="mf-repair mf-text-page mb-4">
 	<div class="mr-block">
 		<div class="mrb-row_textAndImage mrb-row__content -inline-group_top mrb-row-index-0"><div class="mrb-small-18 mrb-medium-12
             mrb-col-index-0 mrb-large-11"><div class="-gd-content mrb-block-index-0"><div class="user-inner">
@@ -81,6 +81,7 @@ $mfForm = mf_handle_static_form(
 		<div class=" mrb-row__content -inline-group_top mrb-row-index-1"><div class="mrb-small-18 mrb-medium-18
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0"><div class="user-inner">
     <h4><span style="font-weight: bold;">Прайс-лист на основные виды работ</span></h4>
+<div class="mf-repair-table" role="region" aria-label="Прайс-лист на основные виды работ">
 <table style="width: 939.425px;" class=" bordered">
 <tbody>
 <tr style="height: 34px; background-color: #f0c419;">
@@ -163,6 +164,7 @@ $mfForm = mf_handle_static_form(
 </tr>
 </tbody>
 </table>
+</div>
 <p style="text-align: center;"><br /></p>
 </div>
 </div></div></div>

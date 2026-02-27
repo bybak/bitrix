@@ -4,8 +4,9 @@ $APPLICATION->SetTitle("FAQ");
 $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 ?>
 
-<div class="mf-text-page user-inner mb-4">
+<div class="mf-faq mf-text-page user-inner mb-4">
 	<h2>Оглавление FAQ</h2>
+	<div class="mf-faq-toc" role="region" aria-label="Оглавление FAQ">
 	<table style="width: 110.088%; margin-right: auto; background-color: #f5f2f2;" class="bordered">
 		<tbody>
 			<tr style="height: 30px;">
@@ -25,6 +26,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 			</tr>
 		</tbody>
 	</table>
+	</div>
 	<h2><br /></h2>
 	<h2><span class="-underline">1. Как оформить заказ в интернет-магазине Motor-Force?</span></h2>
 	<p>Оформить заказ очень просто:</p>

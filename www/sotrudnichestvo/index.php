@@ -21,7 +21,7 @@ $mfForm = mf_handle_static_form(
 );
 ?>
 
-<div class="mf-text-page mb-4">
+<div class="mf-cooperation mf-text-page mb-4">
 	<div class="mr-block"><div class=" mrb-row__content -inline-group_top mrb-row-index-0"><div class="mrb-small-18 mrb-medium-18
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0"><div class="user-inner">
     <h2 style="text-align: left;">Сотрудничество с Motor-Force</h2>

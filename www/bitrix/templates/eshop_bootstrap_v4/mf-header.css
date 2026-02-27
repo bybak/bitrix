@@ -4,6 +4,12 @@
   --fallback-font-paragraph: "ProximaNova-Bold", Futura, Avenir, Helvetica, -apple-system, BlinkMacSystemFont, Roboto, Arial, "Droid Sans", sans-serif;
 }
 
+/* Some Bitrix/legacy bootstrap styles may set html{font-size:10px} on some pages.
+   We use rem units in header/breadcrumbs; enforce standard root size to prevent "tiny" text. */
+html{
+  font-size: 16px !important;
+}
+
 .mf-header {
   /* Fixed header */
   position: fixed;
@@ -68,12 +74,18 @@
   border-bottom: 1px solid rgba(255,255,255,.2);
 }
 
+/* Desktop top row (old) */
 .mf-top-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 0;
+}
+
+/* Hide this desktop top row on mobile (we use top-contacts in mf-nav) */
+@media (max-width: 991.98px) {
+  .mf-top { display: none; }
 }
 
 .mf-phones {
@@ -107,6 +119,23 @@
   background: #2a7a2a;
   opacity: .9;
 }
+
+/* Utilities used by original header */
+.mf-header .show-for-medium { display: none !important; }
+.mf-header .hide-for-medium { display: inline-block !important; }
+@media print,screen and (min-width:48em) {
+  .mf-header .show-for-medium { display: inline-block !important; }
+  .mf-header .hide-for-medium { display: none !important; }
+}
+.mf-header .hide-for-large { display: inline-block !important; }
+@media print,screen and (min-width:64em) { .mf-header .hide-for-large { display: none !important; } }
+
+.mf-header .text-right { text-align: right; }
+.mf-header .-inline-group { display: inline-block; vertical-align: middle; }
+.mf-header .inline-column { display: inline-block; vertical-align: middle; }
+
+/* mainpage.faa412.min.css (top-contacts) – copied 1:1, scoped */
+.mf-header .top-contacts{font-family:var(--menu-font-family,FontParagraph,var(--fallback-font-paragraph),"ProximaNova-Bold",Futura,Avenir,Helvetica,-apple-system,BlinkMacSystemFont,Roboto,Arial,Droid Sans,sans-serif);font-weight:var(--menu-font-weight,500)}.mf-header .top-contacts,.mf-header .top-contacts__link{color:var(--menu-color,#fff)}.mf-header .top-contacts__link{display:inline-block;position:relative}.mf-header .top-contacts__icon{fill:var(--menu-color,#fff);display:inline}.mf-header .top-contacts__icon svg{display:inline-block;height:1rem;vertical-align:middle;width:1rem}.mf-header .top-contacts__icon_phone svg{vertical-align:middle}.mf-header .top-contacts__forms{text-transform:uppercase}.mf-header .top-contacts__phones{white-space:nowrap}.mf-header .top-contacts__phones-item{color:var(--menu-color,#fff)}.mf-header .top-contacts__phones-item:first-child{margin-left:0}.mf-header .top-contacts__phones-item:hover{color:var(--menu-color-hover,#fff)}.mf-header .top-contacts__form{padding-left:1.125rem;padding-right:0}.mf-header .top-contacts__form a{color:var(--menu-color,#fff)}.mf-header .top-contacts__form:hover .top-contacts__form-text,.mf-header .top-contacts__form:hover a{color:var(--menu-color-hover,#fff)}.mf-header .top-contacts .mobile,.mf-header .top-contacts_scroll-up{display:none}@media print,screen and (max-width:47.99875em){.mf-header .top-contacts{text-align:center}.mf-header .top-contacts .mobile,.mf-header .top-contacts .top-contacts_scroll-up{display:inline-block!important}.mf-header .top-contacts .mobile.top-contacts__phones-item{align-self:baseline;order:-1}.mf-header .top-contacts__phones-item a{display:block;font-size:.875rem;width:100%}.mf-header .top-contacts__form{min-height:36px;padding:0}.mf-header .top-contacts__phones-list{background-color:var(--menu-bg-color,rgba(0,0,0,.85));left:0;line-height:1.2;position:absolute;right:0;top:0;transform:translateY(-100%)}.mf-header .top-contacts__phones-list a{color:var(--menu-color,#fff)}.mf-header .top-contacts__icon{line-height:0;margin:0 .625rem;padding:.625rem}.mf-header .top-contacts__icon svg{fill:var(--menu-color,#fff);max-height:1.5rem;max-width:1.5rem}.mf-header .top-contacts .desktop{display:none}.mf-header .top-contacts .mobile{display:block}}.mf-header .top-contacts__inner{margin-left:auto;margin-right:auto;max-width:var(--menu-width,100%);position:relative}@media print,screen and (min-width:48em){.mf-header .top-contacts__inner .top-contacts{align-items:center;display:flex;justify-content:space-between}.mf-header .top-contacts__form:last-child{margin-right:0}.mf-header .top-contacts__form-text{color:var(--menu-color,#fff);line-height:1.2;padding-left:.75rem;text-align:left;white-space:normal}.mf-header .top-contacts__form-text svg{fill:var(--menu-color,#fff)}.mf-header .top-contacts__phones-item{display:inline-block;padding:0 0 0 .75rem;vertical-align:middle}.mf-header .top-contacts__phones-item:nth-child(3):before{background-color:var(--menu-color,#fff);content:\"\";display:inline-block;height:1rem;margin-right:.875rem;opacity:.2;vertical-align:middle;width:1px}.mf-header .top-contacts__forms,.mf-header .top-contacts__phones{font-feature-settings:\"pnum\" on,\"lnum\" on;text-transform:uppercase}.mf-header .top-contacts__forms,.mf-header .top-contacts__phones{font-size:.75rem}.mf-header .top-contacts__link{align-items:baseline;display:flex}.mf-header .top-contacts__link:hover{color:var(--menu-color-hover,#fff)}}@media screen and (max-width:1023px){.mf-header .top-contacts__form-text_display{display:none}}@media print,screen and (min-width:64em){.mf-header .top-contacts__phones{font-size:.875rem}.mf-header .top-contacts__form-text,.mf-header .top-contacts__forms{font-size:.75rem}}@media screen and (max-width:767px){.mf-header .top-contacts__forms .row.-inline-group.text-right{align-items:flex-end;display:flex;justify-content:center}.mf-header .top-contacts__forms .row.-inline-group.text-right .top-contacts__icon{margin:0 .5rem;padding:0}.mf-header .top-contacts__forms .row.-inline-group.text-right .top-contacts__icon svg{height:100%;width:100%}}.mf-header .top-contacts--hover:hover,.mf-header .top-contacts--hover:hover a{color:var(--menu-color-hover,#fff)}.mf-header .top-contacts__phones-item a{color:var(--menu-color,#fff)}.mf-header .top-contacts__phones-item a:hover{color:var(--menu-color-hover,#fff)}
 
 .mf-main {
   padding: 14px 0;
@@ -164,6 +193,17 @@
   gap: 14px;
 }
 
+.mf-account-link{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-decoration: none;
+  line-height: 0;
+}
+.mf-account-link:hover{ text-decoration: none; opacity: .9; }
+.mf-account-link svg{ display:block; width:20px; height:20px; }
+
 .mf-login {
   font-weight: 600;
 }
@@ -178,6 +218,142 @@
   align-items: center;
   gap: 12px;
   padding: 10px 0;
+}
+
+/* Mobile bottom row now contains top-contacts */
+@media (max-width: 991.98px) {
+  .mf-nav-inner { padding: 0; }
+}
+
+/* Mobile: replace Bitrix fixed basket with MF bottom bar */
+@media (max-width: 991.98px) {
+  .bx-basket-fixed { display: none !important; }
+
+  .mf-nav{
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1005;
+    background: rgba(0,0,0,.85);
+    border-top: 0;
+    border-bottom: 0;
+    height: 60px;
+  }
+
+  /* Prevent content being covered by fixed bottom bar */
+  body { padding-bottom: var(--mf-nav-h, 0px); }
+}
+
+/* Mobile bottom bar: center/align icons perfectly */
+@media (max-width: 991.98px) {
+  #bx_eshop_wrap > header > .mf-nav > .container{
+    height: 60px;
+  }
+
+  #bx_eshop_wrap > header > .mf-nav .mf-nav-inner{
+    display: flex;
+    width: 100%;
+    height: 60px;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #bx_eshop_wrap > header > .mf-nav .top-contacts__inner{
+    width: 100%;
+    max-width: none;
+    height: 60px;
+  }
+
+  #bx_eshop_wrap > header > .mf-nav .top-contacts{
+    width: 100%;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* In original mobile header .top-contacts is block; our utility class may turn it inline-block */
+  #bx_eshop_wrap > header > .mf-nav .top-contacts.-inline-group{
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Bottom mobile bar shows only icons; phones block must not take a whole line */
+  #bx_eshop_wrap > header > .mf-nav .top-contacts__phones{
+    display: none !important;
+  }
+
+  #bx_eshop_wrap > header > .mf-nav #topcontacts-show{
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #bx_eshop_wrap > header > .mf-nav .top-contacts__forms{
+    width: auto;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  #bx_eshop_wrap > header > .mf-nav .top-contacts__forms .row.-inline-group.text-right{
+    justify-content: center !important;
+    align-items: flex-end !important;
+    text-align: center !important;
+    width: auto;
+  }
+
+  /* Neutralize Bootstrap .row negative margins inside copied markup */
+  #bx_eshop_wrap > header > .mf-nav .top-contacts__forms .row{
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  /* Bootstrap sometimes forces 100% width on row children; undo for icon row */
+  #bx_eshop_wrap > header > .mf-nav .top-contacts__forms .row.-inline-group.text-right > *{
+    width: auto !important;
+    max-width: none !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    flex: 0 0 auto !important;
+  }
+
+  #bx_eshop_wrap > header > .mf-nav .top-contacts__icon{
+    display: inline !important;
+  }
+}
+
+/* Ensure mobile icons row stays on one line */
+@media (max-width: 47.99875em) {
+  .mf-header .top-contacts__forms .row.-inline-group.text-right {
+    flex-wrap: nowrap !important;
+    gap: 0;
+  }
+}
+
+.mf-menu-btn{
+  display:none;
+  border:0;
+  background:transparent;
+  color:#fff;
+  padding:0;
+  width:44px;
+  height:44px;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.mf-menu-btn svg{width:16px;height:16px;display:block;}
+
+@media (max-width: 991.98px){
+  .mf-menu-btn{display:inline-flex;}
+  .mf-main-inner{
+    grid-template-columns: 44px 1fr auto;
+    gap: 10px;
+  }
+  .mf-logo{justify-self:start;}
 }
 
 .mf-burger {
@@ -375,12 +551,6 @@ html.mf-menu-open .bx-aside-nav {
 
 /* Responsive */
 @media (max-width: 991.98px) {
-  .mf-main-inner { grid-template-columns: 1fr; }
-  .mf-right { justify-content: flex-start; }
-  .mf-search { width: 100%; }
-  .mf-logo { order: 1; }
-  .mf-right { order: 2; }
-  .mf-search { order: 3; }
   .mf-top-inner { flex-direction: column; align-items: flex-start; }
   .mf-top-links { justify-content: flex-start; }
 }

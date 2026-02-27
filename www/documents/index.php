@@ -4,7 +4,7 @@ $APPLICATION->SetTitle("Документы");
 $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 ?>
 
-<div class="mf-text-page user-inner mb-4">
+<div class="mf-documents mf-text-page user-inner mb-4">
 	<h2 style="text-align: center;"><span style="font-weight: bold;">ДОКУМЕНТЫ</span></h2>
 	<p><br /></p>
 

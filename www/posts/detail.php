@@ -49,6 +49,25 @@ $dateAttr = $ts ? date("Y-m-d", $ts) : "";
 $dateText = $ts ? FormatDate("j F Y", $ts) : "";
 
 $detailText = (string)($item["~DETAIL_TEXT"] ?? $item["DETAIL_TEXT"] ?? "");
+
+// Some imported posts have HTML stored as escaped entities (&lt;p&gt;...).
+// Decode only when it doesn't already look like real HTML.
+$detailHtml = $detailText;
+$hasEscapedTags = (strpos($detailHtml, "&lt;") !== false || strpos($detailHtml, "&#60;") !== false);
+$hasRealTags = (bool)preg_match('/<\s*(p|div|h[1-6]|ul|ol|li|br|img|span|table|thead|tbody|tr|td|th|a)\b/i', $detailHtml);
+if ($hasEscapedTags && !$hasRealTags)
+{
+	$charset = defined("SITE_CHARSET") ? (string)SITE_CHARSET : "UTF-8";
+	for ($i = 0; $i < 2; $i++)
+	{
+		$decoded = html_entity_decode($detailHtml, ENT_QUOTES | ENT_HTML5, $charset);
+		if ($decoded === $detailHtml)
+		{
+			break;
+		}
+		$detailHtml = $decoded;
+	}
+}
 ?>
 
 <div
@@ -86,7 +105,7 @@ $detailText = (string)($item["~DETAIL_TEXT"] ?? $item["DETAIL_TEXT"] ?? "");
 					<div class="row">
 						<div class="small-12 medium-12 text-left large-centered large-10 column">
 							<div itemprop="articleBody" class="post-item__body user-inner">
-								<?=$detailText?>
+								<?=$detailHtml?>
 							</div>
 						</div>
 					</div>

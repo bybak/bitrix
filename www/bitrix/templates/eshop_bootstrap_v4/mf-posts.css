@@ -68,8 +68,29 @@ body.mf-posts-page .posts a.posts__rss:hover svg { opacity: 1; }
 @media print,screen and (min-width: 48em) { body.mf-posts-page .posts a.posts__rss { right: -2rem; } }
 
 /* Post item (from post.24b9be.min.css – adapted/scoped) */
-body.mf-posts-page .post-item { margin: 0 0 2rem; }
-body.mf-posts-page .posts__item { margin-bottom: 3.75rem; }
+body.mf-posts-page .post-item { margin: 0 0 14px; }
+body.mf-posts-page .posts__item { margin-bottom: 14px; }
+body.mf-posts-page .posts__list .post-item.row{
+  margin-left: 0;
+  margin-right: 0;
+}
+body.mf-posts-page .posts__list .post-item > .column{
+  padding-left: 0;
+  padding-right: 0;
+}
+body.mf-posts-page .posts__list .post-item{
+  padding: 14px 14px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 26px rgba(0,0,0,.06);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+body.mf-posts-page .posts__list .post-item:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px rgba(0,0,0,.09);
+  border-color: rgba(0,0,0,.14);
+}
 body.mf-posts-page .post-item__time {
   color: #647886;
   display: inline-block;
@@ -80,20 +101,48 @@ body.mf-posts-page .post-item__time {
   text-transform: uppercase;
 }
 body.mf-posts-page .post-item__title {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   font-weight: 900;
   line-height: 1.2;
   margin: 0 0 .75rem;
 }
 body.mf-posts-page .post-item__title a { color: #000; text-decoration: none; }
 body.mf-posts-page .post-item__title a:hover { text-decoration: underline; }
-body.mf-posts-page .post-item__brief { color: #000; font-size: 1rem; line-height: 1.5; }
+body.mf-posts-page .post-item__brief {
+  color: #000;
+  font-size: 1rem;
+  line-height: 1.55;
+}
 body.mf-posts-page .post-item__brief p { margin: 0 0 .75rem; }
+body.mf-posts-page .post-item__brief img{
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,.06);
+}
+body.mf-posts-page .post-item__brief table{
+  max-width: 100%;
+  display: block;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.06);
+}
 
 /* Calendar / years sidebar (from post.24b9be.min.css – adapted/scoped) */
 body.mf-posts-page .posts__calendar { padding-top: .25rem; }
 body.mf-posts-page .posts__calendar { padding: 0; }
-body.mf-posts-page .posts-calendar { align-items: center; display: flex; flex-direction: column; position: relative; }
+body.mf-posts-page .posts-calendar {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 16px;
+  background: #fff;
+  padding: 14px 14px;
+  box-shadow: 0 12px 26px rgba(0,0,0,.06);
+}
 body.mf-posts-page .posts-calendar__icon { display: inline-block; margin-bottom: .875rem; }
 body.mf-posts-page .posts-calendar__icon svg { fill: #000; height: 1.5rem; width: 1.5rem; }
 body.mf-posts-page .posts-calendar__item { align-items: center; display: flex; flex-direction: column; }
@@ -107,6 +156,13 @@ body.mf-posts-page .posts-calendar__devider { color: #647886; font-size: 1rem; l
 body.mf-posts-page .posts-calendar__all-time a { color: #000; font-weight: 900; text-decoration: none; }
 body.mf-posts-page .posts-calendar__all-time a:hover { text-decoration: underline; }
 body.mf-posts-page .separator { background: #e6e6e6; height: 1px; margin: 1.5rem 0; width: 100%; }
+
+@media (min-width: 64em){
+  body.mf-posts-page .posts__calendar{
+    position: sticky;
+    top: 96px;
+  }
+}
 
 /* Pagination (subset from layouts.6f3c98.min.css – adapted/scoped) */
 body.mf-posts-page .pagination { display: inline-flex; align-items: center; justify-content: center; position: relative; padding: 0; margin: 1rem 0 0; }
@@ -143,6 +199,88 @@ body.mf-posts-page .pagination__arrow_right svg { fill: #000; width: 1.25rem; he
 body.mf-posts-page .pagination__arrow_disabled { opacity: .35; cursor: default; }
 body.mf-posts-page .hide-for-small-only { display: none; }
 @media print,screen and (min-width: 48em) { body.mf-posts-page .hide-for-small-only { display: inline-block; } }
+
+/* Pagination (Motor-Force UI override) */
+body.mf-posts-page .pagination{
+  --mf-radius: 14px;
+  --mf-border: 1px solid rgba(0,0,0,.08);
+  --mf-shadow: 0 14px 30px rgba(0,0,0,.08);
+  --mf-yellow: #ebbd2f;
+
+  gap: 6px;
+  padding: 6px;
+  border: var(--mf-border);
+  border-radius: var(--mf-radius);
+  background: #fff;
+  box-shadow: var(--mf-shadow);
+}
+
+body.mf-posts-page .pagination__pages{
+  gap: 6px;
+}
+
+body.mf-posts-page .pagination__item{
+  width: auto;
+  min-width: 40px;
+  height: 40px;
+  line-height: 40px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: #fff;
+  color: rgba(0,0,0,.70);
+  font-weight: 900;
+  letter-spacing: .2px;
+}
+
+body.mf-posts-page a.pagination__item:hover{
+  text-decoration: none;
+  border-color: rgba(0,0,0,.18);
+  color: rgba(0,0,0,.9);
+}
+
+body.mf-posts-page a.pagination__item:focus-visible,
+body.mf-posts-page a.pagination__arrow_left:focus-visible,
+body.mf-posts-page a.pagination__arrow_right:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(235,189,47,.25);
+}
+
+body.mf-posts-page .pagination__item_active{
+  border-color: rgba(0,0,0,.12);
+  background: var(--mf-yellow);
+  color: #000;
+}
+
+body.mf-posts-page .pagination__item_three-dots{
+  min-width: 24px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: rgba(0,0,0,.45);
+}
+
+body.mf-posts-page .pagination__arrow_left,
+body.mf-posts-page .pagination__arrow_right{
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: #fff;
+}
+
+body.mf-posts-page a.pagination__arrow_left:hover,
+body.mf-posts-page a.pagination__arrow_right:hover{
+  text-decoration: none;
+  border-color: rgba(0,0,0,.18);
+}
+
+body.mf-posts-page .pagination__arrow_disabled{
+  border-color: rgba(0,0,0,.08);
+  background: rgba(0,0,0,.02);
+  opacity: .55;
+}
 
 /* Detail page (post widget) */
 body.mf-posts-page .post__title { font-weight: 900; margin: 0 0 .5rem; }

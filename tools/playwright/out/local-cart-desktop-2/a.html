@@ -1,0 +1,406 @@
+<div class="bx-content-section mf-content-section">
+			<div class="container">
+			<!--region breadcrumb-->
+							<div class="mf-breadcrumbs row mb-3">
+					<div class="col" id="navigation">
+						<link href="/bitrix/css/main/font-awesome.css?177126526528777" type="text/css" rel="stylesheet">
+<div class="bx-breadcrumb" itemprop="http://schema.org/breadcrumb" itemscope="" itemtype="http://schema.org/BreadcrumbList">
+			<div class="bx-breadcrumb-item" id="bx_breadcrumb_0" itemprop="itemListElement" itemscope="" itemtype="http://schema.org/ListItem">
+				<a class="bx-breadcrumb-item-link" href="/" title="Главная страница" itemprop="item">
+					<span class="bx-breadcrumb-item-text" itemprop="name">Главная страница</span>
+				</a>
+				<meta itemprop="position" content="1">
+			</div><i class="bx-breadcrumb-item-angle fa fa-angle-right"></i>
+			<div class="bx-breadcrumb-item">
+				<span class="bx-breadcrumb-item-text">Моя корзина</span>
+			</div></div>					</div>
+				</div>
+						<!--endregion-->
+			<div class="row">
+				<div class="bx-content col"><div class="mf-cart" data-mf="cart">
+<script id="basket-total-template" type="text/html">
+	<div class="basket-checkout-container" data-entity="basket-checkout-aligner">
+					<div class="basket-coupon-section">
+				<div class="basket-coupon-block-field">
+					<div class="basket-coupon-block-field-description">
+						Введите код купона для скидки:					</div>
+					<div class="form">
+						<div class="form-group" style="position: relative;">
+							<input type="text" class="form-control" id="" placeholder="" data-entity="basket-coupon-input">
+							<span class=" basket-coupon-block-coupon-btn"></span>
+						</div>
+					</div>
+
+				</div>
+			</div>
+					<div class="basket-checkout-section">
+			<div class="basket-checkout-section-inner">
+				<div class="basket-checkout-block basket-checkout-block-total">
+					<div class="basket-checkout-block-total-inner">
+						<div class="basket-checkout-block-total-title">Итого:</div>
+						<div class="basket-checkout-block-total-description">
+							{{#WEIGHT_FORMATED}}
+								Общий вес: {{{WEIGHT_FORMATED}}}								{{#SHOW_VAT}}<br>{{/SHOW_VAT}}
+							{{/WEIGHT_FORMATED}}
+							{{#SHOW_VAT}}
+								Сумма НДС: {{{VAT_SUM_FORMATED}}}							{{/SHOW_VAT}}
+						</div>
+					</div>
+				</div>
+
+				<div class="basket-checkout-block basket-checkout-block-total-price">
+					<div class="basket-checkout-block-total-price-inner">
+						{{#DISCOUNT_PRICE_FORMATED}}
+							<div class="basket-coupon-block-total-price-old">
+								{{{PRICE_WITHOUT_DISCOUNT_FORMATED}}}
+							</div>
+						{{/DISCOUNT_PRICE_FORMATED}}
+
+						<div class="basket-coupon-block-total-price-current" data-entity="basket-total-price">
+							{{{PRICE_FORMATED}}}
+						</div>
+
+						{{#DISCOUNT_PRICE_FORMATED}}
+							<div class="basket-coupon-block-total-price-difference">
+								Экономия <span style="white-space: nowrap;">{{{DISCOUNT_PRICE_FORMATED}}}</span>							</div>
+						{{/DISCOUNT_PRICE_FORMATED}}
+					</div>
+				</div>
+
+				<div class="basket-checkout-block basket-checkout-block-btn">
+					<button class="btn btn-lg btn-primary basket-btn-checkout{{#DISABLE_CHECKOUT}} disabled{{/DISABLE_CHECKOUT}}"
+						data-entity="basket-checkout-button">
+						Оформить заказ					</button>
+				</div>
+			</div>
+		</div>
+
+					<div class="basket-coupon-alert-section">
+				<div class="basket-coupon-alert-inner">
+					{{#COUPON_LIST}}
+					<div class="basket-coupon-alert text-{{CLASS}}">
+						<span class="basket-coupon-text">
+							<strong>{{COUPON}}</strong> - купон {{JS_CHECK_CODE}}
+							{{#DISCOUNT_NAME}}({{DISCOUNT_NAME}}){{/DISCOUNT_NAME}}
+						</span>
+						<span class="close-link" data-entity="basket-coupon-delete" data-coupon="{{COUPON}}">
+							Удалить						</span>
+					</div>
+					{{/COUPON_LIST}}
+				</div>
+			</div>
+				</div>
+</script><script id="basket-item-template" type="text/html">
+	<tr class="basket-items-list-item-container{{#SHOW_RESTORE}} basket-items-list-item-container-expend{{/SHOW_RESTORE}}"
+		id="basket-item-{{ID}}" data-entity="basket-item" data-id="{{ID}}">
+		{{#SHOW_RESTORE}}
+			<td class="basket-items-list-item-notification" colspan="5">
+				<div class="basket-items-list-item-notification-inner basket-items-list-item-notification-removed" id="basket-item-height-aligner-{{ID}}">
+					{{#SHOW_LOADING}}
+						<div class="basket-items-list-item-overlay"></div>
+					{{/SHOW_LOADING}}
+					<div class="basket-items-list-item-removed-container">
+						<div>
+							Товар <strong>{{NAME}}</strong> был удалён из корзины.						</div>
+						<div class="basket-items-list-item-removed-block">
+							<a href="javascript:void(0)" data-entity="basket-item-restore-button">
+								Восстановить							</a>
+							<span class="basket-items-list-item-clear-btn" data-entity="basket-item-close-restore-button"></span>
+						</div>
+					</div>
+				</div>
+			</td>
+		{{/SHOW_RESTORE}}
+		{{^SHOW_RESTORE}}
+			<td class="basket-items-list-item-descriptions">
+				<div class="basket-items-list-item-descriptions-inner" id="basket-item-height-aligner-{{ID}}">
+											<div class="basket-item-block-image">
+							{{#DETAIL_PAGE_URL}}
+								<a href="{{DETAIL_PAGE_URL}}" class="basket-item-image-link">
+							{{/DETAIL_PAGE_URL}}
+
+							<img class="basket-item-image" alt="{{NAME}}"
+								src="{{{IMAGE_URL}}}{{^IMAGE_URL}}/bitrix/components/bitrix/sale.basket.basket/templates/bootstrap_v4/images/no_photo.png{{/IMAGE_URL}}">
+
+							{{#SHOW_LABEL}}
+								<div class="basket-item-label-text basket-item-label-big  basket-item-label-top basket-item-label-left">
+									{{#LABEL_VALUES}}
+										<div{{#HIDE_MOBILE}} class="d-none d-sm-block"{{/HIDE_MOBILE}}>
+											<span title="{{NAME}}">{{NAME}}</span>
+										</div>
+									{{/LABEL_VALUES}}
+								</div>
+							{{/SHOW_LABEL}}
+
+															{{#DISCOUNT_PRICE_PERCENT}}
+									<div class="basket-item-label-ring basket-item-label-small ">
+										-{{DISCOUNT_PRICE_PERCENT_FORMATED}}
+									</div>
+								{{/DISCOUNT_PRICE_PERCENT}}
+								
+							{{#DETAIL_PAGE_URL}}
+								</a>
+							{{/DETAIL_PAGE_URL}}
+						</div>
+											<div class="basket-item-block-info">
+													<span class="basket-item-actions-remove d-block d-md-none" data-entity="basket-item-delete"></span>
+													<h2 class="basket-item-info-name">
+							{{#DETAIL_PAGE_URL}}
+								<a href="{{DETAIL_PAGE_URL}}" class="basket-item-info-name-link">
+							{{/DETAIL_PAGE_URL}}
+	
+							<span data-entity="basket-item-name">{{NAME}}</span>
+
+							{{#DETAIL_PAGE_URL}}
+								</a>
+							{{/DETAIL_PAGE_URL}}
+						</h2>
+						{{#NOT_AVAILABLE}}
+							<div class="basket-items-list-item-warning-container">
+								<div class="alert alert-warning text-center">
+									В данный момент этот товар не доступен.
+								</div>
+							</div>
+						{{/NOT_AVAILABLE}}
+						{{#DELAYED}}
+							<div class="basket-items-list-item-warning-container">
+								<div class="alert alert-warning text-center">
+									Товар отложен.
+									<a href="javascript:void(0)" data-entity="basket-item-remove-delayed">
+										Добавить к заказу?									</a>
+								</div>
+							</div>
+						{{/DELAYED}}
+						{{#WARNINGS.length}}
+							<div class="basket-items-list-item-warning-container">
+								<div class="alert alert-warning alert-dismissable" data-entity="basket-item-warning-node">
+									<span class="close" data-entity="basket-item-warning-close">&times;</span>
+										{{#WARNINGS}}
+											<div data-entity="basket-item-warning-text">{{{.}}}</div>
+										{{/WARNINGS}}
+								</div>
+							</div>
+						{{/WARNINGS.length}}
+						<div class="basket-item-block-properties">
+																			{{#PROPS}}
+													<div class="basket-item-property">
+														<div class="basket-item-property-name">
+															{{{NAME}}}
+														</div>
+														<div class="basket-item-property-value"
+															data-entity="basket-item-property-value" data-property-code="{{CODE}}">
+															{{{VALUE}}}
+														</div>
+													</div>
+												{{/PROPS}}
+																							{{#SKU_BLOCK_LIST}}
+												{{#IS_IMAGE}}
+													<div class="basket-item-property basket-item-property-scu-image"
+														data-entity="basket-item-sku-block">
+														<div class="basket-item-property-name">{{NAME}}</div>
+														<div class="basket-item-property-value">
+															<ul class="basket-item-scu-list">
+																{{#SKU_VALUES_LIST}}
+																	<li class="basket-item-scu-item{{#SELECTED}} selected{{/SELECTED}}
+																		{{#NOT_AVAILABLE_OFFER}} not-available{{/NOT_AVAILABLE_OFFER}}"
+																		title="{{NAME}}"
+																		data-entity="basket-item-sku-field"
+																		data-initial="{{#SELECTED}}true{{/SELECTED}}{{^SELECTED}}false{{/SELECTED}}"
+																		data-value-id="{{VALUE_ID}}"
+																		data-sku-name="{{NAME}}"
+																		data-property="{{PROP_CODE}}">
+																				<span class="basket-item-scu-item-inner"
+																					style="background-image: url({{PICT}});"></span>
+																	</li>
+																{{/SKU_VALUES_LIST}}
+															</ul>
+														</div>
+													</div>
+												{{/IS_IMAGE}}
+
+												{{^IS_IMAGE}}
+													<div class="basket-item-property basket-item-property-scu-text"
+														data-entity="basket-item-sku-block">
+														<div class="basket-item-property-name">{{NAME}}</div>
+														<div class="basket-item-property-value">
+															<ul class="basket-item-scu-list">
+																{{#SKU_VALUES_LIST}}
+																	<li class="basket-item-scu-item{{#SELECTED}} selected{{/SELECTED}}
+																		{{#NOT_AVAILABLE_OFFER}} not-available{{/NOT_AVAILABLE_OFFER}}"
+																		title="{{NAME}}"
+																		data-entity="basket-item-sku-field"
+																		data-initial="{{#SELECTED}}true{{/SELECTED}}{{^SELECTED}}false{{/SELECTED}}"
+																		data-value-id="{{VALUE_ID}}"
+																		data-sku-name="{{NAME}}"
+																		data-property="{{PROP_CODE}}">
+																		<span class="basket-item-scu-item-inner">{{NAME}}</span>
+																	</li>
+																{{/SKU_VALUES_LIST}}
+															</ul>
+														</div>
+													</div>
+												{{/IS_IMAGE}}
+											{{/SKU_BLOCK_LIST}}
+
+											{{#HAS_SIMILAR_ITEMS}}
+												<div class="basket-items-list-item-double" data-entity="basket-item-sku-notification">
+													<div class="alert alert-info alert-dismissable text-center">
+														{{#USE_FILTER}}
+															<a href="javascript:void(0)"
+																class="basket-items-list-item-double-anchor"
+																data-entity="basket-item-show-similar-link">
+														{{/USE_FILTER}}
+														Этот товар{{#USE_FILTER}}</a>{{/USE_FILTER}}
+														уже есть в корзине в количестве														{{SIMILAR_ITEMS_QUANTITY}} {{MEASURE_TEXT}}
+														<br>
+														<a href="javascript:void(0)" class="basket-items-list-item-double-anchor"
+															data-entity="basket-item-merge-sku-link">
+															Объединить товары в одну позицию c количеством															{{TOTAL_SIMILAR_ITEMS_QUANTITY}} {{MEASURE_TEXT}}?
+														</a>
+													</div>
+												</div>
+											{{/HAS_SIMILAR_ITEMS}}
+																						{{#COLUMN_LIST}}
+												{{#IS_IMAGE}}
+													<div class="basket-item-property-custom basket-item-property-custom-photo
+														{{#HIDE_MOBILE}}d-none d-sm-block{{/HIDE_MOBILE}}"
+														data-entity="basket-item-property">
+														<div class="basket-item-property-custom-name">{{NAME}}</div>
+														<div class="basket-item-property-custom-value">
+															{{#VALUE}}
+																<span>
+																	<img class="basket-item-custom-block-photo-item"
+																		src="{{{IMAGE_SRC}}}" data-image-index="{{INDEX}}"
+																		data-column-property-code="{{CODE}}">
+																</span>
+															{{/VALUE}}
+														</div>
+													</div>
+												{{/IS_IMAGE}}
+
+												{{#IS_TEXT}}
+													<div class="basket-item-property-custom basket-item-property-custom-text
+														{{#HIDE_MOBILE}}d-none d-sm-block{{/HIDE_MOBILE}}"
+														data-entity="basket-item-property">
+														<div class="basket-item-property-custom-name">{{NAME}}</div>
+														<div class="basket-item-property-custom-value"
+															data-column-property-code="{{CODE}}"
+															data-entity="basket-item-property-column-value">
+															{{VALUE}}
+														</div>
+													</div>
+												{{/IS_TEXT}}
+
+												{{#IS_LINK}}
+													<div class="basket-item-property-custom basket-item-property-custom-text
+														{{#HIDE_MOBILE}}d-none d-sm-block{{/HIDE_MOBILE}}"
+														data-entity="basket-item-property">
+														<div class="basket-item-property-custom-name">{{NAME}}</div>
+														<div class="basket-item-property-custom-value"
+															data-column-property-code="{{CODE}}"
+															data-entity="basket-item-property-column-value">
+															{{#VALUE}}
+															{{{LINK}}}{{^IS_LAST}}<br>{{/IS_LAST}}
+															{{/VALUE}}
+														</div>
+													</div>
+												{{/IS_LINK}}
+											{{/COLUMN_LIST}}
+																	</div>
+					</div>
+					{{#SHOW_LOADING}}
+						<div class="basket-items-list-item-overlay"></div>
+					{{/SHOW_LOADING}}
+				</div>
+			</td>
+							<td class="basket-items-list-item-price basket-items-list-item-price-for-one">
+					<div class="basket-item-block-price">
+						{{#SHOW_DISCOUNT_PRICE}}
+							<div class="basket-item-price-old">
+								<span class="basket-item-price-old-text">
+									{{{FULL_PRICE_FORMATED}}}
+								</span>
+							</div>
+						{{/SHOW_DISCOUNT_PRICE}}
+
+						<div class="basket-item-price-current">
+							<span class="basket-item-price-current-text" id="basket-item-price-{{ID}}">
+								{{{PRICE_FORMATED}}}
+							</span>
+						</div>
+
+						<div class="basket-item-price-title">
+							цена за {{MEASURE_RATIO}} {{MEASURE_TEXT}}						</div>
+						{{#SHOW_LOADING}}
+							<div class="basket-items-list-item-overlay"></div>
+						{{/SHOW_LOADING}}
+					</div>
+				</td>
+							<td class="basket-items-list-item-amount">
+				<div class="basket-item-block-amount{{#NOT_AVAILABLE}} disabled{{/NOT_AVAILABLE}}"
+					data-entity="basket-item-quantity-block">
+					<span class="basket-item-amount-btn-minus" data-entity="basket-item-quantity-minus"></span>
+					<div class="basket-item-amount-filed-block">
+						<input type="text" class="basket-item-amount-filed" value="{{QUANTITY}}"
+							{{#NOT_AVAILABLE}} disabled="disabled"{{/NOT_AVAILABLE}}
+							data-value="{{QUANTITY}}" data-entity="basket-item-quantity-field"
+							id="basket-item-quantity-{{ID}}">
+					</div>
+					<span class="basket-item-amount-btn-plus" data-entity="basket-item-quantity-plus"></span>
+					<div class="basket-item-amount-field-description">
+													{{MEASURE_TEXT}}
+												</div>
+					{{#SHOW_LOADING}}
+						<div class="basket-items-list-item-overlay"></div>
+					{{/SHOW_LOADING}}
+				</div>
+			</td>
+							<td class="basket-items-list-item-price">
+					<div class="basket-item-block-price">
+						{{#SHOW_DISCOUNT_PRICE}}
+							<div class="basket-item-price-old">
+								<span class="basket-item-price-old-text" id="basket-item-sum-price-old-{{ID}}">
+									{{{SUM_FULL_PRICE_FORMATED}}}
+								</span>
+							</div>
+						{{/SHOW_DISCOUNT_PRICE}}
+
+						<div class="basket-item-price-current">
+							<span class="basket-item-price-current-text" id="basket-item-sum-price-{{ID}}">
+								{{{SUM_PRICE_FORMATED}}}
+							</span>
+						</div>
+
+						{{#SHOW_DISCOUNT_PRICE}}
+							<div class="basket-item-price-difference">
+								Экономия <span id="basket-item-sum-price-difference-{{ID}}" style="white-space: nowrap;">{{{SUM_DISCOUNT_PRICE_FORMATED}}}</span>							</div>
+						{{/SHOW_DISCOUNT_PRICE}}
+						{{#SHOW_LOADING}}
+							<div class="basket-items-list-item-overlay"></div>
+						{{/SHOW_LOADING}}
+					</div>
+				</td>
+								<td class="basket-items-list-item-remove d-none d-md-block">
+					<div class="basket-item-block-actions">
+						<span class="basket-item-actions-remove" data-entity="basket-item-delete"></span>
+						{{#SHOW_LOADING}}
+							<div class="basket-items-list-item-overlay"></div>
+						{{/SHOW_LOADING}}
+					</div>
+				</td>
+						{{/SHOW_RESTORE}}
+	</tr>
+</script>
+<div class="bx-sbb-empty-cart-container">
+	<div class="bx-sbb-empty-cart-image">
+		<img src="" alt="">
+	</div>
+	<div class="bx-sbb-empty-cart-text">Ваша корзина пуста</div>
+			<div class="bx-sbb-empty-cart-desc">
+			<a href="/">Нажмите здесь</a>, чтобы продолжить покупки		</div>
+		</div></div>
+				</div><!--end .bx-content -->
+
+			</div><!--end row-->
+																</div><!--end .container-->
+		</div>

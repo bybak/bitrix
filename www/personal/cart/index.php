@@ -2,8 +2,11 @@
 define("HIDE_SIDEBAR", true);
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 $APPLICATION->SetTitle("Корзина");
-?><?$APPLICATION->IncludeComponent("bitrix:sale.basket.basket", "bootstrap_v4", array(
+?>
+<div class="mf-cart" data-mf="cart">
+<?$APPLICATION->IncludeComponent("bitrix:sale.basket.basket", "bootstrap_v4", array(
 	"COUNT_DISCOUNT_4_ALL_QUANTITY" => "N",
+	"DETAIL_URL" => "/products/#ELEMENT_CODE#/",
 	"COLUMNS_LIST" => array(
 		0 => "NAME",
 		1 => "DISCOUNT",
@@ -32,4 +35,6 @@ $APPLICATION->SetTitle("Корзина");
 	),
 	),
 	false
-);?><?require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");?>
+);?>
+</div>
+<?require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");?>

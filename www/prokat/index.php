@@ -25,7 +25,7 @@ $mfForm = mf_handle_static_form(
 );
 ?>
 
-<div class="mf-text-page mb-4">
+<div class="mf-prokat mf-text-page mb-4">
 	<div class="mr-block"><div class=" mrb-row__content -inline-group_top mrb-row-index-0"><div class="mrb-small-18 mrb-medium-18
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0"><div class="user-inner">
     <h2 style="text-align: center;"><span style="font-weight: bold;">Прокат квадроциклов в Санкт-Петербурге и Лен. Области </span></h2>
@@ -91,6 +91,7 @@ $mfForm = mf_handle_static_form(
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0"><div class="user-inner">
     <h3 style="text-align: center;"><span style="font-weight: bold;">Стоимость аренды одного квадроцикла</span></h3>
 <p><br /></p>
+<div class="mf-prokat-table" role="region" aria-label="Стоимость аренды одного квадроцикла">
 <table style="width: 99.0356%;" class="tab bordered">
 <tbody>
 <tr style="height: 31.3376px; background-color: #f0c419;">
@@ -135,6 +136,7 @@ $mfForm = mf_handle_static_form(
 </tr>
 </tbody>
 </table>
+</div>
 <p><br /></p>
 <p><br /></p>
 </div>
@@ -142,6 +144,7 @@ $mfForm = mf_handle_static_form(
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0"><div class="user-inner">
     <h3 style="text-align: center;"><span style="font-weight: bold;">Стоимость аренды&nbsp;прицепа для перевозки одного квадроцикла</span></h3>
 <p><br /></p>
+<div class="mf-prokat-table" role="region" aria-label="Стоимость аренды прицепа для перевозки одного квадроцикла">
 <table style="width: 99.0356%;" class="tab bordered">
 <tbody>
 <tr style="height: 31.5px; background-color: #f0c419;">
@@ -176,6 +179,7 @@ $mfForm = mf_handle_static_form(
 </tr>
 </tbody>
 </table>
+</div>
 <p><br /></p>
 </div>
 </div></div></div><div class=" mrb-row__content -inline-group_top mrb-row-index-5"><div class="mrb-small-18 mrb-medium-18

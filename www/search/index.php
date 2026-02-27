@@ -1,13 +1,17 @@
 <?
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 $APPLICATION->SetTitle("Поиск");
+$APPLICATION->AddChainItem("Поиск", SITE_DIR."search/");
 ?>
 
-<?$APPLICATION->IncludeComponent("bitrix:search.page", ".default", array(
-	"RESTART" => "N",
+<?$APPLICATION->IncludeComponent("bitrix:search.page", "mf_search", array(
+	// critical for short queries (BRP/UNV) and to avoid empty-stem issues
+	"RESTART" => "Y",
 	"CHECK_DATES" => "N",
 	"USE_TITLE_RANK" => "N",
 	"DEFAULT_SORT" => "rank",
+	// don't auto-convert keyboard layout (BRP -> ИКЗ)
+	"USE_LANGUAGE_GUESS" => "N",
 	"arrFILTER" => array(
 		0 => "main",
 		1 => "iblock_services",
@@ -33,8 +37,9 @@ $APPLICATION->SetTitle("Поиск");
 	"AJAX_OPTION_JUMP" => "N",
 	"AJAX_OPTION_STYLE" => "Y",
 	"AJAX_OPTION_HISTORY" => "N",
-	"CACHE_TYPE" => "A",
-	"CACHE_TIME" => "36000000",
+	// search results must be fresh; the component caches only auxiliary data anyway
+	"CACHE_TYPE" => "N",
+	"CACHE_TIME" => "0",
 	"DISPLAY_TOP_PAGER" => "N",
 	"DISPLAY_BOTTOM_PAGER" => "Y",
 	"PAGER_TITLE" => "Результаты поиска",

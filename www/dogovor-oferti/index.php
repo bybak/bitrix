@@ -2,9 +2,10 @@
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 $APPLICATION->SetTitle("Договор оферты");
 $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
+$APPLICATION->AddChainItem("Договор оферты", "/dogovor-oferti/");
 ?>
 
-<div class="mf-text-page user-inner mb-4">
+<div class="mf-offer mf-text-page user-inner mb-4">
 	<h2>Оферта договора поставки</h2>
 	<p>Российская Федерация, г. Санкт-Петербург<br /> <span>Дата публикации оферты: </span><span>17</span><span>.0</span><span>2</span><span>.2016 г.</span><br /><span> Дата вступления оферты в силу: </span><span>17</span><span>.0</span><span>2</span><span>.2016 г.</span></p>
 	<p>Публичный договор оферты не требует подписания и имеет точно такую же юридическую силу, как и &laquo;обыкновенный&raquo; подписанный договор в соответствии с Гражданским Кодексом Российской Федерации.</p>
