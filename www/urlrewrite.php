@@ -1,5 +1,15 @@
 <?php
 $arUrlRewrite=array (
+  // Персональный раздел (SEF-компонент sale.personal.section)
+  // Важно: правило должно быть выше остальных "общих" обработчиков, чтобы /personal/* не давало 404.
+  1000 =>
+  array (
+    'CONDITION' => '#^/personal/.*$#',
+    'RULE' => '',
+    'ID' => NULL,
+    'PATH' => '/personal/index.php',
+    'SORT' => 305,
+  ),
   // Правило для категории: /products/category/{категория}/ (должно быть ПЕРВЫМ!)
   4 => 
   array (

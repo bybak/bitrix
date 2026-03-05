@@ -43,12 +43,152 @@ $btnText = ($arParams['ADD_TO_BASKET_ACTION'] === 'BUY')
 
 $canBuy = (!$haveOffers && !empty($actualItem['CAN_BUY'])) || ($haveOffers && !empty($actualItem['CAN_BUY']));
 
+// Dynamic min price across available stores (RAW per store + markup), optional wholesale -10%.
+$mfDynPrice = null;
+if (function_exists('mf_min_price_from_available_stores'))
+{
+	[$p] = mf_min_price_from_available_stores((int)($actualItem['ID'] ?? 0));
+	if ($p !== null && (float)$p > 0)
+	{
+		$mfDynPrice = (float)$p;
+		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+		{
+			$mfDynPrice = round($mfDynPrice * 0.9, 2);
+		}
+	}
+}
+
+// Force availability from store stocks (import writes per-store amounts).
+if (\CModule::IncludeModule('catalog'))
+{
+	$pid = (int)($actualItem['ID'] ?? 0);
+	if ($pid > 0)
+	{
+		$sum = 0.0;
+		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $pid], false, false, ['AMOUNT']);
+		while ($r = $rs->Fetch())
+		{
+			$sum += (float)($r['AMOUNT'] ?? 0);
+		}
+		$canBuy = ($sum > 0);
+		$actualItem['CAN_BUY'] = $canBuy;
+		$item['CAN_BUY'] = $canBuy;
+	}
+}
+
 $code = trim((string)($item['CODE'] ?? ''));
 $placeholder = function_exists('mf_mf_placeholder_img_url') ? (string)mf_mf_placeholder_img_url() : '';
 $imgSrc = function_exists('mf_mf_product_img_url') ? (string)mf_mf_product_img_url($code, 1) : '';
 if ($imgSrc === '')
 {
 	$imgSrc = $placeholder;
+}
+
+// Brand + article (SKU) for line meta.
+$mfNormVal = static function($v): string
+{
+	if (is_array($v))
+	{
+		$v = reset($v);
+	}
+	$v = trim((string)$v);
+	return $v;
+};
+$mfGetProp = static function(array $src, string $code) use ($mfNormVal): string
+{
+	if (isset($src['DISPLAY_PROPERTIES'][$code]))
+	{
+		$p = $src['DISPLAY_PROPERTIES'][$code];
+		$v = $p['DISPLAY_VALUE'] ?? ($p['VALUE'] ?? '');
+		return $mfNormVal($v);
+	}
+	if (isset($src['DISPLAY_PROPERTIES']) && is_array($src['DISPLAY_PROPERTIES']))
+	{
+		foreach ($src['DISPLAY_PROPERTIES'] as $p)
+		{
+			if (is_array($p) && (string)($p['CODE'] ?? '') === $code)
+			{
+				$v = $p['DISPLAY_VALUE'] ?? ($p['VALUE'] ?? '');
+				return $mfNormVal($v);
+			}
+		}
+	}
+	if (isset($src['PROPERTIES'][$code]))
+	{
+		$p = $src['PROPERTIES'][$code];
+		$v = $p['VALUE'] ?? '';
+		return $mfNormVal($v);
+	}
+	if (isset($src['PROPERTIES']) && is_array($src['PROPERTIES']))
+	{
+		foreach ($src['PROPERTIES'] as $p)
+		{
+			if (is_array($p) && (string)($p['CODE'] ?? '') === $code)
+			{
+				$v = $p['VALUE'] ?? '';
+				return $mfNormVal($v);
+			}
+		}
+	}
+	if (array_key_exists($code, $src))
+	{
+		return $mfNormVal($src[$code]);
+	}
+	return '';
+};
+
+$brand = '';
+foreach (['MF_BRAND', 'CML2_MANUFACTURER', 'BRAND', 'MANUFACTURER', 'MF_BRAND_NORM'] as $c)
+{
+	$brand = $mfGetProp($item, $c);
+	if ($brand === '' && is_array($actualItem)) $brand = $mfGetProp($actualItem, $c);
+	if ($brand !== '') break;
+}
+$article = '';
+foreach (['CML2_ARTICLE', 'MF_ARTICLE_NORM', 'ARTNUMBER', 'ARTICLE'] as $c)
+{
+	$article = $mfGetProp($item, $c);
+	if ($article === '' && is_array($actualItem)) $article = $mfGetProp($actualItem, $c);
+	if ($article !== '') break;
+}
+
+// Fallback: if properties weren't selected in catalog.section result, fetch by ID.
+if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('iblock'))
+{
+	static $mfPropsById = [];
+	$pid = (int)($item['ID'] ?? 0);
+	$iblockId = (int)($item['IBLOCK_ID'] ?? 0);
+	if ($pid > 0 && !isset($mfPropsById[$pid]))
+	{
+		$filter = ['ID' => $pid];
+		// Some component result arrays don't include IBLOCK_ID; don't break the query with null.
+		if ($iblockId > 0)
+		{
+			$filter['IBLOCK_ID'] = $iblockId;
+		}
+		$r = \CIBlockElement::GetList(
+			[],
+			$filter,
+			false,
+			['nTopCount' => 1],
+			[
+				'ID',
+				'PROPERTY_MF_BRAND',
+				'PROPERTY_CML2_ARTICLE',
+				'PROPERTY_MF_ARTICLE_NORM',
+				'PROPERTY_MF_BRAND_NORM',
+			]
+		)->Fetch();
+		$mfPropsById[$pid] = [
+			'brand' => trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ($r['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
+			'article' => trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ($r['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''))),
+		];
+	}
+	if ($pid > 0 && isset($mfPropsById[$pid]))
+	{
+		if ($brand === '') $brand = $mfPropsById[$pid]['brand'];
+		if ($article === '') $article = $mfPropsById[$pid]['article'];
+	}
 }
 ?>
 
@@ -81,6 +221,19 @@ if ($imgSrc === '')
 				<?=$productTitle?>
 			<? if ($itemHasDetailUrl): ?></a><? endif; ?>
 		</h3>
+		<?php if ($brand !== '' || $article !== ''): ?>
+			<div class="mf-pline__sub" title="<?=htmlspecialcharsbx(trim($brand . ' ' . $article))?>">
+				<?php if ($brand !== ''): ?>
+					<span class="mf-pline__sub-brand"><?=htmlspecialcharsbx($brand)?></span>
+				<?php endif; ?>
+				<?php if ($brand !== '' && $article !== ''): ?>
+					<span class="mf-pline__sub-sep" aria-hidden="true">•</span>
+				<?php endif; ?>
+				<?php if ($article !== ''): ?>
+					<span class="mf-pline__sub-article">арт. <?=htmlspecialcharsbx($article)?></span>
+				<?php endif; ?>
+			</div>
+		<?php endif; ?>
 	</div>
 
 	<div class="mf-pline__side">
@@ -93,23 +246,13 @@ if ($imgSrc === '')
 			<?php endif; ?>
 			<span class="mf-pline__cur product-item-price-current" id="<?=$itemIds['PRICE']?>">
 				<?php
-				if (!empty($price))
+				if ($mfDynPrice !== null)
 				{
-					if ($arParams['PRODUCT_DISPLAY_MODE'] === 'N' && $haveOffers)
-					{
-						echo Loc::getMessage(
-							'CT_BCI_TPL_MESS_PRICE_SIMPLE_MODE',
-							array(
-								'#PRICE#' => $price['PRINT_RATIO_PRICE'],
-								'#VALUE#' => $measureRatio,
-								'#UNIT#' => $minOffer['ITEM_MEASURE']['TITLE']
-							)
-						);
-					}
-					else
-					{
-						echo $price['PRINT_RATIO_PRICE'];
-					}
+					echo htmlspecialcharsbx(number_format((float)$mfDynPrice, 2, '.', ' ')) . ' &#8381;';
+				}
+				elseif (!empty($price))
+				{
+					echo $price['PRINT_RATIO_PRICE'];
 				}
 				else
 				{

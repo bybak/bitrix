@@ -7,11 +7,15 @@
     }
   }
 
-  onReady(function () {
-    // Global image fallback (for <img>, not CSS backgrounds)
-    // Works even when inline onerror handlers are blocked by CSP.
+  // Global image fallback (for <img>, not CSS backgrounds).
+  // Bound immediately (not waiting for DOMContentLoaded), so we don't miss early load errors.
+  (function bindMfImgFallback() {
+    if (typeof window !== 'undefined' && window.__mfImgFallbackBound) return;
+    if (typeof window !== 'undefined') window.__mfImgFallbackBound = true;
+
     var PLACEHOLDER = '/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg';
-    var HOST_RE = /(^|\/\/)img-motor-force\.ru\//i;
+    // Match both legacy direct host and local proxy.
+    var HOST_RE = /(^\/mf-img\/)|(^|\/\/)img-motor-force\.ru\//i;
 
     document.addEventListener(
       'error',
@@ -20,15 +24,21 @@
         if (!t || !t.tagName || t.tagName.toLowerCase() !== 'img') return;
 
         var src = t.getAttribute('src') || '';
-        // Only touch external MF images (sections/products). Never touch local images/icons.
+        // Only touch MF images. Never touch local icons/assets.
         if (!HOST_RE.test(src)) return;
         if (src === PLACEHOLDER) return;
 
+        // Prevent the browser from trying broken candidates from srcset.
+        try {
+          t.removeAttribute('srcset');
+        } catch (e2) {}
         t.setAttribute('src', PLACEHOLDER);
       },
       true
     );
+  })();
 
+  onReady(function () {
     // Product detail: move the "small card" buy panel into the pay block (near gallery),
     // remove empty info blocks, and simplify tabs into a plain H2 heading.
     var detailRoot = document.querySelector('.mf-shop--detail');

@@ -31,6 +31,23 @@ COL_PREVIEW = "Краткий текст"
 COL_BRAND = "Бренд"
 COL_BRAND_NORM = "Бренд (норм)"
 
+KNOWN_BRANDS = {
+    "Yamaha": ["Yamaha", "Ямаха", "YMH"],
+    "BRP": ["BRP"],
+    "Can-Am": ["Can-Am", "Can Am", "CanAm", "Кан-Ам", "Кан Ам", "Канам"],
+    "Sea-Doo": ["Sea-Doo", "Sea Doo", "SeaDoo", "Си-Ду", "Си Ду", "Сиду"],
+    "Ski-Doo": ["Ski-Doo", "Ski Doo", "SkiDoo", "Ски-Ду", "Ски Ду", "Скиду"],
+    "Polaris": ["Polaris", "Поларис"],
+    "Arctic Cat": ["Arctic Cat", "ArcticCat", "Арктик Кэт", "Арктик Кет", "АрктикКэт", "АрктикКет"],
+    "Honda": ["Honda", "Хонда"],
+    "Suzuki": ["Suzuki", "Сузуки"],
+    "Kawasaki": ["Kawasaki", "Кавасаки"],
+    "CFMoto": ["CFMoto", "CF MOTO", "CF-MOTO", "CFМОТО", "CF МОТО", "ЦФ МОТО"],
+    "Kymco": ["Kymco", "Кимко"],
+    "Dayco": ["Dayco"],
+    "GKA": ["GKA", "ГКА"],
+}
+
 
 LABELS = [
     "производитель",
@@ -58,6 +75,56 @@ def normalize_brand(s: str) -> str:
     return s
 
 
+def find_known_brand(text: str) -> str:
+    nt = normalize_brand(text or "")
+    if not nt:
+        return ""
+    for canonical, variants in KNOWN_BRANDS.items():
+        for v in variants:
+            vn = normalize_brand(v)
+            if vn and vn in nt:
+                return canonical
+    return ""
+
+
+def canonicalize_brand_candidate(candidate: str, full_text: str = "") -> str:
+    c = (candidate or "").strip()
+    c = re.sub(r"\s*\(.*$", "", c, flags=re.U).strip()
+    c = c.strip(" \t\r\n\"'`")
+    if not c:
+        return ""
+
+    k = find_known_brand(c)
+    if k:
+        return k
+
+    parts = re.split(r"\s{2,}|\s\|\s|\s/\s|,|;", c, flags=re.U)
+    for p in parts:
+        p = (p or "").strip()
+        if not p:
+            continue
+        k = find_known_brand(p)
+        if k:
+            return k
+
+    if full_text:
+        k = find_known_brand(full_text)
+        if k:
+            return k
+
+    # fallback: first word-ish token without digits
+    for t in re.split(r"\s+", c, flags=re.U):
+        t = (t or "").strip()
+        if not t or re.search(r"\d", t):
+            continue
+        if not re.match(r"^[A-ZА-Я][A-ZА-Я\-]{1,24}$", t, flags=re.I | re.U):
+            continue
+        # Title-case for nicer storage
+        return t[:1].upper() + t[1:].lower()
+
+    return ""
+
+
 def _textify_preview(preview_html: str) -> str:
     s = preview_html or ""
     if not s:
@@ -80,7 +147,7 @@ def extract_brand_from_preview(preview_html: str) -> str:
     # Try "Label: VALUE" or "Label - VALUE" patterns
     m = re.search(rf"(?:^|[;,\.\(\)\[\]\s])(?:{label_re})\s*[:\-—=]?\s*([^;,\.\n\r]{{1,80}})", s, flags=re.I | re.U)
     if not m:
-        return ""
+        return find_known_brand(s)
     brand = (m.group(1) or "").strip()
 
     # Clean common trailing fragments
@@ -88,7 +155,8 @@ def extract_brand_from_preview(preview_html: str) -> str:
     brand = brand.strip(" \t\r\n\"'`")
     # If it's a long phrase, keep first token-ish chunk
     brand = (re.split(r"\s{2,}|\s\|\s|\s/\s", brand, maxsplit=1, flags=re.U)[0] or "").strip()
-    return brand
+    canon = canonicalize_brand_candidate(brand, s)
+    return canon or find_known_brand(s) or brand
 
 
 def main() -> int:

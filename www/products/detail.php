@@ -15,6 +15,9 @@ $IBLOCK_ID = 4; // Каталог запчастей Motor Force
 
 // Получаем код товара из URL
 $elementCode = $_REQUEST["ELEMENT_CODE"];
+$elementId = 0;
+$mfBrand = '';
+$mfArticle = '';
 
 // 301 redirect support for duplicate SKUs (redirect elements)
 if ($elementCode)
@@ -25,8 +28,22 @@ if ($elementCode)
 		['IBLOCK_ID' => $IBLOCK_ID, '=CODE' => $elementCode],
 		false,
 		false,
-		['ID', 'CODE', 'PROPERTY_MF_IS_REDIRECT', 'PROPERTY_MF_CANONICAL_CODE']
+		[
+			'ID',
+			'CODE',
+			'PROPERTY_MF_IS_REDIRECT',
+			'PROPERTY_MF_CANONICAL_CODE',
+			'PROPERTY_MF_BRAND',
+			'PROPERTY_CML2_ARTICLE',
+		]
 	)->Fetch();
+
+	if ($e && isset($e['ID']))
+	{
+		$elementId = (int)$e['ID'];
+		$mfBrand = trim((string)($e['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+		$mfArticle = trim((string)($e['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+	}
 
 	if ($e && ($e['PROPERTY_MF_IS_REDIRECT_VALUE'] === 'Y' || $e['PROPERTY_MF_IS_REDIRECT_VALUE'] === '1'))
 	{
@@ -38,6 +55,26 @@ if ($elementCode)
 			exit;
 		}
 	}
+}
+
+if ($mfBrand !== '' || $mfArticle !== '')
+{
+	?>
+	<div class="mf-product-meta" aria-label="Бренд и артикул">
+		<?php if ($mfBrand !== ''): ?>
+			<div class="mf-product-meta__item">
+				<span class="mf-product-meta__label">Бренд:</span>
+				<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfBrand)?></span>
+			</div>
+		<?php endif; ?>
+		<?php if ($mfArticle !== ''): ?>
+			<div class="mf-product-meta__item">
+				<span class="mf-product-meta__label">Артикул:</span>
+				<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfArticle)?></span>
+			</div>
+		<?php endif; ?>
+	</div>
+	<?php
 }
 
 $arParams = [
@@ -56,8 +93,10 @@ $arParams = [
     
     // Свойства для показа
     "PROPERTY_CODE" => array(
-        0 => "",
-        1 => "",
+		"CML2_ARTICLE",
+		"MF_BRAND",
+		"MF_ARTICLE_NORM",
+		"MF_BRAND_NORM",
     ),
     
     // Корзина
@@ -94,8 +133,10 @@ $arParams = [
     "USE_GIFTS_SECTION" => "N",
     
     // Кэширование
-    "CACHE_TYPE" => "A",
-    "CACHE_TIME" => "36000000",
+	// IMPORTANT: price/availability are dynamic (per-store RAW price + markup, stocks).
+	// Disable component cache to reflect updates immediately after imports/markup edits.
+    "CACHE_TYPE" => "N",
+    "CACHE_TIME" => "0",
 ];
 
 $APPLICATION->IncludeComponent(
@@ -104,6 +145,166 @@ $APPLICATION->IncludeComponent(
     $arParams,
     false
 );
+
+// Replace the component price with dynamic min-store price (RAW+markup; optional wholesale -10%).
+if ($elementId > 0 && function_exists('mf_min_price_from_available_stores'))
+{
+	[$minP] = mf_min_price_from_available_stores($elementId);
+	if ($minP !== null && (float)$minP > 0)
+	{
+		$minP = (float)$minP;
+		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+		{
+			$minP = round($minP * 0.9, 2);
+		}
+		$minPPrint = number_format($minP, 2, '.', ' ') . ' &#8381;';
+		?>
+		<script>
+		(function(){
+			var price = "<?=CUtil::JSEscape($minPPrint)?>";
+			var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
+			if (el) el.innerHTML = price;
+			var meta = document.querySelector("meta[itemprop='price']");
+			if (meta) meta.setAttribute("content", "<?=CUtil::JSEscape((string)$minP)?>");
+		})();
+		</script>
+		<?php
+	}
+}
+
+// Show store availability block (our supplier stock updates write per-store amounts).
+if ($elementId > 0 && CModule::IncludeModule("catalog"))
+{
+	$storeAmounts = [];
+	$rsAmt = CCatalogStoreProduct::GetList(
+		[],
+		['PRODUCT_ID' => $elementId],
+		false,
+		false,
+		['STORE_ID', 'AMOUNT']
+	);
+	while ($r = $rsAmt->Fetch())
+	{
+		$sid = (int)$r['STORE_ID'];
+		if ($sid <= 0) continue;
+		$storeAmounts[$sid] = (float)$r['AMOUNT'];
+	}
+
+	if (!empty($storeAmounts))
+	{
+		$storeIds = array_keys($storeAmounts);
+		$stores = [];
+		$rsStore = CCatalogStore::GetList(
+			['SORT' => 'ASC', 'ID' => 'ASC'],
+			['ID' => $storeIds, 'ACTIVE' => 'Y'],
+			false,
+			false,
+			['ID', 'TITLE', 'ADDRESS', 'XML_ID', 'CODE']
+		);
+		while ($s = $rsStore->Fetch())
+		{
+			$id = (int)$s['ID'];
+			if ($id <= 0) continue;
+			$stores[$id] = $s;
+		}
+
+		// If some stores are inactive/missing, still show them by ID.
+		foreach ($storeIds as $sid)
+		{
+			if (!isset($stores[$sid]))
+			{
+				$stores[$sid] = ['ID' => $sid, 'TITLE' => 'Склад #' . $sid, 'ADDRESS' => '', 'XML_ID' => '', 'CODE' => ''];
+			}
+		}
+
+		?>
+		<div class="mt-4 mb-4">
+			<h2 class="h5 mb-3">Наличие на складах</h2>
+			<div class="table-responsive">
+				<table class="table table-sm table-striped mb-0">
+					<thead>
+					<tr>
+						<th>Склад</th>
+						<th class="text-right">Цена</th>
+						<th class="text-right">Остаток</th>
+						<th class="text-right"></th>
+					</tr>
+					</thead>
+					<tbody>
+					<?php foreach ($stores as $sid => $s): ?>
+						<?php $amt = (float)($storeAmounts[$sid] ?? 0); ?>
+						<?php
+						$storePrice = null;
+						if (function_exists('mf_calc_store_price') && $amt > 0)
+						{
+							$storePrice = mf_calc_store_price($elementId, (int)$sid);
+							if ($storePrice !== null && function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+							{
+								$storePrice = round((float)$storePrice * 0.9, 2);
+							}
+						}
+						?>
+						<tr>
+							<td>
+								<?=htmlspecialcharsbx((string)($s['TITLE'] ?? ('Склад #' . $sid)))?>
+							</td>
+							<td class="text-right">
+								<?php if ($storePrice !== null): ?>
+									<?=htmlspecialcharsbx(number_format((float)$storePrice, 2, '.', ' '))?> &#8381;
+								<?php else: ?>
+									—
+								<?php endif; ?>
+							</td>
+							<td class="text-right">
+								<?=htmlspecialcharsbx((string)($amt))?>
+							</td>
+							<td class="text-right">
+								<?php if ($amt > 0 && $storePrice !== null): ?>
+									<button
+										type="button"
+										class="btn btn-sm btn-warning js-mf-add-store"
+										data-product-id="<?= (int)$elementId ?>"
+										data-store-id="<?= (int)$sid ?>"
+									>В корзину</button>
+								<?php endif; ?>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<script>
+		(function(){
+			function addToBasket(btn){
+				var pid = btn.getAttribute('data-product-id');
+				var sid = btn.getAttribute('data-store-id');
+				if(!pid || !sid) return;
+				btn.disabled = true;
+				fetch('/ajax/mf_add_to_basket_store.php?productId='+encodeURIComponent(pid)+'&storeId='+encodeURIComponent(sid)+'&qty=1', {
+					credentials: 'same-origin'
+				}).then(function(r){ return r.json(); }).then(function(data){
+					if(!data || !data.ok){
+						throw new Error((data && data.error) ? data.error : 'Ошибка');
+					}
+					window.location.href = '/personal/cart/';
+				}).catch(function(e){
+					alert(e && e.message ? e.message : 'Ошибка');
+					btn.disabled = false;
+				});
+			}
+			document.addEventListener('click', function(e){
+				var t = e.target;
+				if(t && t.classList && t.classList.contains('js-mf-add-store')){
+					e.preventDefault();
+					addToBasket(t);
+				}
+			});
+		})();
+		</script>
+		<?php
+	}
+}
 
 ?>
 	</section>

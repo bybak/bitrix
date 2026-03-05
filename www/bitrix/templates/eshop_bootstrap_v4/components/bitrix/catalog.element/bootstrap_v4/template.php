@@ -68,6 +68,27 @@ if (is_array($arResult) && function_exists('mf_mf_product_img_url'))
 	}
 }
 
+// Force correct availability from store stocks (import writes per-store amounts).
+// Bitrix may compute CAN_BUY differently depending on global catalog settings; we want:
+// "нет на складе" -> not available for purchase.
+if (is_array($arResult) && \CModule::IncludeModule('catalog'))
+{
+	$productId = (int)($arResult['ID'] ?? 0);
+	if ($productId > 0)
+	{
+		$sum = 0.0;
+		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId], false, false, ['AMOUNT']);
+		while ($r = $rs->Fetch())
+		{
+			$sum += (float)($r['AMOUNT'] ?? 0);
+		}
+		$canBuy = ($sum > 0);
+		$arResult['CAN_BUY'] = $canBuy;
+		$arResult['CATALOG_QUANTITY'] = $sum;
+		$arResult['CATALOG_AVAILABLE'] = $canBuy ? 'Y' : 'N';
+	}
+}
+
 // Delegate rendering to the stock Bitrix template.
 $templateFolder = '/bitrix/components/bitrix/catalog.element/templates/bootstrap_v4';
 include($_SERVER['DOCUMENT_ROOT'] . $templateFolder . '/template.php');

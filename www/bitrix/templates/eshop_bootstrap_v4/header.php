@@ -28,6 +28,9 @@ $isProducts = (strpos($curPage, SITE_DIR."products/") === 0);
 $isSearch = (strpos($curPage, SITE_DIR."search/") === 0);
 $isCart = (strpos($curPage, SITE_DIR."personal/cart/") === 0);
 $isOrderMake = (strpos($curPage, SITE_DIR."personal/order/make/") === 0);
+$isPersonal = (strpos($curPage, SITE_DIR."personal/") === 0);
+$isAuth = (strpos($curPage, SITE_DIR."auth/") === 0);
+$isLogin = (strpos($curPage, SITE_DIR."login/") === 0);
 
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-header.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-footer.css");
@@ -61,6 +64,22 @@ if ($isContacts)
 {
 	$APPLICATION->SetAdditionalCSS($mfAssetVer(SITE_TEMPLATE_PATH."/mf-contacts.css"));
 }
+if ($isPersonal)
+{
+	// Force cache-busting for frequently edited personal styles.
+	$APPLICATION->AddHeadString(
+		'<link rel="stylesheet" href="' . htmlspecialcharsbx($mfAssetVer(SITE_TEMPLATE_PATH . '/mf-personal.css')) . '">',
+		true
+	);
+}
+if ($isAuth || $isLogin)
+{
+	// Force cache-busting for frequently edited auth styles.
+	$APPLICATION->AddHeadString(
+		'<link rel="stylesheet" href="' . htmlspecialcharsbx($mfAssetVer(SITE_TEMPLATE_PATH . '/mf-auth.css')) . '">',
+		true
+	);
+}
 if ($isProducts)
 {
 	// We will include mf-shop assets explicitly after ShowHead()
@@ -68,6 +87,13 @@ if ($isProducts)
 if ($isSearch)
 {
 	// We will include mf-search assets explicitly after ShowHead()
+}
+
+// Применяем SEO (title/description/keywords/canonical/OG) для статических страниц меню
+// до генерации <head> (ShowTitle/ShowHead).
+if (function_exists('mf_seo_apply_for_current_page'))
+{
+	mf_seo_apply_for_current_page();
 }
 
 ?><!DOCTYPE html>
@@ -80,6 +106,11 @@ if ($isSearch)
 	<? $APPLICATION->ShowHead(); ?>
 	<?php
 	// Include our custom assets last (override Bitrix aggregated CSS/JS + bust browser cache).
+	// Critical: bind MF image fallback early (before <img> in body is parsed),
+	// so broken external/proxied images are immediately replaced with a placeholder.
+	$imgFallbackJs = $mfAssetVer(SITE_TEMPLATE_PATH . "/mf-img-fallback.js");
+	echo '<script src="' . htmlspecialcharsbx($imgFallbackJs) . '"></script>' . "\n";
+
 	if ($isProducts)
 	{
 		// Ensure catalog.item JS is loaded (binds add-to-basket handlers for JCCatalogItem).

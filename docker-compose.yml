@@ -26,8 +26,18 @@ services:
     restart: unless-stopped
     working_dir: /var/www/html
     user: www-data
+    env_file:
+      - /Users/andrey/cursor_projects/bitrix/www/.env
     environment:
       TZ: Europe/Moscow
+      MF_UNF_ENABLED: "1"
+      # HTTP service in 1C: /unf/hs/<ROOT_URL>/<template>
+      # По твоей конфигурации ROOT_URL = orders, шаблон = /create, метод = POST
+      MF_UNF_ENDPOINT: "http://95.161.174.134:25555/unf/hs/orders/create"
+      MF_UNF_TIMEOUT: "10"
+      MF_UNF_LOG: "1"
+      MF_UNF_OPERATION: "Заказ на продажу"
+      MF_UNF_TAXATION: "Облагается (с НДС)"
     volumes:
       - ./www:/var/www/html
     depends_on:

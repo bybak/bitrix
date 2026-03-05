@@ -24,126 +24,81 @@
 		</div><!--end .bx-content-section-->
 	</div><!--end .workarea-->
 
-	<footer id="footer" class="site-footer site-footer_dark">
-		<div data-widget-store-list="footer" data-region="2" data-module="2">
+	<?php
+	$mfYearFrom = 2015;
+	$mfYearTo = (int)date('Y');
+	$mfYearLabel = ($mfYearTo > $mfYearFrom) ? ($mfYearFrom . '–' . $mfYearTo) : (string)$mfYearFrom;
+	?>
+	<footer id="footer" class="mf-footer">
+		<div class="container">
+			<div class="row mf-footer-top">
+				<div class="col-12 col-md-4 col-lg-3 mb-4 mb-lg-0">
+					<div class="mf-footer-brand">Motor-Force</div>
+					<div class="mf-footer-tagline">Запчасти для мототехники</div>
+					<ul class="mf-footer-contact">
+						<li><a href="tel:+78129864276">8 (812) 986-42-76</a></li>
+						<li><a href="tel:+79218837340">8 (921) 883-73-40</a></li>
+						<li><a href="mailto:andrey@motor-force.ru">andrey@motor-force.ru</a></li>
+						<li class="mf-footer-muted">Санкт‑Петербург, ул. Салова, 57к1</li>
+					</ul>
+				</div>
 
-			<section data-widget-store-item id="footer-columns-29" class="nh-footer-columns widget-block nh-editor-panel lazyload js-indent">
-				<div data-widget-replaceable-content="29"
-					 data-ng-non-bindable
-					 class="nh-footer-columns__wrapper lazyload nh-footer-columns--indent-top-m nh-footer-columns--indent-bottom-m"
-					 style="background-position: center;background-repeat: no-repeat;background-size: cover;background-color: rgba(0,0,0, 1);"
-				>
-					<div class="js-indent-add"></div>
-					<div class="nh-footer-columns__inner nh-footer-columns__container" style="grid-template-columns: repeat( 4, 1fr);">
-						<div class="nh-footer-columns__column">
-							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
-								<div class="nh-footer-columns__title-container">
-									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">Покупателям</div>
-									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
-								</div>
-								<ul class="nh-footer-columns__links-list">
-									<li class="nh-footer-columns__links-item">
-										<a href="/oplata" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Способы оплаты</a>
-									</li>
-									<li class="nh-footer-columns__links-item">
-										<a href="/delivery" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Доставка</a>
-									</li>
-								</ul>
-							</div>
-						</div>
+				<div class="col-6 col-md-4 col-lg-3 mb-4 mb-lg-0">
+					<div class="mf-footer-title">Покупателям</div>
+					<ul class="mf-footer-links">
+						<li><a href="/products/">Магазин</a></li>
+						<li><a href="/oplata/">Оплата</a></li>
+						<li><a href="/delivery/">Доставка</a></li>
+						<li><a href="/faq/">FAQ</a></li>
+						<li><a href="/contacts/">Контакты</a></li>
+					</ul>
+				</div>
 
-						<div class="nh-footer-columns__column">
-							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
-								<div class="nh-footer-columns__title-container">
-									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">Бизнесу</div>
-									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
-								</div>
-								<ul class="nh-footer-columns__links-list">
-									<li class="nh-footer-columns__links-item">
-										<a href="/sotrudnichestvo" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #ffffff;">Сотрудничество</a>
-									</li>
-								</ul>
-							</div>
-						</div>
+				<div class="col-6 col-md-4 col-lg-3 mb-4 mb-lg-0">
+					<div class="mf-footer-title">Услуги</div>
+					<ul class="mf-footer-links">
+						<li><a href="/prokat/">Прокат техники</a></li>
+						<li><a href="/remont_motorov/">Ремонт моторов</a></li>
+						<li><a href="/vikup_mototehniki/">Выкуп мототехники</a></li>
+						<li><a href="/sotrudnichestvo/">Сотрудничество</a></li>
+					</ul>
+				</div>
 
-						<div class="nh-footer-columns__column">
-							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
-								<div class="nh-footer-columns__title-container">
-									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">О компании</div>
-									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
-								</div>
-								<ul class="nh-footer-columns__links-list">
-									<li class="nh-footer-columns__links-item">
-										<a href="/contacts" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Контакты</a>
-									</li>
-								</ul>
-							</div>
+				<div class="col-12 col-lg-3">
+					<div class="mf-footer-title">Медиа</div>
+					<ul class="mf-footer-links">
+						<li><a href="/posts/">Новости</a></li>
+						<li><a href="/blog/">Блог</a></li>
+						<li><a href="/documents/">Документы</a></li>
+						<li><a href="/dogovor-oferti/">Договор оферты</a></li>
+					</ul>
 
-							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #FFFFFF;">
-								<div class="nh-footer-columns__title-container">
-									<div class="nh-footer-columns__section-title" style="--title-color: #FFFFFF;">Мы в соцсетях</div>
-									<div class="nh-footer-columns__title-svg" style="--title-color: #FFFFFF;"></div>
-								</div>
-								<ul class="nh-footer-columns__links-list">
-									<li class="nh-footer-columns__links-item">
-										<a href="https://vk.com/motor_force" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">ВКонтакте</a>
-									</li>
-									<li class="nh-footer-columns__links-item">
-										<a href="https://t.me/motor_force" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Telegram</a>
-									</li>
-									<li class="nh-footer-columns__links-item">
-										<a href="https://www.instagram.com/motor_force.ru/" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #ffffff;">Instagram</a>
-									</li>
-								</ul>
-							</div>
-						</div>
+					<div class="mf-footer-title mt-4">Мы в соцсетях</div>
+					<ul class="mf-footer-social">
+						<li><a href="https://vk.com/motor_force" target="_blank" rel="nofollow noopener">ВКонтакте</a></li>
+						<li><a href="https://t.me/motor_force" target="_blank" rel="nofollow noopener">Telegram</a></li>
+						<li><a href="https://www.instagram.com/motor_force.ru/" target="_blank" rel="nofollow noopener">Instagram</a></li>
+					</ul>
+				</div>
+			</div>
 
-						<div class="nh-footer-columns__column">
-							<div class="nh-footer-columns__section nh-footer-columns__section--align-left" style="--title-color: #ffffff;">
-								<div class="nh-footer-columns__title-container">
-									<div class="nh-footer-columns__section-title" style="--title-color: #ffffff;">Услуги</div>
-									<div class="nh-footer-columns__title-svg" style="--title-color: #ffffff;"></div>
-								</div>
-								<ul class="nh-footer-columns__links-list">
-									<li class="nh-footer-columns__links-item">
-										<a href="/prokat" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Прокат техники</a>
-									</li>
-									<li class="nh-footer-columns__links-item">
-										<a href="/remont_motorov" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Ремонт моторов</a>
-									</li>
-									<li class="nh-footer-columns__links-item">
-										<a href="/vikup_mototehniki" class="nh-footer-columns__link nh-footer-columns__link--underline" target="_parent" style="--item-color: #B2BCC3; --item-hover: #FFFFFF;">Выкуп мототехники</a>
-									</li>
-								</ul>
-							</div>
-						</div>
+			<div class="mf-footer-divider"></div>
+
+			<div class="row align-items-center mf-footer-bottom">
+				<div class="col-12 col-md-7">
+					<div class="mf-footer-copy">
+						<span class="mf-footer-year"><?=$mfYearLabel?></span> © Motor‑Force
+						<span class="mf-footer-dot">•</span>
+						<span class="mf-footer-muted">Запчасти для мототехники</span>
 					</div>
 				</div>
-			</section>
-		</div>
-
-		<div class="site-footer__inner">
-			<div class="row">
-				<section class="small-12 column">
-					<div class="-inline-group">
-						<div class="small-12 large-8 text-center medium-text-left">
-							<div id="footer-text" class="footer-text client nh-editor-panel" style="min-height: 22px;">
-								<div id="footertext1" class="footer-text__about">2015 © Motor-Force</div>
-								<div id="footertext2" class="footer-text__desc">Запчасти для Мототехники</div>
-							</div>
-						</div>
-						<!-- intentionally omitted: .text-center.large-text-right.site-footer__logo -->
+				<div class="col-12 col-md-5 mt-3 mt-md-0 text-md-right">
+					<div class="mf-footer-bottom-links">
+						<a href="/contacts/">Контакты</a>
+						<a href="/delivery/">Доставка</a>
+						<a href="/oplata/">Оплата</a>
 					</div>
-					<div class="row column site-footer_indent">
-						<div class="small-12 large-6 small-centered site-footer__statcounters">
-							<section id="statcounters-left" data-block-id="19" class="block-19 statcounters widget-left widget-block -nt-widget nh-editor-panel">
-								<div id="statcounters-left-show" class="content-block">
-									<div class="statcounters-list text-center"></div>
-								</div>
-							</section>
-						</div>
-					</div>
-				</section>
+				</div>
 			</div>
 		</div>
 	</footer>

@@ -11,7 +11,9 @@ $APPLICATION->SetTitle("Заказы");
 	"ONLY_FULL_PAY_FROM_ACCOUNT" => "N",
 	"ALLOW_AUTO_REGISTER" => "Y",
 	"SEND_NEW_USER_NOTIFY" => "Y",
-	"DELIVERY_NO_AJAX" => "N",
+	// 'H' = считать стоимость заранее только для доставок с isCalculatePriceImmediately()=true
+	// чтобы цены отображались прямо в списке доставок до выбора.
+	"DELIVERY_NO_AJAX" => "H",
 	"TEMPLATE_LOCATION" => "popup",
 	"PROP_1" => array(
 	),

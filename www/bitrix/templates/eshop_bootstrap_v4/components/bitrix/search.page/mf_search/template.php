@@ -106,8 +106,51 @@ $how = (($arResult['REQUEST']['HOW'] ?? '') === 'd') ? 'd' : 'r';
 
 				<div class="mf-search__results">
 					<?php foreach ($arResult['SEARCH'] as $arItem): ?>
+						<?php
+						// Fix broken URLs for catalog items when IBLOCK URL templates are empty.
+						$href = (string)($arItem['URL'] ?? '');
+						$qs = '';
+						if ($href !== '' && $href[0] === '?')
+						{
+							$qs = $href;
+							$href = '';
+						}
+						if ($href === '' && (string)($arItem['MODULE_ID'] ?? '') === 'iblock')
+						{
+							$iblockId = (int)($arItem['PARAM2'] ?? 0);
+							$itemId = (int)($arItem['ITEM_ID'] ?? 0);
+							if ($iblockId === 4 && $itemId > 0 && class_exists('CIBlockElement'))
+							{
+								static $mfCodeCache = [];
+								if (!isset($mfCodeCache[$itemId]))
+								{
+									$row = \CIBlockElement::GetList(
+										[],
+										['IBLOCK_ID' => $iblockId, 'ID' => $itemId],
+										false,
+										['nTopCount' => 1],
+										['ID', 'CODE']
+									)->Fetch();
+									$mfCodeCache[$itemId] = $row ? trim((string)($row['CODE'] ?? '')) : '';
+								}
+								$code = (string)$mfCodeCache[$itemId];
+								if ($code !== '')
+								{
+									$href = '/products/' . rawurlencode($code) . '/';
+								}
+							}
+						}
+						if ($href === '')
+						{
+							$href = (string)($arItem['URL'] ?? '');
+						}
+						if ($qs !== '' && $href !== '' && strpos($href, '?') === false)
+						{
+							$href .= $qs;
+						}
+						?>
 						<article class="mf-search-card">
-							<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($arItem['URL'])?>">
+							<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($href)?>">
 								<?=$arItem['TITLE_FORMATED']?>
 							</a>
 							<?php if (!empty($arItem['BODY_FORMATED'])): ?>

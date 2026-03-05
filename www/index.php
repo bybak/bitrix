@@ -27,7 +27,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												<div class="-gd-content mrb-block-index-0">
 													<div class="mrb-image">
 														<div style="text-align: center">
-															<a href="/products/category/zapchasti-dlya-kvadrociklov" target="_blank">
+															<a href="/products/category/zapchasti-dlya-kvadrotsiklov/" target="_blank">
 																<img src="//i.siteapi.org/jRTvObf-Q7_5qSZeydhgKBs4DAQ=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/51920f0jfocg0o4wogc8kosg84cgog">
 															</a>
 														</div>
@@ -45,7 +45,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												</div>
 												<div class="-gd-content mrb-block-index-1">
 													<div id="mrb-button-block" class="user-inner mrb-button-block theme-default-bordered-white" style="text-align: left">
-														<a href="/products/category/zapchasti-dlya-kvadrociklov" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
+														<a href="/products/category/zapchasti-dlya-kvadrotsiklov/" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
 													</div>
 												</div>
 											</div>
@@ -68,7 +68,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												<div class="-gd-content mrb-block-index-0">
 													<div class="mrb-image">
 														<div style="text-align: center">
-															<a href="/products/category/zapchasti-dlya-snegohodov" target="_blank">
+															<a href="/products/category/zapchasti-dlya-snegokhodov/" target="_blank">
 																<img src="//i.siteapi.org/yCSc4RWdPKyKPZl00ggfHc_2Z6I=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/ot2fwiq4gcg40g0k4g4cgo80ss8cgw">
 															</a>
 														</div>
@@ -86,7 +86,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												</div>
 												<div class="-gd-content mrb-block-index-1">
 													<div id="mrb-button-block" class="user-inner mrb-button-block theme-default-bordered-white" style="text-align: left">
-														<a href="/products/category/zapchasti-dlya-snegohodov" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
+														<a href="/products/category/zapchasti-dlya-snegokhodov/" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
 													</div>
 												</div>
 											</div>
@@ -109,7 +109,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												<div class="-gd-content mrb-block-index-0">
 													<div class="mrb-image">
 														<div style="text-align: center">
-															<a href="/products/category/zapchasti-dlya-motociklov" target="_blank">
+															<a href="/products/category/zapchasti-dlya-mototsiklov/" target="_blank">
 																<img src="//i.siteapi.org/cDj62SkqsoZi0_F_1tRgRZC51iE=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/8fz3qbxaztoggc4s0occs0cwsokg4c">
 															</a>
 														</div>
@@ -127,7 +127,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												</div>
 												<div class="-gd-content mrb-block-index-1">
 													<div id="mrb-button-block" class="user-inner mrb-button-block theme-default-bordered-white" style="text-align: left">
-														<a href="/products/category/zapchasti-dlya-motociklov" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
+														<a href="/products/category/zapchasti-dlya-mototsiklov/" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
 													</div>
 												</div>
 											</div>
@@ -150,7 +150,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												<div class="-gd-content mrb-block-index-0">
 													<div class="mrb-image">
 														<div style="text-align: center">
-															<a href="/products/category/zapchasti-dlya-gidrociklov" target="_blank">
+															<a href="/products/category/zapchasti-dlya-gidrotsiklov/" target="_blank">
 																<img src="//i.siteapi.org/TWC3Pu9He4PQTqtHEKYZFXG08zQ=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/20nwqqsc8gf4go00gowo8wkosws0kw">
 															</a>
 														</div>
@@ -168,7 +168,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												</div>
 												<div class="-gd-content mrb-block-index-1">
 													<div id="mrb-button-block" class="user-inner mrb-button-block theme-default-bordered-white" style="text-align: left">
-														<a href="/products/category/zapchasti-dlya-gidrociklov" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
+														<a href="/products/category/zapchasti-dlya-gidrotsiklov/" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
 													</div>
 												</div>
 											</div>
@@ -191,7 +191,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												<div class="-gd-content mrb-block-index-0">
 													<div class="mrb-image">
 														<div style="text-align: center">
-															<a href="/products/category/zapchasti-dlya-lodochnih-motorov" target="_blank">
+															<a href="/products/category/zapchasti-dlya-lodochnykh-motorov/" target="_blank">
 																<img src="//i.siteapi.org/0JHBVDrPmr2LupaitPCtawPlk3k=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/hmvfg4w4g1kw0os4oc4o8kk4ksckkg">
 															</a>
 														</div>
@@ -209,7 +209,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												</div>
 												<div class="-gd-content mrb-block-index-1">
 													<div id="mrb-button-block" class="user-inner mrb-button-block theme-default-bordered-white" style="text-align: left">
-														<a href="/products/category/zapchasti-dlya-lodochnih-motorov" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
+														<a href="/products/category/zapchasti-dlya-lodochnykh-motorov/" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
 													</div>
 												</div>
 											</div>
@@ -232,7 +232,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												<div class="-gd-content mrb-block-index-0">
 													<div class="mrb-image">
 														<div style="text-align: center">
-															<a href="/products/category/4814322" target="_blank">
+															<a href="/products/category/aksessuary-i-komplektuyushchie-dlya-katerov-lodok-i-yakht/" target="_blank">
 																<img src="//i.siteapi.org/oRcI7-04p1jJzBkm5FrpzC1tq1I=/fit-in/1400x1000/center/top/s.siteapi.org/ccdb0156d66a088.ru/img/7v26uzyx2wkcow4s44kkscokwgcgss">
 															</a>
 														</div>
@@ -250,7 +250,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 												</div>
 												<div class="-gd-content mrb-block-index-1">
 													<div id="mrb-button-block" class="user-inner mrb-button-block theme-default-bordered-white" style="text-align: left">
-														<a href="/products/category/4814322" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
+														<a href="/products/category/aksessuary-i-komplektuyushchie-dlya-katerov-lodok-i-yakht/" target="_blank" class="mrb-btn-large mrb-btn-item a"><span class="mrb-btn-item-text">Подробнее</span></a>
 													</div>
 												</div>
 											</div>

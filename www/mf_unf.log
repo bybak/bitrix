@@ -1,0 +1,192 @@
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":1,"delay":30,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":2,"delay":60,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":14,"attempts":3,"delay":120,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":14,"attempts":4,"delay":240,"error":"UNF returned HTTP 404"}
+
+UNF send failed | {"orderId":14,"attempts":5,"delay":480,"error":"UNF returned HTTP 404"}
+
+UNF send failed | {"orderId":14,"attempts":6,"delay":960,"error":"UNF returned HTTP 405"}
+
+UNF send failed | {"orderId":14,"attempts":7,"delay":1920,"error":"UNF returned HTTP 405"}
+
+UNF send failed | {"orderId":14,"attempts":8,"delay":3600,"error":"UNF returned HTTP 404"}
+
+UNF send failed | {"orderId":14,"attempts":9,"delay":3600,"error":"UNF returned HTTP 404"}
+
+UNF send failed | {"orderId":14,"attempts":10,"delay":3600,"error":"UNF returned HTTP 404"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":11,"delay":3600,"error":"UNF returned HTTP 404"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":12,"delay":3600,"error":"UNF returned HTTP 404"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":13,"delay":3600,"error":"UNF returned HTTP 403"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":14,"delay":3600,"error":"UNF returned HTTP 401"}
+
+Order enqueued | {"orderId":14}
+
+Order sent to UNF | {"orderId":14,"http":200}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":15,"delay":3600,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":16,"delay":3600,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":17,"delay":3600,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":18,"delay":3600,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":19,"delay":3600,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":20,"delay":3600,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+UNF send failed | {"orderId":14,"attempts":21,"delay":3600,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":14}
+
+Order sent to UNF | {"orderId":14,"http":200}
+
+Order enqueued | {"orderId":14}
+
+Order sent to UNF | {"orderId":14,"http":200}
+
+Order enqueued | {"orderId":15}
+
+Order sent to UNF | {"orderId":15,"http":200}
+
+Order enqueued | {"orderId":14}
+
+Order sent to UNF | {"orderId":14,"http":200}
+
+Order enqueued | {"orderId":16}
+
+Order sent to UNF | {"orderId":16,"http":200}
+
+Order enqueued | {"orderId":16}
+
+Order sent to UNF | {"orderId":16,"http":200}
+
+Order enqueued | {"orderId":17}
+
+Order sent to UNF | {"orderId":17,"http":200}
+
+Order enqueued | {"orderId":17}
+
+Order sent to UNF | {"orderId":17,"http":200}
+
+Order enqueued | {"orderId":18}
+
+Order sent to UNF | {"orderId":18,"http":200}
+
+Order sent to UNF | {"orderId":18,"http":200}
+
+Order enqueued | {"orderId":19}
+
+Order sent to UNF | {"orderId":19,"http":200}
+
+Order enqueued | {"orderId":20}
+
+Order sent to UNF | {"orderId":20,"http":200}
+
+Order enqueued | {"orderId":21}
+
+Order sent to UNF | {"orderId":21,"http":200}
+
+Order enqueued | {"orderId":22}
+
+UNF send failed | {"orderId":22,"attempts":1,"delay":30,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":22,"attempts":2,"delay":60,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":22,"attempts":3,"delay":120,"error":"UNF returned HTTP 500"}
+
+Order sent to UNF | {"orderId":22,"http":200}
+
+Order enqueued | {"orderId":23}
+
+Order sent to UNF | {"orderId":23,"http":200}
+
+Order enqueued | {"orderId":24}
+
+Order sent to UNF | {"orderId":24,"http":200}
+
+Order enqueued | {"orderId":25}
+
+UNF send failed | {"orderId":25,"attempts":1,"delay":30,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":25,"attempts":2,"delay":60,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":25,"attempts":3,"delay":120,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":25,"attempts":4,"delay":240,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":25,"attempts":5,"delay":480,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":24}
+
+Order sent to UNF | {"orderId":24,"http":200}
+
+UNF send failed | {"orderId":25,"attempts":6,"delay":960,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":25,"attempts":7,"delay":1920,"error":"UNF returned HTTP 500"}
+
+Order enqueued | {"orderId":26}
+
+UNF send failed | {"orderId":25,"attempts":8,"delay":3600,"error":"UNF returned HTTP 500"}
+
+UNF send failed | {"orderId":26,"attempts":1,"delay":30,"error":"UNF returned HTTP 500"}
+
+Order sent to UNF | {"orderId":25,"http":200}
+
+Order sent to UNF | {"orderId":26,"http":200}
+
+Order enqueued | {"orderId":24}
+
+Order sent to UNF | {"orderId":24,"http":200}
+
+Order enqueued | {"orderId":24}
+
+UNF send failed | {"orderId":24,"attempts":1,"delay":30,"error":"UNF returned HTTP 500"}
+
+Order sent to UNF | {"orderId":24,"http":200}
+
+Order enqueued | {"orderId":27}
+
+Order sent to UNF | {"orderId":27,"http":200}
+
+Order enqueued | {"orderId":28}
+
+Order sent to UNF | {"orderId":28,"http":200}
+
+Order enqueued | {"orderId":29}
+
+Order sent to UNF | {"orderId":29,"http":200}
+

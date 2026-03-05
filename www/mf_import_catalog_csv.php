@@ -29,6 +29,9 @@ use Bitrix\Iblock\SectionTable;
 
 Loader::includeModule("iblock");
 Loader::includeModule("catalog");
+Loader::includeModule("highloadblock");
+
+require_once __DIR__ . '/mf_brand_dict.php';
 
 // Ensure progress output is visible in CLI (no buffering).
 while (ob_get_level() > 0)
@@ -131,6 +134,47 @@ function normalizeBrand(string $s): string
 	return $s;
 }
 
+function mf_brand_lookup(string $text): string
+{
+	$create = (bool)($GLOBALS['MF_BRAND_DICT_CREATE'] ?? false);
+	return mf_brand_find($text, $create);
+}
+
+function mf_canonicalize_brand_candidate(string $candidate, string $fullText = ''): string
+{
+	$candidate = trim($candidate);
+	$candidate = preg_replace('~\\s*\\(.*$~u', '', $candidate) ?? $candidate;
+	$candidate = trim($candidate, " \t\n\r\0\x0B\"'`");
+	$candidate = trim($candidate);
+	if ($candidate === '')
+	{
+		return '';
+	}
+
+	// 1) Direct known brand match in candidate.
+	$known = mf_brand_lookup($candidate);
+	if ($known !== '') return $known;
+
+	// 2) Sometimes "Производитель:" contains "Yamaha Brake Disc ..." → take first sensible token.
+	$parts = preg_split('~\\s{2,}|\\s\\|\\s|\\s/\\s|,|;~u', $candidate) ?: [$candidate];
+	foreach ($parts as $p)
+	{
+		$p = trim((string)$p);
+		if ($p === '') continue;
+		$k = mf_brand_lookup($p);
+		if ($k !== '') return $k;
+	}
+
+	// 3) If full text contains a known brand, prefer it.
+	if ($fullText !== '')
+	{
+		$k = mf_brand_lookup($fullText);
+		if ($k !== '') return $k;
+	}
+
+	return '';
+}
+
 function extractBrandFromPreview(string $previewHtml): string
 {
 	$previewHtml = (string)$previewHtml;
@@ -161,7 +205,8 @@ function extractBrandFromPreview(string $previewHtml): string
 	$labelRe = implode('|', array_map(static fn($x) => preg_quote($x, '~'), $labels));
 	if (!preg_match('~(?:^|[;,.\\(\\)\\[\\]\\s])(' . $labelRe . ')\\s*[:\\-—=]?\\s*([^;,.\\n\\r]{1,80})~iu', $s, $m))
 	{
-		return '';
+		// No explicit label → try scan for known brands in whole preview.
+		return mf_brand_lookup($s);
 	}
 
 	$brand = trim((string)($m[2] ?? ''));
@@ -174,7 +219,9 @@ function extractBrandFromPreview(string $previewHtml): string
 	// If someone wrote "Производитель: BRP (something)" – keep first token-ish chunk
 	$brand = preg_replace('~\\s*\\(.*$~u', '', $brand) ?? $brand;
 	$brand = trim($brand);
-	return $brand;
+	$canonical = mf_canonicalize_brand_candidate($brand, $s);
+	if ($canonical !== '') return $canonical;
+	return mf_brand_lookup($s);
 }
 
 function getBrandFromRow(array $row): array
@@ -182,16 +229,44 @@ function getBrandFromRow(array $row): array
 	// Prefer explicit CSV columns if present
 	$brand = trim((string)($row['Бренд'] ?? ''));
 	$brandNorm = trim((string)($row['Бренд (норм)'] ?? ''));
+	$preview = (string)($row['Краткий текст'] ?? '');
+
+	if ($brand !== '')
+	{
+		$canonical = mf_canonicalize_brand_candidate($brand, $preview);
+		if ($canonical !== '')
+		{
+			$brand = $canonical;
+			$brandNorm = normalizeBrand($brand);
+		}
+		else
+		{
+			$brand = '';
+			$brandNorm = '';
+		}
+	}
+	else if ($brandNorm !== '')
+	{
+		// Try map even from "norm" column if it contains extra noise.
+		$k = mf_brand_lookup($brandNorm);
+		if ($k !== '')
+		{
+			$brand = $k;
+			$brandNorm = normalizeBrand($brand);
+		}
+		else
+		{
+			$brand = '';
+			$brandNorm = '';
+		}
+	}
 
 	if ($brand === '' && $brandNorm === '')
 	{
-		$brand = extractBrandFromPreview((string)($row['Краткий текст'] ?? ''));
-		$brandNorm = normalizeBrand($brand);
+		$brand = extractBrandFromPreview($preview);
+		if ($brand !== '') $brandNorm = normalizeBrand($brand);
 	}
-	if ($brandNorm !== '')
-	{
-		$brandNorm = normalizeBrand($brandNorm);
-	}
+
 	if ($brand === '' && $brandNorm === '')
 	{
 		$brand = 'Unknown brand';
@@ -642,6 +717,7 @@ try
 	$limit = $limit !== null ? (int)$limit : null;
 	$apply = flag('--apply');
 	$dry = flag('--dry-run') || !$apply;
+	$GLOBALS['MF_BRAND_DICT_CREATE'] = (bool)$apply;
 
 	if ($csv === '')
 	{
@@ -663,6 +739,8 @@ try
 	{
 		ensureProperties($iblockId);
 		out("Свойства проверены/созданы.");
+		// Ensure brand dictionary HL exists (and seed minimal defaults on first run).
+		mf_brand_aliases_load(true);
 	}
 
 	$csvSize = (int)@filesize($csv);

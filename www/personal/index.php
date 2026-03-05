@@ -1,7 +1,23 @@
 <?
+define("HIDE_SIDEBAR", true);
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
-$APPLICATION->SetTitle("Персональный раздел");
-?><?$APPLICATION->IncludeComponent(
+$APPLICATION->SetTitle("Личный кабинет");
+?>
+
+<div class="mf-personal">
+	<section class="mf-personal-hero">
+		<div class="mf-personal-hero-inner">
+			<div class="mf-personal-title">Личный кабинет</div>
+			<p class="mf-personal-subtitle">Заказы, профили, личные данные и оплата — всё в одном месте.</p>
+			<div class="mf-personal-actions">
+				<a class="mf-personal-action mf-personal-action_primary" href="/personal/orders/">Мои заказы</a>
+				<a class="mf-personal-action" href="/personal/cart/">Корзина</a>
+			</div>
+		</div>
+	</section>
+
+	<section class="mf-personal-body">
+<?$APPLICATION->IncludeComponent(
 	"bitrix:sale.personal.section",
 	"bootstrap_v4",
 	Array(
@@ -21,7 +37,7 @@ $APPLICATION->SetTitle("Персональный раздел");
 		"NAV_TEMPLATE" => "",
 		"ORDER_HISTORIC_STATUSES" => array("F"),
 		"PATH_TO_BASKET" => "/personal/cart",
-		"PATH_TO_CATALOG" => "/catalog/",
+		"PATH_TO_CATALOG" => "/products/",
 		"PATH_TO_CONTACT" => "/about/contacts",
 		"PATH_TO_PAYMENT" => "/personal/order/payment/",
 		"PER_PAGE" => "20",
@@ -57,5 +73,8 @@ $APPLICATION->SetTitle("Персональный раздел");
 		"USER_PROPERTY_PRIVATE" => array(),
 		"USE_AJAX_LOCATIONS_PROFILE" => "N"
 	)
-);?><br>
-	<br><?require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");?>
+);?>
+	</section>
+</div>
+
+<?require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");?>

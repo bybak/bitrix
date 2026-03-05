@@ -1,0 +1,553 @@
+.mf-personal{
+  margin: 0 0 2rem;
+}
+
+:root{
+  --mf-personal-accent-1: #f5c200; /* Motor-Force yellow */
+  --mf-personal-accent-2: #ff8a00; /* warm orange */
+}
+
+.mf-personal-hero{
+  border-radius: 18px;
+  padding: 1.5rem;
+  background:
+    radial-gradient(900px 420px at 15% 0%, rgba(245, 194, 0, .22), rgba(245, 194, 0, 0) 60%),
+    radial-gradient(700px 380px at 90% 0%, rgba(255, 138, 0, .16), rgba(255, 138, 0, 0) 55%),
+    linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,255,255,1));
+  border: 1px solid rgba(10, 22, 60, .08);
+  box-shadow: 0 14px 40px rgba(12, 18, 40, .06);
+}
+
+.mf-personal-hero-inner{
+  max-width: 720px;
+}
+
+.mf-personal-title{
+  margin: 0;
+  font-weight: 900;
+  letter-spacing: .2px;
+}
+
+.mf-personal-subtitle{
+  margin: .5rem 0 0;
+  color: rgba(17,24,39,.72);
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.mf-personal-actions{
+  margin-top: 1rem;
+  display: flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.mf-personal-action{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(17,24,39,.16);
+  background: #fff;
+  color: rgba(17,24,39,.92);
+  text-decoration: none;
+  font-weight: 700;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.mf-personal-action:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(12,18,40,.08);
+  border-color: rgba(245, 194, 0, .55);
+  text-decoration: none;
+}
+.mf-personal-action_primary{
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  border-color: transparent;
+  color: rgba(17,24,39,.92);
+  box-shadow: 0 14px 30px rgba(255, 138, 0, .22);
+}
+.mf-personal-action_primary:hover{
+  border-color: transparent;
+  color: rgba(17,24,39,.92);
+}
+
+.mf-personal-body{
+  margin-top: 1.25rem;
+}
+
+/* Re-skin default sale.personal.section tiles on index page */
+.mf-personal .sale-personal-section-index-block{
+  background: #fff !important;
+  color: rgba(17,24,39,.92) !important;
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 16px;
+  box-shadow: 0 10px 26px rgba(12,18,40,.06);
+  opacity: 1;
+  text-transform: none;
+  height: auto;
+}
+.mf-personal .sale-personal-section-index-block:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 18px 36px rgba(12,18,40,.10);
+}
+
+.mf-personal .sale-personal-section-index-block-link{
+  padding: 18px 14px;
+  color: rgba(17,24,39,.92) !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .75rem;
+}
+
+.mf-personal .sale-personal-section-index-block-ico{
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  background: rgba(245, 194, 0, .18);
+  color: rgba(166, 111, 0, .96);
+}
+.mf-personal .sale-personal-section-index-block-ico i{
+  line-height: 1;
+}
+
+.mf-personal .sale-personal-section-index-block-name{
+  margin: 0;
+  padding: 0;
+  color: rgba(17,24,39,.92);
+  font-size: 1rem;
+  font-weight: 800;
+  text-transform: none;
+}
+
+@media (max-width: 575.98px){
+  .mf-personal-hero{ border-radius: 16px; padding: 1.25rem; }
+  .mf-personal .sale-personal-section-index-block-link{ padding: 16px 12px; }
+}
+
+/* Orders list (`sale.personal.order.list` / `bootstrap_v4`) */
+.mf-personal .sale-order-list-title-container{
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 16px 16px 0 0;
+  background:
+    linear-gradient(180deg, rgba(245, 194, 0, .14), rgba(255,255,255,1));
+}
+.mf-personal .sale-order-list-title-container h3{
+  font-size: 1rem;
+  font-weight: 900;
+  color: rgba(17,24,39,.92);
+}
+.mf-personal .sale-order-list-inner-container{
+  border: 1px solid rgba(17,24,39,.10);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  background: #fff;
+  box-shadow: 0 14px 30px rgba(12,18,40,.08);
+}
+.mf-personal .sale-order-list-inner-title-line{
+  background: rgba(17,24,39,.10);
+}
+.mf-personal .sale-order-list-inner-title-line-item{
+  color: rgba(17,24,39,.62);
+  letter-spacing: .2px;
+}
+.mf-personal .sale-order-list-payment-title,
+.mf-personal .sale-order-list-shipment-title{
+  color: rgba(17,24,39,.92);
+  font-weight: 900;
+}
+
+.mf-personal .sale-order-list-status-success,
+.mf-personal .sale-order-list-status-alert,
+.mf-personal .sale-order-list-status-restricted{
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 900;
+}
+.mf-personal .sale-order-list-status-success{
+  border-color: rgba(245, 194, 0, .55);
+  background: rgba(245, 194, 0, .18);
+  color: rgba(166, 111, 0, .96);
+}
+.mf-personal .sale-order-list-status-alert{
+  border-color: rgba(255, 138, 0, .55);
+  background: rgba(255, 138, 0, .14);
+  color: rgba(140, 80, 0, .98);
+}
+.mf-personal .sale-order-list-status-restricted{
+  border-color: rgba(17,24,39,.14);
+  background: rgba(17,24,39,.05);
+  color: rgba(17,24,39,.72);
+}
+
+.mf-personal .sale-order-list-change-payment,
+.mf-personal .sale-order-list-shipment-button,
+.mf-personal .sale-order-list-cancel-payment{
+  border-bottom: none;
+  text-decoration: none;
+  font-weight: 800;
+  color: rgba(166, 111, 0, .96);
+}
+.mf-personal .sale-order-list-change-payment:hover,
+.mf-personal .sale-order-list-shipment-button:hover,
+.mf-personal .sale-order-list-cancel-payment:hover{
+  text-decoration: underline;
+}
+
+/* Order detail (`sale.personal.order.detail` / `bootstrap_v4`) */
+.mf-personal .sale-order-detail-card{
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 18px 52px rgba(12,18,40,.10);
+}
+.mf-personal .sale-order-detail-card-title{
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  color: rgba(17,24,39,.92);
+  font-weight: 900;
+}
+.mf-personal .sale-order-detail-section-title{
+  background: rgba(17,24,39,.04);
+  font-weight: 900;
+}
+
+/* Account page (`sale.personal.account` + `sale.account.pay`) */
+.sale-personal-section-account-sub-header{
+  margin: 1.25rem 0 .75rem;
+  font-weight: 900;
+  font-size: 1.35rem;
+  color: rgba(17,24,39,.92);
+}
+
+.sale-personal-account-wallet-container{
+  max-width: 720px;
+  width: 100%;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(17,24,39,.10);
+  box-shadow: 0 18px 52px rgba(12,18,40,.10);
+  background: #fff;
+}
+
+.sale-personal-account-wallet-title{
+  padding: 14px 18px;
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  color: rgba(17,24,39,.92);
+  text-transform: none;
+  letter-spacing: .2px;
+  font-weight: 900;
+  font-size: 1rem;
+}
+
+.sale-personal-account-wallet-list-container{
+  background: #fff;
+  color: rgba(17,24,39,.92);
+}
+
+.sale-personal-account-wallet-list-item{
+  border-bottom: 1px solid rgba(17,24,39,.08);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sale-personal-account-wallet-currency{
+  float: none;
+  display: block;
+  font-size: .95rem;
+  line-height: 1.2;
+}
+
+.sale-personal-account-wallet-currency-item{
+  color: rgba(17,24,39,.70);
+  font-weight: 800;
+}
+
+.sale-personal-account-wallet-sum{
+  float: none;
+  font-size: 1.6rem;
+  font-weight: 900;
+  white-space: nowrap;
+  color: rgba(17,24,39,.92);
+}
+
+/* Top up UI */
+.bx-sap h3{
+  font-weight: 900;
+  color: rgba(17,24,39,.92);
+}
+
+.sale-accountpay-fixedpay-container{
+  margin-top: .25rem;
+}
+
+.sale-accountpay-fixedpay-list .sale-accountpay-fixedpay-item{
+  border-radius: 999px;
+  height: 40px;
+  line-height: 40px;
+  padding: 0 14px;
+  background: rgba(245, 194, 0, .16);
+  border: 1px solid rgba(245, 194, 0, .35);
+  color: rgba(17,24,39,.90);
+  font-weight: 900;
+  min-width: 64px;
+}
+.sale-accountpay-fixedpay-list .sale-accountpay-fixedpay-item:hover{
+  background: rgba(245, 194, 0, .22);
+}
+
+.sale-accountpay-input{
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(17,24,39,.14);
+  background: rgba(248,250,252,1);
+}
+.sale-accountpay-input:focus{
+  border-color: rgba(245, 194, 0, .75);
+  box-shadow: 0 0 0 .2rem rgba(245, 194, 0, .16);
+  background: #fff;
+}
+
+.sale-account-pay-button{
+  width: 100%;
+  height: 46px;
+  border-radius: 12px;
+  font-weight: 900;
+  border: 0;
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  box-shadow: 0 14px 30px rgba(255, 138, 0, .22);
+  color: rgba(17,24,39,.92);
+}
+.sale-account-pay-button:hover{
+  filter: brightness(.98);
+  text-decoration: none;
+  color: rgba(17,24,39,.92);
+}
+
+.sale-accountpay-pp-company-graf-container{
+  border-radius: 14px;
+  border-width: 2px;
+  border-color: rgba(17,24,39,.16);
+  box-shadow: 0 10px 26px rgba(12,18,40,.06);
+}
+.sale-accountpay-pp-company-graf-container:hover{
+  border-color: rgba(245, 194, 0, .55);
+}
+.sale-accountpay-pp-company.bx-selected .sale-accountpay-pp-company-graf-container{
+  border-color: rgba(245, 194, 0, .85);
+  box-shadow: 0 14px 30px rgba(255, 138, 0, .14);
+}
+.sale-accountpay-pp-company-smalltitle{
+  color: rgba(17,24,39,.70);
+  font-weight: 800;
+}
+
+/* Private profile page (`main.profile`) */
+.bx_profile{
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 20px;
+  box-shadow: 0 18px 52px rgba(12,18,40,.10);
+}
+
+.bx_profile h2{
+  margin: 0 0 .75rem;
+  font-weight: 900;
+  color: rgba(17,24,39,.92);
+}
+
+.bx_profile strong{
+  display: inline-block;
+  margin: .75rem 0 .35rem;
+  font-weight: 800;
+  color: rgba(17,24,39,.88);
+}
+
+.bx_profile input[type="text"],
+.bx_profile input[type="password"],
+.bx_profile input[type="email"],
+.bx_profile input[type="tel"],
+.bx_profile select,
+.bx_profile textarea{
+  width: 100%;
+  max-width: 520px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(17,24,39,.14);
+  background: rgba(248,250,252,1);
+  padding: .5rem .75rem;
+  outline: none;
+}
+
+.bx_profile textarea{
+  height: auto;
+  min-height: 110px;
+}
+
+.bx_profile input[type="text"]:focus,
+.bx_profile input[type="password"]:focus,
+.bx_profile input[type="email"]:focus,
+.bx_profile input[type="tel"]:focus,
+.bx_profile select:focus,
+.bx_profile textarea:focus{
+  border-color: rgba(245, 194, 0, .75);
+  box-shadow: 0 0 0 .2rem rgba(245, 194, 0, .16);
+  background: #fff;
+}
+
+.bx_profile .bx_bt_button{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-weight: 900;
+  border: 0;
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  box-shadow: 0 14px 30px rgba(255, 138, 0, .22);
+  color: rgba(17,24,39,.92);
+  cursor: pointer;
+}
+.bx_profile .bx_bt_button:hover{
+  filter: brightness(.98);
+}
+
+/* Hide any socialservices binding UI if still rendered somewhere */
+.soc-serv-main,
+.soc-serv-accounts,
+.soc-serv-title,
+.soc-serv-title-grey,
+.socserv-auth-split-box{
+  display: none !important;
+}
+
+/* Ensure embedded auth forms look ok inside personal pages too */
+.mf-personal .mf-auth{
+  max-width: 720px;
+  margin: 0 auto;
+}
+.mf-personal .mf-auth-card{
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 20px;
+  box-shadow: 0 18px 52px rgba(12,18,40,.10);
+}
+
+/* Profiles list (`sale.personal.profile.list` / `bootstrap_v4`) */
+.mf-personal .table-responsive{
+  border-radius: 16px;
+}
+.mf-personal .table-responsive > .table{
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(12,18,40,.08);
+  border: 1px solid rgba(17,24,39,.10);
+}
+.mf-personal .table-responsive > .table thead th{
+  border-top: none;
+  border-bottom: 1px solid rgba(17,24,39,.10);
+  background: linear-gradient(180deg, rgba(245, 194, 0, .14), rgba(255,255,255,1));
+  color: rgba(17,24,39,.78);
+  font-weight: 900;
+  white-space: nowrap;
+}
+.mf-personal .table-responsive > .table tbody td,
+.mf-personal .table-responsive > .table tbody th{
+  vertical-align: middle;
+}
+.mf-personal .table-hover tbody tr:hover{
+  background: rgba(245, 194, 0, .08);
+}
+.mf-personal .sale-personal-profile-list-arrow-up,
+.mf-personal .sale-personal-profile-list-arrow-down{
+  color: rgba(17,24,39,.32);
+}
+.mf-personal .sale-personal-profile-list-arrow-up:hover,
+.mf-personal .sale-personal-profile-list-arrow-down:hover{
+  color: rgba(166, 111, 0, .96);
+}
+.mf-personal .sale-personal-profile-list-border{
+  border-right-color: rgba(17,24,39,.14);
+  opacity: .8;
+}
+.mf-personal a[title][href*="profiles/"],
+.mf-personal a[title][href*="/personal/profiles/"]{
+  color: rgba(166, 111, 0, .96);
+  font-weight: 900;
+  text-decoration: none;
+}
+.mf-personal a[title][href*="profiles/"]:hover,
+.mf-personal a[title][href*="/personal/profiles/"]:hover{
+  text-decoration: underline;
+}
+.mf-personal .sale-personal-profile-list-close-button{
+  opacity: .7;
+  filter: saturate(.9);
+}
+.mf-personal .sale-personal-profile-list-close-button:hover{
+  opacity: 1;
+}
+
+/* Profile detail (`sale.personal.profile.detail` / `bootstrap_v4`) */
+.mf-personal .sale-profile-detail-form{
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 20px;
+  box-shadow: 0 18px 52px rgba(12,18,40,.10);
+}
+.mf-personal .sale-profile-detail-form h4{
+  margin: 0;
+  font-weight: 900;
+  color: rgba(17,24,39,.92);
+}
+.mf-personal .sale-profile-detail-form .col-form-label{
+  color: rgba(17,24,39,.78);
+  font-weight: 800;
+}
+.mf-personal .sale-profile-detail-form .req{
+  color: #dc3545;
+  margin-left: .25rem;
+}
+.mf-personal .sale-profile-detail-form .form-control{
+  border-radius: 12px;
+  border-color: rgba(17,24,39,.14);
+  background: rgba(248,250,252,1);
+}
+.mf-personal .sale-profile-detail-form .form-control:focus{
+  border-color: rgba(245, 194, 0, .75);
+  box-shadow: 0 0 0 .2rem rgba(245, 194, 0, .16);
+  background: #fff;
+}
+.mf-personal .sale-profile-detail-form .btn.btn-primary{
+  border: 0;
+  border-radius: 12px;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  box-shadow: 0 14px 30px rgba(255, 138, 0, .22);
+  color: rgba(17,24,39,.92);
+}
+.mf-personal .sale-profile-detail-form .btn.btn-primary:hover{
+  filter: brightness(.98);
+}
+.mf-personal .sale-profile-detail-form .btn.btn-link{
+  color: rgba(166, 111, 0, .96);
+  font-weight: 900;
+  text-decoration: none;
+}
+.mf-personal .sale-profile-detail-form .btn.btn-link:hover{
+  text-decoration: underline;
+}
+

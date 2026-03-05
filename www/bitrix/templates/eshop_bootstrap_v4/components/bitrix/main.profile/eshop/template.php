@@ -73,16 +73,4 @@ if ($arResult['DATA_SAVED'] === 'Y')
 	</form>
 </div>
 <br>
-<?php
-if ($arResult["SOCSERV_ENABLED"])
-{
-	$APPLICATION->IncludeComponent(
-		"bitrix:socserv.auth.split",
-		".default",
-		[
-			"SHOW_PROFILES" => "Y",
-			"ALLOW_DELETE" => "Y",
-		],
-		false
-	);
-}
+// Social profile linking (socserv) intentionally disabled for this project.

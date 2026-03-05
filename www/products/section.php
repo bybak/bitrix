@@ -203,8 +203,18 @@ $arParams = array(
     "ELEMENT_SORT_FIELD2" => $sortField2,
     "ELEMENT_SORT_ORDER2" => $sortOrder2,
     
-    // Свойства
-    "PROPERTY_CODE" => array(""),
+    // Свойства (нужны для вывода бренд/артикул в карточках товара)
+    "PROPERTY_CODE" => array(
+		"CML2_ARTICLE",
+		"MF_BRAND",
+		"MF_ARTICLE_NORM",
+		"MF_BRAND_NORM",
+		"CML2_MANUFACTURER",
+		"BRAND",
+		"MANUFACTURER",
+		"ARTNUMBER",
+		"ARTICLE",
+	),
     
     // Цены
     "PRICE_CODE" => array("BASE"),
@@ -214,10 +224,15 @@ $arParams = array(
     // Корзина
     "USE_PRODUCT_QUANTITY" => "Y",
     "ADD_SECTIONS_CHAIN" => "Y",
+
+	// Бренд (используется частью логики catalog.item + может пригодиться для аналитики)
+	"BRAND_PROPERTY" => "MF_BRAND",
     
     // Кэширование
-    "CACHE_TYPE" => "A",
-    "CACHE_TIME" => "36000000",
+	// IMPORTANT: price/availability are dynamic (per-store RAW price + markup, stocks).
+	// Disable component cache to reflect updates immediately after imports/markup edits.
+    "CACHE_TYPE" => "N",
+    "CACHE_TIME" => "0",
     "CACHE_FILTER" => "Y",
     "CACHE_GROUPS" => "Y",
 
