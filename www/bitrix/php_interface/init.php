@@ -245,6 +245,7 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_missing_stock_items');
 }
 
+// Admin menu: "Магазин" -> "Логи импорта остатков" (table mf_supplier_stock_run_log)
 // === SEO sync (static pages from top menu, excluding /products/*) ===
 if (!function_exists('mf_seo_escape_attr'))
 {
@@ -1201,4 +1202,33 @@ if (is_file($mfUnfInclude))
   {
     \Mf\Unf\Bootstrap::init();
   }
+}
+
+// --- Admin: "Import analogs" button on product edit -------------------------
+$mfAdminAnalogsInclude = __DIR__ . '/include/mf_admin_analogs.php';
+if (is_file($mfAdminAnalogsInclude))
+{
+	require_once $mfAdminAnalogsInclude;
+}
+
+// --- Product analogs storage (HL mf_product_analogs) ------------------------
+$mfAnalogsInclude = __DIR__ . '/include/mf_analogs.php';
+if (is_file($mfAnalogsInclude))
+{
+	require_once $mfAnalogsInclude;
+}
+
+// --- Catalog visibility flag (MF_SHOW_IN_CATALOG) ---------------------------
+$mfCatalogVisibilityInclude = __DIR__ . '/include/mf_catalog_visibility.php';
+if (is_file($mfCatalogVisibilityInclude))
+{
+	require_once $mfCatalogVisibilityInclude;
+	if (function_exists('mf_ensure_iblock4_show_in_catalog_property'))
+	{
+		mf_ensure_iblock4_show_in_catalog_property();
+	}
+	if (function_exists('mf_ensure_iblock4_ext_images_property'))
+	{
+		mf_ensure_iblock4_ext_images_property();
+	}
 }

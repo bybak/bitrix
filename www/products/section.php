@@ -122,6 +122,8 @@ if ($hasChildSections)
 // Затем показываем товары текущей категории
 $GLOBALS['mfCatalogFilter'] = [
 	'!PROPERTY_MF_IS_REDIRECT' => 'Y',
+	// Hide products explicitly marked "N". Empty (old) values remain visible.
+	'!PROPERTY_MF_SHOW_IN_CATALOG' => 'N',
 ];
 
 $mfView = (string)($_GET['mf_view'] ?? 'grid');

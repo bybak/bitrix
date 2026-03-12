@@ -10,8 +10,42 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 //   http://img-motor-force.ru/products/<CODE>/0001.jpg, 0002.jpg, ...
 if (is_array($arResult) && function_exists('mf_mf_product_img_url'))
 {
+	// If external image URLs are provided (e.g. analog stubs), use them as-is.
+	$extImgs = [];
+	if (!empty($arResult['PROPERTIES']['MF_EXT_IMAGES']['VALUE']))
+	{
+		$v = $arResult['PROPERTIES']['MF_EXT_IMAGES']['VALUE'];
+		if (is_array($v)) $extImgs = $v;
+		else $extImgs = [$v];
+	}
+	if (empty($extImgs) && class_exists('CIBlockElement') && (int)($arResult['IBLOCK_ID'] ?? 0) > 0 && (int)($arResult['ID'] ?? 0) > 0)
+	{
+		$rsP = \CIBlockElement::GetProperty((int)$arResult['IBLOCK_ID'], (int)$arResult['ID'], ['sort' => 'asc'], ['CODE' => 'MF_EXT_IMAGES']);
+		while ($p = $rsP->Fetch())
+		{
+			$u = trim((string)($p['VALUE'] ?? ''));
+			if ($u !== '') $extImgs[] = $u;
+		}
+	}
+	// Fallback: if element has no MF_EXT_IMAGES, try supplier meta table (reverse lookup).
+	if (empty($extImgs) && function_exists('mf_analogs_meta_images_for_product'))
+	{
+		$extImgs = mf_analogs_meta_images_for_product((int)($arResult['ID'] ?? 0));
+	}
+	$extImgs = array_values(array_filter(array_map('trim', $extImgs), static fn($s) => $s !== ''));
+	if (!empty($extImgs))
+	{
+		$arResult['MORE_PHOTO'] = [];
+		foreach ($extImgs as $u)
+		{
+			$arResult['MORE_PHOTO'][] = ['SRC' => (string)$u, 'ID' => 0];
+		}
+		$arResult['MORE_PHOTO_COUNT'] = count($arResult['MORE_PHOTO']);
+	}
+
+	// Only rewrite to deterministic host when we don't have explicit external images.
 	$code = trim((string)($arResult['CODE'] ?? ''));
-	if ($code !== '')
+	if ($code !== '' && empty($extImgs))
 	{
 		// Ensure we have at least one picture for the template to render.
 		if (empty($arResult['MORE_PHOTO']) || !is_array($arResult['MORE_PHOTO']))

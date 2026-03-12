@@ -77,6 +77,70 @@ $how = (($arResult['REQUEST']['HOW'] ?? '') === 'd') ? 'd' : 'r';
 				{
 					$total = (int)$arResult['NAV_RESULT']->NavRecordCount;
 				}
+
+				// Preload analogs for catalog items (IBLOCK_ID=4) so they show in search results
+				// even if analog items themselves don't match the query.
+				$mfAnalogsByProductId = [];
+				$mfAnalogRowsById = [];
+				$mfProductIds = [];
+				foreach ($arResult['SEARCH'] as $it)
+				{
+					if ((string)($it['MODULE_ID'] ?? '') !== 'iblock') continue;
+					if ((int)($it['PARAM2'] ?? 0) !== 4) continue;
+					$id = (int)($it['ITEM_ID'] ?? 0);
+					if ($id > 0) $mfProductIds[$id] = true;
+				}
+				$mfProductIds = array_keys($mfProductIds);
+				if (!empty($mfProductIds))
+				{
+					$analogsLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/bitrix/php_interface/include/mf_analogs.php';
+					if (is_file($analogsLib))
+					{
+						require_once $analogsLib;
+					}
+					if ((function_exists('mf_analogs_related_ids_for_product') || function_exists('mf_analogs_ids_for_product')) && class_exists('CIBlockElement'))
+					{
+						$allAnalogIds = [];
+						foreach ($mfProductIds as $pid)
+						{
+							$ids = function_exists('mf_analogs_related_ids_for_product')
+								? mf_analogs_related_ids_for_product((int)$pid, 12)
+								: mf_analogs_ids_for_product((int)$pid, 12);
+							if (!empty($ids))
+							{
+								$mfAnalogsByProductId[(int)$pid] = $ids;
+								foreach ($ids as $aid)
+								{
+									$allAnalogIds[(int)$aid] = true;
+								}
+							}
+						}
+
+						$allAnalogIds = array_keys($allAnalogIds);
+						if (!empty($allAnalogIds))
+						{
+							$rsA = \CIBlockElement::GetList(
+								['NAME' => 'ASC', 'ID' => 'ASC'],
+								[
+									'IBLOCK_ID' => 4,
+									'ID' => $allAnalogIds,
+									'ACTIVE' => 'Y',
+								],
+								false,
+								false,
+								['ID', 'NAME', 'CODE', 'PROPERTY_CML2_ARTICLE', 'PROPERTY_MF_BRAND']
+							);
+							while ($r = $rsA->Fetch())
+							{
+								$aid = (int)($r['ID'] ?? 0);
+								if ($aid > 0)
+								{
+									$mfAnalogRowsById[$aid] = $r;
+								}
+							}
+						}
+					}
+				}
 				?>
 				<div class="mf-search__summary">
 					<span>Найдено: <strong><?=$total ?: count($arResult['SEARCH'])?></strong></span>
@@ -153,6 +217,30 @@ $how = (($arResult['REQUEST']['HOW'] ?? '') === 'd') ? 'd' : 'r';
 							<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($href)?>">
 								<?=$arItem['TITLE_FORMATED']?>
 							</a>
+							<?php
+							$mfItemId = (int)($arItem['ITEM_ID'] ?? 0);
+							$mfIsCatalog = ((string)($arItem['MODULE_ID'] ?? '') === 'iblock' && (int)($arItem['PARAM2'] ?? 0) === 4 && $mfItemId > 0);
+							$mfAnalogs = ($mfIsCatalog && isset($mfAnalogsByProductId[$mfItemId])) ? (array)$mfAnalogsByProductId[$mfItemId] : [];
+							?>
+							<?php if (!empty($mfAnalogs)): ?>
+								<div class="mf-search-card__snippet" style="margin-top:6px;">
+									<strong>Аналоги:</strong>
+									<?php
+									$out = [];
+									foreach ($mfAnalogs as $aid)
+									{
+										$r = $mfAnalogRowsById[(int)$aid] ?? null;
+										if (!$r) continue;
+										$codeA = trim((string)($r['CODE'] ?? ''));
+										$urlA = ($codeA !== '' ? '/products/' . rawurlencode($codeA) . '/' : '');
+										if ($urlA === '') continue;
+										$nameA = (string)($r['NAME'] ?? ('ID ' . (int)$aid));
+										$out[] = '<a href="' . htmlspecialcharsbx($urlA) . '">' . htmlspecialcharsbx($nameA) . '</a>';
+									}
+									echo implode(', ', $out);
+									?>
+								</div>
+							<?php endif; ?>
 							<?php if (!empty($arItem['BODY_FORMATED'])): ?>
 								<div class="mf-search-card__snippet">
 									<?=$arItem['BODY_FORMATED']?>

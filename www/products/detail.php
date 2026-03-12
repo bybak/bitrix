@@ -97,6 +97,7 @@ $arParams = [
 		"MF_BRAND",
 		"MF_ARTICLE_NORM",
 		"MF_BRAND_NORM",
+		"MF_EXT_IMAGES",
     ),
     
     // Корзина
@@ -303,6 +304,93 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 		})();
 		</script>
 		<?php
+	}
+}
+
+// === Analogs (from HL mf_product_analogs) ===
+if ($elementId > 0)
+{
+	$analogsLib = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_analogs.php';
+	if (is_file($analogsLib))
+	{
+		require_once $analogsLib;
+	}
+
+	if (function_exists('mf_analogs_ids_for_product'))
+	{
+		$analogIds = function_exists('mf_analogs_related_ids_for_product')
+			? mf_analogs_related_ids_for_product($elementId, 24)
+			: mf_analogs_ids_for_product($elementId, 24);
+		if (!empty($analogIds))
+		{
+			$analogMeta = function_exists('mf_analogs_meta_map_for_product')
+				? mf_analogs_meta_map_for_product($elementId, $analogIds)
+				: [];
+			CModule::IncludeModule("iblock");
+			$analogRows = [];
+			$rs = CIBlockElement::GetList(
+				['NAME' => 'ASC', 'ID' => 'ASC'],
+				[
+					'IBLOCK_ID' => $IBLOCK_ID,
+					'ID' => $analogIds,
+					'ACTIVE' => 'Y',
+				],
+				false,
+				false,
+				['ID', 'NAME', 'CODE', 'PROPERTY_CML2_ARTICLE', 'PROPERTY_MF_BRAND']
+			);
+			while ($r = $rs->Fetch())
+			{
+				$id = (int)($r['ID'] ?? 0);
+				if ($id > 0)
+				{
+					$analogRows[$id] = $r;
+				}
+			}
+
+			?>
+			<div class="mt-4 mb-4 mf-product-analogs">
+				<h2 class="h5 mb-3">Аналоги</h2>
+				<div class="list-group">
+					<?php foreach ($analogIds as $aid): ?>
+						<?php $r = $analogRows[$aid] ?? null; ?>
+						<?php if (!$r) continue; ?>
+						<?php
+						$code = trim((string)($r['CODE'] ?? ''));
+						$url = ($code !== '' ? '/products/' . $code . '/' : '#');
+						$brand = trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+						$article = trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+						$m = $analogMeta[(int)$aid] ?? null;
+						$mStock = is_array($m) ? ($m['stock'] ?? null) : null;
+						$mPrice = is_array($m) ? ($m['price'] ?? null) : null;
+						?>
+						<a class="list-group-item list-group-item-action" href="<?=htmlspecialcharsbx($url)?>">
+							<div class="d-flex w-100 justify-content-between">
+								<div>
+									<strong><?=htmlspecialcharsbx((string)($r['NAME'] ?? ''))?></strong>
+									<?php if ($brand !== '' || $article !== ''): ?>
+										<div class="text-muted" style="font-size:13px;">
+											<?php if ($brand !== ''): ?>Бренд: <?=htmlspecialcharsbx($brand)?><?php endif; ?>
+											<?php if ($brand !== '' && $article !== ''): ?> · <?php endif; ?>
+											<?php if ($article !== ''): ?>Артикул: <?=htmlspecialcharsbx($article)?><?php endif; ?>
+										</div>
+									<?php endif; ?>
+									<?php if ($mStock !== null || $mPrice !== null): ?>
+										<div class="text-muted" style="font-size:13px;">
+											<?php if ($mStock !== null): ?>Остаток: <?=htmlspecialcharsbx((string)$mStock)?><?php endif; ?>
+											<?php if ($mStock !== null && $mPrice !== null): ?> · <?php endif; ?>
+											<?php if ($mPrice !== null): ?>Цена: <?=htmlspecialcharsbx(number_format((float)$mPrice, 2, '.', ' '))?> &#8381;<?php endif; ?>
+										</div>
+									<?php endif; ?>
+								</div>
+								<small class="text-muted">ID <?= (int)$aid ?></small>
+							</div>
+						</a>
+					<?php endforeach; ?>
+				</div>
+			</div>
+			<?php
+		}
 	}
 }
 
