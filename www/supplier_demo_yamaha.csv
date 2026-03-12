@@ -1,7 +1,4 @@
-Бренд;Артикул;Остаток;Цена
+Бренд;Артикул;Остаток;Цена;Картинки
 # Реальные товары (есть в базе) — обновятся по связке бренд+артикул
-Yamaha;1HP-F582T-00-00;5;1290
-Yamaha;BB5-F514A-00-00;7;990
-# Несуществующие (не найдутся) — попадут в таблицу "ненайденные"
-Yamaha;NO-SUCH-ARTICLE-123;10;555
-Nonexistent Brand;1HP-F582T-00-00;2;999
+Yamaha;123;5;1290;https://o-ring.su/wa-data/public/shop/products/70/98/29870/images/7699/7699.518x0@2x.jpg,https://gidropraktika.ru/wp-content/uploads/2025/03/gost_9833-73_uplotnitelnye-kolca_rezinovye.png
+Yamaha;1123;7;990

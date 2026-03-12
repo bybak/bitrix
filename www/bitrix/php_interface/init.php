@@ -246,6 +246,42 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 }
 
 // Admin menu: "Магазин" -> "Логи импорта остатков" (table mf_supplier_stock_run_log)
+if (!function_exists('mf_admin_menu_stock_import_logs'))
+{
+	function mf_admin_menu_stock_import_logs(array &$aGlobalMenu, array &$aModuleMenu): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+
+		$url = 'mf_stock_import_log.php?lang=ru';
+		$parentMenu =
+			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
+				(isset($aGlobalMenu['global_menu_sale']) ? 'global_menu_sale' : 'global_menu_content'));
+
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_stock_import',
+			'sort' => 2051,
+			'text' => 'Логи импорта остатков',
+			'title' => 'История запусков mf_update_supplier_stock.php',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_stock_import_log',
+			'url' => $url,
+			'more_url' => [
+				'mf_stock_import_log.php',
+			],
+		];
+	}
+}
+
+if (class_exists(\Bitrix\Main\EventManager::class))
+{
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_stock_import_logs');
+}
+
 // === SEO sync (static pages from top menu, excluding /products/*) ===
 if (!function_exists('mf_seo_escape_attr'))
 {

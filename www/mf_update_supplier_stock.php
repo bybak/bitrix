@@ -38,6 +38,7 @@ define('BX_CRONTAB', true);
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/prolog_before.php");
 
 use Bitrix\Main\Loader;
+use Bitrix\Main\Application;
 use Bitrix\Catalog\StoreTable;
 use Bitrix\Main\Type\DateTime;
 use Bitrix\Highloadblock\HighloadBlockTable;
@@ -71,6 +72,192 @@ function out(string $s): void
 	if (function_exists('flush')) flush();
 }
 
+function mf_toUtf8($v, string $fromEncoding): string
+{
+	$s = (string)($v ?? '');
+	if ($s === '') return '';
+
+	// If it already looks like valid UTF-8, keep it (helps when user passes wrong --encoding).
+	if (function_exists('mb_check_encoding') && mb_check_encoding($s, 'UTF-8'))
+	{
+		return $s;
+	}
+
+	$from = strtoupper(trim($fromEncoding));
+	if ($from === '' || $from === 'UTF8') $from = 'UTF-8';
+
+	// Prefer iconv with //IGNORE to avoid fatal conversion errors.
+	if (function_exists('iconv'))
+	{
+		$converted = @iconv($from, 'UTF-8//IGNORE', $s);
+		if (is_string($converted) && $converted !== '')
+		{
+			return $converted;
+		}
+	}
+
+	if (function_exists('mb_convert_encoding'))
+	{
+		$converted = mb_convert_encoding($s, 'UTF-8', $from);
+		return is_string($converted) ? $converted : $s;
+	}
+
+	return $s;
+}
+
+/**
+ * Run log table (MySQL) for mf_update_supplier_stock.php.
+ * We keep this as a plain DB table (not HL) to simplify writes from CLI.
+ */
+function mf_supplier_stock_log_conn(): ?\Bitrix\Main\DB\Connection
+{
+	if (!class_exists(Application::class))
+	{
+		return null;
+	}
+	try
+	{
+		return Application::getConnection();
+	}
+	catch (Throwable $e)
+	{
+		return null;
+	}
+}
+
+function mf_supplier_stock_log_ensure_table(): bool
+{
+	$conn = mf_supplier_stock_log_conn();
+	if (!$conn) return false;
+
+	// Works on MySQL. If using another DB driver, silently disable logging.
+	$driver = method_exists($conn, 'getType') ? (string)$conn->getType() : '';
+	if ($driver !== '' && stripos($driver, 'mysql') === false)
+	{
+		return false;
+	}
+
+	$sql = "CREATE TABLE IF NOT EXISTS mf_supplier_stock_run_log (
+		ID BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+		UF_STARTED_AT DATETIME NOT NULL,
+		UF_FINISHED_AT DATETIME NULL,
+		UF_DURATION_MS INT UNSIGNED NULL,
+		UF_STATUS VARCHAR(16) NOT NULL DEFAULT 'running',
+
+		UF_WAREHOUSE_CODE VARCHAR(64) NOT NULL,
+		UF_WAREHOUSE_TITLE VARCHAR(255) NULL,
+		UF_STORE_ID INT NULL,
+		UF_STORE_XML_ID VARCHAR(128) NULL,
+
+		UF_INPUT_FILE VARCHAR(512) NOT NULL,
+		UF_FILE_SIZE BIGINT NULL,
+		UF_FILE_MTIME DATETIME NULL,
+		UF_ENCODING VARCHAR(32) NULL,
+
+		UF_MODE VARCHAR(16) NOT NULL,
+		UF_PRICE_UPDATE CHAR(1) NOT NULL DEFAULT 'N',
+		UF_RECALC_BASE CHAR(1) NOT NULL DEFAULT 'N',
+		UF_SYNC_MISSING CHAR(1) NOT NULL DEFAULT 'Y',
+
+		UF_TOTAL INT UNSIGNED NOT NULL DEFAULT 0,
+		UF_UPDATED INT UNSIGNED NOT NULL DEFAULT 0,
+		UF_NOT_FOUND INT UNSIGNED NOT NULL DEFAULT 0,
+		UF_ZEROED INT UNSIGNED NOT NULL DEFAULT 0,
+		UF_ERRORS INT UNSIGNED NOT NULL DEFAULT 0,
+
+		UF_ERROR_ITEMS MEDIUMTEXT NULL,
+		UF_NOT_FOUND_ITEMS MEDIUMTEXT NULL,
+
+		UF_PHP_SAPI VARCHAR(64) NULL,
+		UF_HOST VARCHAR(255) NULL,
+		UF_PID INT NULL,
+		UF_MEMORY_PEAK_MB DOUBLE NULL,
+		UF_NOTE VARCHAR(255) NULL,
+
+		PRIMARY KEY (ID),
+		KEY IX_STARTED_AT (UF_STARTED_AT),
+		KEY IX_WAREHOUSE_CODE (UF_WAREHOUSE_CODE),
+		KEY IX_STORE_XML_ID (UF_STORE_XML_ID),
+		KEY IX_STATUS (UF_STATUS)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+	try
+	{
+		$conn->queryExecute($sql);
+		return true;
+	}
+	catch (Throwable $e)
+	{
+		return false;
+	}
+}
+
+function mf_supplier_stock_log_quote(\Bitrix\Main\DB\Connection $conn, $value): string
+{
+	if ($value === null)
+	{
+		return 'NULL';
+	}
+	$h = $conn->getSqlHelper();
+	return "'" . $h->forSql((string)$value) . "'";
+}
+
+function mf_supplier_stock_log_col(string $name): string
+{
+	// We only use fixed UF_* column names from this script.
+	$name = str_replace('`', '', trim($name));
+	return '`' . $name . '`';
+}
+
+function mf_supplier_stock_log_insert(array $fields): int
+{
+	$conn = mf_supplier_stock_log_conn();
+	if (!$conn) return 0;
+
+	$cols = [];
+	$vals = [];
+	foreach ($fields as $k => $v)
+	{
+		$k = trim((string)$k);
+		if ($k === '') continue;
+		$cols[] = mf_supplier_stock_log_col($k);
+		$vals[] = mf_supplier_stock_log_quote($conn, $v);
+	}
+	if (empty($cols)) return 0;
+
+	$sql = "INSERT INTO mf_supplier_stock_run_log (" . implode(', ', $cols) . ") VALUES (" . implode(', ', $vals) . ")";
+	$conn->queryExecute($sql);
+
+	$r = $conn->query("SELECT LAST_INSERT_ID() AS ID")->fetch();
+	return (int)($r['ID'] ?? 0);
+}
+
+function mf_supplier_stock_log_update(int $id, array $fields): void
+{
+	$id = (int)$id;
+	if ($id <= 0) return;
+
+	$conn = mf_supplier_stock_log_conn();
+	if (!$conn) return;
+
+	$sets = [];
+	foreach ($fields as $k => $v)
+	{
+		$k = trim((string)$k);
+		if ($k === '') continue;
+		$sets[] = mf_supplier_stock_log_col($k) . '=' . mf_supplier_stock_log_quote($conn, $v);
+	}
+	if (empty($sets)) return;
+
+	$conn->queryExecute("UPDATE mf_supplier_stock_run_log SET " . implode(', ', $sets) . " WHERE ID=" . (int)$id . " LIMIT 1");
+}
+
+function mf_sql_dt(?float $ts = null): string
+{
+	if ($ts === null) $ts = microtime(true);
+	return date('Y-m-d H:i:s', (int)$ts);
+}
+
 function mf_pct(float $done, float $total): float
 {
 	if ($total <= 0) return 0.0;
@@ -96,6 +283,16 @@ function mf_progressDone(): void
 {
 	echo PHP_EOL;
 	if (function_exists('flush')) flush();
+}
+
+function mf_fmt_eta(int $sec): string
+{
+	if ($sec < 0) $sec = 0;
+	$h = intdiv($sec, 3600);
+	$m = intdiv($sec % 3600, 60);
+	$s = $sec % 60;
+	if ($h > 0) return sprintf('%dh%02dm%02ds', $h, $m, $s);
+	return sprintf('%dm%02ds', $m, $s);
 }
 
 function normalizeArticle(string $s): string
@@ -551,6 +748,9 @@ function deleteMissing(?array $hl, string $warehouseXmlId, string $uniqKey): voi
 
 try
 {
+	$scriptStartTs = microtime(true);
+	$runStartedAtSql = mf_sql_dt($scriptStartTs);
+
 	$iblockId = (int)(arg('--iblock-id') ?: 4);
 	$warehouseCode = arg('--warehouse-code') ?: '';
 	$warehouseTitle = arg('--warehouse-title') ?: '';
@@ -563,6 +763,10 @@ try
 	$recalcBase = (arg('--recalc-base') ?: 'Y') === 'Y';
 	$syncMissing = (arg('--sync-missing') ?: 'Y') === 'Y';
 
+	// --- Run log (best-effort; script must work even if DB log fails) ---
+	$runLogId = 0;
+	$runLogEnabled = false;
+
 	if ($warehouseCode === '' && $supplier !== '')
 	{
 		$warehouseCode = $supplier;
@@ -571,6 +775,40 @@ try
 	if ($warehouseCode === '') throw new RuntimeException("Укажи --warehouse-code=CODE (или --supplier=NAME)");
 	if ($file === '') throw new RuntimeException("Укажи --file=/path/file.csv");
 	if (!file_exists($file)) throw new RuntimeException("Файл не найден: $file");
+
+	if (mf_supplier_stock_log_ensure_table())
+	{
+		$runLogEnabled = true;
+		try
+		{
+			$fileSize = (int)@filesize($file);
+			$fileMtime = (int)@filemtime($file);
+			$runLogId = mf_supplier_stock_log_insert([
+				'UF_STARTED_AT' => $runStartedAtSql,
+				'UF_STATUS' => 'running',
+				'UF_WAREHOUSE_CODE' => $warehouseCode,
+				'UF_WAREHOUSE_TITLE' => ($warehouseTitle !== '' ? $warehouseTitle : null),
+				'UF_STORE_ID' => null,
+				'UF_STORE_XML_ID' => null,
+				'UF_INPUT_FILE' => $file,
+				'UF_FILE_SIZE' => ($fileSize > 0 ? $fileSize : null),
+				'UF_FILE_MTIME' => ($fileMtime > 0 ? date('Y-m-d H:i:s', $fileMtime) : null),
+				'UF_ENCODING' => $encoding,
+				'UF_MODE' => ($apply ? 'APPLY' : 'DRY-RUN'),
+				'UF_PRICE_UPDATE' => ($usePrice ? 'Y' : 'N'),
+				'UF_RECALC_BASE' => (($usePrice && $recalcBase) ? 'Y' : 'N'),
+				'UF_SYNC_MISSING' => ($syncMissing ? 'Y' : 'N'),
+				'UF_PHP_SAPI' => (string)php_sapi_name(),
+				'UF_HOST' => (string)gethostname(),
+				'UF_PID' => (int)getmypid(),
+			]);
+		}
+		catch (Throwable $e)
+		{
+			$runLogEnabled = false;
+			$runLogId = 0;
+		}
+	}
 
 	out("=== MF SUPPLIER STOCK UPDATE ===");
 	out("IBLOCK_ID: $iblockId");
@@ -592,6 +830,13 @@ try
 	{
 		out("STORE_ID: $storeId");
 		out("STORE_XML_ID: $storeXmlId");
+	}
+	if ($runLogEnabled && $runLogId > 0)
+	{
+		mf_supplier_stock_log_update($runLogId, [
+			'UF_STORE_ID' => ($storeId > 0 ? $storeId : null),
+			'UF_STORE_XML_ID' => ($storeXmlId !== '' ? $storeXmlId : null),
+		]);
 	}
 
 	$storeMarkupPct = ($storeId > 0) ? getStoreMarkupPct($storeId) : 0.0;
@@ -624,7 +869,7 @@ try
 
 	$headers = fgetcsv($h, 0, ';');
 	if (!$headers) throw new RuntimeException("Пустой CSV");
-	$headers = array_map(static fn($v) => mb_convert_encoding((string)$v, 'UTF-8', $encoding), $headers);
+	$headers = array_map(static fn($v) => mf_toUtf8($v, $encoding), $headers);
 
 	$idxBrand = null;
 	$idxArt = null;
@@ -650,13 +895,18 @@ try
 	$errors = 0;
 	$zeroedMissing = 0;
 	$seenProducts = [];
+	$errorItems = [];
+	$errorItemsSet = [];
+	$notFoundItems = [];
+	$notFoundItemsSet = [];
 	$progressEvery = 200;
 	$lastProgressAt = microtime(true);
+	$loopStartTs = microtime(true);
 
 	while (($row = fgetcsv($h, 0, ';')) !== false)
 	{
 		$total++;
-		$row = array_map(static fn($v) => mb_convert_encoding((string)$v, 'UTF-8', $encoding), $row);
+		$row = array_map(static fn($v) => mf_toUtf8($v, $encoding), $row);
 		$brandRaw = $idxBrand !== null ? trim((string)($row[$idxBrand] ?? '')) : '';
 		// allow comments in demo CSV
 		if ($brandRaw !== '' && str_starts_with($brandRaw, '#')) continue;
@@ -684,6 +934,12 @@ try
 		if (!$productId)
 		{
 			$notFound++;
+			$keyNF = $brandRaw . ';' . $artRaw;
+			if (!isset($notFoundItemsSet[$keyNF]))
+			{
+				$notFoundItemsSet[$keyNF] = true;
+				if (count($notFoundItems) < 5000) $notFoundItems[] = $keyNF;
+			}
 			if (!$dry && $storeXmlId !== '')
 			{
 				upsertMissing(
@@ -739,17 +995,40 @@ try
 		catch (Throwable $e)
 		{
 			$errors++;
+			$keyErr = $brandRaw . ';' . $artRaw;
+			if (!isset($errorItemsSet[$keyErr]))
+			{
+				$errorItemsSet[$keyErr] = true;
+				if (count($errorItems) < 5000) $errorItems[] = $keyErr;
+			}
 		}
 
 		$now = microtime(true);
 		if (($total % $progressEvery) === 0 || ($now - $lastProgressAt) >= 0.5)
 		{
 			$pct = 0.0;
+			$extra = "rows=$total updated=$updated notFound=$notFound errors=$errors";
 			if ($fileSize > 0)
 			{
-				$pct = mf_pct((float)ftell($h), (float)$fileSize);
+				$pos = (int)ftell($h);
+				$pct = mf_pct((float)$pos, (float)$fileSize);
+
+				$elapsed = max(0.001, $now - $loopStartTs);
+				$bytesPerSec = $pos / $elapsed;
+				$rowsPerSec = $total / $elapsed;
+				$eta = null;
+				if ($bytesPerSec > 1)
+				{
+					$eta = (int)round(((float)max(0, $fileSize - $pos)) / $bytesPerSec);
+				}
+
+				$extra .= sprintf(" speed=%.0f r/s", $rowsPerSec);
+				if ($eta !== null)
+				{
+					$extra .= " eta=" . mf_fmt_eta($eta);
+				}
 			}
-			mf_progress('SUPPLIER', $pct, "rows=$total updated=$updated notFound=$notFound errors=$errors");
+			mf_progress('SUPPLIER', $pct, $extra);
 			$lastProgressAt = $now;
 		}
 	}
@@ -793,9 +1072,43 @@ try
 	}
 
 	out("DONE total=$total updated=$updated notFound=$notFound zeroedMissing=$zeroedMissing errors=$errors");
+
+	// finalize run log
+	if ($runLogEnabled && $runLogId > 0)
+	{
+		$durationMs = (int)round((microtime(true) - $scriptStartTs) * 1000.0);
+		$memPeakMb = memory_get_peak_usage(true) / 1024 / 1024;
+		mf_supplier_stock_log_update($runLogId, [
+			'UF_FINISHED_AT' => mf_sql_dt(),
+			'UF_DURATION_MS' => $durationMs,
+			'UF_STATUS' => 'ok',
+			'UF_TOTAL' => (int)$total,
+			'UF_UPDATED' => (int)$updated,
+			'UF_NOT_FOUND' => (int)$notFound,
+			'UF_ZEROED' => (int)$zeroedMissing,
+			'UF_ERRORS' => (int)$errors,
+			'UF_ERROR_ITEMS' => (!empty($errorItems) ? implode("\n", $errorItems) : null),
+			'UF_NOT_FOUND_ITEMS' => (!empty($notFoundItems) ? implode("\n", $notFoundItems) : null),
+			'UF_MEMORY_PEAK_MB' => (float)$memPeakMb,
+		]);
+	}
 }
 catch (Throwable $e)
 {
+	// Try to persist a failed run log (if logging was enabled and run already inserted).
+	if (isset($runLogEnabled, $runLogId) && $runLogEnabled && (int)$runLogId > 0)
+	{
+		$durationMs = isset($scriptStartTs) ? (int)round((microtime(true) - (float)$scriptStartTs) * 1000.0) : null;
+		$memPeakMb = memory_get_peak_usage(true) / 1024 / 1024;
+		mf_supplier_stock_log_update((int)$runLogId, [
+			'UF_FINISHED_AT' => mf_sql_dt(),
+			'UF_DURATION_MS' => $durationMs,
+			'UF_STATUS' => 'failed',
+			'UF_NOTE' => mb_substr((string)$e->getMessage(), 0, 250),
+			'UF_MEMORY_PEAK_MB' => (float)$memPeakMb,
+		]);
+	}
+
 	out("ОШИБКА: " . $e->getMessage());
 	fwrite(STDERR, $e->getTraceAsString() . PHP_EOL);
 	exit(1);
