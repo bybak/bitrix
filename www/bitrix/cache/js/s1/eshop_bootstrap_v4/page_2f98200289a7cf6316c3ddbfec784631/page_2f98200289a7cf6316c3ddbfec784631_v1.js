@@ -1,7 +1,0 @@
-
-; /* Start:"a:4:{s:4:"full";s:127:"/bitrix/components/bitrix/sale.personal.section/templates/bootstrap_v4/bitrix/main.profile/.default/script.min.js?1771265264635";s:6:"source";s:109:"/bitrix/components/bitrix/sale.personal.section/templates/bootstrap_v4/bitrix/main.profile/.default/script.js";s:3:"min";s:113:"/bitrix/components/bitrix/sale.personal.section/templates/bootstrap_v4/bitrix/main.profile/.default/script.min.js";s:3:"map";s:113:"/bitrix/components/bitrix/sale.personal.section/templates/bootstrap_v4/bitrix/main.profile/.default/script.map.js";}"*/
-BX.namespace("BX.Sale.PersonalProfileComponent");(function(){BX.Sale.PrivateProfileComponent={init:function(){var e=BX("main-profile-password");var r=BX("main-profile-password-confirm");BX.ready(function(){BX.bind(r,"input",function(){if(!BX.type.isNotEmptyString(r.value)){BX.removeClass(e.parentNode,"has-error")}else if(!BX.type.isNotEmptyString(e.value)){BX.addClass(e.parentNode,"has-error")}});BX.bind(e,"input",function(){if(BX.type.isNotEmptyString(e.value)){BX.removeClass(e.parentNode,"has-error")}else if(BX.type.isNotEmptyString(r.value)){BX.addClass(e.parentNode,"has-error")}})})}}})();
-/* End */
-;; /* /bitrix/components/bitrix/sale.personal.section/templates/bootstrap_v4/bitrix/main.profile/.default/script.min.js?1771265264635*/
-
-//# sourceMappingURL=page_2f98200289a7cf6316c3ddbfec784631.map.js

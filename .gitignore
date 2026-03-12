@@ -1,5 +1,23 @@
 # Local dumps
 dump.sql
+*.sql.gz
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Runtime logs / caches (must not be committed)
+logs/
+www/bitrix/cache/
+www/bitrix/stack_cache/
+www/bitrix/site_checker_*.log
+www/bitrix/modules/*.log
+
+# Large supplier CSV exports (keep small demo files committed explicitly)
+www/amtel_club_*.csv
+www/brinex_*.csv
+www/lba_moto_*.csv
+
 www/upload/mf_sync_src/
 www/upload/resize_cache/iblock/
 www/upload/iblock/
