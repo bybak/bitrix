@@ -632,6 +632,77 @@ function recalcBasePriceFromAvailableStores(int $productId, array $storeToGroup)
 	return $min;
 }
 
+/**
+ * Batch recalc helper: compute min BASE price for multiple products using SQL joins.
+ * This is much faster than calling CPrice/CCatalogStoreProduct per row.
+ *
+ * Returns map: productId => minComputedPrice
+ */
+function recalcBasePricesSql(array $productIds, array $storeToGroup): array
+{
+	$out = [];
+	$conn = mf_supplier_stock_log_conn(); // Application::getConnection()
+	if (!$conn) return $out;
+	if (empty($productIds) || empty($storeToGroup)) return $out;
+
+	$parts = [];
+	foreach ($storeToGroup as $storeId => $groupId)
+	{
+		$storeId = (int)$storeId;
+		$groupId = (int)$groupId;
+		if ($storeId <= 0 || $groupId <= 0) continue;
+		$markup = (float)getStoreMarkupPct($storeId);
+		if (!is_finite($markup)) $markup = 0.0;
+		$markupSql = str_replace(',', '.', (string)round($markup, 6));
+		$parts[] = "SELECT {$storeId} AS STORE_ID, {$groupId} AS GID, {$markupSql} AS MARKUP";
+	}
+	if (empty($parts)) return $out;
+	$mapSql = '(' . implode(' UNION ALL ', $parts) . ')';
+
+	$ids = [];
+	foreach ($productIds as $pid)
+	{
+		$pid = (int)$pid;
+		if ($pid > 0) $ids[$pid] = true;
+	}
+	$ids = array_keys($ids);
+	if (empty($ids)) return $out;
+
+	$chunkSize = 800;
+	for ($i = 0; $i < count($ids); $i += $chunkSize)
+	{
+		$chunk = array_slice($ids, $i, $chunkSize);
+		$in = implode(',', array_map('intval', $chunk));
+		if ($in === '') continue;
+
+		$sql = "
+SELECT
+  sp.PRODUCT_ID AS PID,
+  MIN(p.PRICE * (1 + (m.MARKUP / 100))) AS MIN_PRICE
+FROM b_catalog_store_product sp
+INNER JOIN {$mapSql} m ON m.STORE_ID = sp.STORE_ID
+INNER JOIN b_catalog_price p ON p.PRODUCT_ID = sp.PRODUCT_ID AND p.CATALOG_GROUP_ID = m.GID
+WHERE sp.PRODUCT_ID IN ({$in})
+  AND sp.AMOUNT > 0
+  AND p.PRICE > 0
+GROUP BY sp.PRODUCT_ID
+";
+
+		$rs = $conn->query($sql);
+		while ($r = $rs->fetch())
+		{
+			$pid = (int)($r['PID'] ?? $r['pid'] ?? 0);
+			$min = (float)($r['MIN_PRICE'] ?? $r['min_price'] ?? 0);
+			if ($pid > 0 && $min > 0)
+			{
+				$out[$pid] = $min;
+			}
+		}
+	}
+
+	return $out;
+}
+
 function ensureMissingHl(bool $create): ?array
 {
 	// Highload-block for "ненайденные товары" (для дальнейшей обработки в админке).
@@ -895,6 +966,7 @@ try
 	$errors = 0;
 	$zeroedMissing = 0;
 	$seenProducts = [];
+	$recalcBaseProducts = [];
 	$errorItems = [];
 	$errorItemsSet = [];
 	$notFoundItems = [];
@@ -981,14 +1053,11 @@ try
 			if ($price !== null && $price > 0 && $usePrice)
 			{
 				upsertPrice($productId, $priceGroupId, $price);
-				if ($recalcBase)
-				{
-					$min = recalcBasePriceFromAvailableStores($productId, $storeToGroup);
-					if ($min !== null)
-					{
-						setBasePrice($productId, $min);
-					}
-				}
+			}
+			// Defer BASE recalculation until the end (much faster on large files).
+			if ($usePrice && $recalcBase)
+			{
+				$recalcBaseProducts[$productId] = true;
 			}
 			$updated++;
 		}
@@ -1062,12 +1131,68 @@ try
 					'QUANTITY_TRACE' => 'Y',
 					'CAN_BUY_ZERO' => 'N',
 				]);
+				if ($usePrice && $recalcBase)
+				{
+					$recalcBaseProducts[$pid] = true;
+				}
 				$zeroedMissing++;
 			}
 			catch (Throwable $e)
 			{
 				$errors++;
 			}
+		}
+	}
+
+	// Recalculate BASE price once, after all updates (and sync-missing zeroing) are done.
+	// This is dramatically faster than recalculating per CSV row on large suppliers.
+	if ($apply && !$dry && $usePrice && $recalcBase && !empty($recalcBaseProducts))
+	{
+		$recalcIds = array_keys($recalcBaseProducts);
+		$done = 0;
+		$totalRecalc = count($recalcIds);
+		out("RECALC_BASE_POST: products=$totalRecalc");
+
+		$minMap = [];
+		try
+		{
+			$minMap = recalcBasePricesSql($recalcIds, $storeToGroup);
+		}
+		catch (Throwable $e)
+		{
+			$minMap = [];
+		}
+
+		if (!empty($minMap))
+		{
+			foreach ($minMap as $pid => $min)
+			{
+				setBasePrice((int)$pid, (float)$min);
+				$done++;
+				if (($done % 500) === 0)
+				{
+					mf_progress('BASE', mf_pct((float)$done, (float)$totalRecalc), "done=$done of $totalRecalc");
+				}
+			}
+			mf_progressDone();
+		}
+		else
+		{
+			// Fallback: slower per-product recalc (should not happen on MySQL).
+			foreach ($recalcIds as $pid)
+			{
+				$min = recalcBasePriceFromAvailableStores((int)$pid, $storeToGroup);
+				if ($min !== null)
+				{
+					setBasePrice((int)$pid, (float)$min);
+				}
+				$done++;
+				if (($done % 200) === 0)
+				{
+					mf_progress('BASE', mf_pct((float)$done, (float)$totalRecalc), "done=$done of $totalRecalc (fallback)");
+				}
+			}
+			mf_progressDone();
 		}
 	}
 
