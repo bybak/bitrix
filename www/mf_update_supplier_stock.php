@@ -27,6 +27,10 @@
  *   --apply / --dry-run
  *   --price=Y|N        (по умолчанию N)
  *   --recalc-base=Y|N  (по умолчанию Y, если --price=Y)
+ *   --save-missing=Y|N (по умолчанию Y) — писать ли "ненайденные" в HL mf_stock_import_missing
+ *   --brand-dict=Y|N   (по умолчанию N) — каноникализация бренда через mf_brand_dict.php (ускоряет матчинг/уменьшает notFound)
+ *   --ensure-indexes=Y|N (по умолчанию N) — попытаться создать полезные индексы (выполнять один раз, может блокировать таблицы)
+ *   --fast-product-update=Y|N (по умолчанию Y) — откладывать обновление QUANTITY/AVAILABLE и записывать пачкой в конце
  */
 
 $_SERVER["DOCUMENT_ROOT"] = __DIR__;
@@ -103,6 +107,13 @@ function mf_toUtf8($v, string $fromEncoding): string
 	}
 
 	return $s;
+}
+
+function mf_bool(string $v, string $default = 'N'): bool
+{
+	$v = strtoupper(trim($v));
+	if ($v === '') $v = strtoupper(trim($default));
+	return ($v === 'Y' || $v === '1' || $v === 'YES' || $v === 'TRUE');
 }
 
 /**
@@ -258,6 +269,59 @@ function mf_sql_dt(?float $ts = null): string
 	return date('Y-m-d H:i:s', (int)$ts);
 }
 
+function mf_try_ensure_indexes(bool $apply): void
+{
+	if (!$apply) return;
+
+	$conn = mf_supplier_stock_log_conn();
+	if (!$conn) return;
+
+	// MySQL-only.
+	$driver = method_exists($conn, 'getType') ? (string)$conn->getType() : '';
+	if ($driver !== '' && stripos($driver, 'mysql') === false) return;
+
+	// 1) Ensure unique pair (PRODUCT_ID, STORE_ID) in b_catalog_store_product
+	// This prevents accidental duplicates and speeds up lookups.
+	try
+	{
+		$idx = $conn->query("SHOW INDEX FROM b_catalog_store_product WHERE Key_name='UX_MF_STORE_PRODUCT_PAIR'")->fetch();
+		if (!$idx)
+		{
+			// Only create if there are no duplicates (safe guard).
+			$dup = $conn->query("
+				SELECT 1
+				FROM b_catalog_store_product
+				GROUP BY PRODUCT_ID, STORE_ID
+				HAVING COUNT(*) > 1
+				LIMIT 1
+			")->fetch();
+			if (!$dup)
+			{
+				$conn->queryExecute("ALTER TABLE b_catalog_store_product ADD UNIQUE KEY UX_MF_STORE_PRODUCT_PAIR (PRODUCT_ID, STORE_ID)");
+			}
+		}
+	}
+	catch (Throwable $e)
+	{
+		// ignore (best-effort)
+	}
+
+	// 2) Speed up mf_stock_import_missing upserts:
+	// add unique index (UF_WAREHOUSE_XML_ID, UF_UNIQ_KEY) with prefix lengths (TEXT columns).
+	try
+	{
+		$idx = $conn->query("SHOW INDEX FROM mf_stock_import_missing WHERE Key_name='UX_MF_MISSING_WAREHOUSE_UNIQ'")->fetch();
+		if (!$idx)
+		{
+			$conn->queryExecute("ALTER TABLE mf_stock_import_missing ADD UNIQUE KEY UX_MF_MISSING_WAREHOUSE_UNIQ (UF_WAREHOUSE_XML_ID(64), UF_UNIQ_KEY(128))");
+		}
+	}
+	catch (Throwable $e)
+	{
+		// ignore
+	}
+}
+
 function mf_pct(float $done, float $total): float
 {
 	if ($total <= 0) return 0.0;
@@ -316,6 +380,81 @@ function makeUniqKey(string $articleNorm, string $brandNorm): string
 	$brandNorm = trim($brandNorm);
 	if ($brandNorm === '') $brandNorm = 'UNKNOWNBRAND';
 	return $articleNorm . '_' . $brandNorm;
+}
+
+function mf_iblock4_property_id(string $code): int
+{
+	static $cache = null;
+	if (!is_array($cache))
+	{
+		$cache = [];
+	}
+	$code = trim($code);
+	if ($code === '') return 0;
+	if (isset($cache[$code])) return (int)$cache[$code];
+
+	$conn = mf_supplier_stock_log_conn();
+	if (!$conn)
+	{
+		$cache[$code] = 0;
+		return 0;
+	}
+
+	try
+	{
+		$h = $conn->getSqlHelper();
+		$codeSql = $h->forSql($code);
+		$r = $conn->query("SELECT ID FROM b_iblock_property WHERE IBLOCK_ID=4 AND CODE='{$codeSql}' LIMIT 1")->fetch();
+		$id = (int)($r['ID'] ?? 0);
+		$cache[$code] = $id;
+		return $id;
+	}
+	catch (Throwable $e)
+	{
+		$cache[$code] = 0;
+		return 0;
+	}
+}
+
+function findCanonicalProductIdByUniqKey(int $iblockId, string $uniqKey): ?int
+{
+	$iblockId = (int)$iblockId;
+	$uniqKey = trim((string)$uniqKey);
+	if ($iblockId <= 0 || $uniqKey === '') return null;
+
+	$conn = mf_supplier_stock_log_conn();
+	if (!$conn) return null;
+
+	$propUniq = mf_iblock4_property_id('MF_UNIQ_KEY');
+	$propRedir = mf_iblock4_property_id('MF_IS_REDIRECT');
+	if ($propUniq <= 0 || $propRedir <= 0) return null;
+
+	try
+	{
+		$h = $conn->getSqlHelper();
+		$keySql = $h->forSql($uniqKey);
+		$sql = "
+SELECT e.ID
+FROM b_iblock_element e
+INNER JOIN b_iblock_element_property pkey
+  ON pkey.IBLOCK_ELEMENT_ID = e.ID
+ AND pkey.IBLOCK_PROPERTY_ID = {$propUniq}
+ AND pkey.VALUE = '{$keySql}'
+LEFT JOIN b_iblock_element_property pred
+  ON pred.IBLOCK_ELEMENT_ID = e.ID
+ AND pred.IBLOCK_PROPERTY_ID = {$propRedir}
+WHERE e.IBLOCK_ID = {$iblockId}
+  AND (pred.VALUE IS NULL OR pred.VALUE <> 'Y')
+LIMIT 1
+";
+		$r = $conn->query($sql)->fetch();
+		$id = (int)($r['ID'] ?? 0);
+		return $id > 0 ? $id : null;
+	}
+	catch (Throwable $e)
+	{
+		return null;
+	}
 }
 
 function findStoreIdByXmlId(string $xmlId): ?int
@@ -442,7 +581,7 @@ function getOrCreateStoreByCode(string $warehouseCode, string $warehouseTitle, b
 	return [(int)$res->getId(), $xmlId];
 }
 
-function getOrCreatePriceGroupIdByStoreXmlId(string $storeXmlId, string $titleFallback): int
+function getOrCreatePriceGroupIdByStoreXmlId(string $storeXmlId, string $titleFallback, bool $create): int
 {
 	$name = mb_strtoupper(trim($storeXmlId));
 	if ($name === '') throw new RuntimeException('Пустой storeXmlId');
@@ -451,6 +590,11 @@ function getOrCreatePriceGroupIdByStoreXmlId(string $storeXmlId, string $titleFa
 	if ($r = $rs->Fetch())
 	{
 		return (int)$r['ID'];
+	}
+
+	if (!$create)
+	{
+		return 0;
 	}
 
 	$cg = new CCatalogGroup();
@@ -472,7 +616,7 @@ function getOrCreatePriceGroupIdByStoreXmlId(string $storeXmlId, string $titleFa
 	return (int)$id;
 }
 
-function getSupplierStoreToPriceGroupMap(): array
+function getSupplierStoreToPriceGroupMap(bool $create): array
 {
 	$map = []; // storeId => priceGroupId
 	$rs = CCatalogStore::GetList(['ID' => 'ASC'], ['%XML_ID' => 'SUPPLIER_'], false, false, ['ID', 'XML_ID', 'TITLE']);
@@ -481,7 +625,11 @@ function getSupplierStoreToPriceGroupMap(): array
 		$storeId = (int)$s['ID'];
 		$xmlId = (string)($s['XML_ID'] ?? '');
 		if ($storeId <= 0 || $xmlId === '') continue;
-		$map[$storeId] = getOrCreatePriceGroupIdByStoreXmlId($xmlId, (string)($s['TITLE'] ?? $xmlId));
+		$gid = getOrCreatePriceGroupIdByStoreXmlId($xmlId, (string)($s['TITLE'] ?? $xmlId), $create);
+		if ($gid > 0)
+		{
+			$map[$storeId] = $gid;
+		}
 	}
 	return $map;
 }
@@ -517,6 +665,14 @@ function findCanonicalProductIdByArticleBrand(int $iblockId, string $articleNorm
 
 	// If brand is provided in CSV, do NOT fallback to article-only.
 	$brandProvided = ($brandNorm !== '' || $brandRaw !== '');
+
+	// Fast path: exact match by MF_UNIQ_KEY (indexable) instead of LIKE searches.
+	if ($brandProvided && $brandNorm !== '')
+	{
+		$uniqKey = makeUniqKey($articleNorm, $brandNorm);
+		$fast = findCanonicalProductIdByUniqKey($iblockId, $uniqKey);
+		if ($fast && $fast > 0) return $fast;
+	}
 
 	// 1) Try brand_norm contains brandNorm (handles existing "грязные" brand_norm that still include YAMAHA...)
 	if ($brandNorm !== '')
@@ -678,7 +834,7 @@ function recalcBasePricesSql(array $productIds, array $storeToGroup): array
 		$sql = "
 SELECT
   sp.PRODUCT_ID AS PID,
-  MIN(p.PRICE * (1 + (m.MARKUP / 100))) AS MIN_PRICE
+  MIN(ROUND(p.PRICE * (1 + (m.MARKUP / 100)), 2)) AS MIN_PRICE
 FROM b_catalog_store_product sp
 INNER JOIN {$mapSql} m ON m.STORE_ID = sp.STORE_ID
 INNER JOIN b_catalog_price p ON p.PRODUCT_ID = sp.PRODUCT_ID AND p.CATALOG_GROUP_ID = m.GID
@@ -817,6 +973,110 @@ function deleteMissing(?array $hl, string $warehouseXmlId, string $uniqKey): voi
 	}
 }
 
+function mf_missing_bulk_upsert(\Bitrix\Main\DB\Connection $conn, array $rows): void
+{
+	if (empty($rows)) return;
+	$h = $conn->getSqlHelper();
+	$now = date('Y-m-d H:i:s');
+	$vals = [];
+	foreach ($rows as $r)
+	{
+		$vals[] = '('
+			. "'" . $h->forSql((string)$r['UF_WAREHOUSE_XML_ID']) . "',"
+			. "'" . $h->forSql((string)$r['UF_UNIQ_KEY']) . "',"
+			. "'" . $h->forSql((string)($r['UF_WAREHOUSE_TITLE'] ?? '')) . "',"
+			. "'" . $h->forSql((string)($r['UF_BRAND'] ?? '')) . "',"
+			. "'" . $h->forSql((string)($r['UF_ARTICLE'] ?? '')) . "',"
+			. (float)($r['UF_QTY'] ?? 0) . ','
+			. (float)($r['UF_PRICE'] ?? 0) . ','
+			. "'" . $h->forSql($now) . "',"
+			. "'" . $h->forSql($now) . "'"
+			. ')';
+	}
+
+	$sql = "INSERT INTO mf_stock_import_missing
+		(UF_WAREHOUSE_XML_ID, UF_UNIQ_KEY, UF_WAREHOUSE_TITLE, UF_BRAND, UF_ARTICLE, UF_QTY, UF_PRICE, UF_LAST_SEEN, UF_FIRST_SEEN)
+		VALUES " . implode(',', $vals) . "
+		ON DUPLICATE KEY UPDATE
+			UF_WAREHOUSE_TITLE = VALUES(UF_WAREHOUSE_TITLE),
+			UF_BRAND = VALUES(UF_BRAND),
+			UF_ARTICLE = VALUES(UF_ARTICLE),
+			UF_QTY = VALUES(UF_QTY),
+			UF_PRICE = VALUES(UF_PRICE),
+			UF_LAST_SEEN = VALUES(UF_LAST_SEEN)";
+
+	$conn->queryExecute($sql);
+}
+
+function mf_missing_bulk_delete(\Bitrix\Main\DB\Connection $conn, string $warehouseXmlId, array $uniqKeys): void
+{
+	$warehouseXmlId = trim($warehouseXmlId);
+	if ($warehouseXmlId === '' || empty($uniqKeys)) return;
+	$h = $conn->getSqlHelper();
+	$wx = "'" . $h->forSql($warehouseXmlId) . "'";
+
+	$keys = [];
+	foreach ($uniqKeys as $k)
+	{
+		$k = trim((string)$k);
+		if ($k === '') continue;
+		$keys[$k] = true;
+	}
+	$keys = array_keys($keys);
+	if (empty($keys)) return;
+
+	$chunk = 400;
+	for ($i = 0; $i < count($keys); $i += $chunk)
+	{
+		$part = array_slice($keys, $i, $chunk);
+		$in = implode(',', array_map(static fn($s) => "'" . $h->forSql((string)$s) . "'", $part));
+		if ($in === '') continue;
+		$conn->queryExecute("DELETE FROM mf_stock_import_missing WHERE UF_WAREHOUSE_XML_ID={$wx} AND UF_UNIQ_KEY IN ({$in})");
+	}
+}
+
+function mf_fast_update_catalog_product_qty(\Bitrix\Main\DB\Connection $conn, array $productIdToQty): void
+{
+	if (empty($productIdToQty)) return;
+	$ids = [];
+	foreach ($productIdToQty as $pid => $qty)
+	{
+		$pid = (int)$pid;
+		if ($pid > 0) $ids[$pid] = true;
+	}
+	$ids = array_keys($ids);
+	if (empty($ids)) return;
+
+	$chunk = 300;
+	for ($i = 0; $i < count($ids); $i += $chunk)
+	{
+		$part = array_slice($ids, $i, $chunk);
+		$caseQty = "CASE ID ";
+		$caseAvail = "CASE ID ";
+		foreach ($part as $pid)
+		{
+			$q = (float)($productIdToQty[$pid] ?? 0);
+			if ($q < 0) $q = 0;
+			$caseQty .= " WHEN {$pid} THEN {$q} ";
+			$caseAvail .= " WHEN {$pid} THEN " . ($q > 0 ? "'Y'" : "'N'") . " ";
+		}
+		$caseQty .= " ELSE QUANTITY END";
+		$caseAvail .= " ELSE AVAILABLE END";
+		$in = implode(',', array_map('intval', $part));
+		if ($in === '') continue;
+
+		$conn->queryExecute("
+			UPDATE b_catalog_product
+			SET
+				QUANTITY = {$caseQty},
+				AVAILABLE = {$caseAvail},
+				QUANTITY_TRACE = 'Y',
+				CAN_BUY_ZERO = 'N'
+			WHERE ID IN ({$in})
+		");
+	}
+}
+
 try
 {
 	$scriptStartTs = microtime(true);
@@ -830,9 +1090,13 @@ try
 	$encoding = arg('--encoding') ?: 'cp1251';
 	$apply = flag('--apply');
 	$dry = flag('--dry-run') || !$apply;
-	$usePrice = (arg('--price') ?: 'N') === 'Y';
-	$recalcBase = (arg('--recalc-base') ?: 'Y') === 'Y';
-	$syncMissing = (arg('--sync-missing') ?: 'Y') === 'Y';
+	$usePrice = mf_bool((string)(arg('--price') ?: ''), 'N');
+	$recalcBase = mf_bool((string)(arg('--recalc-base') ?: ''), 'Y');
+	$syncMissing = mf_bool((string)(arg('--sync-missing') ?: ''), 'Y');
+	$saveMissing = mf_bool((string)(arg('--save-missing') ?: ''), 'Y');
+	$useBrandDict = mf_bool((string)(arg('--brand-dict') ?: ''), 'N');
+	$ensureIndexes = mf_bool((string)(arg('--ensure-indexes') ?: ''), 'N');
+	$fastProductUpdate = mf_bool((string)(arg('--fast-product-update') ?: ''), 'Y');
 
 	// --- Run log (best-effort; script must work even if DB log fails) ---
 	$runLogId = 0;
@@ -891,6 +1155,15 @@ try
 	out("PRICE_UPDATE: " . ($usePrice ? 'Y' : 'N'));
 	out("RECALC_BASE: " . (($usePrice && $recalcBase) ? 'Y' : 'N'));
 	out("SYNC_MISSING: " . ($syncMissing ? 'Y' : 'N'));
+	out("SAVE_MISSING: " . ($saveMissing ? 'Y' : 'N'));
+	out("BRAND_DICT: " . ($useBrandDict ? 'Y' : 'N'));
+	out("ENSURE_INDEXES: " . ($ensureIndexes ? 'Y' : 'N'));
+	out("FAST_PRODUCT_UPDATE: " . ($fastProductUpdate ? 'Y' : 'N'));
+
+	if ($ensureIndexes)
+	{
+		mf_try_ensure_indexes($apply);
+	}
 
 	[$storeId, $storeXmlId] = getOrCreateStoreByCode($warehouseCode, $warehouseTitle, $apply);
 	if ($storeId <= 0)
@@ -916,7 +1189,8 @@ try
 		out("STORE_MARKUP_PCT: " . $storeMarkupPct);
 	}
 
-	$storeToGroup = $usePrice ? getSupplierStoreToPriceGroupMap() : [];
+	// IMPORTANT: in dry-run we must not create new price groups.
+	$storeToGroup = $usePrice ? getSupplierStoreToPriceGroupMap($apply) : [];
 	$priceGroupId = ($usePrice && $storeId > 0) ? (int)($storeToGroup[$storeId] ?? 0) : 0;
 	if ($usePrice && $priceGroupId <= 0)
 	{
@@ -959,13 +1233,14 @@ try
 		throw new RuntimeException("Не найдены колонки Артикул/Остаток");
 	}
 
-	$missingHl = ensureMissingHl($apply);
+	$missingHl = ($saveMissing ? ensureMissingHl($apply) : null);
 	$total = 0;
 	$updated = 0;
 	$notFound = 0;
 	$errors = 0;
 	$zeroedMissing = 0;
 	$seenProducts = [];
+	$touchedProducts = [];
 	$recalcBaseProducts = [];
 	$errorItems = [];
 	$errorItemsSet = [];
@@ -974,6 +1249,20 @@ try
 	$progressEvery = 200;
 	$lastProgressAt = microtime(true);
 	$loopStartTs = microtime(true);
+
+	// Prepare optional brand dictionary once (do NOT require inside the loop).
+	$brandDictReady = false;
+	if ($useBrandDict && is_file(__DIR__ . '/mf_brand_dict.php'))
+	{
+		require_once __DIR__ . '/mf_brand_dict.php';
+		$brandDictReady = function_exists('mf_brand_find');
+	}
+
+	$missingBuf = [];
+	$missingBufMax = 500;
+	$missingDeleteBuf = [];
+	$missingDeleteBufMax = 800;
+	$conn = mf_supplier_stock_log_conn();
 
 	while (($row = fgetcsv($h, 0, ';')) !== false)
 	{
@@ -988,6 +1277,11 @@ try
 
 		$articleNorm = normalizeArticle($artRaw);
 		if ($articleNorm === '') continue;
+		if ($useBrandDict && $brandDictReady && $brandRaw !== '')
+		{
+			$canon = (string)mf_brand_find($brandRaw, true);
+			if ($canon !== '') $brandRaw = $canon;
+		}
 		$brandNorm = $brandRaw !== '' ? normalizeBrand($brandRaw) : '';
 		$uniqKey = makeUniqKey($articleNorm, $brandNorm);
 
@@ -1012,18 +1306,22 @@ try
 				$notFoundItemsSet[$keyNF] = true;
 				if (count($notFoundItems) < 5000) $notFoundItems[] = $keyNF;
 			}
-			if (!$dry && $storeXmlId !== '')
+			if ($saveMissing && !$dry && $storeXmlId !== '' && $conn)
 			{
-				upsertMissing(
-					$missingHl,
-					$storeXmlId,
-					($warehouseTitle !== '' ? $warehouseTitle : $warehouseCode),
-					$uniqKey,
-					$brandRaw,
-					$artRaw,
-					$qty,
-					($priceRaw !== null ? (float)$priceRaw : 0.0)
-				);
+				$missingBuf[] = [
+					'UF_WAREHOUSE_XML_ID' => $storeXmlId,
+					'UF_WAREHOUSE_TITLE' => ($warehouseTitle !== '' ? $warehouseTitle : $warehouseCode),
+					'UF_UNIQ_KEY' => $uniqKey,
+					'UF_BRAND' => $brandRaw,
+					'UF_ARTICLE' => $artRaw,
+					'UF_QTY' => $qty,
+					'UF_PRICE' => ($priceRaw !== null ? (float)$priceRaw : 0.0),
+				];
+				if (count($missingBuf) >= $missingBufMax)
+				{
+					mf_missing_bulk_upsert($conn, $missingBuf);
+					$missingBuf = [];
+				}
 			}
 			continue;
 		}
@@ -1039,16 +1337,15 @@ try
 		try
 		{
 			upsertStoreAmount($productId, $storeId, $qty);
-			$sum = sumAllStoresAmount($productId);
-			CCatalogProduct::Update($productId, [
-				'QUANTITY' => $sum,
-				'AVAILABLE' => ($sum > 0) ? 'Y' : 'N',
-				'QUANTITY_TRACE' => 'Y',
-				'CAN_BUY_ZERO' => 'N',
-			]);
-			if ($storeXmlId !== '')
+			$touchedProducts[$productId] = true;
+			if ($saveMissing && $storeXmlId !== '' && $conn)
 			{
-				deleteMissing($missingHl, $storeXmlId, $uniqKey);
+				$missingDeleteBuf[] = $uniqKey;
+				if (count($missingDeleteBuf) >= $missingDeleteBufMax)
+				{
+					mf_missing_bulk_delete($conn, $storeXmlId, $missingDeleteBuf);
+					$missingDeleteBuf = [];
+				}
 			}
 			if ($price !== null && $price > 0 && $usePrice)
 			{
@@ -1104,6 +1401,18 @@ try
 	fclose($h);
 	mf_progressDone();
 
+	// Flush missing buffers
+	if ($conn && !empty($missingBuf))
+	{
+		mf_missing_bulk_upsert($conn, $missingBuf);
+		$missingBuf = [];
+	}
+	if ($conn && $saveMissing && $storeXmlId !== '' && !empty($missingDeleteBuf))
+	{
+		mf_missing_bulk_delete($conn, $storeXmlId, $missingDeleteBuf);
+		$missingDeleteBuf = [];
+	}
+
 	// If a product is missing in the supplier file, treat it as out of stock on this warehouse.
 	// This prevents stale quantities from keeping items "in stock".
 	if ($apply && !$dry && $syncMissing && $storeId > 0)
@@ -1124,13 +1433,7 @@ try
 			try
 			{
 				CCatalogStoreProduct::Update((int)$sp['ID'], ['AMOUNT' => 0]);
-				$sum = sumAllStoresAmount($pid);
-				CCatalogProduct::Update($pid, [
-					'QUANTITY' => $sum,
-					'AVAILABLE' => ($sum > 0) ? 'Y' : 'N',
-					'QUANTITY_TRACE' => 'Y',
-					'CAN_BUY_ZERO' => 'N',
-				]);
+				$touchedProducts[$pid] = true;
 				if ($usePrice && $recalcBase)
 				{
 					$recalcBaseProducts[$pid] = true;
@@ -1141,6 +1444,40 @@ try
 			{
 				$errors++;
 			}
+		}
+	}
+
+	// Batch update QUANTITY/AVAILABLE after all store updates.
+	if ($apply && !$dry && $fastProductUpdate && !empty($touchedProducts))
+	{
+		$ids = array_keys($touchedProducts);
+		$totalQty = count($ids);
+		out("RECALC_QTY_POST: products=$totalQty");
+
+		$qtyMap = array_fill_keys($ids, 0.0);
+		if ($conn)
+		{
+			$chunk = 800;
+			for ($i = 0; $i < count($ids); $i += $chunk)
+			{
+				$part = array_slice($ids, $i, $chunk);
+				$in = implode(',', array_map('intval', $part));
+				if ($in === '') continue;
+				$rs = $conn->query("
+					SELECT PRODUCT_ID, SUM(AMOUNT) AS QTY
+					FROM b_catalog_store_product
+					WHERE PRODUCT_ID IN ({$in})
+					GROUP BY PRODUCT_ID
+				");
+				while ($r = $rs->fetch())
+				{
+					$pid = (int)($r['PRODUCT_ID'] ?? 0);
+					$q = (float)($r['QTY'] ?? 0);
+					if ($pid > 0) $qtyMap[$pid] = max(0.0, $q);
+				}
+			}
+
+			mf_fast_update_catalog_product_qty($conn, $qtyMap);
 		}
 	}
 
