@@ -41,6 +41,20 @@ function mf_sl_escape(string $s): string
 		: htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function mf_sl_fmt_duration($ms): string
+{
+	if ($ms === null) return '';
+	$ms = (int)$ms;
+	if ($ms <= 0) return '';
+	if ($ms < 1000) return '<1s';
+
+	$sec = intdiv($ms, 1000);
+	$h = intdiv($sec, 3600);
+	$m = intdiv($sec % 3600, 60);
+	$s = $sec % 60;
+	return sprintf('%d:%02d:%02d', $h, $m, $s);
+}
+
 function mf_sl_table_exists(): bool
 {
 	try
@@ -112,7 +126,7 @@ if ($isView)
 	$kv('Статус', $row['UF_STATUS'] ?? '');
 	$kv('Started', $row['UF_STARTED_AT'] ?? '');
 	$kv('Finished', $row['UF_FINISHED_AT'] ?? '');
-	$kv('Duration, ms', $row['UF_DURATION_MS'] ?? '');
+	$kv('Duration', mf_sl_fmt_duration($row['UF_DURATION_MS'] ?? null));
 	$kv('Склад (код)', $row['UF_WAREHOUSE_CODE'] ?? '');
 	$kv('Склад (название)', $row['UF_WAREHOUSE_TITLE'] ?? '');
 	$kv('STORE_ID', $row['UF_STORE_ID'] ?? '');
@@ -267,7 +281,7 @@ catch (\Throwable $e)
 $lAdmin->AddHeaders([
 	['id' => 'ID', 'content' => 'ID', 'default' => true, 'sort' => 'ID'],
 	['id' => 'UF_STARTED_AT', 'content' => 'Started', 'default' => true, 'sort' => 'UF_STARTED_AT'],
-	['id' => 'UF_DURATION_MS', 'content' => 'ms', 'default' => true, 'sort' => 'UF_DURATION_MS'],
+	['id' => 'UF_DURATION_MS', 'content' => 'Duration', 'default' => true, 'sort' => 'UF_DURATION_MS'],
 	['id' => 'UF_STATUS', 'content' => 'Status', 'default' => true, 'sort' => 'UF_STATUS'],
 	['id' => 'UF_WAREHOUSE_CODE', 'content' => 'Warehouse', 'default' => true, 'sort' => 'UF_WAREHOUSE_CODE'],
 	['id' => 'UF_STORE_XML_ID', 'content' => 'Store XML_ID', 'default' => false],
@@ -292,9 +306,11 @@ foreach ($rows as $r)
 
 	$file = (string)($r['UF_INPUT_FILE'] ?? '');
 	$fileShort = $file !== '' ? basename($file) : '';
+	$dur = mf_sl_fmt_duration($r['UF_DURATION_MS'] ?? null);
 
 	$row->AddViewField('ID', '<a href="' . mf_sl_escape($viewUrl) . '">' . (int)$id . '</a>');
 	$row->AddViewField('UF_INPUT_FILE', mf_sl_escape($fileShort));
+	$row->AddViewField('UF_DURATION_MS', mf_sl_escape($dur));
 
 	$actions = [
 		[
