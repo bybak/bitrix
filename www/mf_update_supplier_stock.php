@@ -10,7 +10,10 @@
  *   --supplier=SupplierA (используется как warehouse-code и дефолтное имя)
  *
  * CSV формат (рекомендуется):
- *   Бренд;Артикул;Остаток;Цена
+ *   Бренд;Артикул;Название;Остаток;Цена
+ *
+ * Колонка "Название/Наименование" — опциональна: используется только для записи в "ненайденные товары"
+ * (mf_stock_import_missing), чтобы потом проще создавать товары-заглушки в админке.
  *
  * Важно про цену:
  * - Для каждого поставщика создаётся свой тип цены (CATALOG_GROUP) и обновляется туда.
@@ -918,6 +921,7 @@ function ensureMissingHl(bool $create): ?array
 	$ensureUf('UF_UNIQ_KEY', 'string', ['ru' => 'Ключ (бренд+артикул)', 'en' => 'Key (brand+article)'], 120);
 	$ensureUf('UF_BRAND', 'string', ['ru' => 'Бренд', 'en' => 'Brand'], 130);
 	$ensureUf('UF_ARTICLE', 'string', ['ru' => 'Артикул', 'en' => 'Article'], 140);
+	$ensureUf('UF_NAME', 'string', ['ru' => 'Название товара (из CSV)', 'en' => 'Product name (from CSV)'], 145);
 	$ensureUf('UF_QTY', 'double', ['ru' => 'Остаток', 'en' => 'Stock'], 150);
 	$ensureUf('UF_PRICE', 'double', ['ru' => 'Цена', 'en' => 'Price'], 160);
 	$ensureUf('UF_LAST_SEEN', 'datetime', ['ru' => 'Последнее появление', 'en' => 'Last seen'], 170);
@@ -927,7 +931,17 @@ function ensureMissingHl(bool $create): ?array
 	return ['DATA_CLASS' => $entity->getDataClass()];
 }
 
-function upsertMissing(?array $hl, string $warehouseXmlId, string $warehouseTitle, string $uniqKey, string $brand, string $article, float $qty, float $price): void
+function upsertMissing(
+	?array $hl,
+	string $warehouseXmlId,
+	string $warehouseTitle,
+	string $uniqKey,
+	string $brand,
+	string $article,
+	float $qty,
+	float $price,
+	string $name = ''
+): void
 {
 	if (!$hl) return;
 	$dataClass = $hl['DATA_CLASS'];
@@ -942,6 +956,7 @@ function upsertMissing(?array $hl, string $warehouseXmlId, string $warehouseTitl
 		'UF_UNIQ_KEY' => $uniqKey,
 		'UF_BRAND' => $brand,
 		'UF_ARTICLE' => $article,
+		'UF_NAME' => $name,
 		'UF_QTY' => $qty,
 		'UF_PRICE' => $price,
 		'UF_LAST_SEEN' => $now,
@@ -987,6 +1002,7 @@ function mf_missing_bulk_upsert(\Bitrix\Main\DB\Connection $conn, array $rows): 
 			. "'" . $h->forSql((string)($r['UF_WAREHOUSE_TITLE'] ?? '')) . "',"
 			. "'" . $h->forSql((string)($r['UF_BRAND'] ?? '')) . "',"
 			. "'" . $h->forSql((string)($r['UF_ARTICLE'] ?? '')) . "',"
+			. "'" . $h->forSql((string)($r['UF_NAME'] ?? '')) . "',"
 			. (float)($r['UF_QTY'] ?? 0) . ','
 			. (float)($r['UF_PRICE'] ?? 0) . ','
 			. "'" . $h->forSql($now) . "',"
@@ -995,12 +1011,13 @@ function mf_missing_bulk_upsert(\Bitrix\Main\DB\Connection $conn, array $rows): 
 	}
 
 	$sql = "INSERT INTO mf_stock_import_missing
-		(UF_WAREHOUSE_XML_ID, UF_UNIQ_KEY, UF_WAREHOUSE_TITLE, UF_BRAND, UF_ARTICLE, UF_QTY, UF_PRICE, UF_LAST_SEEN, UF_FIRST_SEEN)
+		(UF_WAREHOUSE_XML_ID, UF_UNIQ_KEY, UF_WAREHOUSE_TITLE, UF_BRAND, UF_ARTICLE, UF_NAME, UF_QTY, UF_PRICE, UF_LAST_SEEN, UF_FIRST_SEEN)
 		VALUES " . implode(',', $vals) . "
 		ON DUPLICATE KEY UPDATE
 			UF_WAREHOUSE_TITLE = VALUES(UF_WAREHOUSE_TITLE),
 			UF_BRAND = VALUES(UF_BRAND),
 			UF_ARTICLE = VALUES(UF_ARTICLE),
+			UF_NAME = VALUES(UF_NAME),
 			UF_QTY = VALUES(UF_QTY),
 			UF_PRICE = VALUES(UF_PRICE),
 			UF_LAST_SEEN = VALUES(UF_LAST_SEEN)";
@@ -1218,6 +1235,7 @@ try
 
 	$idxBrand = null;
 	$idxArt = null;
+	$idxName = null;
 	$idxQty = null;
 	$idxPrice = null;
 	foreach ($headers as $i => $hdr)
@@ -1225,6 +1243,7 @@ try
 		$h2 = mb_strtolower(trim($hdr));
 		if (in_array($h2, ['бренд', 'brand', 'производитель', 'manufacturer', 'vendor'], true)) $idxBrand = $i;
 		if (in_array($h2, ['артикул', 'article', 'sku'], true)) $idxArt = $i;
+		if (in_array($h2, ['название', 'наименование', 'товар', 'product', 'name', 'title'], true)) $idxName = $i;
 		if (in_array($h2, ['остаток', 'количество', 'кол-во', 'qty', 'stock'], true)) $idxQty = $i;
 		if (in_array($h2, ['цена', 'price', 'стоимость'], true)) $idxPrice = $i;
 	}
@@ -1271,6 +1290,7 @@ try
 		$brandRaw = $idxBrand !== null ? trim((string)($row[$idxBrand] ?? '')) : '';
 		// allow comments in demo CSV
 		if ($brandRaw !== '' && str_starts_with($brandRaw, '#')) continue;
+		$nameRaw = $idxName !== null ? trim((string)($row[$idxName] ?? '')) : '';
 		$artRaw = trim((string)($row[$idxArt] ?? ''));
 		if ($artRaw !== '' && str_starts_with($artRaw, '#')) continue;
 		if ($artRaw === '') continue;
@@ -1314,6 +1334,7 @@ try
 					'UF_UNIQ_KEY' => $uniqKey,
 					'UF_BRAND' => $brandRaw,
 					'UF_ARTICLE' => $artRaw,
+					'UF_NAME' => $nameRaw,
 					'UF_QTY' => $qty,
 					'UF_PRICE' => ($priceRaw !== null ? (float)$priceRaw : 0.0),
 				];

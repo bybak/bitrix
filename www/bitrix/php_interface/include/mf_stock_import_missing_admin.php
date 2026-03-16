@@ -151,6 +151,25 @@ function mf_miss_find_product_id_by_uniq_key(int $iblockId, string $uniqKey): ?i
 	return ($r && (int)$r['ID'] > 0) ? (int)$r['ID'] : null;
 }
 
+function mf_miss_has_column(\Bitrix\Main\DB\Connection $conn, string $col): bool
+{
+	static $cache = [];
+	$col = trim($col);
+	if ($col === '') return false;
+	if (array_key_exists($col, $cache)) return (bool)$cache[$col];
+	try
+	{
+		$r = $conn->query("SHOW COLUMNS FROM mf_stock_import_missing LIKE '" . $conn->getSqlHelper()->forSql($col) . "'")->fetch();
+		$cache[$col] = (bool)$r;
+		return (bool)$cache[$col];
+	}
+	catch (\Throwable $e)
+	{
+		$cache[$col] = false;
+		return false;
+	}
+}
+
 function mf_miss_find_store_row_by_xml_id(string $xmlId): ?array
 {
 	$xmlId = trim($xmlId);
@@ -347,6 +366,7 @@ if (array_key_exists('find_brand', $_GET))
 }
 
 $adminNotice = null;
+$hasNameCol = mf_miss_has_column($conn, 'UF_NAME');
 
 // AJAX: dependent dropdown for brands by warehouse (without page reload).
 // Bitrix admin list often reloads only the table via mode=list; filter controls stay unchanged.
@@ -464,6 +484,7 @@ if (($arID = $lAdmin->GroupAction()) !== false)
 
 						$brand = trim((string)($r['UF_BRAND'] ?? ''));
 						$article = trim((string)($r['UF_ARTICLE'] ?? ''));
+						$nameFromCsv = trim((string)($r['UF_NAME'] ?? ''));
 						$uniqKey = trim((string)($r['UF_UNIQ_KEY'] ?? ''));
 						$qty = (float)($r['UF_QTY'] ?? 0);
 						$rawPrice = (float)($r['UF_PRICE'] ?? 0);
@@ -514,7 +535,7 @@ if (($arID = $lAdmin->GroupAction()) !== false)
 						$brandNorm = function_exists('mf_analogs_norm_brand') ? mf_analogs_norm_brand($brand) : mb_strtoupper($brand);
 						$articleNorm = function_exists('mf_analogs_norm_article') ? mf_analogs_norm_article($article) : mb_strtoupper($article);
 
-						$name = $brand . ' ' . $article;
+						$name = ($nameFromCsv !== '' ? $nameFromCsv : ($brand . ' ' . $article));
 						$codeBase = ($brandNorm !== '' && $articleNorm !== '') ? ($brandNorm . '-' . $articleNorm) : $name;
 						$code = mf_analogs_generate_unique_code($iblockId, $codeBase);
 
@@ -623,6 +644,10 @@ $whereSql = !empty($where) ? ('WHERE ' . implode(' AND ', $where)) : '';
 $by = strtoupper((string)$oSort->getField());
 $order = strtoupper((string)$oSort->getOrder());
 $allowedSort = ['ID', 'UF_LAST_SEEN', 'UF_FIRST_SEEN', 'UF_BRAND', 'UF_ARTICLE', 'UF_QTY', 'UF_PRICE'];
+if ($hasNameCol)
+{
+	$allowedSort[] = 'UF_NAME';
+}
 if (!in_array($by, $allowedSort, true))
 {
 	$by = 'UF_LAST_SEEN';
@@ -634,21 +659,25 @@ if (!in_array($order, ['ASC', 'DESC'], true))
 
 // Keep it fast: show only last N rows.
 $limit = 500;
-$sql = "SELECT
-	ID,
-	UF_WAREHOUSE_XML_ID,
-	UF_WAREHOUSE_TITLE,
-	UF_BRAND,
-	UF_ARTICLE,
-	UF_QTY,
-	UF_PRICE,
-	UF_LAST_SEEN,
-	UF_FIRST_SEEN,
-	UF_UNIQ_KEY
-FROM mf_stock_import_missing
-$whereSql
-ORDER BY $by $order, ID DESC
-LIMIT $limit";
+$cols = [
+	'ID',
+	'UF_WAREHOUSE_XML_ID',
+	'UF_WAREHOUSE_TITLE',
+	'UF_BRAND',
+	'UF_ARTICLE',
+];
+if ($hasNameCol)
+{
+	$cols[] = 'UF_NAME';
+}
+$cols = array_merge($cols, [
+	'UF_QTY',
+	'UF_PRICE',
+	'UF_LAST_SEEN',
+	'UF_FIRST_SEEN',
+	'UF_UNIQ_KEY',
+]);
+$sql = "SELECT\n\t" . implode(",\n\t", $cols) . "\nFROM mf_stock_import_missing\n$whereSql\nORDER BY $by $order, ID DESC\nLIMIT $limit";
 
 $rows = [];
 try
@@ -728,17 +757,24 @@ catch (\Throwable $e)
 	// ignore
 }
 
-$lAdmin->AddHeaders([
+$headers = [
 	['id' => 'ID', 'content' => 'ID', 'default' => true, 'sort' => 'ID'],
 	['id' => 'UF_WAREHOUSE_XML_ID', 'content' => 'Warehouse', 'default' => true],
 	['id' => 'UF_BRAND', 'content' => 'Brand', 'default' => true, 'sort' => 'UF_BRAND'],
 	['id' => 'UF_ARTICLE', 'content' => 'Article', 'default' => true, 'sort' => 'UF_ARTICLE'],
+];
+if ($hasNameCol)
+{
+	$headers[] = ['id' => 'UF_NAME', 'content' => 'Name', 'default' => true, 'sort' => 'UF_NAME'];
+}
+$headers = array_merge($headers, [
 	['id' => 'UF_QTY', 'content' => 'Qty', 'default' => true, 'sort' => 'UF_QTY'],
 	['id' => 'UF_PRICE', 'content' => 'Price', 'default' => true, 'sort' => 'UF_PRICE'],
 	['id' => 'UF_LAST_SEEN', 'content' => 'Last seen', 'default' => true, 'sort' => 'UF_LAST_SEEN'],
 	['id' => 'UF_FIRST_SEEN', 'content' => 'First seen', 'default' => false, 'sort' => 'UF_FIRST_SEEN'],
 	['id' => 'UF_UNIQ_KEY', 'content' => 'Key', 'default' => false],
 ]);
+$lAdmin->AddHeaders($headers);
 
 foreach ($rows as $r)
 {
@@ -750,6 +786,10 @@ foreach ($rows as $r)
 	$row->AddViewField('UF_WAREHOUSE_XML_ID', mf_miss_escape((string)($r['UF_WAREHOUSE_XML_ID'] ?? '')));
 	$row->AddViewField('UF_BRAND', mf_miss_escape((string)($r['UF_BRAND'] ?? '')));
 	$row->AddViewField('UF_ARTICLE', mf_miss_escape((string)($r['UF_ARTICLE'] ?? '')));
+	if ($hasNameCol)
+	{
+		$row->AddViewField('UF_NAME', mf_miss_escape((string)($r['UF_NAME'] ?? '')));
+	}
 
 	$actions = [
 		[
