@@ -82,6 +82,70 @@ if (!function_exists('mf_mf_placeholder_img_url'))
 	}
 }
 
+// --- Local dev: hide Bitrix "site checker" admin notify --------------------
+// Some Bitrix installations show a persistent admin popup:
+// "Обнаружены ошибки в работе сайта..." (TAG=SITE_CHECKER).
+// For local development we suppress it to avoid interrupting admin workflows.
+if (!function_exists('mf_is_local_dev_host'))
+{
+	function mf_is_local_dev_host(): bool
+	{
+		$httpHost = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+		return
+			$httpHost === 'localhost'
+			|| str_starts_with($httpHost, 'localhost:')
+			|| $httpHost === '127.0.0.1'
+			|| str_starts_with($httpHost, '127.0.0.1:')
+			|| str_ends_with($httpHost, '.local')
+			|| str_ends_with($httpHost, '.test');
+	}
+}
+
+if (!function_exists('mf_admin_suppress_site_checker_notify'))
+{
+	function mf_admin_suppress_site_checker_notify(): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+		if (!mf_is_local_dev_host())
+		{
+			return;
+		}
+
+		// 1) Remove the notify record (if any).
+		if (class_exists('CAdminNotify') && method_exists('CAdminNotify', 'DeleteByTag'))
+		{
+			\CAdminNotify::DeleteByTag('SITE_CHECKER');
+		}
+
+		// 2) Keep the option in "success" state so it doesn't get re-added just because it was "N".
+		if (class_exists(\Bitrix\Main\Config\Option::class))
+		{
+			try
+			{
+				\Bitrix\Main\Config\Option::set('main', 'site_checker_success', 'Y');
+			}
+			catch (\Throwable $e)
+			{
+				// ignore in local dev
+			}
+		}
+	}
+}
+
+// Remove early (before page output) and also at the end of the request,
+// so even if some agent recreates it during the hit, it won't persist.
+if (defined('ADMIN_SECTION') && ADMIN_SECTION === true && mf_is_local_dev_host())
+{
+	mf_admin_suppress_site_checker_notify();
+	if (class_exists(\Bitrix\Main\EventManager::class))
+	{
+		\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnEpilog', 'mf_admin_suppress_site_checker_notify');
+	}
+}
+
 if (!function_exists('mf_mf_section_img_url'))
 {
 	function mf_mf_section_img_url(int $sectionId): string
@@ -216,8 +280,8 @@ if (!function_exists('mf_admin_menu_missing_stock_items'))
 			return;
 		}
 
-		// Admin list expects numeric ENTITY_ID (HL block ID).
-		$url = 'highloadblock_rows_list.php?lang=ru&ENTITY_ID=' . $hlId;
+		// Custom page with convenient filters (warehouse + brand).
+		$url = 'mf_stock_import_missing.php?lang=ru';
 
 		$parentMenu =
 			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
@@ -234,6 +298,8 @@ if (!function_exists('mf_admin_menu_missing_stock_items'))
 			'items_id' => 'menu_mf_stock_import_missing',
 			'url' => $url,
 			'more_url' => [
+				'mf_stock_import_missing.php',
+				'highloadblock_rows_list.php?lang=ru&ENTITY_ID=' . $hlId,
 				'highloadblock_row_edit.php?lang=ru&ENTITY_ID=' . $hlId,
 			],
 		];
