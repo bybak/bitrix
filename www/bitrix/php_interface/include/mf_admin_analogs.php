@@ -64,6 +64,20 @@ if (!class_exists(\Bitrix\Main\EventManager::class))
 	$aModuleMenu[] = [
 		'parent_menu' => 'global_menu_store',
 		'section' => 'mf_analogs',
+		'sort' => 2059,
+		'text' => 'Все аналоги',
+		'title' => 'Все связи аналогов (mf_product_analogs)',
+		'icon' => 'sale_menu_icon',
+		'page_icon' => 'sale_menu_icon',
+		'items_id' => 'menu_mf_analogs_all',
+		'url' => 'mf_analogs_all.php?lang=' . urlencode($lang),
+		'more_url' => [
+			'mf_analogs_all.php?lang=' . urlencode($lang),
+		],
+	];
+	$aModuleMenu[] = [
+		'parent_menu' => 'global_menu_store',
+		'section' => 'mf_analogs',
 		'sort' => 2060,
 		'text' => 'Импорт аналогов',
 		'title' => 'Импорт аналогов для множества товаров (CSV)',

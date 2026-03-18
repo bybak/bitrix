@@ -863,6 +863,7 @@ $APPLICATION->SetTitle('Ненайденные товары (импорт скл
 						</option>
 					<?php endforeach; ?>
 				</select>
+				<div id="mf_brand_status" style="margin-top:4px;color:#888;"></div>
 				<?php if ($find_warehouse === '' && count($brands) >= 2000): ?>
 					<div style="margin-top:4px;color:#888;">Показаны первые 2000 брендов. Для полного списка выбери склад.</div>
 				<?php endif; ?>
@@ -881,7 +882,13 @@ $APPLICATION->SetTitle('Ненайденные товары (импорт скл
 	(function () {
 		var wh = document.getElementById('mf_find_warehouse');
 		var br = document.getElementById('mf_find_brand_sel');
+		var st = document.getElementById('mf_brand_status');
 		if (!wh || !br) return;
+
+		function setStatus(msg) {
+			if (!st) return;
+			st.textContent = msg || '';
+		}
 
 		function setBrandLoading() {
 			br.innerHTML = '';
@@ -913,7 +920,13 @@ $APPLICATION->SetTitle('Ненайденные товары (импорт скл
 		function loadBrandsForWarehouse(warehouseXml) {
 			br.disabled = true;
 			setBrandLoading();
-			var url = window.location.pathname + '?lang=<?=mf_miss_escape((string)LANGUAGE_ID)?>&mf_ajax=brands&warehouse=' + encodeURIComponent(warehouseXml || '');
+			setStatus('Загружаю бренды для склада: ' + (warehouseXml || '—'));
+			var sess = (window.BX && typeof BX.bitrix_sessid === 'function') ? BX.bitrix_sessid() : '';
+			var url = '<?=mf_miss_escape($APPLICATION->GetCurPage())?>'
+				+ '?lang=<?=mf_miss_escape((string)LANGUAGE_ID)?>'
+				+ '&mf_ajax=brands'
+				+ '&warehouse=' + encodeURIComponent(warehouseXml || '')
+				+ (sess ? ('&sessid=' + encodeURIComponent(sess)) : '');
 			var done = function (data) {
 				try {
 					if (typeof data === 'string') {
@@ -921,9 +934,11 @@ $APPLICATION->SetTitle('Ненайденные товары (импорт скл
 					}
 					if (data && data.items && Array.isArray(data.items)) {
 						setBrandOptions(data.items, !!data.truncated);
+						setStatus('Брендов: ' + data.items.length + (data.truncated ? ' (ограничено)' : ''));
 					} else {
 						// If we didn't get JSON (e.g. session timeout -> HTML), keep a safe empty list.
 						setBrandOptions([], false);
+						setStatus('Не удалось получить список брендов (ответ не JSON).');
 					}
 				} finally {
 					br.disabled = false;
