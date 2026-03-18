@@ -12,6 +12,7 @@ use Bitrix\Main\Type\DateTime;
 use Bitrix\Main\Web\HttpClient;
 use Bitrix\Sale\BasketItem;
 use Bitrix\Sale\Order;
+use Bitrix\Sale\Payment;
 
 final class Config
 {
@@ -33,6 +34,20 @@ final class Config
 			return trim((string)$env);
 		}
 		return trim(Option::get('mf.unf', 'endpoint', ''));
+	}
+
+	/**
+	 * Endpoint for payment updates. If empty, uses the main endpoint().
+	 * By default we resend the same order payload so the 1C handler can upsert by external_id.
+	 */
+	public static function paidEndpoint(): string
+	{
+		$env = getenv('MF_UNF_PAID_ENDPOINT');
+		if ($env !== false && trim((string)$env) !== '')
+		{
+			return trim((string)$env);
+		}
+		return self::endpoint();
 	}
 
 	public static function token(): string
@@ -193,6 +208,56 @@ final class Db
 	}
 }
 
+final class DbPaid
+{
+	public const TABLE = 'mf_unf_paid_queue';
+
+	public static function ensureSchema(): void
+	{
+		$conn = Application::getConnection();
+		if ($conn->isTableExists(self::TABLE))
+		{
+			// Soft-migrate: add PAYLOAD_JSON for better debugging (older installs may not have it).
+			try
+			{
+				$col = $conn->query("SHOW COLUMNS FROM `" . self::TABLE . "` LIKE 'PAYLOAD_JSON'")->fetch();
+				if (!$col)
+				{
+					$conn->queryExecute("ALTER TABLE `" . self::TABLE . "` ADD COLUMN `PAYLOAD_JSON` MEDIUMTEXT NULL AFTER `LAST_ERROR`");
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore (no rights / unsupported)
+			}
+			return;
+		}
+
+		$sql = "
+			CREATE TABLE `" . self::TABLE . "` (
+				`ID` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+				`ORDER_ID` INT UNSIGNED NOT NULL,
+				`PAYMENT_ID` INT UNSIGNED NULL,
+				`PAY_SYSTEM_ACTION_ID` INT UNSIGNED NULL,
+				`STATUS` VARCHAR(16) NOT NULL DEFAULT 'new',
+				`ATTEMPTS` INT UNSIGNED NOT NULL DEFAULT 0,
+				`NEXT_RETRY_AT` DATETIME NULL,
+				`LAST_ERROR` TEXT NULL,
+				`PAYLOAD_JSON` MEDIUMTEXT NULL,
+				`RESPONSE_HTTP_CODE` INT NULL,
+				`RESPONSE_BODY` MEDIUMTEXT NULL,
+				`CREATED_AT` DATETIME NOT NULL,
+				`UPDATED_AT` DATETIME NOT NULL,
+				`SENT_AT` DATETIME NULL,
+				PRIMARY KEY (`ID`),
+				UNIQUE KEY `UX_ORDER_ID` (`ORDER_ID`),
+				KEY `IX_STATUS_NEXT` (`STATUS`, `NEXT_RETRY_AT`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+		";
+		$conn->queryExecute($sql);
+	}
+}
+
 final class Bootstrap
 {
 	private static bool $inited = false;
@@ -214,6 +279,7 @@ final class Bootstrap
 		try
 		{
 			Db::ensureSchema();
+			DbPaid::ensureSchema();
 		}
 		catch (\Throwable $e)
 		{
@@ -229,6 +295,12 @@ final class Bootstrap
 					'sale',
 					'OnSaleOrderSaved',
 					[Handlers::class, 'onSaleOrderSaved']
+				);
+
+				\Bitrix\Main\EventManager::getInstance()->addEventHandler(
+					'sale',
+					'OnSalePaymentEntitySaved',
+					[Handlers::class, 'onSalePaymentEntitySaved']
 				);
 			}
 		}
@@ -311,6 +383,92 @@ final class Handlers
 			Bootstrap::log('Failed to enqueue order', ['orderId' => $order->getId(), 'e' => $e->getMessage()]);
 		}
 	}
+
+	/**
+	 * sale:OnSalePaymentEntitySaved
+	 * Enqueue an UNF update when payment becomes PAID=Y.
+	 */
+	public static function onSalePaymentEntitySaved(\Bitrix\Main\Event $event): void
+	{
+		if (!Config::isEnabled())
+		{
+			return;
+		}
+
+		$entity = $event->getParameter('ENTITY');
+		if (!$entity instanceof Payment)
+		{
+			return;
+		}
+
+		$values = $event->getParameter('VALUES');
+		$wasPaid = is_array($values) && (string)($values['PAID'] ?? 'N') === 'Y';
+		$isPaid = (string)$entity->getField('PAID') === 'Y';
+		if (!$isPaid || $wasPaid)
+		{
+			return;
+		}
+
+		$psActionId = (int)$entity->getPaymentSystemId();
+		if ($psActionId <= 0)
+		{
+			return;
+		}
+		if (!self::isPaykeeperAction($psActionId))
+		{
+			return;
+		}
+
+		$orderId = (int)$entity->getOrderId();
+		if ($orderId <= 0)
+		{
+			return;
+		}
+
+		try
+		{
+			DbPaid::ensureSchema();
+			QueuePaid::enqueuePaid($orderId, (int)$entity->getId(), $psActionId);
+		}
+		catch (\Throwable $e)
+		{
+			Bootstrap::log('Failed to enqueue paid update', [
+				'orderId' => $orderId,
+				'paymentId' => (int)$entity->getId(),
+				'psActionId' => $psActionId,
+				'e' => $e->getMessage(),
+			]);
+		}
+	}
+
+	private static function isPaykeeperAction(int $psActionId): bool
+	{
+		static $cache = [];
+		if (isset($cache[$psActionId]))
+		{
+			return (bool)$cache[$psActionId];
+		}
+
+		try
+		{
+			$conn = Application::getConnection();
+			$row = $conn->query("
+				SELECT ACTION_FILE
+				FROM b_sale_pay_system_action
+				WHERE ID = " . (int)$psActionId . "
+				LIMIT 1
+			")->fetch();
+			$af = is_array($row) ? trim((string)($row['ACTION_FILE'] ?? '')) : '';
+			$ok = ($af === 'mf_paykeeper' || $af === 'mfpaykeeper');
+			$cache[$psActionId] = $ok;
+			return $ok;
+		}
+		catch (\Throwable $e)
+		{
+			$cache[$psActionId] = false;
+			return false;
+		}
+	}
 }
 
 final class Agent
@@ -343,6 +501,7 @@ final class Agent
 		try
 		{
 			Queue::process(5);
+			QueuePaid::process(5);
 		}
 		catch (\Throwable $e)
 		{
@@ -541,8 +700,469 @@ final class Queue
 	}
 }
 
+final class QueuePaid
+{
+	private static function unfResponseCheck(?string $respBody): ?string
+	{
+		$raw = (string)($respBody ?? '');
+		$raw = trim($raw);
+		if ($raw === '')
+		{
+			return 'UNF returned empty body';
+		}
+		$decoded = json_decode($raw, true);
+		if (!is_array($decoded))
+		{
+			return 'UNF returned non-JSON body';
+		}
+		if (($decoded['ok'] ?? null) === false)
+		{
+			$err = (string)($decoded['error'] ?? 'unknown_error');
+			return 'UNF response ok=false: ' . $err;
+		}
+		$pr = $decoded['payment_result'] ?? null;
+		if (is_array($pr) && (($pr['ok'] ?? null) === false))
+		{
+			$err = (string)($pr['error'] ?? 'unknown_payment_error');
+			return 'UNF payment_result.ok=false: ' . $err;
+		}
+		return null;
+	}
+
+	public static function enqueuePaid(int $orderId, int $paymentId, int $psActionId): void
+	{
+		DbPaid::ensureSchema();
+
+		$orderId = (int)$orderId;
+		if ($orderId <= 0)
+		{
+			throw new \RuntimeException('Order ID is empty');
+		}
+
+		$conn = Application::getConnection();
+		$now = new DateTime();
+		$nowSql = $conn->getSqlHelper()->convertToDbDateTime($now);
+
+		$sql = "
+			INSERT INTO `" . DbPaid::TABLE . "`
+				(`ORDER_ID`, `PAYMENT_ID`, `PAY_SYSTEM_ACTION_ID`, `STATUS`, `ATTEMPTS`, `NEXT_RETRY_AT`, `LAST_ERROR`, `RESPONSE_HTTP_CODE`, `RESPONSE_BODY`, `CREATED_AT`, `UPDATED_AT`, `SENT_AT`)
+			VALUES
+				(" . $orderId . ", " . ($paymentId > 0 ? $paymentId : "NULL") . ", " . ($psActionId > 0 ? $psActionId : "NULL") . ", 'new', 0, NULL, NULL, NULL, NULL, " . $nowSql . ", " . $nowSql . ", NULL)
+			ON DUPLICATE KEY UPDATE
+				`STATUS` = 'new',
+				`PAYMENT_ID` = VALUES(`PAYMENT_ID`),
+				`PAY_SYSTEM_ACTION_ID` = VALUES(`PAY_SYSTEM_ACTION_ID`),
+				`UPDATED_AT` = VALUES(`UPDATED_AT`),
+				`ATTEMPTS` = 0,
+				`LAST_ERROR` = NULL,
+				`RESPONSE_HTTP_CODE` = NULL,
+				`RESPONSE_BODY` = NULL,
+				`NEXT_RETRY_AT` = NULL,
+				`SENT_AT` = NULL
+		";
+		$conn->queryExecute($sql);
+
+		Bootstrap::log('Paid update enqueued', ['orderId' => $orderId, 'paymentId' => $paymentId, 'psActionId' => $psActionId]);
+	}
+
+	public static function process(int $limit): void
+	{
+		if (!Config::isEnabled())
+		{
+			return;
+		}
+		$endpoint = Config::paidEndpoint();
+		if ($endpoint === '')
+		{
+			return;
+		}
+
+		DbPaid::ensureSchema();
+		$conn = Application::getConnection();
+		$sqlHelper = $conn->getSqlHelper();
+		$now = new DateTime();
+		$nowSql = $sqlHelper->convertToDbDateTime($now);
+
+		$limit = max(1, min(50, (int)$limit));
+		$rows = $conn->query("
+			SELECT *
+			FROM `" . DbPaid::TABLE . "`
+			WHERE (`STATUS` IN ('new','error'))
+			  AND (`NEXT_RETRY_AT` IS NULL OR `NEXT_RETRY_AT` <= " . $nowSql . ")
+			ORDER BY 
+				CASE WHEN `STATUS` = 'new' THEN 0 ELSE 1 END ASC,
+				`ID` ASC
+			LIMIT " . $limit . "
+		");
+
+		while ($row = $rows->fetch())
+		{
+			self::sendRow($row);
+		}
+	}
+
+	private static function sendRow(array $row): void
+	{
+		$conn = Application::getConnection();
+		$sqlHelper = $conn->getSqlHelper();
+
+		$id = (int)($row['ID'] ?? 0);
+		$orderId = (int)($row['ORDER_ID'] ?? 0);
+		$attempts = (int)($row['ATTEMPTS'] ?? 0);
+		$paymentId = (int)($row['PAYMENT_ID'] ?? 0);
+		$psActionId = (int)($row['PAY_SYSTEM_ACTION_ID'] ?? 0);
+
+		if ($id <= 0 || $orderId <= 0)
+		{
+			return;
+		}
+
+		// Ensure order create queue is sent first (avoid "update before create").
+		try
+		{
+			if ($conn->isTableExists(Db::TABLE))
+			{
+				$createRow = $conn->query("
+					SELECT STATUS
+					FROM `" . Db::TABLE . "`
+					WHERE ORDER_ID = " . $orderId . "
+					LIMIT 1
+				")->fetch();
+				$createStatus = is_array($createRow) ? (string)($createRow['STATUS'] ?? '') : '';
+				if ($createStatus !== '' && $createStatus !== 'sent')
+				{
+					self::reschedule($id, $orderId, $attempts + 1, 60, 'Waiting for order create to be sent (status=' . $createStatus . ')', null, null);
+					return;
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore and attempt send anyway
+		}
+
+		$endpoint = Config::paidEndpoint();
+		$token = Config::token();
+		$basicUser = Config::basicUser();
+		$basicPass = Config::basicPass();
+		$client = new HttpClient([
+			'redirect' => false,
+			'timeout' => Config::timeoutSeconds(),
+			'disableSslVerification' => false,
+		]);
+
+		$headers = [
+			'Content-Type' => 'application/json; charset=utf-8',
+			'Accept' => 'application/json, text/plain, */*',
+		];
+		$client->setHeaders($headers);
+		if ($basicUser !== '')
+		{
+			$client->setAuthorization($basicUser, $basicPass);
+			if ($token !== '')
+			{
+				$client->setHeader('X-MF-Token', $token);
+			}
+		}
+		elseif ($token !== '')
+		{
+			$client->setHeader('Authorization', 'Bearer ' . $token);
+		}
+
+		$httpCode = null;
+		$respBody = null;
+		$error = null;
+		$payloadJson = null;
+
+		try
+		{
+			if (!Loader::includeModule('sale'))
+			{
+				throw new \RuntimeException('sale module is not available');
+			}
+			$order = Order::load($orderId);
+			if (!$order)
+			{
+				throw new \RuntimeException('Order not found');
+			}
+
+			$payload = Payload::build($order);
+			// Keep payload compatible with 1C handler: add meta only (should be safe to ignore).
+			if (isset($payload['meta']) && is_array($payload['meta']))
+			{
+				$payload['meta']['event'] = 'payment_paid';
+				$payload['meta']['event_at'] = (new DateTime())->format(\DateTimeInterface::ATOM);
+				$payload['meta']['payment_id'] = $paymentId > 0 ? $paymentId : null;
+				$payload['meta']['pay_system_action_id'] = $psActionId > 0 ? $psActionId : null;
+			}
+			// Provide payment details so 1C can create/update settlement docs reliably.
+			$paymentEntity = null;
+			$pc = $order->getPaymentCollection();
+			if ($pc)
+			{
+				if ($paymentId > 0)
+				{
+					$paymentEntity = $pc->getItemById($paymentId);
+				}
+				if (!$paymentEntity)
+				{
+					foreach ($pc as $p)
+					{
+						/** @var Payment $p */
+						if ((string)$p->getField('PAID') === 'Y')
+						{
+							$paymentEntity = $p;
+							break;
+						}
+					}
+				}
+			}
+			if ($paymentEntity instanceof Payment)
+			{
+				$datePaid = $paymentEntity->getField('DATE_PAID');
+				$datePaidAtom = null;
+				try
+				{
+					if ($datePaid instanceof \Bitrix\Main\Type\DateTime)
+					{
+						$datePaidAtom = $datePaid->format(\DateTimeInterface::ATOM);
+					}
+				}
+				catch (\Throwable $e)
+				{
+					$datePaidAtom = null;
+				}
+
+				$paymentInfo = [
+					'bitrix_payment_id' => (int)$paymentEntity->getId(),
+					'pay_system_action_id' => (int)$paymentEntity->getPaymentSystemId(),
+					'pay_system_name' => (string)$paymentEntity->getPaymentSystemName(),
+					'sum' => (float)$paymentEntity->getSum(),
+					'currency' => (string)$paymentEntity->getField('CURRENCY'),
+					'paid_at' => $datePaidAtom,
+					'ps_status_code' => (string)$paymentEntity->getField('PS_STATUS_CODE'),
+					'ps_invoice_id' => (string)$paymentEntity->getField('PS_INVOICE_ID'),
+					'pay_voucher_num' => (string)$paymentEntity->getField('PAY_VOUCHER_NUM'),
+				];
+
+				$payload['payment_event'] = $paymentInfo;
+				if (isset($payload['order']) && is_array($payload['order']) && isset($payload['order']['payment']) && is_array($payload['order']['payment']))
+				{
+					$payload['order']['payment'] = array_merge($payload['order']['payment'], [
+						'bitrix_payment_id' => (int)$paymentEntity->getId(),
+						'pay_system_action_id' => (int)$paymentEntity->getPaymentSystemId(),
+						'sum' => (float)$paymentEntity->getSum(),
+						'currency' => (string)$paymentEntity->getField('CURRENCY'),
+						'paid_at' => $datePaidAtom,
+						'ps_invoice_id' => (string)$paymentEntity->getField('PS_INVOICE_ID'),
+						'pay_voucher_num' => (string)$paymentEntity->getField('PAY_VOUCHER_NUM'),
+					]);
+				}
+			}
+
+			$payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
+			if (!is_string($payloadJson) || $payloadJson === '')
+			{
+				throw new \RuntimeException('Failed to encode payload JSON');
+			}
+
+			$respBody = $client->post($endpoint, $payloadJson);
+			$httpCode = (int)$client->getStatus();
+			if ($httpCode < 200 || $httpCode >= 300)
+			{
+				throw new \RuntimeException('UNF returned HTTP ' . $httpCode);
+			}
+
+			// 1C handler may respond 200 but still report application-level error.
+			$appErr = self::unfResponseCheck(is_string($respBody) ? $respBody : null);
+			if ($appErr !== null)
+			{
+				throw new \RuntimeException($appErr);
+			}
+		}
+		catch (\Throwable $e)
+		{
+			$error = $e->getMessage();
+		}
+
+		if ($error === null)
+		{
+			$now = new DateTime();
+			$nowSql = $sqlHelper->convertToDbDateTime($now);
+
+			// Save last payload for debugging (if column exists).
+			if (is_string($payloadJson) && $payloadJson !== '')
+			{
+				try
+				{
+					$conn->queryExecute("
+						UPDATE `" . DbPaid::TABLE . "`
+						SET `PAYLOAD_JSON` = '" . $sqlHelper->forSql($payloadJson) . "'
+						WHERE `ID` = " . $id . "
+					");
+				}
+				catch (\Throwable $e)
+				{
+					// ignore
+				}
+			}
+
+			$conn->queryExecute("
+				UPDATE `" . DbPaid::TABLE . "`
+				SET
+					`STATUS` = 'sent',
+					`UPDATED_AT` = " . $nowSql . ",
+					`SENT_AT` = " . $nowSql . ",
+					`RESPONSE_HTTP_CODE` = " . ((int)$httpCode) . ",
+					`RESPONSE_BODY` = " . ($respBody === null ? "NULL" : ("'" . $sqlHelper->forSql((string)$respBody) . "'")) . ",
+					`LAST_ERROR` = NULL,
+					`NEXT_RETRY_AT` = NULL
+				WHERE `ID` = " . $id . "
+			");
+			Bootstrap::log('Paid update sent to UNF', ['orderId' => $orderId, 'http' => $httpCode]);
+			return;
+		}
+
+		$attempts++;
+		$delay = self::backoffSeconds($attempts);
+		$next = (new DateTime())->add($delay);
+		$nextSql = $sqlHelper->convertToDbDateTime($next);
+		$now = new DateTime();
+		$nowSql = $sqlHelper->convertToDbDateTime($now);
+
+		$conn->queryExecute("
+			UPDATE `" . DbPaid::TABLE . "`
+			SET
+				`STATUS` = 'error',
+				`ATTEMPTS` = " . $attempts . ",
+				`UPDATED_AT` = " . $nowSql . ",
+				`NEXT_RETRY_AT` = " . $nextSql . ",
+				`LAST_ERROR` = '" . $sqlHelper->forSql($error) . "',
+				`RESPONSE_HTTP_CODE` = " . ($httpCode === null ? "NULL" : ((int)$httpCode)) . ",
+				`RESPONSE_BODY` = " . ($respBody === null ? "NULL" : ("'" . $sqlHelper->forSql((string)$respBody) . "'")) . "
+			WHERE `ID` = " . $id . "
+		");
+
+		// Save last payload for debugging (best-effort; column may not exist on older installs).
+		if (is_string($payloadJson) && $payloadJson !== '')
+		{
+			try
+			{
+				$conn->queryExecute("
+					UPDATE `" . DbPaid::TABLE . "`
+					SET `PAYLOAD_JSON` = '" . $sqlHelper->forSql($payloadJson) . "'
+					WHERE `ID` = " . $id . "
+				");
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+		Bootstrap::log('UNF paid update failed', ['orderId' => $orderId, 'attempts' => $attempts, 'delay' => $delay, 'error' => $error]);
+	}
+
+	private static function reschedule(int $id, int $orderId, int $attempts, int $delaySeconds, string $reason, ?int $httpCode, ?string $respBody): void
+	{
+		$conn = Application::getConnection();
+		$sqlHelper = $conn->getSqlHelper();
+		$now = new DateTime();
+		$next = (new DateTime())->add(max(1, (int)$delaySeconds));
+		$nowSql = $sqlHelper->convertToDbDateTime($now);
+		$nextSql = $sqlHelper->convertToDbDateTime($next);
+
+		$conn->queryExecute("
+			UPDATE `" . DbPaid::TABLE . "`
+			SET
+				`STATUS` = 'error',
+				`ATTEMPTS` = " . max(0, $attempts) . ",
+				`UPDATED_AT` = " . $nowSql . ",
+				`NEXT_RETRY_AT` = " . $nextSql . ",
+				`LAST_ERROR` = '" . $sqlHelper->forSql($reason) . "',
+				`RESPONSE_HTTP_CODE` = " . ($httpCode === null ? "NULL" : ((int)$httpCode)) . ",
+				`RESPONSE_BODY` = " . ($respBody === null ? "NULL" : ("'" . $sqlHelper->forSql((string)$respBody) . "'")) . "
+			WHERE `ID` = " . (int)$id . "
+		");
+		Bootstrap::log('Paid update rescheduled', ['orderId' => $orderId, 'delay' => $delaySeconds, 'reason' => $reason]);
+	}
+
+	private static function backoffSeconds(int $attempts): int
+	{
+		$base = 30;
+		$max = 3600;
+		$pow = min(16, max(0, $attempts - 1));
+		$delay = $base * (2 ** $pow);
+		return min($max, $delay);
+	}
+}
+
 final class Payload
 {
+	private static function productMeta(int $productId): array
+	{
+		static $cache = [];
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return [
+				'xml_id' => '',
+				'code' => '',
+				'article' => '',
+				'brand' => '',
+			];
+		}
+		if (isset($cache[$productId]))
+		{
+			return $cache[$productId];
+		}
+
+		$meta = [
+			'xml_id' => '',
+			'code' => '',
+			'article' => '',
+			'brand' => '',
+		];
+
+		try
+		{
+			if (!Loader::includeModule('iblock'))
+			{
+				return $cache[$productId] = $meta;
+			}
+
+			// IMPORTANT:
+			// - Article is stored in PROPERTY_CML2_ARTICLE (used across the site templates).
+			// - Brand is stored in PROPERTY_MF_BRAND (canonical brand name).
+			$e = \CIBlockElement::GetList(
+				[],
+				['=ID' => $productId],
+				false,
+				['nTopCount' => 1],
+				[
+					'ID',
+					'XML_ID',
+					'CODE',
+					'PROPERTY_CML2_ARTICLE',
+					'PROPERTY_MF_BRAND',
+				]
+			)->Fetch();
+
+			if (is_array($e))
+			{
+				$meta['xml_id'] = trim((string)($e['XML_ID'] ?? ''));
+				$meta['code'] = trim((string)($e['CODE'] ?? ''));
+				$meta['article'] = trim((string)($e['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+				$meta['brand'] = trim((string)($e['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		return $cache[$productId] = $meta;
+	}
+
 	private static function currencyFor1c(Order $order): array
 	{
 		$bitrixCur = (string)$order->getCurrency();
@@ -602,6 +1222,7 @@ final class Payload
 			foreach ($basket->getBasketItems() as $item)
 			{
 				$productId = (int)$item->getProductId();
+				$pm = self::productMeta($productId);
 				$externalId = self::productExternalId($productId);
 				$vatRate = null;
 				try { $vatRate = (float)$item->getVatRate(); } catch (\Throwable $e) { $vatRate = null; }
@@ -611,6 +1232,10 @@ final class Payload
 					'product' => [
 						'bitrix_product_id' => $productId,
 						'external_id' => $externalId,
+						'xml_id' => $pm['xml_id'] !== '' ? $pm['xml_id'] : null,
+						'code' => $pm['code'] !== '' ? $pm['code'] : null,
+						'article' => $pm['article'] !== '' ? $pm['article'] : null,
+						'brand' => $pm['brand'] !== '' ? $pm['brand'] : null,
 						'name' => (string)$item->getField('NAME'),
 					],
 					'quantity' => (float)$item->getQuantity(),
@@ -646,12 +1271,49 @@ final class Payload
 		}
 
 		$paymentName = '';
+		$paymentInfo = null;
+		$paymentPlan = null;
 		$paymentCollection = $order->getPaymentCollection();
 		if ($paymentCollection)
 		{
 			foreach ($paymentCollection as $payment)
 			{
 				$paymentName = (string)$payment->getPaymentSystemName();
+
+				$datePaidAtom = null;
+				try
+				{
+					$datePaid = $payment->getField('DATE_PAID');
+					if ($datePaid instanceof \Bitrix\Main\Type\DateTime)
+					{
+						$datePaidAtom = $datePaid->format(\DateTimeInterface::ATOM);
+					}
+				}
+				catch (\Throwable $e)
+				{
+					$datePaidAtom = null;
+				}
+
+				$paymentInfo = [
+					'bitrix_payment_id' => (int)$payment->getId(),
+					'pay_system_action_id' => (int)$payment->getPaymentSystemId(),
+					'pay_system_name' => (string)$payment->getPaymentSystemName(),
+					'sum' => (float)$payment->getSum(),
+					'currency' => (string)$payment->getField('CURRENCY'),
+					'paid' => (string)$payment->getField('PAID') === 'Y',
+					'paid_at' => $datePaidAtom,
+					'ps_invoice_id' => (string)$payment->getField('PS_INVOICE_ID'),
+					'pay_voucher_num' => (string)$payment->getField('PAY_VOUCHER_NUM'),
+				];
+
+				// Default payment plan: full amount due at order creation time.
+				$dueAt = $order->getDateInsert() ? $order->getDateInsert()->format(\DateTimeInterface::ATOM) : (new DateTime())->format(\DateTimeInterface::ATOM);
+				$paymentPlan = [
+					'type' => 'full_prepayment',
+					'due_at' => $dueAt,
+					'sum' => (float)$order->getPrice(),
+					'currency' => (string)$order->getCurrency(),
+				];
 				break;
 			}
 		}
@@ -718,6 +1380,8 @@ final class Payload
 				'payment' => [
 					'name' => $paymentName,
 					'paid' => (string)$order->getField('PAYED') === 'Y',
+					'info' => $paymentInfo,
+					'plan' => $paymentPlan,
 				],
 				'customer' => [
 					'name' => $userName,

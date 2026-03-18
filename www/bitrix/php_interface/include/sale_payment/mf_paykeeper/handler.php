@@ -9,6 +9,7 @@ use Bitrix\Main\Web\HttpClient;
 use Bitrix\Sale\PaySystem;
 use Bitrix\Sale\Payment;
 use Bitrix\Sale\Repository\PaymentRepository;
+use Bitrix\Sale\Internals\PaymentTable;
 
 Loc::loadMessages(__FILE__);
 
@@ -21,6 +22,52 @@ Loc::loadMessages(__FILE__);
  */
 final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 {
+	private function notifyLog(string $message, array $ctx = []): void
+	{
+		try
+		{
+			$path = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/') . '/upload/mf_paykeeper_notify.log';
+			$line = '[' . date('c') . '] ' . $message;
+			if (!empty($ctx))
+			{
+				$line .= ' ' . json_encode($ctx, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+			}
+			$line .= "\n";
+			@file_put_contents($path, $line, FILE_APPEND);
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+	}
+
+	private function in(Request $request, string $name): string
+	{
+		$v = $request->getPost($name);
+		if ($v === null || $v === '')
+		{
+			$v = $request->getQuery($name);
+		}
+		if (($v === null || $v === '') && method_exists($request, 'decodeJson') && method_exists($request, 'getJsonList'))
+		{
+			try
+			{
+				$request->decodeJson();
+				$v = $request->getJsonList()->get($name);
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		if (is_array($v))
+		{
+			return '';
+		}
+		return (string)$v;
+	}
+
 	private function uuidV4(): string
 	{
 		// RFC 4122 UUID v4
@@ -61,6 +108,13 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 		$order = $payment->getCollection()->getOrder();
 		$cart = [];
 		$total = 0.0;
+		// Fiscal: for online payments we treat it as 100% prepayment.
+		// PayKeeper expects these keys per item (same naming as its Bitrix module):
+		// - item_type: goods/service/work/...
+		// - payment_type: prepay/part_prepay/advance/full
+		// - measure: pcs/kg/l/...
+		$defaultPaymentType = 'prepay';
+		$defaultMeasure = 'pcs';
 
 		$basket = $order->getBasket();
 		if ($basket)
@@ -87,6 +141,9 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 					'quantity' => ($qty == (int)$qty ? (int)$qty : $qty),
 					'sum' => rtrim(rtrim(number_format($sum, 2, '.', ''), '0'), '.'),
 					'tax' => $vat,
+					'item_type' => 'goods',
+					'payment_type' => $defaultPaymentType,
+					'measure' => $defaultMeasure,
 				];
 				$total += $sum;
 			}
@@ -103,6 +160,9 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 				'quantity' => 1,
 				'sum' => rtrim(rtrim(number_format($delivery, 2, '.', ''), '0'), '.'),
 				'tax' => $defaultVat,
+				'item_type' => 'service',
+				'payment_type' => $defaultPaymentType,
+				'measure' => $defaultMeasure,
 			];
 			$total += $delivery;
 		}
@@ -165,20 +225,32 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 			$paymentId = (int)$payment->getId();
 
 			$orderIdLabel = ($orderId > 0) ? ('Заказ #' . $orderId) : 'Заказ';
-			// External order id for PayKeeper: UUID (stored in PS_INVOICE_ID to map callbacks back to payment).
+			/**
+			 * External order id for PayKeeper.
+			 *
+			 * CRITICAL: callbacks must reliably map back to a Bitrix payment.
+			 * We store generated UUID into PS_INVOICE_ID and persist it via direct update
+			 * (order->save can silently fail on some installs / during initiatePay).
+			 *
+			 * getPaymentIdFromRequest() also supports legacy "PAYMENT_<id>" if needed.
+			 */
 			$orderid = trim((string)$payment->getField('PS_INVOICE_ID'));
 			if ($orderid === '')
 			{
 				$orderid = $this->uuidV4();
 				$payment->setField('PS_INVOICE_ID', $orderid);
-				// Persist mapping so sale_ps_result.php can find payment by UUID.
+			}
+
+			// Persist mapping as safely as possible (direct update; order->save can fail on some installs).
+			if ($paymentId > 0)
+			{
 				try
 				{
-					$order->save();
+					PaymentTable::update($paymentId, ['PS_INVOICE_ID' => $orderid]);
 				}
 				catch (\Throwable $e)
 				{
-					// ignore: if not saved, callback mapping may fail; we'll still try.
+					// ignore
 				}
 			}
 			$serviceName = $purpose . ' (' . $orderIdLabel . ')';
@@ -336,19 +408,36 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 		$secret = (string)$this->getBusinessValue($payment, 'PK_SECRET');
 		if ($secret === '')
 		{
+			$this->notifyLog('processRequest: missing PK_SECRET', [
+				'ip' => (string)($request->getRemoteAddress() ?? ''),
+				'method' => (string)($request->getRequestMethod() ?? ''),
+				'uri' => (string)($request->getRequestUri() ?? ''),
+			]);
 			$result->addError(new Error('PayKeeper secret (PK_SECRET) is not configured.'));
 			return $result;
 		}
 
-		$paykeeperId = (string)$request->getPost('id');
-		$sum = (string)$request->getPost('sum');
-		$clientid = (string)$request->getPost('clientid');
-		$orderid = (string)$request->getPost('orderid');
-		$key = (string)$request->getPost('key');
+		$paykeeperId = $this->in($request, 'id');
+		$sum = $this->in($request, 'sum');
+		$clientid = $this->in($request, 'clientid');
+		$orderid = $this->in($request, 'orderid');
+		$key = $this->in($request, 'key');
 
 		$expected = md5($paykeeperId . $sum . $clientid . $orderid . $secret);
 		if (!hash_equals($expected, $key))
 		{
+			$this->notifyLog('processRequest: signature mismatch', [
+				'ip' => (string)($request->getRemoteAddress() ?? ''),
+				'method' => (string)($request->getRequestMethod() ?? ''),
+				'orderid' => $orderid,
+				'id' => $paykeeperId,
+				'sum' => $sum,
+				'clientid_len' => strlen($clientid),
+				'clientid_md5' => md5($clientid),
+				'key_prefix' => substr($key, 0, 12),
+				'expected_prefix' => substr($expected, 0, 12),
+				'secret_len' => strlen($secret),
+			]);
 			$result->addError(new Error('PayKeeper signature mismatch.'));
 			return $result;
 		}
@@ -358,15 +447,42 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 		$got = (float)str_replace(',', '.', $sum);
 		if ($got > 0 && abs($got - $shouldPay) > 0.01)
 		{
+			$this->notifyLog('processRequest: sum mismatch', [
+				'ip' => (string)($request->getRemoteAddress() ?? ''),
+				'orderid' => $orderid,
+				'id' => $paykeeperId,
+				'got' => $got,
+				'should' => $shouldPay,
+			]);
 			$result->addError(new Error('PayKeeper sum mismatch.'));
 			return $result;
 		}
 
+		$this->notifyLog('processRequest: ok', [
+			'ip' => (string)($request->getRemoteAddress() ?? ''),
+			'orderid' => $orderid,
+			'id' => $paykeeperId,
+			'sum' => $sum,
+		]);
+
 		$result->setOperationType(PaySystem\ServiceResult::MONEY_COMING);
+		// IMPORTANT: Only set fields that exist on Bitrix Payment entity,
+		// otherwise Payment::setFields() throws and Bitrix returns 500.
+		$now = new \Bitrix\Main\Type\DateTime();
+		$currency = (string)$payment->getField('CURRENCY');
+		if ($currency === '')
+		{
+			$currency = 'RUB';
+		}
 		$result->setPsData([
-			'PAYKEEPER_ID' => $paykeeperId,
-			'PAYKEEPER_SUM' => $sum,
-			'PAYKEEPER_ORDERID' => $orderid,
+			'PS_STATUS_CODE' => (string)$paykeeperId,
+			'PS_STATUS_DESCRIPTION' => 'PayKeeper notification accepted',
+			'PS_STATUS_MESSAGE' => 'orderid=' . (string)$orderid,
+			'PS_SUM' => (float)str_replace(',', '.', (string)$sum),
+			'PS_CURRENCY' => $currency,
+			'PS_RESPONSE_DATE' => $now,
+			'PAY_VOUCHER_NUM' => (string)$paykeeperId,
+			'PAY_VOUCHER_DATE' => $now,
 		]);
 
 		return $result;
@@ -375,30 +491,89 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 	public function sendResponse(PaySystem\ServiceResult $result, Request $request)
 	{
 		// PayKeeper требует ответ: "OK <md5(id+secret)>"
-		$paykeeperId = (string)$request->getPost('id');
+		$paykeeperId = $this->in($request, 'id');
 		$paymentId = (int)$this->getPaymentIdFromRequest($request);
 		if ($paykeeperId === '' || $paymentId <= 0)
 		{
+			$this->notifyLog('sendResponse: no id/paymentId', [
+				'ip' => (string)($request->getRemoteAddress() ?? ''),
+				'id' => $paykeeperId,
+				'paymentId' => $paymentId,
+			]);
 			return '';
 		}
 
 		$payment = PaymentRepository::getInstance()->getById($paymentId);
 		if (!$payment)
 		{
+			$this->notifyLog('sendResponse: payment not found', [
+				'ip' => (string)($request->getRemoteAddress() ?? ''),
+				'id' => $paykeeperId,
+				'paymentId' => $paymentId,
+			]);
 			return '';
 		}
 		$secret = (string)$this->getBusinessValue($payment, 'PK_SECRET');
 		if ($secret === '')
 		{
+			$this->notifyLog('sendResponse: missing PK_SECRET', [
+				'ip' => (string)($request->getRemoteAddress() ?? ''),
+				'id' => $paykeeperId,
+				'paymentId' => $paymentId,
+			]);
 			return '';
 		}
 
-		return 'OK ' . md5($paykeeperId . $secret);
+		// Extra safety: confirm signature before acknowledging to PayKeeper.
+		$sum = $this->in($request, 'sum');
+		$clientid = $this->in($request, 'clientid');
+		$orderid = $this->in($request, 'orderid');
+		$key = $this->in($request, 'key');
+		$expected = md5($paykeeperId . $sum . $clientid . $orderid . $secret);
+		if ($sum === '' || $orderid === '' || $key === '' || !hash_equals($expected, $key))
+		{
+			$this->notifyLog('sendResponse: signature mismatch', [
+				'ip' => (string)($request->getRemoteAddress() ?? ''),
+				'paymentId' => $paymentId,
+				'orderid' => $orderid,
+				'id' => $paykeeperId,
+				'sum' => $sum,
+				'clientid_len' => strlen($clientid),
+				'clientid_md5' => md5($clientid),
+				'key_prefix' => substr($key, 0, 12),
+				'expected_prefix' => substr($expected, 0, 12),
+			]);
+			return '';
+		}
+
+		$this->notifyLog('sendResponse: OK', [
+			'ip' => (string)($request->getRemoteAddress() ?? ''),
+			'paymentId' => $paymentId,
+			'orderid' => $orderid,
+			'id' => $paykeeperId,
+			'sum' => $sum,
+		]);
+
+		$body = 'OK ' . md5($paykeeperId . $secret);
+		// IMPORTANT: Service::processRequest ignores return value. We must output body.
+		// PayKeeper подтверждает получение только по телу ответа.
+		if (!headers_sent())
+		{
+			header('Content-Type: text/plain; charset=UTF-8');
+		}
+		echo $body;
+		// Prevent any further output/header modifications (e.g. $APPLICATION->FinalActions()).
+		// Otherwise Bitrix may throw and respond with 500 even after we echoed OK.
+		if (PHP_SAPI !== 'cli')
+		{
+			die();
+		}
+		return $body;
 	}
 
 	public function getPaymentIdFromRequest(Request $request)
 	{
-		$orderid = (string)($request->getPost('orderid') ?? '');
+		$orderid = $this->in($request, 'orderid');
 		$orderid = trim($orderid);
 		if ($orderid === '')
 		{

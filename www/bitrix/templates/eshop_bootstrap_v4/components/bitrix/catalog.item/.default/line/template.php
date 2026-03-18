@@ -199,10 +199,11 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 		<?php else: ?>
 			<span class="mf-pline__media-link" data-entity="image-wrapper">
 		<?php endif; ?>
-				<img class="mf-pline__media-img" src="<?=$imgSrc?>" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+				<span class="product-item-image-original" id="<?=$itemIds['PICT']?>">
+					<img class="mf-pline__media-img" src="<?=$imgSrc?>" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+				</span>
 				<span style="display:none" aria-hidden="true">
 					<span class="product-item-image-slider-slide-container slide" id="<?=$itemIds['PICT_SLIDER']?>"></span>
-					<span class="product-item-image-original" id="<?=$itemIds['PICT']?>"></span>
 					<?php if (!empty($itemIds['SECOND_PICT'])): ?>
 						<span class="product-item-image-alternative" id="<?=$itemIds['SECOND_PICT']?>"></span>
 					<?php endif; ?>

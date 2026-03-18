@@ -4760,6 +4760,72 @@ class SaleOrderAjax extends \CBitrixComponent
 			$this->order = $this->createOrder($this->getUserId() ?? 0);
 			$this->prepareResultArray();
 			self::scaleImages($this->arResult['JS_DATA'], $this->arParams['SERVICES_IMAGES_SCALING']);
+
+			// Motor-Force debug: log resulting location/zip values on localhost.
+			try
+			{
+				$host = (string)($_SERVER['HTTP_HOST'] ?? '');
+				if ($host === 'localhost' || $host === '127.0.0.1')
+				{
+					$props = is_array($this->arUserResult['ORDER_PROP'] ?? null) ? $this->arUserResult['ORDER_PROP'] : [];
+					$out = [
+						'ORDER_PROP_6' => $props[6] ?? null,
+						'ORDER_PROP_4' => $props[4] ?? null,
+						'ORDER_PROP_5' => $props[5] ?? null,
+						'ORDER_PROP_18' => $props[18] ?? null,
+						'ORDER_PROP_16' => $props[16] ?? null,
+						'ORDER_PROP_17' => $props[17] ?? null,
+					];
+
+					// Also try to capture what JS_DATA returns for location prop.
+					$jsLoc = null;
+					if (isset($this->arResult['JS_DATA']['ORDER_PROP']['properties']) && is_array($this->arResult['JS_DATA']['ORDER_PROP']['properties']))
+					{
+						foreach ($this->arResult['JS_DATA']['ORDER_PROP']['properties'] as $p)
+						{
+							if (is_array($p) && ($p['IS_LOCATION'] ?? 'N') === 'Y')
+							{
+								$jsLoc = [
+									'ID' => $p['ID'] ?? null,
+									'VALUE' => $p['VALUE'] ?? null,
+									'DEFAULT_VALUE' => $p['DEFAULT_VALUE'] ?? null,
+									'SOURCE' => $p['SOURCE'] ?? null,
+								];
+								break;
+							}
+						}
+					}
+					$out['JS_LOC'] = $jsLoc;
+					// Capture delivery prices returned to UI (first 10).
+					$del = [];
+					if (isset($this->arResult['JS_DATA']['DELIVERY']) && is_array($this->arResult['JS_DATA']['DELIVERY']))
+					{
+						$cnt = 0;
+						foreach ($this->arResult['JS_DATA']['DELIVERY'] as $d)
+						{
+							if (!is_array($d))
+								continue;
+							$del[] = [
+								'ID' => $d['ID'] ?? null,
+								'NAME' => $d['NAME'] ?? null,
+								'PRICE' => $d['PRICE'] ?? null,
+								'PRICE_FORMATTED' => $d['PRICE_FORMATED'] ?? null,
+								'CALC_DESC' => $d['CALCULATE_DESCRIPTION'] ?? null,
+							];
+							$cnt++;
+							if ($cnt >= 10)
+								break;
+						}
+					}
+					$out['JS_DELIVERY'] = $del;
+					$line = date('c') . ' refreshResult ' . json_encode($out, JSON_UNESCAPED_UNICODE) . PHP_EOL;
+					@file_put_contents($_SERVER['DOCUMENT_ROOT'] . '/.tmp_order_make_loc.log', $line, FILE_APPEND);
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
 		}
 		else
 			$error = Loc::getMessage('SESSID_ERROR');

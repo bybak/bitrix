@@ -370,6 +370,11 @@
     padding-top: 0;
     line-height: 20px;
 }
+.bx-soa-coupon,
+.bx-soa-coupon-block {
+	display: none !important;
+}
+
 .bx-soa-coupon-block {
     vertical-align: middle;
     line-height: 34px;

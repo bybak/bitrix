@@ -18,6 +18,16 @@ services:
     networks:
       - bitrix
 
+  mailhog:
+    image: mailhog/mailhog
+    container_name: bitrix_mailhog
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - bitrix
+
   php:
     build:
       context: .
@@ -34,10 +44,11 @@ services:
       # HTTP service in 1C: /unf/hs/<ROOT_URL>/<template>
       # По твоей конфигурации ROOT_URL = orders, шаблон = /create, метод = POST
       MF_UNF_ENDPOINT: "http://95.161.174.134:25555/unf/hs/orders/create"
+      MF_UNF_PAID_ENDPOINT: "http://95.161.174.134:25555/unf/hs/orders/update"
       MF_UNF_TIMEOUT: "10"
       MF_UNF_LOG: "1"
       MF_UNF_OPERATION: "Заказ на продажу"
-      MF_UNF_TAXATION: "Облагается (с НДС)"
+      MF_UNF_TAXATION: "Не облагается (без НДС)"
     volumes:
       - ./www:/var/www/html
     depends_on:

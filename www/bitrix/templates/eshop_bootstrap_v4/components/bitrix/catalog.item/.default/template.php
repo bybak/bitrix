@@ -9,31 +9,55 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('mf_mf_product_img_url'))
 {
 	$fallback = function_exists('mf_mf_placeholder_img_url') ? (string)mf_mf_placeholder_img_url() : '';
-	$cssWrap = function(string $primary) use ($fallback): string
-	{
-		$primary = trim($primary);
-		if ($primary === '' || $fallback === '')
-		{
-			return $primary;
-		}
-		// This value is later used inside url('<SRC>') in both PHP templates and JS:
-		// url('<primary>'), url('<fallback>')
-		return $primary . "'), url('" . $fallback;
-	};
 
 	$code = trim((string)($arResult['ITEM']['CODE'] ?? ''));
 	if ($code !== '')
 	{
-		$src1 = $cssWrap((string)mf_mf_product_img_url($code, 1));
+		// IMPORTANT:
+		// - this SRC is used as an <img src> in the add-to-basket popup (JCCatalogItem)
+		// - so it must be a plain URL, NOT a CSS "url(...), url(...)" expression
+		$src1 = trim((string)mf_mf_product_img_url($code, 1));
+		if ($src1 === '' && $fallback !== '')
+		{
+			$src1 = $fallback;
+		}
 		if ($src1 !== '')
 		{
-			if (isset($arResult['ITEM']['PREVIEW_PICTURE']) && is_array($arResult['ITEM']['PREVIEW_PICTURE']))
+			// Ensure preview picture arrays exist (Bitrix may omit them if no local files).
+			if (!isset($arResult['ITEM']['PREVIEW_PICTURE']) || !is_array($arResult['ITEM']['PREVIEW_PICTURE']))
+			{
+				$arResult['ITEM']['PREVIEW_PICTURE'] = ['SRC' => $src1];
+			}
+			else
 			{
 				$arResult['ITEM']['PREVIEW_PICTURE']['SRC'] = $src1;
 			}
-			if (isset($arResult['ITEM']['PREVIEW_PICTURE_SECOND']) && is_array($arResult['ITEM']['PREVIEW_PICTURE_SECOND']))
+
+			if (!isset($arResult['ITEM']['PREVIEW_PICTURE_SECOND']) || !is_array($arResult['ITEM']['PREVIEW_PICTURE_SECOND']))
+			{
+				$arResult['ITEM']['PREVIEW_PICTURE_SECOND'] = ['SRC' => $src1];
+			}
+			else
 			{
 				$arResult['ITEM']['PREVIEW_PICTURE_SECOND']['SRC'] = $src1;
+			}
+
+			// Defaults used by JS in some modes.
+			if (!isset($arResult['ITEM']['PRODUCT_PREVIEW']) || !is_array($arResult['ITEM']['PRODUCT_PREVIEW']))
+			{
+				$arResult['ITEM']['PRODUCT_PREVIEW'] = ['SRC' => $src1];
+			}
+			else
+			{
+				$arResult['ITEM']['PRODUCT_PREVIEW']['SRC'] = $src1;
+			}
+			if (!isset($arResult['ITEM']['PRODUCT_PREVIEW_SECOND']) || !is_array($arResult['ITEM']['PRODUCT_PREVIEW_SECOND']))
+			{
+				$arResult['ITEM']['PRODUCT_PREVIEW_SECOND'] = ['SRC' => $src1];
+			}
+			else
+			{
+				$arResult['ITEM']['PRODUCT_PREVIEW_SECOND']['SRC'] = $src1;
 			}
 		}
 
@@ -43,7 +67,11 @@ if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('
 			foreach ($arResult['ITEM']['MORE_PHOTO'] as $k => $p)
 			{
 				$i++;
-				$src = $cssWrap((string)mf_mf_product_img_url($code, $i));
+				$src = trim((string)mf_mf_product_img_url($code, $i));
+				if ($src === '' && $fallback !== '')
+				{
+					$src = $fallback;
+				}
 				if ($src === '')
 				{
 					continue;
@@ -64,11 +92,19 @@ if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('
 		{
 			foreach ($arResult['ITEM']['OFFERS'] as $ok => $offer)
 			{
-				if (isset($offer['PREVIEW_PICTURE']) && is_array($offer['PREVIEW_PICTURE']))
+				if (!isset($offer['PREVIEW_PICTURE']) || !is_array($offer['PREVIEW_PICTURE']))
+				{
+					$arResult['ITEM']['OFFERS'][$ok]['PREVIEW_PICTURE'] = ['SRC' => $src1];
+				}
+				else
 				{
 					$arResult['ITEM']['OFFERS'][$ok]['PREVIEW_PICTURE']['SRC'] = $src1;
 				}
-				if (isset($offer['PREVIEW_PICTURE_SECOND']) && is_array($offer['PREVIEW_PICTURE_SECOND']))
+				if (!isset($offer['PREVIEW_PICTURE_SECOND']) || !is_array($offer['PREVIEW_PICTURE_SECOND']))
+				{
+					$arResult['ITEM']['OFFERS'][$ok]['PREVIEW_PICTURE_SECOND'] = ['SRC' => $src1];
+				}
+				else
 				{
 					$arResult['ITEM']['OFFERS'][$ok]['PREVIEW_PICTURE_SECOND']['SRC'] = $src1;
 				}
@@ -78,7 +114,11 @@ if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('
 					foreach ($offer['MORE_PHOTO'] as $k => $p)
 					{
 						$i++;
-						$src = $cssWrap((string)mf_mf_product_img_url($code, $i));
+						$src = trim((string)mf_mf_product_img_url($code, $i));
+						if ($src === '' && $fallback !== '')
+						{
+							$src = $fallback;
+						}
 						if ($src === '')
 						{
 							continue;

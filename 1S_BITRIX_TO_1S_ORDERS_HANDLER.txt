@@ -1,0 +1,34 @@
+// Единый тонкий HTTP-обработчик (handler) для 1С.
+// В модуле HTTP-сервиса оставляем ТОЛЬКО делегирование в общие модули.
+//
+// Как использовать:
+// 1) Создай общий модуль `MfBitrixUnfOrdersCreate` (Сервер, Экспорт) и вставь в него код из:
+//    `1S_BITRIX_TO_1S_ORDER_CREATE.txt`
+// 2) Создай общий модуль `MfBitrixUnfOrdersUpdate` (Сервер, Экспорт) и вставь в него код из:
+//    `1S_BITRIX_TO_1S_ORDER_UPDATE.txt`
+// 3) В модуле HTTP-сервиса (ROOT_URL=orders) вставь код из ЭТОГО файла.
+//
+// Контракты методов сохраняются:
+// - MfScriptVersion(), Ping(Запрос), Orders(Запрос) -> create-логика
+// - UpdateOrder(Запрос, Ответ) -> update-логика
+
+&НаСервере
+Функция MfScriptVersion() Экспорт
+	Возврат MfBitrixUnfOrdersCreate.MfScriptVersion();
+КонецФункции
+
+&НаСервере
+Функция Ping(Запрос) Экспорт
+	Возврат MfBitrixUnfOrdersCreate.Ping(Запрос);
+КонецФункции
+
+&НаСервере
+Функция Orders(Запрос) Экспорт
+	Возврат MfBitrixUnfOrdersCreate.Orders(Запрос);
+КонецФункции
+
+&НаСервере
+Функция UpdateOrder(Запрос) Экспорт
+	Возврат MfBitrixUnfOrdersUpdate.UpdateOrder(Запрос);
+КонецФункции
+

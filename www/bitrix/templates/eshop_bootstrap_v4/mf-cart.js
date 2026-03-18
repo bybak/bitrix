@@ -80,6 +80,33 @@
     }
   }
 
+  function hideBasketInternalProps(root) {
+    root = root || document;
+    // Hide internal basket properties used for store selection.
+    // They must remain in the basket for backend logic, but should not be shown to the user.
+    var hide = {
+      MF_STORE_ID: true,
+      MF_STORE_TITLE: true,
+      MF_STORE_CODE: true,
+    };
+
+    var nodes = root.querySelectorAll('.basket-item-property-value[data-property-code]');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var code = n.getAttribute('data-property-code') || '';
+      if (!code) continue;
+      if (!hide[code] && code.indexOf('MF_STORE_') !== 0) continue;
+
+      var wrap = n.closest ? n.closest('.basket-item-property') : null;
+      if (wrap && wrap.parentNode) {
+        wrap.parentNode.removeChild(wrap);
+      } else {
+        // Fallback: hide just in case we can't locate the wrapper
+        n.style.display = 'none';
+      }
+    }
+  }
+
   function layoutCart(root) {
     root = root || document;
     var basketRoot = root.querySelector('#basket-root');
@@ -113,6 +140,7 @@
 
     layoutCart(cartRoot);
     patchBasketImages(cartRoot);
+    hideBasketInternalProps(cartRoot);
 
     // Basket UI re-renders via JS. Re-apply image patch on mutations.
     var raf = 0;
@@ -122,6 +150,7 @@
         raf = 0;
         layoutCart(cartRoot);
         patchBasketImages(cartRoot);
+        hideBasketInternalProps(cartRoot);
       });
     });
     obs.observe(cartRoot, {
@@ -138,6 +167,7 @@
       tries++;
       layoutCart(cartRoot);
       patchBasketImages(cartRoot);
+      hideBasketInternalProps(cartRoot);
       if (tries >= 10) {
         window.clearInterval(iv);
       }

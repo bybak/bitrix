@@ -203,11 +203,12 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 		<span class="mf-pcard__media" data-entity="image-wrapper">
 	<?php endif; ?>
 			<span class="mf-pcard__media-inner">
-				<img class="mf-pcard__media-img" src="<?=$imgSrc?>" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+				<span class="product-item-image-original" id="<?=$itemIds['PICT']?>">
+					<img class="mf-pcard__media-img" src="<?=$imgSrc?>" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+				</span>
 			</span>
 			<span style="display:none" aria-hidden="true">
 				<span class="product-item-image-slider-slide-container slide" id="<?=$itemIds['PICT_SLIDER']?>"></span>
-				<span class="product-item-image-original" id="<?=$itemIds['PICT']?>"></span>
 				<?php if (!empty($itemIds['SECOND_PICT'])): ?>
 					<span class="product-item-image-alternative" id="<?=$itemIds['SECOND_PICT']?>"></span>
 				<?php endif; ?>

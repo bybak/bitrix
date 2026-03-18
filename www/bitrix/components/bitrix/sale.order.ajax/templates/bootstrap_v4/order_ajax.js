@@ -706,8 +706,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					case 'REGION':
 						if (showAll || this.regionBlockNode.getAttribute('data-visited') === 'true')
 						{
-							this.showError(this.regionBlockNode, blockErrors, true);
-							this.showError(this.regionHiddenBlockNode, blockErrors);
+							// Motor-Force customization: region step disabled; show region-related errors in Delivery block.
+							this.showError(this.deliveryBlockNode, blockErrors, true);
+							this.showError(this.deliveryHiddenBlockNode, blockErrors);
 						}
 						break;
 					case 'DELIVERY':
@@ -1666,7 +1667,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				arProperty, data, section;
 
 			this.locationsInitialized = true;
-			this.fixLocationsStyle(this.regionBlockNode, this.regionHiddenBlockNode);
+			// Motor-Force customization: location+zip are rendered in Delivery block.
+			this.fixLocationsStyle(this.deliveryBlockNode, this.deliveryHiddenBlockNode);
 			this.fixLocationsStyle(this.propsBlockNode, this.propsHiddenBlockNode);
 
 			for (i in this.locations)
@@ -1727,8 +1729,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.checkNotifications();
 
-			if (this.activeSectionId !== this.regionBlockNode.id)
-				this.editFadeRegionContent(this.regionBlockNode.querySelector('.bx-soa-section-content'));
+			// Motor-Force customization: region block disabled (location+zip are in Delivery block).
 
 			if (this.activeSectionId != this.propsBlockNode.id)
 				this.editFadePropsContent(this.propsBlockNode.querySelector('.bx-soa-section-content'));
@@ -1795,6 +1796,35 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				section = this.getNextSection(actionSection),
 				allSections, titleNode, editStep;
 
+			// Motor-Force customization:
+			// In "virtual eDost tariffs" mode, do not allow leaving Delivery step
+			// until user explicitly selects a tariff (MF_EDOST_TARIF_ID).
+			try
+			{
+				if (actionSection && actionSection.id === this.deliveryBlockNode.id)
+				{
+					var f = BX('bx-soa-order-form');
+					var virtual = f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box'));
+					if (virtual)
+					{
+						var tidEl = f ? f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
+						var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
+						// Also require location to be chosen (the selector may exist but be empty).
+						var locHidden = f ? f.querySelector('input[type="hidden"][name^="ORDER_PROP_"]') : null;
+						if (!tid)
+						{
+							this.showError(this.deliveryBlockNode, 'Выберите способ доставки, чтобы перейти дальше.', true);
+							this.animateScrollTo(this.deliveryBlockNode, 400, 20);
+							return BX.PreventDefault(event);
+						}
+					}
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
+
 			this.reachGoal('next', actionSection);
 
 			if (
@@ -1816,6 +1846,40 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.fade(actionSection, section.next);
 			this.show(section.next);
 
+			// Motor-Force customization:
+			// After fading Delivery block, Bitrix renders the collapsed summary ("Стандартный 0 ₽").
+			// Replace it with the selected virtual delivery tariff name/price (display-only).
+			try
+			{
+				if (actionSection && actionSection.id === this.deliveryBlockNode.id)
+				{
+					setTimeout(function(){
+						try {
+							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.applyDeliverySummary === 'function')
+							{
+								BX.saleOrderAjax.__mfEdost.applyDeliverySummary();
+							}
+						} catch(e2) {}
+					}, 30);
+				}
+				// When navigating into Delivery step, re-render virtual offers and restore selection.
+				if (section && section.next && section.next.id === this.deliveryBlockNode.id)
+				{
+					setTimeout(function(){
+						try {
+							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
+							{
+								BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+							}
+						} catch(e3) {}
+					}, 30);
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
+
 			return BX.PreventDefault(event);
 		},
 
@@ -1830,6 +1894,46 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.fade(actionSection);
 			this.show(section.next);
+			// Motor-Force customization:
+			// When leaving Delivery step backwards (Delivery -> Basket), Bitrix re-renders the collapsed
+			// delivery summary and can show the technical delivery ("Стандартный"). Replace it again.
+			try
+			{
+				if (actionSection && actionSection.id === this.deliveryBlockNode.id)
+				{
+					setTimeout(function(){
+						try {
+							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.applyDeliverySummary === 'function')
+							{
+								BX.saleOrderAjax.__mfEdost.applyDeliverySummary();
+							}
+						} catch(e3) {}
+					}, 30);
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
+			// Motor-Force customization: when navigating into Delivery step, restore virtual offers.
+			try
+			{
+				if (section && section.next && section.next.id === this.deliveryBlockNode.id)
+				{
+					setTimeout(function(){
+						try {
+							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
+							{
+								BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+							}
+						} catch(e2) {}
+					}, 30);
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
 			this.animateScrollTo(section.next, 800);
 			return BX.PreventDefault(event);
 		},
@@ -1882,6 +1986,23 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (section.id === this.deliveryBlockNode.id)
 				{
+					// Motor-Force customization:
+					// We use a single technical Bitrix delivery ("Стандартный", price=0) and show
+					// real delivery options as virtual eDost tariffs. Therefore we must NOT skip
+					// the Delivery step even if Bitrix sees only one delivery service.
+					try
+					{
+						var f = BX('bx-soa-order-form');
+						if (f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box')))
+						{
+							return false;
+						}
+					}
+					catch (e)
+					{
+						// ignore
+					}
+
 					skip = this.result.DELIVERY && this.result.DELIVERY.length === 1
 						&& this.result.DELIVERY[0].EXTRA_SERVICES.length === 0
 						&& !this.result.DELIVERY[0].CALCULATE_ERRORS;
@@ -2172,6 +2293,25 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			fadeNode && this.fade(fadeNode);
 			this.show(showNode);
+			// Motor-Force customization: clicking "изменить" on Delivery should show virtual offers.
+			try
+			{
+				if (showNode && showNode.id === this.deliveryBlockNode.id)
+				{
+					setTimeout(function(){
+						try {
+							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
+							{
+								BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+							}
+						} catch(e2) {}
+					}, 30);
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
 
 			setTimeout(BX.delegate(function(){
 				if (BX.pos(showNode).top < scrollTop)
@@ -3678,8 +3818,20 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				{
 					if (props.hasOwnProperty(i))
 					{
-						var name = props[i].NAME || '',
+						var propCode = (props[i].CODE || props[i].NAME || ''),
+							name = props[i].NAME || '',
 							value = props[i].VALUE || '';
+
+						// Hide internal basket properties used for store selection.
+						if (
+							propCode === 'MF_STORE_ID'
+							|| propCode === 'MF_STORE_TITLE'
+							|| propCode === 'MF_STORE_CODE'
+							|| propCode.indexOf('MF_STORE_') === 0
+						)
+						{
+							continue;
+						}
 
 						propsNodes.push(
 							BX.create('DIV', {
@@ -3851,8 +4003,20 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					{
 						if (props.hasOwnProperty(i))
 						{
-							var name = props[i].NAME || '',
+							var propCode = (props[i].CODE || props[i].NAME || ''),
+								name = props[i].NAME || '',
 								value = props[i].VALUE || '';
+
+							// Hide internal basket properties used for store selection.
+							if (
+								propCode === 'MF_STORE_ID'
+								|| propCode === 'MF_STORE_TITLE'
+								|| propCode === 'MF_STORE_CODE'
+								|| propCode.indexOf('MF_STORE_') === 0
+							)
+							{
+								continue;
+							}
 
 							if (value.length == 0)
 								continue;
@@ -4249,73 +4413,20 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 		editRegionBlock: function(active)
 		{
-			if (!this.regionBlockNode || !this.regionHiddenBlockNode || !this.result.PERSON_TYPE)
-				return;
-
-			if (active)
+			// Motor-Force customization:
+			// - remove "Region" step entirely
+			// - location + zip are rendered in Delivery block
+			// - person type selector UI is removed (we keep a hidden PERSON_TYPE input elsewhere)
+			if (this.regionBlockNode)
 			{
-				this.editActiveRegionBlock(true);
-				!this.regionBlockNotEmpty && this.editFadeRegionBlock();
+				this.regionBlockNode.style.display = 'none';
 			}
-			else
-				this.editFadeRegionBlock();
-
 			this.initialized.region = true;
 		},
 
 		editActiveRegionBlock: function(activeNodeMode)
 		{
-			var node = activeNodeMode ? this.regionBlockNode : this.regionHiddenBlockNode,
-				regionContent, regionNode, regionNodeCol;
-
-			if (this.initialized.region)
-			{
-				BX.remove(BX.lastChild(node));
-				node.appendChild(BX.firstChild(this.regionHiddenBlockNode));
-			}
-			else
-			{
-				regionContent = node.querySelector('.bx-soa-section-content');
-				if (!regionContent)
-				{
-					regionContent = this.getNewContainer();
-					node.appendChild(regionContent);
-				}
-				else
-					BX.cleanNode(regionContent);
-
-				this.getErrorContainer(regionContent);
-
-				regionNode = BX.create('DIV', {props: {className: 'bx_soa_location row'}});
-				regionNodeCol = BX.create('DIV', {props: {className: 'col'}});
-
-				this.getPersonTypeControl(regionNodeCol);
-
-				this.getProfilesControl(regionNodeCol);
-
-				this.getDeliveryLocationInput(regionNodeCol);
-
-				if (!this.result.SHOW_AUTH)
-				{
-					if (this.regionBlockNotEmpty)
-					{
-						BX.addClass(this.regionBlockNode, 'bx-active');
-						this.regionBlockNode.style.display = '';
-					}
-					else
-					{
-						BX.removeClass(this.regionBlockNode, 'bx-active');
-						this.regionBlockNode.style.display = 'none';
-
-						if (!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
-							this.initFirstSection();
-					}
-				}
-
-				regionNode.appendChild(regionNodeCol);
-				regionContent.appendChild(regionNode);
-				this.getBlockFooter(regionContent);
-			}
+			// Disabled. (Location + ZIP are rendered in Delivery block.)
 		},
 
 		editFadeRegionBlock: function()
@@ -4408,11 +4519,12 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (validRegionErrors.length)
 				{
-					BX.addClass(this.regionBlockNode, 'bx-step-error');
-					this.showError(this.regionBlockNode, validRegionErrors);
+					// Motor-Force customization: region step disabled; show in Delivery block.
+					BX.addClass(this.deliveryBlockNode, 'bx-step-error');
+					this.showError(this.deliveryBlockNode, validRegionErrors);
 				}
 				else
-					BX.removeClass(this.regionBlockNode, 'bx-step-error');
+					BX.removeClass(this.deliveryBlockNode, 'bx-step-error');
 			}
 
 			BX.bind(node.querySelector('.alert.alert-danger'), 'click', BX.proxy(this.showByClick, this));
@@ -4561,15 +4673,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.getZipLocationInput(node);
 
-			if (location && location[0])
-			{
-				node.appendChild(
-					BX.create('DIV', {
-						props: {className: 'bx-soa-reference'},
-						html: this.params.MESS_REGION_REFERENCE
-					})
-				);
-			}
+			// Motor-Force customization: hide "region" reference text (region step removed).
 		},
 
 		getLocationString: function(node)
@@ -4693,112 +4797,30 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.result.PERSON_TYPE = this.getPersonTypeSortedArray(this.result.PERSON_TYPE);
 
+			// Motor-Force customization:
+			// Hide payer type selector UI. Keep a hidden PERSON_TYPE value so Bitrix logic stays intact.
 			var personTypesCount = this.result.PERSON_TYPE.length,
-				currentType, oldPersonTypeId, i,
-				input, options = [], label, delimiter = false;
+				selectedId = null,
+				i;
 
-			if (personTypesCount > 1)
+			for (i in this.result.PERSON_TYPE)
 			{
-				input = BX.create('DIV', {
-					props: {className: 'form-check-group'},
-					children: [
-						BX.create('LABEL', {
-							props: {className: 'bx-soa-custom-label'},
-							html: this.params.MESS_PERSON_TYPE
-						})
-					]
-				});
-				node.appendChild(input);
-				node = input;
-			}
-
-			if (personTypesCount > 2)
-			{
-				for (i in this.result.PERSON_TYPE)
+				if (this.result.PERSON_TYPE.hasOwnProperty(i) && this.result.PERSON_TYPE[i].CHECKED == 'Y')
 				{
-					if (this.result.PERSON_TYPE.hasOwnProperty(i))
-					{
-						currentType = this.result.PERSON_TYPE[i];
-						options.push(BX.create('OPTION', {
-							props: {
-								value: currentType.ID,
-								selected: currentType.CHECKED == 'Y'
-							},
-							text: currentType.NAME
-						}));
-
-						if (currentType.CHECKED == 'Y')
-							oldPersonTypeId = currentType.ID;
-					}
-
+					selectedId = this.result.PERSON_TYPE[i].ID;
+					break;
 				}
-				node.appendChild(BX.create('SELECT', {
-					props: {name: 'PERSON_TYPE', className: 'form-control'},
-					children: options,
-					events: {change: BX.proxy(this.sendRequest, this)}
-				}));
-
-				this.regionBlockNotEmpty = true;
 			}
-			else if (personTypesCount == 2)
+			if (!selectedId && personTypesCount > 0)
 			{
-				for (i in this.result.PERSON_TYPE)
-				{
-					if (this.result.PERSON_TYPE.hasOwnProperty(i))
-					{
-						currentType = this.result.PERSON_TYPE[i];
-						var inputContainer = BX.create("div", {
-							attrs: {className: "form-check"},
-							children: [
-								BX.create('INPUT', {
-									attrs: {
-										className: "form-check-input",
-										id: "radio" + currentType.ID,
-										checked: currentType.CHECKED == 'Y'},
-										props: {type: 'radio', name: 'PERSON_TYPE', value: currentType.ID}
-								}),
-								BX.create('LABEL', {
-									attrs: {
-										className: "form-check-label",
-										for: "radio" + currentType.ID
-									},
-									text: BX.util.htmlspecialchars(currentType.NAME),
-									events: {change: BX.proxy(this.sendRequest, this)}
-								})
-							],
-							events: {change: BX.proxy(this.sendRequest, this)}
-
-						});
-
-						node.appendChild(inputContainer);
-						delimiter = true;
-
-						if (currentType.CHECKED == 'Y')
-							oldPersonTypeId = currentType.ID;
-					}
-				}
-
-				this.regionBlockNotEmpty = true;
+				selectedId = this.result.PERSON_TYPE[0].ID;
 			}
-			else
+			if (selectedId)
 			{
-				for (i in this.result.PERSON_TYPE)
-					if (this.result.PERSON_TYPE.hasOwnProperty(i))
-						node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: this.result.PERSON_TYPE[i].ID}}));
-			}
-
-			if (oldPersonTypeId)
-			{
-				node.appendChild(
-					BX.create('INPUT', {
-						props: {
-							type: 'hidden',
-							name: 'PERSON_TYPE_OLD',
-							value: oldPersonTypeId
-
-						}
-					})
-				);
+				node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: selectedId}}));
+				// Important: also send PERSON_TYPE_OLD so Bitrix doesn't treat each AJAX refresh
+				// as "person type changed" and doesn't overwrite LOCATION from the saved profile (e.g., Moscow).
+				node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE_OLD', value: selectedId}}));
 			}
 		},
 
@@ -5381,7 +5403,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		editActiveDeliveryBlock: function(activeNodeMode)
 		{
 			var node = activeNodeMode ? this.deliveryBlockNode : this.deliveryHiddenBlockNode,
-				deliveryContent, deliveryNode;
+				deliveryContent, deliveryNode, locationNode, locationNodeCol;
 
 			if (this.initialized.delivery)
 			{
@@ -5400,6 +5422,14 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					BX.cleanNode(deliveryContent);
 
 				this.getErrorContainer(deliveryContent);
+
+				// Motor-Force customization: location + zip belong to Delivery block.
+				locationNode = BX.create('DIV', {props: {className: 'bx_soa_location row'}});
+				locationNodeCol = BX.create('DIV', {props: {className: 'col'}});
+				this.getPersonTypeControl(locationNodeCol);
+				this.getDeliveryLocationInput(locationNodeCol);
+				locationNode.appendChild(locationNodeCol);
+				deliveryContent.appendChild(locationNode);
 
 				deliveryNode = BX.create('DIV', {props: {className: 'bx-soa-pp row'}});
 				this.editDeliveryItems(deliveryNode);
@@ -7364,7 +7394,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (regionErrors.length)
 			{
 				navigated = true;
-				this.animateScrollTo(this.regionBlockNode, 800, 50);
+				// Motor-Force customization: location+zip are inside Delivery block.
+				this.animateScrollTo(this.deliveryBlockNode, 800, 50);
 			}
 
 			if (propsErrors.length && !navigated)
@@ -7387,8 +7418,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (regionErrors.length)
 			{
-				this.showError(this.regionBlockNode, regionErrors);
-				BX.addClass(this.regionBlockNode, 'bx-step-error');
+				this.showError(this.deliveryBlockNode, regionErrors);
+				BX.addClass(this.deliveryBlockNode, 'bx-step-error');
 			}
 
 			if (propsErrors.length)
@@ -8247,6 +8278,37 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				{
 					deliveryValue += '<br><span class="bx-price-old">' + curDelivery.PRICE_FORMATED + '</span>';
 				}
+			}
+
+			// Motor-Force customization:
+			// Virtual delivery tariffs (display-only). Delivery must show:
+			// - "Не выбрано" until user selects a tariff
+			// - selected tariff price after selection
+			// but MUST NOT affect order totals (Bitrix delivery price remains 0).
+			try
+			{
+				var f = BX('bx-soa-order-form');
+				if (f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box')))
+				{
+					var tidEl = f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]');
+					var priceEl = f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_PRICE"]');
+					var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
+					var price = priceEl ? BX.util.trim(String(priceEl.value || '')) : '';
+
+					params = {}; // override free/error styling
+					if (!tid)
+					{
+						deliveryValue = 'Не выбрано';
+					}
+					else
+					{
+						deliveryValue = price !== '' ? (price + ' ₽') : 'Не выбрано';
+					}
+				}
+			}
+			catch (e)
+			{
+				// ignore
 			}
 
 			if (this.result.DELIVERY.length)

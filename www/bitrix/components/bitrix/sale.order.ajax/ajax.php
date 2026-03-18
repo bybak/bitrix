@@ -43,6 +43,57 @@ if (empty($action))
 	return;
 }
 
+// Motor-Force debug: log incoming location/profile values on localhost.
+// Helps diagnose "location resets to Moscow" issues.
+try
+{
+	$host = (string)($_SERVER['HTTP_HOST'] ?? '');
+	// In Docker, browser requests usually come from 172.* addresses.
+	// We treat localhost host header as sufficient signal for local debug.
+	$isLocal = ($host === 'localhost' || $host === '127.0.0.1');
+
+	if ($isLocal && in_array($action, ['refreshOrderAjax', 'saveOrderAjax'], true))
+	{
+		$order = $request->get('order');
+		$order = is_array($order) ? $order : [];
+
+		$pick = static function(array $src, array $keys): array {
+			$out = [];
+			foreach ($keys as $k)
+			{
+				if (array_key_exists($k, $src))
+				{
+					$out[$k] = $src[$k];
+				}
+			}
+			return $out;
+		};
+
+		$interesting = $pick($order, [
+			'PERSON_TYPE',
+			'PERSON_TYPE_OLD',
+			'PROFILE_ID',
+			'profile_change',
+			'location_type',
+			'RECENT_DELIVERY_VALUE',
+			'ZIP_PROPERTY_CHANGED',
+			'ORDER_PROP_6',  // person type 1 location
+			'ORDER_PROP_4',  // person type 1 zip
+			'ORDER_PROP_5',  // person type 1 city (alt)
+			'ORDER_PROP_18', // person type 2 location
+			'ORDER_PROP_16', // person type 2 zip
+			'ORDER_PROP_17', // person type 2 city (alt)
+		]);
+
+		$line = date('c') . ' action=' . $action . ' ' . json_encode($interesting, JSON_UNESCAPED_UNICODE) . PHP_EOL;
+		@file_put_contents($_SERVER['DOCUMENT_ROOT'] . '/.tmp_order_make_loc.log', $line, FILE_APPEND);
+	}
+}
+catch (\Throwable $e)
+{
+	// ignore
+}
+
 global $APPLICATION;
 
 $APPLICATION->IncludeComponent(

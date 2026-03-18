@@ -24,3 +24,6 @@ www/upload/iblock/
 www/bitrix/managed_cache/
 www/upload/resize_cache/
 .env
+.tmp_1cxml
+.repost_out
+logs/*

@@ -45,19 +45,11 @@ $arParams['PICKUP_MAP_TYPE'] = (string)($arParams['PICKUP_MAP_TYPE'] ?? 'yandex'
 $arParams['HIDE_ORDER_DESCRIPTION'] = ($arParams['HIDE_ORDER_DESCRIPTION'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['ALLOW_USER_PROFILES'] = ($arParams['ALLOW_USER_PROFILES'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['ALLOW_NEW_PROFILE'] = ($arParams['ALLOW_NEW_PROFILE'] ?? 'N') === 'Y' ? 'Y' : 'N';
-$arParams['SHOW_COUPONS'] = ($arParams['SHOW_COUPONS'] ?? 'Y') === 'N' ? 'N' : 'Y';
-if ($arParams['SHOW_COUPONS'] === 'N')
-{
-	$arParams['SHOW_COUPONS_BASKET'] = 'N';
-	$arParams['SHOW_COUPONS_DELIVERY'] = 'N';
-	$arParams['SHOW_COUPONS_PAY_SYSTEM'] = 'N';
-}
-else
-{
-	$arParams['SHOW_COUPONS_BASKET'] = ($arParams['SHOW_COUPONS_BASKET'] ?? 'Y') === 'N' ? 'N' : 'Y';
-	$arParams['SHOW_COUPONS_DELIVERY'] = ($arParams['SHOW_COUPONS_DELIVERY'] ?? 'Y') === 'N' ? 'N' : 'Y';
-	$arParams['SHOW_COUPONS_PAY_SYSTEM'] = ($arParams['SHOW_COUPONS_PAY_SYSTEM'] ?? 'Y') === 'N' ? 'N' : 'Y';
-}
+// Motor-Force customization: полностью убираем блок "Применить купон" на всех формах оформления.
+$arParams['SHOW_COUPONS'] = 'N';
+$arParams['SHOW_COUPONS_BASKET'] = 'N';
+$arParams['SHOW_COUPONS_DELIVERY'] = 'N';
+$arParams['SHOW_COUPONS_PAY_SYSTEM'] = 'N';
 
 $arParams['USE_YM_GOALS'] = ($arParams['USE_YM_GOALS'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['YM_GOALS_COUNTER'] = (string)($arParams['YM_GOALS_COUNTER'] ?? '');
@@ -299,9 +291,13 @@ switch (LANGUAGE_ID)
 }
 
 \Bitrix\Main\UI\Extension::load('ui.fonts.opensans');
-$this->addExternalJs($templateFolder.'/order_ajax.js');
+$orderAjaxPath = Main\Application::getDocumentRoot() . $templateFolder . '/order_ajax.js';
+$orderAjaxVer = @filemtime($orderAjaxPath) ?: time();
+$this->addExternalJs($templateFolder . '/order_ajax.js?v=' . $orderAjaxVer);
 \Bitrix\Sale\PropertyValueCollection::initJs();
-$this->addExternalJs($templateFolder.'/script.js');
+$scriptPath = Main\Application::getDocumentRoot() . $templateFolder . '/script.js';
+$scriptVer = @filemtime($scriptPath) ?: time();
+$this->addExternalJs($templateFolder . '/script.js?v=' . $scriptVer);
 ?>
 	<NOSCRIPT>
 		<div style="color:red"><?=Loc::getMessage('SOA_NO_JS')?></div>
@@ -374,8 +370,8 @@ else
 				endif;
 				?>
 
-				<!--	REGION BLOCK	-->
-				<div id="bx-soa-region" data-visited="false" class="bx-soa-section bx-active">
+				<!--	REGION BLOCK (disabled by Motor-Force customizations)	-->
+				<div id="bx-soa-region" data-visited="false" class="bx-soa-section" style="display:none">
 					<div class="bx-soa-section-title-container d-flex justify-content-between align-items-center flex-nowrap">
 						<div class="bx-soa-section-title" data-entity="section-title">
 							<span class="bx-soa-section-title-count"></span><?=$arParams['MESS_REGION_BLOCK_NAME']?>

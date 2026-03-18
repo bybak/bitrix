@@ -3,10 +3,250 @@ declare(strict_types=1);
 
 namespace MF\Delivery;
 
+use Bitrix\Main\Application;
+use Bitrix\Main\Config\Option;
 use Bitrix\Main\Localization\Loc;
+use Bitrix\Main\Web\HttpClient;
 use Bitrix\Sale\Delivery\CalculationResult;
 use Bitrix\Sale\Delivery\Services\Base;
 use Bitrix\Sale\Shipment;
+
+final class Edost
+{
+	public static function isConfigured(): bool
+	{
+		return self::shopId() !== '' && self::shopPass() !== '';
+	}
+
+	public static function endpointPrimary(): string
+	{
+		$env = getenv('MF_EDOST_ENDPOINT');
+		if ($env !== false && trim((string)$env) !== '')
+		{
+			return trim((string)$env);
+		}
+		$opt = trim((string)Option::get('mf.edost', 'endpoint', 'http://api.edost.ru/api2.php'));
+		return $opt !== '' ? $opt : 'http://api.edost.ru/api2.php';
+	}
+
+	public static function endpointFallback(): string
+	{
+		$env = getenv('MF_EDOST_ENDPOINT_FALLBACK');
+		if ($env !== false && trim((string)$env) !== '')
+		{
+			return trim((string)$env);
+		}
+		$opt = trim((string)Option::get('mf.edost', 'endpoint_fallback', 'http://edost.net/api2.php'));
+		return $opt !== '' ? $opt : 'http://edost.net/api2.php';
+	}
+
+	public static function shopId(): string
+	{
+		$env = getenv('MF_EDOST_ID');
+		if ($env !== false && trim((string)$env) !== '')
+		{
+			return trim((string)$env);
+		}
+		return trim((string)Option::get('mf.edost', 'id', ''));
+	}
+
+	public static function shopPass(): string
+	{
+		$env = getenv('MF_EDOST_PASS');
+		if ($env !== false && trim((string)$env) !== '')
+		{
+			return trim((string)$env);
+		}
+		return trim((string)Option::get('mf.edost', 'pass', ''));
+	}
+
+	public static function timeoutSeconds(): int
+	{
+		$env = getenv('MF_EDOST_TIMEOUT');
+		if ($env !== false && is_numeric($env))
+		{
+			return max(1, (int)$env);
+		}
+		return max(1, (int)Option::get('mf.edost', 'timeout', '10'));
+	}
+
+	public static function defaultInsuranceRub(): float
+	{
+		$env = getenv('MF_EDOST_STRAH');
+		if ($env !== false && is_numeric($env))
+		{
+			return max(0.0, (float)$env);
+		}
+		return max(0.0, (float)Option::get('mf.edost', 'strah', '0'));
+	}
+
+	/**
+	 * @return array{ok:bool, stat?:int, warning?:int, error?:string, offers?:array<int, array{id:string,price:float,days_from:int,days_to:int,company:string,name:string,strah:int}>}
+	 */
+	public static function calculate(string $toCityRuUtf8, float $weightKg, float $insuranceRub, string $zipDigits = ''): array
+	{
+		$toCityRuUtf8 = trim($toCityRuUtf8);
+		$zipDigits = preg_replace('~\\D+~', '', $zipDigits);
+		$weightKg = max(0.001, $weightKg);
+		$insuranceRub = max(0.0, $insuranceRub);
+
+		if (!self::isConfigured())
+		{
+			return ['ok' => false, 'error' => 'eDost credentials are not configured'];
+		}
+		if ($toCityRuUtf8 === '')
+		{
+			return ['ok' => false, 'error' => 'empty to_city'];
+		}
+
+		$toCity1251 = @iconv('UTF-8', 'Windows-1251//IGNORE', $toCityRuUtf8);
+		if (!is_string($toCity1251) || $toCity1251 === '')
+		{
+			return ['ok' => false, 'error' => 'cannot convert to_city to windows-1251'];
+		}
+
+		$post = [
+			'id' => self::shopId(),
+			'p' => self::shopPass(),
+			'to_city' => $toCity1251,
+			'weight' => (string)round($weightKg, 3),
+			'strah' => (string)round($insuranceRub, 2),
+			'headerutf' => '1',
+		];
+		if ($zipDigits !== '')
+		{
+			$post['zip'] = $zipDigits;
+		}
+
+		$payload = http_build_query($post, '', '&');
+
+		$http = new HttpClient([
+			'socketTimeout' => self::timeoutSeconds(),
+			'streamTimeout' => self::timeoutSeconds(),
+		]);
+		$http->setHeader('Content-Type', 'application/x-www-form-urlencoded');
+
+		$body = (string)$http->post(self::endpointPrimary(), $payload);
+		if ($body === '' || $http->getStatus() <= 0)
+		{
+			$body = (string)$http->post(self::endpointFallback(), $payload);
+		}
+
+		$xml = @simplexml_load_string($body);
+		if ($xml === false)
+		{
+			return ['ok' => false, 'error' => 'invalid xml from eDost'];
+		}
+
+		$stat = (int)($xml->stat ?? 0);
+		if ($stat !== 1)
+		{
+			return ['ok' => false, 'stat' => $stat, 'warning' => (int)($xml->warning ?? 0), 'error' => 'eDost stat=' . (string)$stat];
+		}
+
+		$offers = [];
+		foreach (($xml->tarif ?? []) as $tarif)
+		{
+			$id = trim((string)($tarif->id ?? ''));
+			$price = (float)str_replace(',', '.', (string)($tarif->price ?? '0'));
+			$dayRaw = trim((string)($tarif->day ?? ''));
+			[$dFrom, $dTo] = self::parseDaysRange($dayRaw);
+			$company = trim((string)($tarif->company ?? ''));
+			$name = trim((string)($tarif->name ?? ''));
+			$strah = (int)($tarif->strah ?? 0);
+
+			if ($id === '' || $price <= 0)
+			{
+				continue;
+			}
+
+			$offers[] = [
+				'id' => $id,
+				'price' => $price,
+				'days_from' => $dFrom,
+				'days_to' => $dTo,
+				'company' => $company,
+				'name' => $name,
+				'strah' => $strah,
+			];
+		}
+
+		return [
+			'ok' => true,
+			'stat' => $stat,
+			'warning' => (int)($xml->warning ?? 0),
+			'offers' => $offers,
+		];
+	}
+
+	/**
+	 * @return array{0:int,1:int}
+	 */
+	private static function parseDaysRange(string $dayRaw): array
+	{
+		$dayRaw = trim(mb_strtolower($dayRaw));
+		$dayRaw = preg_replace('~[^0-9\\-–]+~u', ' ', $dayRaw);
+		$dayRaw = trim(preg_replace('~\\s+~', ' ', $dayRaw));
+
+		if ($dayRaw === '')
+		{
+			return [0, 0];
+		}
+
+		if (preg_match('~^(\\d+)\\s*[-–]\\s*(\\d+)$~u', $dayRaw, $m))
+		{
+			$a = (int)$m[1];
+			$b = (int)$m[2];
+			$a = max(0, $a);
+			$b = max($a, $b);
+			return [$a, $b];
+		}
+
+		if (preg_match('~^(\\d+)$~u', $dayRaw, $m))
+		{
+			$a = max(0, (int)$m[1]);
+			return [$a, $a];
+		}
+
+		// Fallback: extract up to 2 numbers anywhere.
+		if (preg_match_all('~\\d+~u', $dayRaw, $mm) && !empty($mm[0]))
+		{
+			$nums = array_map('intval', array_slice($mm[0], 0, 2));
+			$a = max(0, (int)($nums[0] ?? 0));
+			$b = max($a, (int)($nums[1] ?? $a));
+			return [$a, $b];
+		}
+
+		return [0, 0];
+	}
+
+	public static function resolveCityNameRuByLocationCode(string $locationCode): string
+	{
+		$locationCode = trim($locationCode);
+		if ($locationCode === '')
+		{
+			return '';
+		}
+
+		try
+		{
+			$conn = Application::getConnection();
+			$h = $conn->getSqlHelper();
+			$codeSql = $h->forSql($locationCode);
+			$name = (string)$conn->queryScalar(
+				"SELECT n.NAME
+				 FROM b_sale_location l
+				 JOIN b_sale_loc_name n ON n.LOCATION_ID = l.ID AND n.LANGUAGE_ID = 'ru'
+				 WHERE l.CODE = '{$codeSql}'"
+			);
+			return trim($name);
+		}
+		catch (\Throwable $e)
+		{
+			return '';
+		}
+	}
+}
 
 /**
  * Простая тарифная доставка для carrier'ов (СДЭК/Почта/ТК и т.п.).
@@ -19,6 +259,9 @@ use Bitrix\Sale\Shipment;
  */
 final class Tariffed extends Base
 {
+	/** @var array<string, array<int, array{id:string,price:float,days_from:int,days_to:int,company:string,name:string,strah:int}>> */
+	private static $edostOffersHitCache = [];
+
 	// Важно для sale.order.ajax: позволяет посчитать стоимость заранее (DELIVERY_NO_AJAX=H)
 	// и показать цены у всех вариантов доставки до выбора.
 	protected static $isCalculatePriceImmediately = true;
@@ -45,6 +288,21 @@ final class Tariffed extends Base
 		$result = new CalculationResult();
 
 		$config = is_array($this->config) ? $this->config : [];
+		// Backward/forward compatibility: Bitrix can persist config either flat,
+		// or grouped by sections returned from getConfigStructure() (MAIN/EDOST/PERIOD).
+		// Prefer explicit (flat) values, but fall back to section values if present.
+		if (isset($config['MAIN']) && is_array($config['MAIN']))
+		{
+			$config = array_merge($config['MAIN'], $config);
+		}
+		if (isset($config['EDOST']) && is_array($config['EDOST']))
+		{
+			$config = array_merge($config['EDOST'], $config);
+		}
+		if (isset($config['PERIOD']) && is_array($config['PERIOD']))
+		{
+			$config = array_merge($config['PERIOD'], $config);
+		}
 
 		$base = (float)($config['BASE_PRICE'] ?? 0);
 		$perKg = (float)($config['PRICE_PER_KG'] ?? 0);
@@ -52,6 +310,7 @@ final class Tariffed extends Base
 		$freeFrom = (float)($config['FREE_FROM_SUM'] ?? 0);
 		$round = (string)($config['ROUND'] ?? 'Y');
 		$useZones = (string)($config['USE_ZONES'] ?? 'N');
+		$useEdost = (string)($config['EDOST_ENABLED'] ?? 'N');
 
 		$weight = (float)$shipment->getWeight(); // grams in Bitrix
 		$weightKg = $weight > 0 ? ($weight / 1000.0) : 0.0;
@@ -114,17 +373,229 @@ final class Tariffed extends Base
 		}
 
 		$price = 0.0;
-		if ($freeFrom > 0 && $orderSum >= $freeFrom)
+		$edostOffer = null;
+		if ($useEdost === 'Y' && Edost::isConfigured())
 		{
-			$price = 0.0;
+			$isLocalHost = false;
+			try
+			{
+				$host = (string)($_SERVER['HTTP_HOST'] ?? '');
+				$isLocalHost = ($host === 'localhost' || $host === '127.0.0.1');
+			}
+			catch (\Throwable $e)
+			{
+				$isLocalHost = false;
+			}
+
+			$companyFilter = trim((string)($config['EDOST_COMPANY'] ?? ''));
+			if ($companyFilter === '')
+			{
+				// По умолчанию пробуем по названию службы (СДЭК/Почта России/EMS/...)
+				$companyFilter = trim((string)($config['CARRIER'] ?? ''));
+			}
+			if ($companyFilter === '')
+			{
+				$companyFilter = trim((string)$this->getName());
+			}
+
+			$toCity = Edost::resolveCityNameRuByLocationCode($locationCode);
+			$insuranceMode = (string)($config['EDOST_INSURANCE'] ?? 'N');
+			$insurance = $insuranceMode === 'Y' ? $orderSum : Edost::defaultInsuranceRub();
+
+			$cacheTtl = (int)($config['EDOST_CACHE_TTL'] ?? 15);
+			$cacheTtl = max(0, $cacheTtl);
+			// Avoid stale cached "empty offers" while debugging locally.
+			if ($isLocalHost)
+			{
+				$cacheTtl = 0;
+			}
+
+			$cacheKey = implode('|', [
+				'v1',
+				mb_strtolower($toCity),
+				(string)$zipDigits,
+				(string)round($weightKg, 3),
+				(string)round($insurance, 2),
+			]);
+			$cacheDir = 'mf/edost';
+
+			$offers = null;
+			$resp = null;
+
+			// Per-hit in-memory cache to avoid N eDost HTTP calls for N delivery cards.
+			if (isset(self::$edostOffersHitCache[$cacheKey]) && is_array(self::$edostOffersHitCache[$cacheKey]))
+			{
+				$offers = self::$edostOffersHitCache[$cacheKey];
+			}
+
+			if ($offers === null && $cacheTtl > 0 && class_exists(\Bitrix\Main\Data\Cache::class))
+			{
+				$cache = \Bitrix\Main\Data\Cache::createInstance();
+				if ($cache->initCache($cacheTtl * 60, md5($cacheKey), $cacheDir))
+				{
+					$data = $cache->getVars();
+					if (is_array($data) && isset($data['offers']) && is_array($data['offers']))
+					{
+						$offers = $data['offers'];
+					}
+				}
+				elseif ($cache->startDataCache())
+				{
+					$resp = Edost::calculate($toCity, max(0.001, $weightKg), $insurance, (string)$zipDigits);
+					$offers = (is_array($resp) && ($resp['ok'] ?? false) && isset($resp['offers']) && is_array($resp['offers'])) ? $resp['offers'] : [];
+					$cache->endDataCache(['offers' => $offers]);
+				}
+			}
+			elseif ($offers === null)
+			{
+				$resp = Edost::calculate($toCity, max(0.001, $weightKg), $insurance, (string)$zipDigits);
+				$offers = (is_array($resp) && ($resp['ok'] ?? false) && isset($resp['offers']) && is_array($resp['offers'])) ? $resp['offers'] : [];
+			}
+
+			$offers = is_array($offers) ? $offers : [];
+			self::$edostOffersHitCache[$cacheKey] = $offers;
+			$norm = static function(string $s): string {
+				$s = mb_strtolower(trim($s));
+				// keep letters/digits only to make matching robust across punctuation/spaces.
+				$s = preg_replace('~[^\\p{L}\\p{N}]+~u', '', $s);
+				return (string)$s;
+			};
+			$companyNeedle = $norm((string)$companyFilter);
+			$filtered = array_values(array_filter($offers, static function ($o) use ($companyNeedle, $norm) {
+				if (!is_array($o))
+				{
+					return false;
+				}
+				if ($companyNeedle === '')
+				{
+					return true;
+				}
+				$company = $norm((string)($o['company'] ?? ''));
+				if ($company === '')
+				{
+					return false;
+				}
+				// Allow partial match in either direction:
+				// "Почта России" should match "EMS Почта России" if account returns only EMS.
+				return (mb_strpos($company, $companyNeedle) !== false) || (mb_strpos($companyNeedle, $company) !== false);
+			}));
+
+			$pick = (string)($config['EDOST_PICK'] ?? 'CHEAPEST');
+			$pick = strtoupper(trim($pick));
+			$list = $filtered ?: $offers;
+
+			// Optional: pick a specific eDost tariff within the (filtered) offers.
+			$tariffIdNeedle = trim((string)($config['EDOST_TARIFF_ID'] ?? ''));
+			$tariffNameNeedle = trim((string)($config['EDOST_TARIFF_NAME'] ?? ''));
+			$templateOnly = (string)($config['EDOST_TEMPLATE_ONLY'] ?? 'N');
+			// "Template-only" delivery is used as a single hidden delivery service on checkout.
+			// It must NOT produce an error (otherwise sale.order.ajax shows "cannot calculate delivery"),
+			// and its price must not affect the order total.
+			if ($templateOnly === 'Y' && $tariffIdNeedle === '' && $tariffNameNeedle === '')
+			{
+				$result->setDeliveryPrice(0.0);
+				return $result;
+			}
+			if ($tariffIdNeedle !== '' || $tariffNameNeedle !== '')
+			{
+				$tid = preg_replace('~\\D+~', '', $tariffIdNeedle);
+				$tname = $norm($tariffNameNeedle);
+				$byTariff = array_values(array_filter($list, static function ($o) use ($tid, $tname, $norm) {
+					if (!is_array($o))
+					{
+						return false;
+					}
+					if ($tid !== '')
+					{
+						return (string)($o['id'] ?? '') === $tid;
+					}
+					if ($tname === '')
+					{
+						return false;
+					}
+					$name = $norm((string)($o['name'] ?? ''));
+					return $name !== '' && (mb_strpos($name, $tname) !== false || mb_strpos($tname, $name) !== false);
+				}));
+				if (!empty($byTariff))
+				{
+					$edostOffer = $byTariff[0] ?? null;
+				}
+			}
+
+			// If a fixed tariff was requested but not available for this destination,
+			// make this delivery variant unavailable (so it won't be shown/selected).
+			if (($tariffIdNeedle !== '' || $tariffNameNeedle !== '') && !is_array($edostOffer))
+			{
+				$result->addError(new \Bitrix\Main\Error('eDost tariff is not available for this destination'));
+				return $result;
+			}
+
+			// Default: choose cheapest/fastest within company.
+			if (!is_array($edostOffer) && !empty($list))
+			{
+				usort($list, static function ($a, $b) use ($pick) {
+					$pa = (float)($a['price'] ?? 0);
+					$pb = (float)($b['price'] ?? 0);
+					$da = (int)($a['days_to'] ?? 0);
+					$db = (int)($b['days_to'] ?? 0);
+
+					if ($pick === 'FASTEST')
+					{
+						return ($da <=> $db) ?: ($pa <=> $pb);
+					}
+					return ($pa <=> $pb) ?: ($da <=> $db);
+				});
+				$edostOffer = $list[0] ?? null;
+			}
+
+			// Local debug log (no UI impact).
+			if ($isLocalHost)
+			{
+				try
+				{
+					$line = json_encode([
+						'ts' => date('c'),
+						'delivery_id' => method_exists($this, 'getId') ? $this->getId() : null,
+						'delivery_name' => method_exists($this, 'getName') ? $this->getName() : null,
+						'use_edost' => $useEdost,
+						'configured' => Edost::isConfigured(),
+						'to_city' => $toCity,
+						'zip' => (string)$zipDigits,
+						'weightKg' => round(max(0.001, (float)$weightKg), 3),
+						'company_filter' => $companyFilter,
+						'resp_ok' => is_array($resp) ? (bool)($resp['ok'] ?? false) : null,
+						'resp_stat' => is_array($resp) ? ($resp['stat'] ?? null) : null,
+						'resp_error' => is_array($resp) ? ($resp['error'] ?? null) : null,
+						'offers_total' => is_array($offers) ? count($offers) : null,
+						'offers_filtered' => is_array($filtered) ? count($filtered) : null,
+						'offer_pick' => $edostOffer,
+					], JSON_UNESCAPED_UNICODE);
+					@file_put_contents($_SERVER['DOCUMENT_ROOT'] . '/.tmp_edost_calc.log', $line . PHP_EOL, FILE_APPEND);
+				}
+				catch (\Throwable $e)
+				{
+					// ignore
+				}
+			}
 		}
-		else
+
+		if (is_array($edostOffer) && (float)($edostOffer['price'] ?? 0) > 0)
+		{
+			$price = (float)$edostOffer['price'];
+		}
+		elseif (!($freeFrom > 0 && $orderSum >= $freeFrom))
 		{
 			$price = $base + ($perKg * $weightKg);
 			if ($min > 0)
 			{
 				$price = max($price, $min);
 			}
+		}
+
+		// Бесплатная доставка от суммы заказа — приоритетнее расчёта (и eDost, и тарифного).
+		if ($freeFrom > 0 && $orderSum >= $freeFrom)
+		{
+			$price = 0.0;
 		}
 
 		if ($round !== 'N')
@@ -141,6 +612,7 @@ final class Tariffed extends Base
 
 		$carrier = (string)($config['CARRIER'] ?? '');
 		$desc = [];
+		$edostSetPeriod = false;
 		if ($carrier !== '')
 		{
 			$desc[] = 'Служба: ' . $carrier;
@@ -165,6 +637,39 @@ final class Tariffed extends Base
 		{
 			$desc[] = 'Зона: ' . $zone;
 		}
+		if (is_array($edostOffer))
+		{
+			$edCompany = trim((string)($edostOffer['company'] ?? ''));
+			$edName = trim((string)($edostOffer['name'] ?? ''));
+			$edId = trim((string)($edostOffer['id'] ?? ''));
+			$edDaysFrom = (int)($edostOffer['days_from'] ?? 0);
+			$edDaysTo = (int)($edostOffer['days_to'] ?? 0);
+
+			$label = 'eDost';
+			if ($edCompany !== '')
+			{
+				$label .= ': ' . $edCompany;
+			}
+			if ($edName !== '')
+			{
+				$label .= ' — ' . $edName;
+			}
+			if ($edId !== '')
+			{
+				$label .= ' (тариф ' . $edId . ')';
+			}
+			$desc[] = $label;
+
+			if ($edDaysFrom > 0 || $edDaysTo > 0)
+			{
+				$edDaysFrom = max(0, $edDaysFrom);
+				$edDaysTo = max($edDaysFrom, $edDaysTo);
+				$result->setPeriodFrom($edDaysFrom);
+				$result->setPeriodTo($edDaysTo);
+				$result->setPeriodDescription('Срок: ' . ($edDaysFrom > 0 ? $edDaysFrom : 0) . '–' . ($edDaysTo > 0 ? $edDaysTo : $edDaysFrom) . ' дн.');
+				$edostSetPeriod = true;
+			}
+		}
 		if ($desc)
 		{
 			$result->setDescription(implode('. ', $desc) . '.');
@@ -172,7 +677,7 @@ final class Tariffed extends Base
 
 		$fromDays = (int)($config['PERIOD_FROM_DAYS'] ?? 0);
 		$toDays = (int)($config['PERIOD_TO_DAYS'] ?? 0);
-		if ($fromDays > 0 || $toDays > 0)
+		if (!$edostSetPeriod && ($fromDays > 0 || $toDays > 0))
 		{
 			$fromDays = max(0, $fromDays);
 			$toDays = max($fromDays, $toDays);
@@ -275,6 +780,68 @@ final class Tariffed extends Base
 						'TYPE' => 'NUMBER',
 						'NAME' => 'Москва: бесплатно от суммы заказа',
 						'DEFAULT' => 0,
+					],
+				],
+			],
+			'EDOST' => [
+				'TITLE' => 'eDost (онлайн-расчёт)',
+				'DESCRIPTION' => 'Если включено и настроены MF_EDOST_ID/MF_EDOST_PASS, цена и срок берутся из eDost.',
+				'ITEMS' => [
+					'EDOST_ENABLED' => [
+						'TYPE' => 'ENUM',
+						'NAME' => 'Использовать eDost для расчёта',
+						'DEFAULT' => 'N',
+						'OPTIONS' => [
+							'Y' => 'Да',
+							'N' => 'Нет',
+						],
+					],
+					'EDOST_COMPANY' => [
+						'TYPE' => 'STRING',
+						'NAME' => 'Фильтр company (например: СДЭК, Почта России, EMS, Деловые линии, ПЭК, Энергия)',
+						'DEFAULT' => '',
+					],
+					'EDOST_TEMPLATE_ONLY' => [
+						'TYPE' => 'ENUM',
+						'NAME' => 'Шаблонная служба (скрыть базовую карточку, использовать только для генерации вариантов)',
+						'DEFAULT' => 'N',
+						'OPTIONS' => [
+							'Y' => 'Да',
+							'N' => 'Нет',
+						],
+					],
+					'EDOST_PICK' => [
+						'TYPE' => 'ENUM',
+						'NAME' => 'Как выбирать тариф внутри company',
+						'DEFAULT' => 'CHEAPEST',
+						'OPTIONS' => [
+							'CHEAPEST' => 'Самый дешёвый',
+							'FASTEST' => 'Самый быстрый',
+						],
+					],
+					'EDOST_TARIFF_ID' => [
+						'TYPE' => 'STRING',
+						'NAME' => 'Фиксированный tarif id (если задан — выбираем именно его)',
+						'DEFAULT' => '',
+					],
+					'EDOST_TARIFF_NAME' => [
+						'TYPE' => 'STRING',
+						'NAME' => 'Фиксированный тариф по названию (подстрока name из eDost)',
+						'DEFAULT' => '',
+					],
+					'EDOST_INSURANCE' => [
+						'TYPE' => 'ENUM',
+						'NAME' => 'Страховка = сумма заказа (параметр strah)',
+						'DEFAULT' => 'N',
+						'OPTIONS' => [
+							'Y' => 'Да',
+							'N' => 'Нет',
+						],
+					],
+					'EDOST_CACHE_TTL' => [
+						'TYPE' => 'NUMBER',
+						'NAME' => 'Кэш eDost (минут)',
+						'DEFAULT' => 15,
 					],
 				],
 			],

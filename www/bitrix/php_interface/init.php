@@ -1285,6 +1285,41 @@ if (!function_exists('mf_on_order_before_saved'))
 				mf_assign_store_and_price_to_basket_item($item);
 			}
 		}
+
+		// Motor-Force customization:
+		// Save selected eDost delivery tariff into manager comment (hidden from customer).
+		try
+		{
+			if (class_exists(\Bitrix\Main\Application::class))
+			{
+				$req = \Bitrix\Main\Application::getInstance()->getContext()->getRequest();
+				$tid = trim((string)$req->getPost('MF_EDOST_TARIF_ID'));
+				if ($tid !== '')
+				{
+					$company = trim((string)$req->getPost('MF_EDOST_TARIF_COMPANY'));
+					$name = trim((string)$req->getPost('MF_EDOST_TARIF_NAME'));
+					$price = trim((string)$req->getPost('MF_EDOST_TARIF_PRICE'));
+
+					$line = 'Доставка (eDost, справочно, не входит в Итого): '
+						. ($company !== '' ? ($company . ' — ') : '')
+						. ($name !== '' ? $name : ('тариф ' . $tid))
+						. ' — ' . $price . ' ₽'
+						. ' (tarif_id=' . $tid . ')';
+
+					$comments = (string)$order->getField('COMMENTS');
+					// Replace previous line if it exists (avoid duplicates on multiple saves).
+					$comments = preg_replace('~^Доставка \\(eDost, справочно, не входит в Итого\\):.*$~mu', '', $comments);
+					$comments = trim((string)$comments);
+					$comments = trim($comments . "\n" . $line);
+
+					$order->setField('COMMENTS', $comments);
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
 	}
 }
 
@@ -1333,4 +1368,26 @@ if (is_file($mfCatalogVisibilityInclude))
 	{
 		mf_ensure_iblock4_ext_images_property();
 	}
+}
+
+// --- Stock: deduct store amounts on checkout --------------------------------
+$mfStockInclude = __DIR__ . '/include/mf_stock.php';
+if (is_file($mfStockInclude))
+{
+    require_once $mfStockInclude;
+    if (class_exists('\\Mf\\Stock\\Bootstrap'))
+    {
+        \Mf\Stock\Bootstrap::init();
+    }
+}
+
+// --- Payment: card-to-card email instructions --------------------------------
+$mfC2CInclude = __DIR__ . '/include/mf_card2card.php';
+if (is_file($mfC2CInclude))
+{
+    require_once $mfC2CInclude;
+    if (class_exists('\\Mf\\Card2Card\\Bootstrap'))
+    {
+        \Mf\Card2Card\Bootstrap::init();
+    }
 }

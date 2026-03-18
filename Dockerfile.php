@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     curl \
+    ca-certificates \
+    msmtp \
+    msmtp-mta \
     && rm -rf /var/lib/apt/lists/*
 
 # Установка PHP расширений для Битрикс
@@ -42,6 +45,10 @@ RUN pecl install redis apcu \
 # Копирование конфигурации PHP
 COPY php-bitrix.ini /usr/local/etc/php/conf.d/99-bitrix.ini
 
+# Entry-point: generate ~/.msmtprc from env (optional)
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Установка прав
 RUN chown -R www-data:www-data /var/www
 
@@ -54,5 +61,6 @@ USER www-data
 # Expose порт PHP-FPM
 EXPOSE 9000
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["php-fpm"]
 
