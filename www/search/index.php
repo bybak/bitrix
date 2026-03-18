@@ -13,21 +13,10 @@ $APPLICATION->AddChainItem("Поиск", SITE_DIR."search/");
 	// don't auto-convert keyboard layout (BRP -> ИКЗ)
 	"USE_LANGUAGE_GUESS" => "N",
 	"arrFILTER" => array(
-		0 => "main",
-		1 => "iblock_services",
-		2 => "iblock_news",
-		3 => "iblock_catalog",
-	),
-	"arrFILTER_main" => array(
-	),
-	"arrFILTER_iblock_services" => array(
-		0 => "all",
-	),
-	"arrFILTER_iblock_news" => array(
-		0 => "all",
+		0 => "iblock_catalog",
 	),
 	"arrFILTER_iblock_catalog" => array(
-		0 => "all",
+		0 => "4",
 	),
 	"SHOW_WHERE" => "N",
 	"SHOW_WHEN" => "N",

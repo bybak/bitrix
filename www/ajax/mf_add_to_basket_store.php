@@ -94,7 +94,14 @@ try
 		throw new RuntimeException(implode('; ', $r->getErrorMessages()));
 	}
 
-	echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+	// Return actual basket quantity for live header counter update.
+	$basketCount = 0.0;
+	foreach ($basket as $bi)
+	{
+		try { $basketCount += (float)$bi->getQuantity(); } catch (Throwable $e) {}
+	}
+
+	echo json_encode(['ok' => true, 'basket_count' => (int)round($basketCount)], JSON_UNESCAPED_UNICODE);
 }
 catch (Throwable $e)
 {

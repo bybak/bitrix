@@ -631,10 +631,12 @@
 				}
 
 				this.obBuyBtn && BX.bind(this.obBuyBtn, 'click', BX.proxy(this.buyBasket, this));
-				this.smallCardNodes.buyButton && BX.bind(this.smallCardNodes.buyButton, 'click', BX.proxy(this.buyBasket, this));
+				this.smallCardNodes.buyButton && this.smallCardNodes.buyButton !== this.obBuyBtn
+					&& BX.bind(this.smallCardNodes.buyButton, 'click', BX.proxy(this.buyBasket, this));
 
 				this.obAddToBasketBtn && BX.bind(this.obAddToBasketBtn, 'click', BX.proxy(this.add2Basket, this));
-				this.smallCardNodes.addButton && BX.bind(this.smallCardNodes.addButton, 'click', BX.proxy(this.add2Basket, this));
+				this.smallCardNodes.addButton && this.smallCardNodes.addButton !== this.obAddToBasketBtn
+					&& BX.bind(this.smallCardNodes.addButton, 'click', BX.proxy(this.add2Basket, this));
 
 				if (this.obCompare)
 				{
@@ -3354,6 +3356,12 @@
 			if (!this.canBuy)
 				return;
 
+			// Motor-Force customization:
+			// Prevent duplicate adds caused by double bindings / double clicks.
+			if (this.__mfBasketInFlight)
+				return;
+			this.__mfBasketInFlight = true;
+
 			this.initBasketUrl();
 			this.fillBasketProps();
 			BX.ajax({
@@ -3361,7 +3369,13 @@
 				dataType: 'json',
 				url: this.basketUrl,
 				data: this.basketParams,
-				onsuccess: BX.proxy(this.basketResult, this)
+				onsuccess: BX.proxy(function(res){
+					this.__mfBasketInFlight = false;
+					this.basketResult(res);
+				}, this),
+				onfailure: BX.proxy(function(){
+					this.__mfBasketInFlight = false;
+				}, this)
 			});
 		},
 

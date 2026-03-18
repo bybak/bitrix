@@ -6,6 +6,14 @@ BitrixSmallCart.prototype = {
 
 	activate: function ()
 	{
+		// Motor-Force customization:
+		// Keep a global registry of small cart instances so custom AJAX flows
+		// (e.g. add-to-basket from search) can reliably trigger refreshCart().
+		try {
+			window.__mfSmallCarts = window.__mfSmallCarts || [];
+			if (window.__mfSmallCarts.indexOf(this) === -1) window.__mfSmallCarts.push(this);
+		} catch (e) {}
+
 		this.cartElement = BX(this.cartId);
 		this.fixedPosition = this.arParams.POSITION_FIXED == 'Y';
 		if (this.fixedPosition)

@@ -628,10 +628,12 @@
 				}
 
 				this.obBuyBtn && BX.bind(this.obBuyBtn, 'click', BX.proxy(this.buyBasket, this));
-				this.smallCardNodes.buyButton && BX.bind(this.smallCardNodes.buyButton, 'click', BX.proxy(this.buyBasket, this));
+				this.smallCardNodes.buyButton && this.smallCardNodes.buyButton !== this.obBuyBtn
+					&& BX.bind(this.smallCardNodes.buyButton, 'click', BX.proxy(this.buyBasket, this));
 
 				this.obAddToBasketBtn && BX.bind(this.obAddToBasketBtn, 'click', BX.proxy(this.add2Basket, this));
-				this.smallCardNodes.addButton && BX.bind(this.smallCardNodes.addButton, 'click', BX.proxy(this.add2Basket, this));
+				this.smallCardNodes.addButton && this.smallCardNodes.addButton !== this.obAddToBasketBtn
+					&& BX.bind(this.smallCardNodes.addButton, 'click', BX.proxy(this.add2Basket, this));
 
 				if (this.obCompare)
 				{
@@ -3350,14 +3352,54 @@
 			if (!this.canBuy)
 				return;
 
+			// Motor-Force customization:
+			// Prevent duplicate adds caused by double bindings / double clicks / double init.
+			try
+			{
+				window.__mfBasketGlobalLocks = window.__mfBasketGlobalLocks || {};
+			}
+			catch (e)
+			{
+				// ignore
+			}
+			if (this.__mfBasketInFlight)
+				return;
+
 			this.initBasketUrl();
 			this.fillBasketProps();
+
+			var lockKey = '';
+			try
+			{
+				var pid = 0;
+				try { pid = (this.productType === 3) ? (this.offers[this.offerNum] && this.offers[this.offerNum].ID) : this.product.id; } catch (e2) {}
+				var qty = this.obQuantity && this.obQuantity.value ? String(this.obQuantity.value) : '1';
+				lockKey = String(this.basketUrl || '') + '|' + String(pid || '') + '|' + String(qty || '') + '|' + String(this.basketMode || '');
+				if (lockKey && window.__mfBasketGlobalLocks && window.__mfBasketGlobalLocks[lockKey])
+					return;
+				if (lockKey && window.__mfBasketGlobalLocks)
+					window.__mfBasketGlobalLocks[lockKey] = 1;
+			}
+			catch (e)
+			{
+				lockKey = '';
+			}
+
+			this.__mfBasketInFlight = true;
 			BX.ajax({
 				method: 'POST',
 				dataType: 'json',
 				url: this.basketUrl,
 				data: this.basketParams,
-				onsuccess: BX.proxy(this.basketResult, this)
+				onsuccess: BX.proxy(function(res){
+					this.__mfBasketInFlight = false;
+					try { if (lockKey && window.__mfBasketGlobalLocks) delete window.__mfBasketGlobalLocks[lockKey]; } catch(e2) {}
+					this.basketResult(res);
+				}, this),
+				onfailure: BX.proxy(function(){
+					this.__mfBasketInFlight = false;
+					try { if (lockKey && window.__mfBasketGlobalLocks) delete window.__mfBasketGlobalLocks[lockKey]; } catch(e2) {}
+				}, this)
 			});
 		},
 
