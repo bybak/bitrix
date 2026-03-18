@@ -37,7 +37,7 @@ services:
     working_dir: /var/www/html
     user: www-data
     env_file:
-      - /Users/andrey/cursor_projects/bitrix/www/.env
+      - ./.env
     environment:
       TZ: Europe/Moscow
       MF_UNF_ENABLED: "1"
