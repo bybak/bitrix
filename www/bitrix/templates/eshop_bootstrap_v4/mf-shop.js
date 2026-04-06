@@ -39,6 +39,184 @@
   })();
 
   onReady(function () {
+    function ensureRequestPriceModal() {
+      var modal = document.getElementById('mf-global-request-price-modal');
+      if (modal) return modal;
+
+      var wrap = document.createElement('div');
+      wrap.innerHTML = [
+        '<div class="mf-shop-modal" id="mf-global-request-price-modal" hidden>',
+        '  <div class="mf-shop-modal__backdrop js-mf-shop-request-close"></div>',
+        '  <div class="mf-shop-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="mf-shop-request-title">',
+        '    <button type="button" class="mf-shop-modal__close js-mf-shop-request-close" aria-label="Закрыть">×</button>',
+        '    <div class="mf-shop-modal__title" id="mf-shop-request-title">Запросить цену</div>',
+        '    <div class="mf-shop-modal__subtitle" id="mf-shop-request-product"></div>',
+        '    <div class="mf-shop-modal__message" id="mf-shop-request-message" hidden></div>',
+        '    <form class="mf-shop-modal__form" id="mf-shop-request-form">',
+        '      <input type="hidden" name="sessid" value="' + ((window.BX && BX.bitrix_sessid) ? BX.bitrix_sessid() : '') + '">',
+        '      <input type="hidden" name="product_id" value="">',
+        '      <input type="hidden" name="product_name" value="">',
+        '      <input type="hidden" name="product_url" value="">',
+        '      <div class="form-group">',
+        '        <label for="mf-shop-request-name">Имя</label>',
+        '        <input id="mf-shop-request-name" type="text" class="form-control" name="name" value="">',
+        '      </div>',
+        '      <div class="form-group">',
+        '        <label for="mf-shop-request-email">E-mail</label>',
+        '        <input id="mf-shop-request-email" type="email" class="form-control" name="email" value="">',
+        '      </div>',
+        '      <div class="form-group">',
+        '        <label for="mf-shop-request-comment">Комментарий</label>',
+        '        <textarea id="mf-shop-request-comment" class="form-control" name="comment" rows="5"></textarea>',
+        '      </div>',
+        '      <div class="mf-shop-modal__actions">',
+        '        <button type="submit" class="btn btn-warning mf-shop-modal__submit">Отправить</button>',
+        '      </div>',
+        '    </form>',
+        '  </div>',
+        '</div>'
+      ].join('');
+      modal = wrap.firstChild;
+      document.body.appendChild(modal);
+      return modal;
+    }
+
+    function setRequestMessage(text, isError) {
+      var box = document.getElementById('mf-shop-request-message');
+      if (!box) return;
+      box.textContent = String(text || '');
+      box.className = 'mf-shop-modal__message' + (isError ? ' is-error' : ' is-success');
+      box.hidden = !text;
+    }
+
+    function closeRequestModal() {
+      var modal = document.getElementById('mf-global-request-price-modal');
+      if (!modal) return;
+      modal.hidden = true;
+      document.documentElement.classList.remove('mf-shop-modal-open');
+      document.body.classList.remove('mf-shop-modal-open');
+    }
+
+    function openRequestModal(btn) {
+      var modal = ensureRequestPriceModal();
+      var form = document.getElementById('mf-shop-request-form');
+      var subtitle = document.getElementById('mf-shop-request-product');
+      if (!modal || !form) return;
+
+      var productName = btn.getAttribute('data-product-name') || '';
+      var userName = btn.getAttribute('data-user-name') || '';
+      var userEmail = btn.getAttribute('data-user-email') || '';
+      var locked = btn.getAttribute('data-user-locked') === '1';
+
+      form.elements.product_id.value = btn.getAttribute('data-product-id') || '';
+      form.elements.product_name.value = productName;
+      form.elements.product_url.value = btn.getAttribute('data-product-url') || '';
+      form.elements.name.value = userName;
+      form.elements.email.value = userEmail;
+      form.elements.comment.value = '';
+      form.elements.name.readOnly = locked && !!userName;
+      form.elements.email.readOnly = locked && !!userEmail;
+      if (subtitle) subtitle.textContent = productName;
+      setRequestMessage('', false);
+      modal.hidden = false;
+      document.documentElement.classList.add('mf-shop-modal-open');
+      document.body.classList.add('mf-shop-modal-open');
+      setTimeout(function () {
+        try {
+          if (form.elements.comment) form.elements.comment.focus();
+        } catch (e) {}
+      }, 0);
+    }
+
+    function submitRequestModal() {
+      var form = document.getElementById('mf-shop-request-form');
+      if (!form) return;
+      var submitBtn = form.querySelector('button[type="submit"]');
+      var oldText = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Отправляем…';
+      }
+      setRequestMessage('', false);
+
+      var done = function (resp) {
+        if (!resp || !resp.ok) {
+          setRequestMessage((resp && resp.error) ? resp.error : 'Не удалось отправить сообщение.', true);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = oldText;
+          }
+          return;
+        }
+        setRequestMessage('Сообщение отправлено. Мы свяжемся с вами.', false);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = oldText;
+        }
+        setTimeout(closeRequestModal, 900);
+      };
+
+      if (window.BX && BX.ajax) {
+        BX.ajax({
+          url: '/ajax/mf_request_price.php',
+          method: 'POST',
+          dataType: 'json',
+          data: {
+            sessid: form.elements.sessid.value,
+            product_id: form.elements.product_id.value,
+            product_name: form.elements.product_name.value,
+            product_url: form.elements.product_url.value,
+            name: form.elements.name.value,
+            email: form.elements.email.value,
+            comment: form.elements.comment.value
+          },
+          onsuccess: done,
+          onfailure: function () {
+            done({ ok: false, error: 'Не удалось отправить сообщение.' });
+          }
+        });
+        return;
+      }
+
+      if (window.fetch) {
+        var fd = new FormData(form);
+        fetch('/ajax/mf_request_price.php', {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (r) { return r.json(); })
+          .then(done)
+          .catch(function () {
+            done({ ok: false, error: 'Не удалось отправить сообщение.' });
+          });
+      }
+    }
+
+    document.addEventListener('click', function (e) {
+      var reqBtn = e && e.target && e.target.closest ? e.target.closest('.js-mf-request-price-global') : null;
+      if (reqBtn) {
+        e.preventDefault();
+        openRequestModal(reqBtn);
+        return;
+      }
+      var closeBtn = e && e.target && e.target.closest ? e.target.closest('.js-mf-shop-request-close') : null;
+      if (closeBtn) {
+        e.preventDefault();
+        closeRequestModal();
+      }
+    }, true);
+
+    document.addEventListener('keydown', function (e) {
+      if (e && e.key === 'Escape') closeRequestModal();
+    });
+
+    document.addEventListener('submit', function (e) {
+      var form = e && e.target && e.target.closest ? e.target.closest('#mf-shop-request-form') : null;
+      if (!form) return;
+      e.preventDefault();
+      submitRequestModal();
+    }, true);
+
     // Product detail: move the "small card" buy panel into the pay block (near gallery),
     // remove empty info blocks, and simplify tabs into a plain H2 heading.
     var detailRoot = document.querySelector('.mf-shop--detail');

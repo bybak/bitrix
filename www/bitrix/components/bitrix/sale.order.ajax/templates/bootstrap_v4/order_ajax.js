@@ -93,6 +93,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.defaultPaySystemLogo = this.templateFolder + "/images/pay_system_logo.png";
 
 			this.orderBlockNode = BX(parameters.orderBlockId);
+			this.checkoutMetaBlockNode = BX(parameters.checkoutMetaBlockId);
 			this.totalBlockNode = BX(parameters.totalBlockId);
 			this.mobileTotalBlockNode = BX(parameters.totalBlockId + '-mobile');
 			this.savedFilesBlockNode = BX('bx-soa-saved-files');
@@ -174,6 +175,23 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.firstLoad = false;
 
 			action = BX.type.isNotEmptyString(action) ? action : 'refreshOrderAjax';
+
+			if (action === 'showAuthForm')
+			{
+				try
+				{
+					form = BX('bx-soa-order-form');
+					this.__mfPendingRegisterSuccess = !!(
+						form
+						&& form.querySelector('input[name="do_register"]')
+						&& form.querySelector('input[name="do_register"]').value === 'Y'
+					);
+				}
+				catch (e)
+				{
+					this.__mfPendingRegisterSuccess = false;
+				}
+			}
 
 			var eventArgs = {
 				action: action,
@@ -357,6 +375,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				this.initOptions();
 				this.editOrder();
+				if (this.__mfPendingRegisterSuccess && this.result && this.result.IS_AUTHORIZED)
+				{
+					this.showTopSuccess('Вы зарегистрированы. Личный кабинет создан, данные для оформления подставлены автоматически.');
+					this.__mfPendingRegisterSuccess = false;
+				}
 				this.mapsReady && this.initMaps();
 				BX.saleOrderAjax && BX.saleOrderAjax.initDeferredControl();
 			}
@@ -962,7 +985,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					switch (k.toUpperCase())
 					{
 						case 'DELIVERY':
-							if (this.deliveryBlockNode.getAttribute('data-visited') === 'true')
+							if (
+								this.deliveryBlockNode.getAttribute('data-visited') === 'true'
+								&& !this.isIgnoredDeliveryWarning(this.result.WARNING[k])
+							)
 							{
 								this.showBlockWarning(this.deliveryBlockNode, this.result.WARNING[k], true);
 								this.showBlockWarning(this.deliveryHiddenBlockNode, this.result.WARNING[k], true);
@@ -990,12 +1016,28 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			switch (node.id)
 			{
 				case this.deliveryBlockNode.id:
-					this.showBlockWarning(this.deliveryBlockNode, this.result.WARNING.DELIVERY, true);
+					if (this.result.WARNING && !this.isIgnoredDeliveryWarning(this.result.WARNING.DELIVERY))
+						this.showBlockWarning(this.deliveryBlockNode, this.result.WARNING.DELIVERY, true);
 					break;
 				case this.paySystemBlockNode.id:
 					this.showBlockWarning(this.paySystemBlockNode, this.result.WARNING.PAY_SYSTEM, true);
 					break;
 			}
+		},
+
+		isIgnoredDeliveryWarning: function(warnings)
+		{
+			if (warnings == null)
+				return true;
+
+			var text = '';
+			if (BX.type.isArray(warnings))
+				text = warnings.join(' ');
+			else
+				text = String(warnings);
+
+			text = text.replace(/\s+/g, ' ').trim().toLowerCase();
+			return text === 'выбрана первая доступная доставка';
 		},
 
 		showBlockWarning: function(node, warnings, hide)
@@ -2592,6 +2634,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!this.orderBlockNode || !this.result)
 				return;
 
+			this.editCheckoutMetaBlock();
+
 			if (this.result.DELIVERY.length > 0)
 			{
 				BX.addClass(this.deliveryBlockNode, 'bx-active');
@@ -2620,8 +2664,496 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.editTotalBlock();
 			this.totalBlockFixFont();
 
+			if (this.__mfPendingPersonTypeSectionReset)
+			{
+				this.applyPersonTypeSectionReset();
+				this.__mfPendingPersonTypeSectionReset = false;
+			}
+
 			this.showErrors(this.result.ERROR, false);
 			this.showWarnings();
+
+			if (!this.result.SHOW_AUTH && this.result.OK_MESSAGE && this.result.OK_MESSAGE.length)
+			{
+				this.showTopSuccess(this.result.OK_MESSAGE.join(' '));
+				this.result.OK_MESSAGE = [];
+			}
+			else if (!this.result.SHOW_AUTH)
+			{
+				try
+				{
+					if (window.sessionStorage.getItem('mf_checkout_register_success') === 'Y' && this.result.IS_AUTHORIZED)
+					{
+						this.showTopSuccess('Вы зарегистрированы. Личный кабинет создан, данные для оформления подставлены автоматически.');
+						window.sessionStorage.removeItem('mf_checkout_register_success');
+					}
+				}
+				catch (storageError)
+				{
+					// ignore
+				}
+			}
+
+			try
+			{
+				if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.deferApplyDeliverySummary === 'function')
+				{
+					BX.saleOrderAjax.__mfEdost.deferApplyDeliverySummary();
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
+		},
+
+		editCheckoutMetaBlock: function()
+		{
+			if (!this.checkoutMetaBlockNode || !this.result || !this.result.PERSON_TYPE)
+				return;
+
+			var node = this.checkoutMetaBlockNode,
+				form = BX('bx-soa-order-form') || node,
+				personTypes = this.getPersonTypeSortedArray(this.result.PERSON_TYPE),
+				personTypesCount = personTypes.length,
+				selectedId = null,
+				checkoutModeInput = form.querySelector('input[name="MF_CHECKOUT_MODE"]'),
+				resetSwitchInput = form.querySelector('input[name="MF_RESET_PERSON_TYPE_SWITCH"]'),
+				checkoutMode = (this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.MODE === 'register') ? 'register' : 'guest',
+				personTypeOldInput = form.querySelector('input[type=hidden][name="PERSON_TYPE_OLD"]'),
+				personTypeInput = form.querySelector('input[type=hidden][name="PERSON_TYPE"]'),
+				profileIdInput = form.querySelector('input[type=hidden][name="PROFILE_ID"]'),
+				profileChangeInput = form.querySelector('input[type=hidden][name="profile_change"]'),
+				i,
+				ctx = this;
+
+			BX.cleanNode(node);
+			personTypeOldInput = form.querySelector('input[type=hidden][name="PERSON_TYPE_OLD"]');
+			personTypeInput = form.querySelector('input[type=hidden][name="PERSON_TYPE"]');
+			profileIdInput = form.querySelector('input[type=hidden][name="PROFILE_ID"]');
+			profileChangeInput = form.querySelector('input[type=hidden][name="profile_change"]');
+			if (resetSwitchInput)
+			{
+				resetSwitchInput.value = 'N';
+			}
+
+			for (i in personTypes)
+			{
+				if (personTypes.hasOwnProperty(i) && personTypes[i].CHECKED == 'Y')
+				{
+					selectedId = personTypes[i].ID;
+					break;
+				}
+			}
+
+			if (!selectedId && personTypesCount > 0)
+			{
+				selectedId = personTypes[0].ID;
+			}
+
+			if (!personTypeInput || !personTypeInput.parentNode)
+			{
+				personTypeInput = BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: selectedId || ''}});
+				node.appendChild(personTypeInput);
+			}
+			else
+			{
+				personTypeInput.value = selectedId || '';
+			}
+
+			if (!personTypeOldInput || !personTypeOldInput.parentNode)
+			{
+				personTypeOldInput = BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE_OLD', value: selectedId || ''}});
+				node.appendChild(personTypeOldInput);
+			}
+			else
+			{
+				personTypeOldInput.value = selectedId || '';
+			}
+
+			if (this.result.IS_AUTHORIZED)
+			{
+				node.style.display = 'none';
+
+				if (!profileIdInput || !profileIdInput.parentNode)
+				{
+					for (i in this.result.USER_PROFILES)
+					{
+						if (
+							this.result.USER_PROFILES.hasOwnProperty(i)
+							&& this.result.USER_PROFILES[i].CHECKED === 'Y'
+						)
+						{
+							profileIdInput = BX.create('INPUT', {
+								props: {
+									type: 'hidden',
+									name: 'PROFILE_ID',
+									value: this.result.USER_PROFILES[i].ID
+								}
+							});
+							node.appendChild(profileIdInput);
+							break;
+						}
+					}
+				}
+				else if (this.result.USER_PROFILES)
+				{
+					for (i in this.result.USER_PROFILES)
+					{
+						if (
+							this.result.USER_PROFILES.hasOwnProperty(i)
+							&& this.result.USER_PROFILES[i].CHECKED === 'Y'
+						)
+						{
+							profileIdInput.value = this.result.USER_PROFILES[i].ID;
+							break;
+						}
+					}
+				}
+
+				if (!profileChangeInput || !profileChangeInput.parentNode)
+				{
+					profileChangeInput = BX.create('INPUT', {
+						props: {
+							type: 'hidden',
+							id: 'profile_change',
+							name: 'profile_change',
+							value: 'N'
+						}
+					});
+					node.appendChild(profileChangeInput);
+				}
+				else
+				{
+					profileChangeInput.value = 'N';
+				}
+
+				return;
+			}
+
+			node.style.display = '';
+
+			node.appendChild(BX.create('DIV', {
+				props: {className: 'mf-checkout-meta__title'},
+				text: 'Параметры оформления'
+			}));
+
+			if (this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED && !this.result.IS_AUTHORIZED)
+			{
+				var guestWrap = BX.create('DIV', {props: {className: 'mf-checkout-choice'}});
+				guestWrap.appendChild(BX.create('DIV', {
+					props: {className: 'mf-checkout-choice__title'},
+					text: 'Оформление заказа'
+				}));
+
+				var guestCards = BX.create('DIV', {props: {className: 'mf-checkout-choice__cards'}});
+				[
+					{
+						value: 'guest',
+						title: 'Без регистрации',
+						desc: 'Заказ будет оформлен без создания личного кабинета.'
+					},
+					{
+						value: 'register',
+						title: 'Зарегистрироваться и оформить',
+						desc: 'После оформления автоматически создадим аккаунт на указанный email.'
+					}
+				].forEach(function(item){
+					var input = BX.create('INPUT', {
+						props: {
+							type: 'radio',
+							name: 'MF_CHECKOUT_MODE_CONTROL',
+							value: item.value,
+							checked: checkoutMode === item.value
+						},
+						events: {
+							change: function() {
+								if (!this.checked || !checkoutModeInput)
+								{
+									return;
+								}
+								checkoutModeInput.value = item.value;
+							}
+						}
+					});
+
+					guestCards.appendChild(BX.create('LABEL', {
+						props: {className: 'mf-checkout-choice__item'},
+						children: [
+							input,
+							BX.create('SPAN', {props: {className: 'mf-checkout-choice__item-title'}, text: item.title}),
+							BX.create('SPAN', {props: {className: 'mf-checkout-choice__item-desc'}, text: item.desc})
+						]
+					}));
+				});
+
+				guestWrap.appendChild(guestCards);
+				node.appendChild(guestWrap);
+			}
+
+			if (personTypesCount > 1)
+			{
+				var personWrap = BX.create('DIV', {props: {className: 'mf-checkout-choice mf-checkout-choice--person-type'}});
+				personWrap.appendChild(BX.create('DIV', {
+					props: {className: 'mf-checkout-choice__title'},
+					text: 'Тип плательщика'
+				}));
+
+				var personCards = BX.create('DIV', {props: {className: 'mf-checkout-choice__cards'}});
+				for (i in personTypes)
+				{
+					if (!personTypes.hasOwnProperty(i))
+					{
+						continue;
+					}
+
+					(function(personType){
+						var input = BX.create('INPUT', {
+							props: {
+								type: 'radio',
+								name: 'PERSON_TYPE',
+								value: personType.ID,
+								checked: String(selectedId) === String(personType.ID)
+							},
+							events: {
+								change: BX.delegate(function() {
+									var profileInput, profileChangeInput;
+									if (!input.checked)
+									{
+										return;
+									}
+
+									ctx.resetCheckoutStateAfterPersonTypeSwitch(form);
+									ctx.resetCheckoutSectionsAfterPersonTypeSwitch();
+									ctx.applyPersonTypeSectionReset();
+									if (resetSwitchInput)
+									{
+										resetSwitchInput.value = 'Y';
+									}
+
+									personTypeOldInput.value = selectedId || personType.ID;
+									selectedId = personType.ID;
+									if (personTypeInput)
+									{
+										personTypeInput.value = personType.ID;
+									}
+
+									profileInput = form.querySelector('select[name="PROFILE_ID"], input[name="PROFILE_ID"]');
+									if (profileInput)
+									{
+										profileInput.value = '0';
+									}
+									profileChangeInput = form.querySelector('input[name="profile_change"]');
+									if (profileChangeInput)
+									{
+										profileChangeInput.value = 'Y';
+									}
+
+									ctx.sendRequest();
+								}, ctx)
+							}
+						});
+
+						personCards.appendChild(BX.create('LABEL', {
+							props: {className: 'mf-checkout-choice__item'},
+							children: [
+								input,
+								BX.create('SPAN', {props: {className: 'mf-checkout-choice__item-title'}, text: personType.NAME || ''}),
+								BX.create('SPAN', {
+									props: {className: 'mf-checkout-choice__item-desc'},
+									text: String(personType.ID) === '2'
+										? 'Для юрлица обязательны реквизиты и доступна только оплата по счету.'
+										: 'Стандартное оформление заказа для физического лица.'
+								})
+							]
+						}));
+					})(personTypes[i]);
+				}
+
+				personWrap.appendChild(personCards);
+				node.appendChild(personWrap);
+			}
+			else if (selectedId)
+			{
+				node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: selectedId}}));
+			}
+
+			this.getProfilesControl(node);
+		},
+
+		showTopSuccess: function(message)
+		{
+			if (!message)
+				return;
+
+			var container = this.mainErrorsNode || this.orderBlockNode;
+			if (!container)
+				return;
+
+			var existed = container.querySelector('.alert.alert-success.mf-checkout-success');
+			if (existed)
+			{
+				BX.remove(existed);
+			}
+
+			BX.prepend(BX.create('DIV', {
+				props: {className: 'alert alert-success mf-checkout-success'},
+				text: message
+			}), container);
+		},
+
+		resetCheckoutStateAfterPersonTypeSwitch: function(form)
+		{
+			if (!form || !form.querySelectorAll)
+				return;
+
+			var i, nodes, field;
+
+			nodes = form.querySelectorAll('input[name^="ORDER_PROP_"], textarea[name^="ORDER_PROP_"], select[name^="ORDER_PROP_"]');
+			for (i = 0; i < nodes.length; i++)
+			{
+				field = nodes[i];
+				if (!field)
+					continue;
+
+				if (field.type === 'radio' || field.type === 'checkbox')
+				{
+					field.checked = false;
+				}
+				else
+				{
+					field.value = '';
+				}
+			}
+
+			nodes = form.querySelectorAll(
+				'input[name="DELIVERY_ID"], input[name="PAY_SYSTEM_ID"], input[name="BUYER_STORE"], '
+				+ 'input[name="PROFILE_ID"], input[name="ZIP_PROPERTY_CHANGED"], '
+				+ 'input[name="MF_EDOST_TARIF_ID"], input[name="MF_EDOST_TARIF_COMPANY"], '
+				+ 'input[name="MF_EDOST_TARIF_NAME"], input[name="MF_EDOST_TARIF_PRICE"], '
+				+ 'input[name="MF_EDOST_TARIF_UI"]'
+			);
+			for (i = 0; i < nodes.length; i++)
+			{
+				if (nodes[i])
+				{
+					nodes[i].value = '';
+				}
+			}
+
+			nodes = form.querySelectorAll('select[name="PROFILE_ID"]');
+			for (i = 0; i < nodes.length; i++)
+			{
+				nodes[i].value = '0';
+			}
+
+			nodes = form.querySelectorAll('input[name="profile_change"]');
+			for (i = 0; i < nodes.length; i++)
+			{
+				nodes[i].value = 'Y';
+			}
+
+			nodes = form.querySelectorAll('input[name="MF_EDOST_TARIF_UI"]');
+			for (i = 0; i < nodes.length; i++)
+			{
+				nodes[i].checked = false;
+			}
+
+			try
+			{
+				if (
+					window.BX
+					&& BX.saleOrderAjax
+					&& BX.saleOrderAjax.__mfEdost
+					&& typeof BX.saleOrderAjax.__mfEdost.clearSelection === 'function'
+				)
+				{
+					BX.saleOrderAjax.__mfEdost.clearSelection();
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
+		},
+
+		resetCheckoutSectionsAfterPersonTypeSwitch: function()
+		{
+			if (!this.orderBlockNode || !this.orderBlockNode.querySelectorAll)
+				return;
+
+			var sections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active'),
+				i,
+				section,
+				alertNode;
+
+			for (i = 0; i < sections.length; i++)
+			{
+				section = sections[i];
+				if (!section)
+					continue;
+
+				section.setAttribute('data-visited', 'false');
+				BX.removeClass(section, 'bx-selected bx-step-completed bx-step-good bx-step-warning bx-step-error');
+
+				alertNode = section.querySelector('.alert.alert-warning.alert-hide');
+				if (alertNode)
+				{
+					BX.remove(alertNode);
+				}
+			}
+
+			this.hasErrorSection = {};
+			this.activeSectionId = '';
+			this.__mfPendingPersonTypeSectionReset = true;
+		},
+
+		applyPersonTypeSectionReset: function()
+		{
+			if (!this.orderBlockNode || !this.basketBlockNode)
+				return;
+
+			var sections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active'),
+				i,
+				section,
+				content;
+
+			for (i = 0; i < sections.length; i++)
+			{
+				section = sections[i];
+				if (!section)
+					continue;
+
+				if (section.id === this.basketBlockNode.id)
+				{
+					this.changeVisibleSection(section, true);
+					section.setAttribute('data-visited', 'false');
+					BX.removeClass(section, 'bx-selected bx-step-completed bx-step-good bx-step-warning bx-step-error');
+					continue;
+				}
+
+				content = section.querySelector('.bx-soa-section-content');
+				this.changeVisibleSection(section, false);
+				section.setAttribute('data-visited', 'false');
+				BX.removeClass(section, 'bx-selected bx-step-completed bx-step-good bx-step-warning bx-step-error');
+				if (content)
+				{
+					content.style.display = 'none';
+				}
+			}
+
+			this.activeSectionId = '';
+			this.show(this.basketBlockNode);
+			content = this.basketBlockNode.querySelector('.bx-soa-section-content');
+			if (content)
+			{
+				content.style.display = '';
+				if (content.querySelector('.bx-soa-more'))
+				{
+					BX.remove(content.querySelector('.bx-soa-more'));
+				}
+				this.getBlockFooter(content);
+			}
 		},
 
 		/**
@@ -3197,6 +3729,14 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 								},
 								events: {
 									click: BX.delegate(function(e){
+										try
+										{
+											window.sessionStorage.setItem('mf_checkout_register_success', 'Y');
+										}
+										catch (storageError)
+										{
+											// ignore
+										}
 										BX('do_register').value = 'Y';
 										this.sendRequest('showAuthForm');
 										return BX.PreventDefault(e);
@@ -4555,6 +5095,14 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					personTypeInput = this.regionHiddenBlockNode.querySelector('select[name=PERSON_TYPE] > option:checked');
 			}
 
+			if (!personTypeInput && this.controls && this.controls.scope && this.controls.scope.querySelector)
+			{
+				personTypeInput =
+					this.controls.scope.querySelector('input[type=radio][name=PERSON_TYPE]:checked')
+					|| this.controls.scope.querySelector('input[type=hidden][name=PERSON_TYPE]')
+					|| this.controls.scope.querySelector('select[name=PERSON_TYPE] > option:checked');
+			}
+
 			if (personTypeInput)
 			{
 				personTypeId = personTypeInput.value;
@@ -4797,31 +5345,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.result.PERSON_TYPE = this.getPersonTypeSortedArray(this.result.PERSON_TYPE);
 
-			// Motor-Force customization:
-			// Hide payer type selector UI. Keep a hidden PERSON_TYPE value so Bitrix logic stays intact.
-			var personTypesCount = this.result.PERSON_TYPE.length,
-				selectedId = null,
-				i;
-
-			for (i in this.result.PERSON_TYPE)
-			{
-				if (this.result.PERSON_TYPE.hasOwnProperty(i) && this.result.PERSON_TYPE[i].CHECKED == 'Y')
-				{
-					selectedId = this.result.PERSON_TYPE[i].ID;
-					break;
-				}
-			}
-			if (!selectedId && personTypesCount > 0)
-			{
-				selectedId = this.result.PERSON_TYPE[0].ID;
-			}
-			if (selectedId)
-			{
-				node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: selectedId}}));
-				// Important: also send PERSON_TYPE_OLD so Bitrix doesn't treat each AJAX refresh
-				// as "person type changed" and doesn't overwrite LOCATION from the saved profile (e.g., Moscow).
-				node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE_OLD', value: selectedId}}));
-			}
+			return;
 		},
 
 		getProfilesControl: function(node)
@@ -5441,6 +5965,21 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				this.getBlockFooter(deliveryContent);
 			}
+
+			// Motor-Force customization:
+			// After the active Delivery DOM is fully rebuilt, force virtual eDost render again.
+			// This is more reliable than only relying on navigation callbacks/timers.
+			if (activeNodeMode)
+			{
+				setTimeout(function(){
+					try {
+						if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
+						{
+							BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+						}
+					} catch(e) {}
+				}, 0);
+			}
 		},
 
 		editDeliveryItems: function(deliveryNode)
@@ -5677,6 +6216,28 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (this.params.SHOW_COUPONS_DELIVERY == 'Y')
 				this.editCouponsFade(newContent);
+
+			// Motor-Force customization:
+			// Whenever Bitrix rebuilds the collapsed delivery summary, replace the technical
+			// "Стандартный / 0 ₽" output with the selected virtual eDost tariff.
+			try
+			{
+				if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost)
+				{
+					if (typeof BX.saleOrderAjax.__mfEdost.applyDeliverySummary === 'function')
+					{
+						BX.saleOrderAjax.__mfEdost.applyDeliverySummary();
+					}
+					if (typeof BX.saleOrderAjax.__mfEdost.applyTotalDeliveryLine === 'function')
+					{
+						BX.saleOrderAjax.__mfEdost.applyTotalDeliveryLine();
+					}
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
 		},
 
 		createDeliveryItem: function(item)
@@ -5769,7 +6330,38 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				name = this.params.SHOW_DELIVERY_PARENT_NAMES != 'N' ? selectedDelivery.NAME : selectedDelivery.OWN_NAME,
 				errorNode = this.deliveryHiddenBlockNode.querySelector('div.alert.alert-danger'),
 				warningNode = this.deliveryHiddenBlockNode.querySelector('div.alert.alert-warning.alert-show'),
-				extraService, logotype, imgSrc, arNodes, i;
+				extraService, logotype, imgSrc, arNodes, i,
+				form, edostId, edostCompany, edostName, edostPrice, displayPriceText;
+
+			// Motor-Force customization:
+			// For virtual eDost tariffs, the collapsed delivery summary must show the
+			// selected eDost method instead of the technical Bitrix delivery ("Стандартный").
+			form = BX('bx-soa-order-form');
+			edostId = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || {}).value || '')) : '';
+			edostCompany = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_COMPANY"]') || {}).value || '')) : '';
+			edostName = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_NAME"]') || {}).value || '')) : '';
+			edostPrice = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_PRICE"]') || {}).value || '')) : '';
+			displayPriceText = ((selectedDelivery && typeof selectedDelivery.PRICE !== 'undefined') ? (String(selectedDelivery.PRICE) + ' ₽') : '0 ₽');
+
+			if (
+				(edostId === '' || edostName === '')
+				&& this.result
+				&& this.result.MF_EDOST_DEFAULT
+				&& this.result.MF_EDOST_DEFAULT.id
+				&& this.result.MF_EDOST_DEFAULT.name
+			)
+			{
+				edostId = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.id || ''));
+				edostCompany = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.company || ''));
+				edostName = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.name || this.result.MF_EDOST_DEFAULT.company || ''));
+				edostPrice = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.price || ''));
+			}
+
+			if (edostId !== '' && edostName !== '')
+			{
+				name = (edostCompany ? (edostCompany + ' — ') : '') + edostName;
+				displayPriceText = edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении';
+			}
 
 			if (errorNode && errorNode.innerHTML)
 				node.appendChild(errorNode.cloneNode(true));
@@ -5817,7 +6409,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 							}),
 							BX.create('DIV', {
 								props: {className: 'col-sm bx-soa-pp-price'},
-								children: this.getDeliveryPriceNodes(selectedDelivery)
+								text: displayPriceText
 							})
 						]
 					})

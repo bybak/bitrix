@@ -218,6 +218,12 @@
   .mf-shop-view{
     gap: 6px;
   }
+  .mf-shop-modal__dialog{
+    width: calc(100vw - 20px);
+    margin-top: 16px;
+    padding: 18px 16px 16px;
+    max-height: calc(100vh - 24px);
+  }
 }
 
 /* We fully control product cards markup now (mf-pcard / mf-pline).
@@ -474,21 +480,6 @@
   font-weight: 800;
   color: rgba(0,0,0,.65);
 }
-.mf-pcard__na{
-  width: 100%;
-  min-height: 40px;
-  padding: 10px 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  border: 1px dashed rgba(0,0,0,.18);
-  color: rgba(0,0,0,.65);
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: .6px;
-  text-align: center;
-}
 
 /* Product line (list): new markup */
 .mf-pline{
@@ -591,15 +582,101 @@
   text-transform: uppercase !important;
   letter-spacing: .8px !important;
 }
-.mf-pline__na{
+
+.mf-shop-modal{
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+}
+.mf-shop-modal__backdrop{
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+}
+.mf-shop-modal__dialog{
+  position: relative;
+  width: min(560px, calc(100vw - 32px));
+  margin: 8vh auto 0;
+  background: #fff;
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.22);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+.mf-shop-modal__close{
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  border: 0;
+  background: transparent;
+  color: rgba(0,0,0,.55);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mf-shop-modal__title{
+  font-size: 22px;
+  font-weight: 900;
+  color: #000;
+}
+.mf-shop-modal__subtitle{
+  margin-top: 6px;
+  color: rgba(0,0,0,.68);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.mf-shop-modal__message{
+  margin-top: 14px;
   padding: 10px 12px;
   border-radius: 12px;
-  border: 1px dashed rgba(0,0,0,.18);
-  color: rgba(0,0,0,.65);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.mf-shop-modal__message.is-success{
+  background: rgba(40,167,69,.1);
+  color: #1f6f35;
+}
+.mf-shop-modal__message.is-error{
+  background: rgba(220,53,69,.08);
+  color: #a12a36;
+  white-space: pre-line;
+}
+.mf-shop-modal__form{
+  margin-top: 16px;
+}
+.mf-shop-modal__form .form-group{
+  margin-bottom: 14px;
+}
+.mf-shop-modal__form label{
+  display: block;
+  margin: 0 0 6px;
+  font-size: 13px;
   font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: .6px;
-  text-align: center;
+  color: rgba(0,0,0,.82);
+}
+.mf-shop-modal__actions{
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding-top: 12px;
+}
+.mf-shop-modal__submit{
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  min-height: 42px;
+  font-weight: 900;
+  background: #ebbd2f !important;
+  color: #000 !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+.mf-shop-modal-open{
+  overflow: hidden;
 }
 
 /* Detail page uses mf-shop but no sidebar grid */
@@ -659,7 +736,7 @@
   /* First row in catalog.element is the top area (gallery + right column) */
   .mf-shop--detail .bx-catalog-element > .container-fluid > .row:first-child{
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-columns: minmax(0, 30%) minmax(0, 70%);
     gap: 18px;
     align-items: start;
   }
@@ -690,6 +767,14 @@
 
 /* Hide empty "info" card to avoid blank blocks */
 .mf-shop--detail .product-item-detail-info-section:empty{
+  display: none !important;
+}
+
+/* We render our own right-side summary/tabs on detail page */
+.mf-shop--detail .product-item-detail-info-section,
+.mf-shop--detail .product-item-detail-pay-block,
+.mf-shop--detail [id$="_tabs"],
+.mf-shop--detail [id$="_tab_containers"]{
   display: none !important;
 }
 
@@ -850,6 +935,12 @@
 }
 
 @media (max-width: 767px){
+  .mf-detail-tabs__content{
+    padding: 14px;
+  }
+  .mf-detail-shell__min-price{
+    font-size: 17px;
+  }
   .mf-shop .product-item-detail-slider-container.popup .product-item-detail-slider-block{
     padding: 12px 12px 0;
     height: calc(100vh - 112px);
@@ -893,6 +984,93 @@
 /* Restyle moved buy panel */
 .mf-shop--detail .product-item-detail-pay-block{
   margin-top: 10px;
+}
+.mf-detail-shell{
+  margin: 0 0 14px;
+}
+.mf-detail-shell__brief{
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(0,0,0,.78);
+}
+.mf-detail-shell__min-price{
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 900;
+  color: rgba(0,0,0,.68);
+}
+.mf-detail-shell__min-price span{
+  color: #000;
+}
+.mf-product-meta--detail{
+  margin: 0 0 14px;
+}
+.mf-detail-tabs{
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+}
+.mf-detail-tabs__nav{
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(0,0,0,.08);
+  background: rgba(0,0,0,.018);
+}
+.mf-detail-tabs__btn{
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 14px 18px;
+  font-size: 13px;
+  font-weight: 900;
+  color: rgba(0,0,0,.58);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mf-detail-tabs__btn.is-active{
+  color: #000;
+  border-bottom-color: #ebbd2f;
+  background: #fff;
+}
+.mf-detail-tabs__content{
+  padding: 16px;
+}
+.mf-detail-tabs__pane{
+  display: block;
+}
+.mf-detail-tabs__pane[hidden]{
+  display: none !important;
+}
+.mf-detail-tabs__pane--description{
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(0,0,0,.82);
+}
+.mf-detail-tabs__pane--description p:last-child{
+  margin-bottom: 0;
+}
+.mf-detail-tabs__empty{
+  padding: 8px 0;
+  color: rgba(0,0,0,.58);
+}
+.mf-detail-stock-wrap .table{
+  margin-bottom: 0;
+}
+.mf-detail-stock-table th,
+.mf-detail-stock-table td{
+  vertical-align: middle !important;
+}
+.mf-detail-analogs-list .list-group-item:first-child{
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+.mf-detail-analogs-list .list-group-item:last-child{
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
 }
 .mf-shop--detail .product-item-detail-pay-block .product-item-detail-short-card-content-container{
   border: 1px solid rgba(0,0,0,.08);
@@ -963,7 +1141,7 @@
   .mf-shop--detail .product-item-detail-pay-block{
     margin-top: 0;
     position: sticky;
-    top: 16px;
+    top: 24px;
   }
   /* Title is already shown as page H1 */
   .mf-shop--detail .product-item-detail-pay-block .product-item-detail-short-title-container{

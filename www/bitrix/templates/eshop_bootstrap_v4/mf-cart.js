@@ -107,6 +107,150 @@
     }
   }
 
+  function collectBasketItemIds(root) {
+    root = root || document;
+    var ids = [];
+    var seen = {};
+    var items = root.querySelectorAll('[data-entity="basket-item"][data-id]');
+    for (var i = 0; i < items.length; i++) {
+      var id = parseInt(items[i].getAttribute('data-id') || '0', 10);
+      if (!id || seen[id]) continue;
+      seen[id] = true;
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  function ensureStoreMetaMount(item) {
+    if (!item) return null;
+    var info = item.querySelector('.basket-item-block-info');
+    if (!info) return null;
+    var node = info.querySelector('.mf-cart-store-meta');
+    if (node) return node;
+    node = document.createElement('div');
+    node.className = 'mf-cart-store-meta';
+    info.appendChild(node);
+    return node;
+  }
+
+  function renderStoreMeta(item, data) {
+    var mount = ensureStoreMetaMount(item);
+    if (!mount || !data) return;
+
+    var html = '';
+    if (data.current_store_title) {
+      html += '<div class="mf-cart-store-meta__line"><span class="mf-cart-store-meta__label">Склад:</span><span class="mf-cart-store-meta__value">' + BX.util.htmlspecialchars(String(data.current_store_title)) + '</span></div>';
+    }
+    if (data.delivery_term) {
+      html += '<div class="mf-cart-store-meta__line"><span class="mf-cart-store-meta__label">Срок доставки:</span><span class="mf-cart-store-meta__value">' + BX.util.htmlspecialchars(String(data.delivery_term)) + '</span></div>';
+    }
+    if (data.can_switch && data.options && data.options.length > 1) {
+      html += '<div class="mf-cart-store-meta__switch">';
+      html += '<div class="mf-cart-store-meta__switch-title">Выбрать склад</div>';
+      html += '<div class="mf-cart-store-meta__switch-controls">';
+      html += '<select class="mf-cart-store-meta__select" data-entity="mf-cart-store-select">';
+      for (var i = 0; i < data.options.length; i++) {
+        var opt = data.options[i] || {};
+        var selected = parseInt(opt.store_id || 0, 10) === parseInt(data.current_store_id || 0, 10);
+        var label = String(opt.title || ('Склад #' + String(opt.store_id || '')));
+        if (opt.price_fmt) label += ' • ' + String(opt.price_fmt);
+        if (opt.delivery_term) label += ' • ' + String(opt.delivery_term);
+        html += '<option value="' + BX.util.htmlspecialchars(String(opt.store_id || '')) + '"' + (selected ? ' selected' : '') + '>' + BX.util.htmlspecialchars(label) + '</option>';
+      }
+      html += '</select>';
+      html += '<button type="button" class="mf-cart-store-meta__apply" data-entity="mf-cart-store-apply">Применить</button>';
+      html += '</div>';
+      html += '</div>';
+    }
+    mount.innerHTML = html;
+    mount.setAttribute('data-basket-item-id', String(data.basket_item_id || ''));
+  }
+
+  function fetchStoreMeta(root) {
+    root = root || document;
+    var ids = collectBasketItemIds(root);
+    if (!ids.length) return;
+    var key = ids.join(',');
+    if (root.__mfStoreMetaInFlight && root.__mfStoreMetaKey === key) return;
+    if (root.__mfStoreMetaLoadedKey === key) {
+      var ready = true;
+      var existingRows = root.querySelectorAll('[data-entity="basket-item"][data-id]');
+      for (var r = 0; r < existingRows.length; r++) {
+        if (!existingRows[r].querySelector('.mf-cart-store-meta')) {
+          ready = false;
+          break;
+        }
+      }
+      if (ready) return;
+    }
+    root.__mfStoreMetaInFlight = true;
+    root.__mfStoreMetaKey = key;
+
+    BX.ajax({
+      url: '/ajax/mf_cart_store_meta.php',
+      method: 'POST',
+      dataType: 'json',
+      data: { basketItemIds: ids },
+      onsuccess: function (resp) {
+        root.__mfStoreMetaInFlight = false;
+        if (!resp || !resp.ok || !resp.items) return;
+        root.__mfStoreMetaLoadedKey = key;
+        var rows = root.querySelectorAll('[data-entity="basket-item"][data-id]');
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          var id = String(row.getAttribute('data-id') || '');
+          if (!id || !resp.items[id]) continue;
+          renderStoreMeta(row, resp.items[id]);
+        }
+      },
+      onfailure: function () {
+        root.__mfStoreMetaInFlight = false;
+      }
+    });
+  }
+
+  function applyStoreChange(btn) {
+    var wrap = btn && btn.closest ? btn.closest('.mf-cart-store-meta') : null;
+    if (!wrap) return;
+    var basketItemId = wrap.getAttribute('data-basket-item-id') || '';
+    var select = wrap.querySelector('[data-entity="mf-cart-store-select"]');
+    if (!basketItemId || !select) return;
+    var storeId = select.value || '';
+    if (!storeId) return;
+
+    btn.disabled = true;
+    select.disabled = true;
+    var oldText = btn.textContent;
+    btn.textContent = 'Пересчитываем...';
+
+    BX.ajax({
+      url: '/ajax/mf_cart_update_store.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        sessid: BX.bitrix_sessid(),
+        basket_item_id: basketItemId,
+        store_id: storeId
+      },
+      onsuccess: function (resp) {
+        if (!resp || !resp.ok) {
+          alert((resp && resp.error) ? resp.error : 'Не удалось сменить склад');
+          btn.disabled = false;
+          select.disabled = false;
+          btn.textContent = oldText;
+          return;
+        }
+        window.location.reload();
+      },
+      onfailure: function () {
+        alert('Не удалось сменить склад');
+        btn.disabled = false;
+        select.disabled = false;
+        btn.textContent = oldText;
+      }
+    });
+  }
+
   function layoutCart(root) {
     root = root || document;
     var basketRoot = root.querySelector('#basket-root');
@@ -141,6 +285,14 @@
     layoutCart(cartRoot);
     patchBasketImages(cartRoot);
     hideBasketInternalProps(cartRoot);
+    fetchStoreMeta(cartRoot);
+
+    cartRoot.addEventListener('click', function (e) {
+      var btn = e && e.target && e.target.closest ? e.target.closest('[data-entity="mf-cart-store-apply"]') : null;
+      if (!btn) return;
+      e.preventDefault();
+      applyStoreChange(btn);
+    });
 
     // Basket UI re-renders via JS. Re-apply image patch on mutations.
     var raf = 0;
@@ -151,6 +303,7 @@
         layoutCart(cartRoot);
         patchBasketImages(cartRoot);
         hideBasketInternalProps(cartRoot);
+        fetchStoreMeta(cartRoot);
       });
     });
     obs.observe(cartRoot, {
@@ -168,6 +321,7 @@
       layoutCart(cartRoot);
       patchBasketImages(cartRoot);
       hideBasketInternalProps(cartRoot);
+      fetchStoreMeta(cartRoot);
       if (tries >= 10) {
         window.clearInterval(iv);
       }

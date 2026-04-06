@@ -1028,6 +1028,108 @@ if (!function_exists('mf_min_price_from_available_stores'))
 	}
 }
 
+if (!function_exists('mf_store_delivery_term'))
+{
+	function mf_store_delivery_term(int $storeId): string
+	{
+		$s = function_exists('mf_store_row') ? mf_store_row($storeId) : null;
+		if (!is_array($s))
+		{
+			return 'Срок уточнит менеджер';
+		}
+
+		$code = mb_strtoupper(trim((string)($s['CODE'] ?? '')));
+		$xml = mb_strtoupper(trim((string)($s['XML_ID'] ?? '')));
+
+		if ($code === 'MOTOR_FORCE_INTERNAL' || mb_strpos($xml, 'MOTOR_FORCE_INTERNAL') !== false)
+		{
+			return '1-2 дня';
+		}
+		if ($xml !== '' && mb_strpos($xml, 'SUPPLIER_') === 0)
+		{
+			return '1-4 дня';
+		}
+
+		return 'Срок уточнит менеджер';
+	}
+}
+
+if (!function_exists('mf_product_available_stores_for_qty'))
+{
+	/**
+	 * @return array<int, array{store_id:int,title:string,code:string,xml_id:string,amount:float,price:float,price_fmt:string,delivery_term:string}>
+	 */
+	function mf_product_available_stores_for_qty(int $productId, float $qty = 1.0): array
+	{
+		$out = [];
+		$productId = (int)$productId;
+		$qty = (float)$qty;
+		if ($productId <= 0)
+		{
+			return $out;
+		}
+		if ($qty <= 0)
+		{
+			$qty = 1.0;
+		}
+		if (!class_exists(\CCatalogStoreProduct::class))
+		{
+			return $out;
+		}
+
+		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId, '>AMOUNT' => 0], false, false, ['STORE_ID', 'AMOUNT']);
+		while ($r = $rs->Fetch())
+		{
+			$storeId = (int)($r['STORE_ID'] ?? 0);
+			$amount = (float)($r['AMOUNT'] ?? 0);
+			if ($storeId <= 0 || $amount + 1e-9 < $qty)
+			{
+				continue;
+			}
+
+			$price = function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null;
+			if ($price === null || $price <= 0)
+			{
+				continue;
+			}
+			if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+			{
+				$price = round((float)$price * 0.9, 2);
+			}
+
+			$s = function_exists('mf_store_row') ? mf_store_row($storeId) : null;
+			$title = trim((string)($s['TITLE'] ?? ''));
+			if ($title === '')
+			{
+				$title = 'Склад #' . $storeId;
+			}
+
+			$out[] = [
+				'store_id' => $storeId,
+				'title' => $title,
+				'code' => (string)($s['CODE'] ?? ''),
+				'xml_id' => (string)($s['XML_ID'] ?? ''),
+				'amount' => $amount,
+				'price' => (float)$price,
+				'price_fmt' => number_format((float)$price, 2, '.', ' ') . ' ₽',
+				'delivery_term' => function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : 'Срок уточнит менеджер',
+			];
+		}
+
+		usort($out, static function (array $a, array $b): int {
+			$pa = (float)($a['price'] ?? 0);
+			$pb = (float)($b['price'] ?? 0);
+			if ($pa > 0 && $pb > 0 && abs($pa - $pb) > 1e-9)
+			{
+				return $pa <=> $pb;
+			}
+			return (int)($a['store_id'] ?? 0) <=> (int)($b['store_id'] ?? 0);
+		});
+
+		return $out;
+	}
+}
+
 // === Wholesale: show and charge -10% vs retail ===
 if (!function_exists('mf_user_is_wholesale'))
 {
@@ -1134,6 +1236,17 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('catalog', 'OnGetOptimalPriceResult', 'mf_wholesale_optimal_price_result');
 }
 
+// --- Checkout flow: guest/registration choice, payer type, requisites -------
+$mfCheckoutInclude = __DIR__ . '/include/mf_checkout.php';
+if (is_file($mfCheckoutInclude))
+{
+	require_once $mfCheckoutInclude;
+	if (function_exists('mf_checkout_bootstrap'))
+	{
+		mf_checkout_bootstrap();
+	}
+}
+
 // === Basket/order: attach chosen store + set computed price dynamically ===
 if (!function_exists('mf_basket_get_prop'))
 {
@@ -1188,6 +1301,115 @@ if (!function_exists('mf_basket_set_props'))
 				'SORT' => 1000,
 			]);
 		}
+	}
+}
+
+if (!function_exists('mf_catalog_brand_article_by_product_id'))
+{
+	/**
+	 * Бренд и артикул из карточки товара (инфоблок), если в позиции корзины/заказа они не продублированы в b_sale_basket_props.
+	 * Учитывает связку торговое предложение → товар (SKU).
+	 *
+	 * @return array{brand: string, article: string}
+	 */
+	function mf_catalog_brand_article_by_product_id(int $productId): array
+	{
+		static $cache = [];
+		if ($productId <= 0)
+		{
+			return ['brand' => '', 'article' => ''];
+		}
+		if (array_key_exists($productId, $cache))
+		{
+			return $cache[$productId];
+		}
+
+		$empty = ['brand' => '', 'article' => ''];
+		if (!class_exists(\CIBlockElement::class) || !\Bitrix\Main\Loader::includeModule('iblock'))
+		{
+			$cache[$productId] = $empty;
+
+			return $empty;
+		}
+
+		$select = [
+			'ID',
+			'IBLOCK_ID',
+			'PROPERTY_CML2_ARTICLE',
+			'PROPERTY_MF_BRAND',
+			'PROPERTY_MF_BRAND_NORM',
+			'PROPERTY_MF_ARTICLE_NORM',
+			'PROPERTY_ARTNUMBER',
+		];
+
+		$pick = static function (array $row): array {
+			$article = trim((string)($row['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+			if ($article === '')
+			{
+				$article = trim((string)($row['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''));
+			}
+			if ($article === '')
+			{
+				$article = trim((string)($row['PROPERTY_ARTNUMBER_VALUE'] ?? ''));
+			}
+			$brand = trim((string)($row['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+			if ($brand === '')
+			{
+				$brand = trim((string)($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
+			}
+
+			return ['brand' => $brand, 'article' => $article];
+		};
+
+		$load = static function (int $id) use ($select): ?array {
+			if ($id <= 0)
+			{
+				return null;
+			}
+			$rs = \CIBlockElement::GetList([], ['ID' => $id], false, false, $select);
+			$row = $rs ? $rs->GetNext() : false;
+
+			return is_array($row) ? $row : null;
+		};
+
+		$ids = [$productId];
+		if (\Bitrix\Main\Loader::includeModule('catalog'))
+		{
+			$info = \CCatalogSKU::GetProductInfo($productId);
+			if (is_array($info) && !empty($info['ID']))
+			{
+				$parentId = (int)$info['ID'];
+				if ($parentId > 0 && $parentId !== $productId)
+				{
+					$ids[] = $parentId;
+				}
+			}
+		}
+
+		$brand = '';
+		$article = '';
+		foreach ($ids as $id)
+		{
+			$row = $load($id);
+			if ($row === null)
+			{
+				continue;
+			}
+			$p = $pick($row);
+			if ($article === '' && $p['article'] !== '')
+			{
+				$article = $p['article'];
+			}
+			if ($brand === '' && $p['brand'] !== '')
+			{
+				$brand = $p['brand'];
+			}
+		}
+
+		$out = ['brand' => $brand, 'article' => $article];
+		$cache[$productId] = $out;
+
+		return $out;
 	}
 }
 
@@ -1303,7 +1525,7 @@ if (!function_exists('mf_on_order_before_saved'))
 					$line = 'Доставка (eDost, справочно, не входит в Итого): '
 						. ($company !== '' ? ($company . ' — ') : '')
 						. ($name !== '' ? $name : ('тариф ' . $tid))
-						. ' — ' . $price . ' ₽'
+						. ' — ' . ($price !== '' ? ($price . ' ₽') : 'оплата при получении')
 						. ' (tarif_id=' . $tid . ')';
 
 					$comments = (string)$order->getField('COMMENTS');

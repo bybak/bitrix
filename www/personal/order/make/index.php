@@ -9,7 +9,8 @@ $APPLICATION->SetTitle("Заказы");
 	"COUNT_DELIVERY_TAX" => "N",
 	"COUNT_DISCOUNT_4_ALL_QUANTITY" => "N",
 	"ONLY_FULL_PAY_FROM_ACCOUNT" => "N",
-	"ALLOW_AUTO_REGISTER" => "Y",
+	"ALLOW_AUTO_REGISTER" => "N",
+	"MF_CUSTOM_GUEST_FLOW" => "Y",
 	"SEND_NEW_USER_NOTIFY" => "Y",
 	// 'H' = считать стоимость заранее только для доставок с isCalculatePriceImmediately()=true
 	// чтобы цены отображались прямо в списке доставок до выбора.
@@ -31,7 +32,9 @@ $APPLICATION->SetTitle("Заказы");
 	"USER_CONSENT" => "Y",
 	"USER_CONSENT_ID" => "1",
 	"USER_CONSENT_IS_CHECKED" => "Y",
-	"USER_CONSENT_IS_LOADED" => "Y"
+	"USER_CONSENT_IS_LOADED" => "Y",
+	"ALLOW_USER_PROFILES" => "Y",
+	"ALLOW_NEW_PROFILE" => "Y"
 	),
 	false
 );?>

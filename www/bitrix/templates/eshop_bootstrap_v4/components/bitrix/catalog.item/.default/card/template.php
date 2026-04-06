@@ -44,6 +44,21 @@ $btnText = ($arParams['ADD_TO_BASKET_ACTION'] === 'BUY')
 	: $arParams['MESS_BTN_ADD_TO_BASKET'];
 
 $canBuy = (!$haveOffers && !empty($actualItem['CAN_BUY'])) || ($haveOffers && !empty($actualItem['CAN_BUY']));
+global $USER;
+$mfReqIsAuthorized = is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized();
+$mfReqUserName = '';
+$mfReqUserEmail = '';
+if ($mfReqIsAuthorized)
+{
+	$mfReqUserName = trim((string)$USER->GetFirstName() . ' ' . (string)$USER->GetLastName());
+	if ($mfReqUserName === '')
+	{
+		$mfReqUserName = trim((string)$USER->GetLogin());
+	}
+	$mfReqUserEmail = trim((string)$USER->GetEmail());
+}
+$mfReqProductName = trim(html_entity_decode(strip_tags((string)($item['NAME'] ?? $productTitle ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+$mfReqProductUrl = (string)($item['DETAIL_PAGE_URL'] ?? '');
 
 // Dynamic min price across available stores (RAW per store + markup), optional wholesale -10%.
 $mfDynPrice = null;
@@ -309,15 +324,32 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 							?>
 						</div>
 					<?php endif; ?>
-					<div class="mf-pcard__na"><?=$arParams['MESS_NOT_AVAILABLE']?></div>
+					<div class="mf-pcard__btn product-item-button-container">
+						<button
+							type="button"
+							class="btn btn-default <?=$buttonSizeClass?> js-mf-request-price-global"
+							data-product-id="<?= (int)($actualItem['ID'] ?? 0) ?>"
+							data-product-name="<?=htmlspecialcharsbx($mfReqProductName)?>"
+							data-product-url="<?=htmlspecialcharsbx($mfReqProductUrl)?>"
+							data-user-name="<?=htmlspecialcharsbx($mfReqUserName)?>"
+							data-user-email="<?=htmlspecialcharsbx($mfReqUserEmail)?>"
+							data-user-locked="<?=$mfReqIsAuthorized ? '1' : '0'?>"
+						>Запросить цену</button>
+					</div>
 				<?php endif; ?>
 			<?php else: ?>
 				<?php if ($arParams['PRODUCT_DISPLAY_MODE'] === 'Y'): ?>
 					<div class="mf-pcard__btn product-item-button-container">
-						<a class="btn btn-link <?=$buttonSizeClass?>" id="<?=$itemIds['NOT_AVAILABLE_MESS']?>" href="javascript:void(0)" rel="nofollow"
+						<button type="button" class="btn btn-default <?=$buttonSizeClass?> js-mf-request-price-global" id="<?=$itemIds['NOT_AVAILABLE_MESS']?>"
+							data-product-id="<?= (int)($actualItem['ID'] ?? 0) ?>"
+							data-product-name="<?=htmlspecialcharsbx($mfReqProductName)?>"
+							data-product-url="<?=htmlspecialcharsbx($mfReqProductUrl)?>"
+							data-user-name="<?=htmlspecialcharsbx($mfReqUserName)?>"
+							data-user-email="<?=htmlspecialcharsbx($mfReqUserEmail)?>"
+							data-user-locked="<?=$mfReqIsAuthorized ? '1' : '0'?>"
 							<?=($actualItem['CAN_BUY'] ? 'style="display: none;"' : '')?>>
-							<?=$arParams['MESS_NOT_AVAILABLE']?>
-						</a>
+							Запросить цену
+						</button>
 						<div id="<?=$itemIds['BASKET_ACTIONS']?>" <?=($actualItem['CAN_BUY'] ? '' : 'style="display: none;"')?>>
 							<a class="btn btn-default <?=$buttonSizeClass?>" id="<?=$itemIds['BUY_LINK']?>" href="javascript:void(0)" rel="nofollow">
 								<?=$btnText?>

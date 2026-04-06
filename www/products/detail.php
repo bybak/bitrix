@@ -18,6 +18,10 @@ $elementCode = $_REQUEST["ELEMENT_CODE"];
 $elementId = 0;
 $mfBrand = '';
 $mfArticle = '';
+$mfPreviewText = '';
+$mfPreviewTextType = 'text';
+$mfDetailText = '';
+$mfDetailTextType = 'text';
 
 // 301 redirect support for duplicate SKUs (redirect elements)
 if ($elementCode)
@@ -31,6 +35,11 @@ if ($elementCode)
 		[
 			'ID',
 			'CODE',
+			'NAME',
+			'PREVIEW_TEXT',
+			'PREVIEW_TEXT_TYPE',
+			'DETAIL_TEXT',
+			'DETAIL_TEXT_TYPE',
 			'PROPERTY_MF_IS_REDIRECT',
 			'PROPERTY_MF_CANONICAL_CODE',
 			'PROPERTY_MF_BRAND',
@@ -43,6 +52,10 @@ if ($elementCode)
 		$elementId = (int)$e['ID'];
 		$mfBrand = trim((string)($e['PROPERTY_MF_BRAND_VALUE'] ?? ''));
 		$mfArticle = trim((string)($e['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+		$mfPreviewText = (string)($e['PREVIEW_TEXT'] ?? '');
+		$mfPreviewTextType = (string)($e['PREVIEW_TEXT_TYPE'] ?? 'text');
+		$mfDetailText = (string)($e['DETAIL_TEXT'] ?? '');
+		$mfDetailTextType = (string)($e['DETAIL_TEXT_TYPE'] ?? 'text');
 	}
 
 	if ($e && ($e['PROPERTY_MF_IS_REDIRECT_VALUE'] === 'Y' || $e['PROPERTY_MF_IS_REDIRECT_VALUE'] === '1'))
@@ -57,25 +70,45 @@ if ($elementCode)
 	}
 }
 
-if ($mfBrand !== '' || $mfArticle !== '')
+$mfPlainText = static function (string $html): string {
+	$plain = trim((string)html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+	return preg_replace('~\s+~u', ' ', $plain) ?? $plain;
+};
+
+$mfRenderHtmlField = static function (string $value, string $type): string {
+	if (trim($value) === '')
+	{
+		return '';
+	}
+	return strtolower(trim($type)) === 'html' ? $value : '<p>' . nl2br(htmlspecialcharsbx($value)) . '</p>';
+};
+
+$mfBriefDescription = $mfPlainText($mfPreviewText);
+if ($mfBriefDescription === '')
 {
-	?>
-	<div class="mf-product-meta" aria-label="Бренд и артикул">
-		<?php if ($mfBrand !== ''): ?>
-			<div class="mf-product-meta__item">
-				<span class="mf-product-meta__label">Бренд:</span>
-				<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfBrand)?></span>
-			</div>
-		<?php endif; ?>
-		<?php if ($mfArticle !== ''): ?>
-			<div class="mf-product-meta__item">
-				<span class="mf-product-meta__label">Артикул:</span>
-				<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfArticle)?></span>
-			</div>
-		<?php endif; ?>
-	</div>
-	<?php
+	$mfBriefDescription = $mfPlainText($mfDetailText);
 }
+if ($mfBriefDescription !== '' && mb_strlen($mfBriefDescription) > 320)
+{
+	$mfBriefDescription = rtrim(mb_substr($mfBriefDescription, 0, 320), " \t\n\r\0\x0B.,;:") . '...';
+}
+
+$mfFullDescriptionParts = [];
+if (trim($mfPreviewText) !== '')
+{
+	$mfFullDescriptionParts[] = $mfRenderHtmlField($mfPreviewText, $mfPreviewTextType);
+}
+if (trim($mfDetailText) !== '')
+{
+	$detailHtml = $mfRenderHtmlField($mfDetailText, $mfDetailTextType);
+	if ($detailHtml !== '' && !in_array($detailHtml, $mfFullDescriptionParts, true))
+	{
+		$mfFullDescriptionParts[] = $detailHtml;
+	}
+}
+$mfFullDescriptionHtml = implode("\n", array_filter($mfFullDescriptionParts, static fn($v) => trim((string)$v) !== ''));
+$mfMinPriceValue = null;
+$mfMinPriceText = '';
 
 $arParams = [
     "IBLOCK_TYPE" => "catalog",
@@ -158,6 +191,8 @@ if ($elementId > 0 && function_exists('mf_min_price_from_available_stores'))
 		{
 			$minP = round($minP * 0.9, 2);
 		}
+		$mfMinPriceValue = $minP;
+		$mfMinPriceText = number_format($minP, 2, '.', ' ') . ' &#8381;';
 		$minPPrint = number_format($minP, 2, '.', ' ') . ' &#8381;';
 		?>
 		<script>
@@ -172,6 +207,9 @@ if ($elementId > 0 && function_exists('mf_min_price_from_available_stores'))
 		<?php
 	}
 }
+
+$mfStockTabHtml = '';
+$mfAnalogsTabHtml = '';
 
 // Show store availability block (our supplier stock updates write per-store amounts).
 if ($elementId > 0 && CModule::IncludeModule("catalog"))
@@ -218,11 +256,11 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 			}
 		}
 
+		ob_start();
 		?>
-		<div class="mt-4 mb-4">
-			<h2 class="h5 mb-3">Наличие на складах</h2>
+		<div class="mf-detail-stock-wrap">
 			<div class="table-responsive">
-				<table class="table table-sm table-striped mb-0">
+				<table class="table table-sm table-striped mb-0 mf-detail-stock-table">
 					<thead>
 					<tr>
 						<th>Склад</th>
@@ -275,35 +313,8 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 				</table>
 			</div>
 		</div>
-		<script>
-		(function(){
-			function addToBasket(btn){
-				var pid = btn.getAttribute('data-product-id');
-				var sid = btn.getAttribute('data-store-id');
-				if(!pid || !sid) return;
-				btn.disabled = true;
-				fetch('/ajax/mf_add_to_basket_store.php?productId='+encodeURIComponent(pid)+'&storeId='+encodeURIComponent(sid)+'&qty=1', {
-					credentials: 'same-origin'
-				}).then(function(r){ return r.json(); }).then(function(data){
-					if(!data || !data.ok){
-						throw new Error((data && data.error) ? data.error : 'Ошибка');
-					}
-					window.location.href = '/personal/cart/';
-				}).catch(function(e){
-					alert(e && e.message ? e.message : 'Ошибка');
-					btn.disabled = false;
-				});
-			}
-			document.addEventListener('click', function(e){
-				var t = e.target;
-				if(t && t.classList && t.classList.contains('js-mf-add-store')){
-					e.preventDefault();
-					addToBasket(t);
-				}
-			});
-		})();
-		</script>
 		<?php
+		$mfStockTabHtml = trim((string)ob_get_clean());
 	}
 }
 
@@ -348,10 +359,10 @@ if ($elementId > 0)
 				}
 			}
 
+			ob_start();
 			?>
-			<div class="mt-4 mb-4 mf-product-analogs">
-				<h2 class="h5 mb-3">Аналоги</h2>
-				<div class="list-group">
+			<div class="mf-product-analogs">
+				<div class="list-group mf-detail-analogs-list">
 					<?php foreach ($analogIds as $aid): ?>
 						<?php $r = $analogRows[$aid] ?? null; ?>
 						<?php if (!$r) continue; ?>
@@ -390,11 +401,151 @@ if ($elementId > 0)
 				</div>
 			</div>
 			<?php
+			$mfAnalogsTabHtml = trim((string)ob_get_clean());
 		}
 	}
 }
 
 ?>
+	<div id="mf-detail-shell" class="mf-detail-shell" hidden>
+		<?php if ($mfBriefDescription !== ''): ?>
+			<div class="mf-detail-shell__brief"><?=htmlspecialcharsbx($mfBriefDescription)?></div>
+		<?php endif; ?>
+
+		<?php if ($mfMinPriceText !== ''): ?>
+			<div class="mf-detail-shell__min-price">От <span><?=$mfMinPriceText?></span></div>
+		<?php endif; ?>
+
+		<?php if ($mfBrand !== '' || $mfArticle !== ''): ?>
+			<div class="mf-product-meta mf-product-meta--detail" aria-label="Бренд и артикул">
+				<?php if ($mfBrand !== ''): ?>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">Бренд:</span>
+						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfBrand)?></span>
+					</div>
+				<?php endif; ?>
+				<?php if ($mfArticle !== ''): ?>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">Артикул:</span>
+						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfArticle)?></span>
+					</div>
+				<?php endif; ?>
+			</div>
+		<?php endif; ?>
+
+		<div class="mf-detail-tabs" data-mf-detail-tabs>
+			<div class="mf-detail-tabs__nav" role="tablist" aria-label="Информация о товаре">
+				<button type="button" class="mf-detail-tabs__btn is-active" data-tab-target="stock" role="tab" aria-selected="true">Склад</button>
+				<button type="button" class="mf-detail-tabs__btn" data-tab-target="analogs" role="tab" aria-selected="false">Аналоги</button>
+				<button type="button" class="mf-detail-tabs__btn" data-tab-target="description" role="tab" aria-selected="false">Описание</button>
+			</div>
+			<div class="mf-detail-tabs__content">
+				<div class="mf-detail-tabs__pane is-active" data-tab-pane="stock">
+					<?php if ($mfStockTabHtml !== ''): ?>
+						<?=$mfStockTabHtml?>
+					<?php else: ?>
+						<div class="mf-detail-tabs__empty">Нет данных по складам.</div>
+					<?php endif; ?>
+				</div>
+				<div class="mf-detail-tabs__pane" data-tab-pane="analogs" hidden>
+					<?php if ($mfAnalogsTabHtml !== ''): ?>
+						<?=$mfAnalogsTabHtml?>
+					<?php else: ?>
+						<div class="mf-detail-tabs__empty">Аналоги не найдены.</div>
+					<?php endif; ?>
+				</div>
+				<div class="mf-detail-tabs__pane mf-detail-tabs__pane--description" data-tab-pane="description" hidden>
+					<?php if ($mfFullDescriptionHtml !== ''): ?>
+						<?=$mfFullDescriptionHtml?>
+					<?php else: ?>
+						<div class="mf-detail-tabs__empty">Описание отсутствует.</div>
+					<?php endif; ?>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script>
+	(function(){
+		function addToBasket(btn){
+			var pid = btn.getAttribute('data-product-id');
+			var sid = btn.getAttribute('data-store-id');
+			if(!pid || !sid) return;
+			btn.disabled = true;
+			fetch('/ajax/mf_add_to_basket_store.php?productId='+encodeURIComponent(pid)+'&storeId='+encodeURIComponent(sid)+'&qty=1', {
+				credentials: 'same-origin'
+			}).then(function(r){ return r.json(); }).then(function(data){
+				if(!data || !data.ok){
+					throw new Error((data && data.error) ? data.error : 'Ошибка');
+				}
+				window.location.href = '/personal/cart/';
+			}).catch(function(e){
+				alert(e && e.message ? e.message : 'Ошибка');
+				btn.disabled = false;
+			});
+		}
+
+		function initDetailTabs(scope){
+			if (!scope || scope.__mfTabsInited) return;
+			scope.__mfTabsInited = true;
+			scope.addEventListener('click', function(e){
+				var btn = e.target && e.target.closest ? e.target.closest('[data-tab-target]') : null;
+				if (!btn) return;
+				var target = btn.getAttribute('data-tab-target') || '';
+				if (!target) return;
+				var buttons = scope.querySelectorAll('[data-tab-target]');
+				var panes = scope.querySelectorAll('[data-tab-pane]');
+				for (var i = 0; i < buttons.length; i++){
+					var isActiveBtn = buttons[i] === btn;
+					buttons[i].classList.toggle('is-active', isActiveBtn);
+					buttons[i].setAttribute('aria-selected', isActiveBtn ? 'true' : 'false');
+				}
+				for (var j = 0; j < panes.length; j++){
+					var isActivePane = panes[j].getAttribute('data-tab-pane') === target;
+					panes[j].classList.toggle('is-active', isActivePane);
+					panes[j].hidden = !isActivePane;
+				}
+			});
+		}
+
+		function mountDetailShell(){
+			var shell = document.getElementById('mf-detail-shell');
+			if (!shell) return;
+			var rightCol = document.querySelector('.mf-shop--detail .bx-catalog-element > .container-fluid > .row:first-child > [class*="col-"]:nth-child(2)');
+			if (!rightCol) return;
+			if (shell.parentNode !== rightCol){
+				rightCol.insertBefore(shell, rightCol.firstChild);
+			}
+			shell.hidden = false;
+			initDetailTabs(shell.querySelector('[data-mf-detail-tabs]'));
+
+			var tabsRow = rightCol.parentNode ? rightCol.parentNode.querySelector('[id$="_tabs"]') : null;
+			if (tabsRow && tabsRow.parentNode) {
+				var row1 = tabsRow.closest('.row');
+				if (row1) row1.style.display = 'none';
+			}
+			var tabsContainers = rightCol.parentNode ? rightCol.parentNode.querySelector('[id$="_tab_containers"]') : null;
+			if (tabsContainers) {
+				var row2 = tabsContainers.closest('.row');
+				if (row2) row2.style.display = 'none';
+			}
+		}
+
+		document.addEventListener('click', function(e){
+			var t = e.target;
+			if(t && t.classList && t.classList.contains('js-mf-add-store')){
+				e.preventDefault();
+				addToBasket(t);
+			}
+		});
+
+		if (document.readyState === 'loading'){
+			document.addEventListener('DOMContentLoaded', mountDetailShell);
+		} else {
+			mountDetailShell();
+		}
+	})();
+	</script>
 	</section>
 </div>
 <?php

@@ -331,6 +331,8 @@ else
 		<input type="hidden" name="<?=$arParams['ACTION_VARIABLE']?>" value="saveOrderAjax">
 		<input type="hidden" name="location_type" value="code">
 		<input type="hidden" name="BUYER_STORE" id="BUYER_STORE" value="<?=$arResult['BUYER_STORE']?>">
+		<input type="hidden" name="MF_CHECKOUT_MODE" id="MF_CHECKOUT_MODE" value="guest">
+		<input type="hidden" name="MF_RESET_PERSON_TYPE_SWITCH" id="MF_RESET_PERSON_TYPE_SWITCH" value="N">
 		<div id="bx-soa-order" class="row" style="opacity: 0">
 			<!--	MAIN BLOCK	-->
 			<div class="col-lg-8 col-md-7 bx-soa">
@@ -338,6 +340,7 @@ else
 					<div class="alert alert-danger" style="display:none"></div>
 					<div data-type="informer" style="display:none"></div>
 				</div>
+				<div id="bx-soa-checkout-meta" class="mf-checkout-meta"></div>
 				<!--	AUTH BLOCK	-->
 				<div id="bx-soa-auth" class="bx-soa-section bx-soa-auth" style="display: none;">
 					<div class="bx-soa-section-title-container">
@@ -617,6 +620,7 @@ else
 				}
 			},
 			orderBlockId: 'bx-soa-order',
+			checkoutMetaBlockId: 'bx-soa-checkout-meta',
 			authBlockId: 'bx-soa-auth',
 			basketBlockId: 'bx-soa-basket',
 			regionBlockId: 'bx-soa-region',

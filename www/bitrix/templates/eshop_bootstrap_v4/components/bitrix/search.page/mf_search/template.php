@@ -12,6 +12,19 @@ IncludeTemplateLangFile(__FILE__);
 $queryValue = (string)($arResult['REQUEST']['QUERY'] ?? '');
 $queryValueAttr = htmlspecialcharsbx($queryValue);
 $how = (($arResult['REQUEST']['HOW'] ?? '') === 'd') ? 'd' : 'r';
+global $USER;
+$mfIsAuthorized = is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized();
+$mfCurrentUserName = '';
+$mfCurrentUserEmail = '';
+if ($mfIsAuthorized)
+{
+	$mfCurrentUserName = trim((string)$USER->GetFirstName() . ' ' . (string)$USER->GetLastName());
+	if ($mfCurrentUserName === '')
+	{
+		$mfCurrentUserName = trim((string)$USER->GetLogin());
+	}
+	$mfCurrentUserEmail = trim((string)$USER->GetEmail());
+}
 
 // Motor-Force search cards helpers (catalog-only).
 $mfCatalogIblockId = 4;
@@ -105,6 +118,11 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 	$desc = $mfTrimText($descHtml, 170);
 	$stores = $mfStoresForProduct($id);
 	$wrapTag = $isAnalog ? 'div' : 'article';
+	$titlePlain = trim(html_entity_decode(strip_tags($titleHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+	if ($titlePlain === '')
+	{
+		$titlePlain = 'Товар #' . $id;
+	}
 	?>
 	<<?=$wrapTag?> class="mf-search-card<?=($isAnalog ? ' mf-search-card--analog' : ' mf-search-card--root')?>">
 		<div class="mf-search-card__top">
@@ -120,7 +138,6 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 		</div>
 
 		<div class="mf-search-card__avail">
-			<div class="mf-search-card__avail-title">В наличии</div>
 			<?php if (!empty($stores)): ?>
 				<table class="mf-search-stock-table">
 					<thead>
@@ -128,6 +145,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							<th>Склад</th>
 							<th class="mf-ta-r">Остаток</th>
 							<th class="mf-ta-r">Цена</th>
+							<th class="mf-ta-r">Кол-во</th>
 							<th class="mf-ta-r"></th>
 						</tr>
 					</thead>
@@ -137,6 +155,23 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								<td><?=htmlspecialcharsbx((string)$s['title'])?></td>
 								<td class="mf-ta-r"><?=htmlspecialcharsbx((string)round((float)$s['amount'], 3))?></td>
 								<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
+								<td class="mf-ta-r">
+									<div class="mf-search-stock__actions">
+										<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)round((float)$s['amount'], 3))?>">
+											<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
+											<input
+												type="number"
+												class="mf-search-qty__input js-mf-qty-input"
+												value="1"
+												min="1"
+												step="1"
+												inputmode="numeric"
+												aria-label="Количество"
+											>
+											<button type="button" class="mf-search-qty__btn js-mf-qty-plus" aria-label="Увеличить количество">+</button>
+										</div>
+									</div>
+								</td>
 								<td class="mf-ta-r">
 									<button
 										type="button"
@@ -151,11 +186,21 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					</tbody>
 				</table>
 			<?php else: ?>
-				<div class="mf-search-card__no-stock">Отсутствует на складах</div>
+				<div class="mf-search-card__no-stock-row">
+					<div class="mf-search-card__no-stock">Отсутствует на складах</div>
+					<button
+						type="button"
+						class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
+						data-product-id="<?=$id?>"
+						data-product-name="<?=htmlspecialcharsbx($titlePlain)?>"
+						data-product-url="<?=htmlspecialcharsbx($url)?>"
+					>Запросить цену</button>
+				</div>
 			<?php endif; ?>
 		</div>
 
 		<?php if (!$isAnalog && !empty($analogs)): ?>
+			<div class="mf-search-card__catalog-note">Также Вы можете заказать данный товар или его аналог в каталогах</div>
 			<div class="mf-search-card__analogs">
 				<div class="mf-search-card__analogs-title">Аналоги</div>
 				<div class="mf-search-analogs">
@@ -436,10 +481,65 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					<?php endforeach; ?>
 				</div>
 
+				<div class="mf-search-modal" id="mf-request-price-modal" hidden>
+					<div class="mf-search-modal__backdrop js-mf-request-price-close"></div>
+					<div class="mf-search-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="mf-request-price-title">
+						<button type="button" class="mf-search-modal__close js-mf-request-price-close" aria-label="Закрыть">×</button>
+						<div class="mf-search-modal__title" id="mf-request-price-title">Запросить цену</div>
+						<div class="mf-search-modal__subtitle" id="mf-request-price-product"></div>
+						<div class="mf-search-modal__message" id="mf-request-price-message" hidden></div>
+						<form class="mf-search-modal__form" id="mf-request-price-form">
+							<input type="hidden" name="sessid" value="<?=htmlspecialcharsbx(bitrix_sessid())?>">
+							<input type="hidden" name="product_id" value="">
+							<input type="hidden" name="product_name" value="">
+							<input type="hidden" name="product_url" value="">
+
+							<div class="form-group">
+								<label for="mf-request-price-name">Имя</label>
+								<input
+									id="mf-request-price-name"
+									type="text"
+									class="form-control"
+									name="name"
+									value="<?=htmlspecialcharsbx($mfCurrentUserName)?>"
+									<?=$mfIsAuthorized && $mfCurrentUserName !== '' ? 'readonly' : ''?>
+								>
+							</div>
+							<div class="form-group">
+								<label for="mf-request-price-email">E-mail</label>
+								<input
+									id="mf-request-price-email"
+									type="email"
+									class="form-control"
+									name="email"
+									value="<?=htmlspecialcharsbx($mfCurrentUserEmail)?>"
+									<?=$mfIsAuthorized && $mfCurrentUserEmail !== '' ? 'readonly' : ''?>
+								>
+							</div>
+							<div class="form-group">
+								<label for="mf-request-price-comment">Комментарий</label>
+								<textarea id="mf-request-price-comment" class="form-control" name="comment" rows="5"></textarea>
+							</div>
+							<div class="mf-search-modal__actions">
+								<button type="submit" class="btn btn-warning mf-search-modal__submit">Отправить</button>
+							</div>
+						</form>
+					</div>
+				</div>
+
 				<script>
 				(function(){
 					if (window.__mfSearchAddStoreBound) return;
 					window.__mfSearchAddStoreBound = true;
+					var requestPriceCfg = <?=\CUtil::PhpToJSObject([
+						'isAuthorized' => $mfIsAuthorized,
+						'userName' => $mfCurrentUserName,
+						'userEmail' => $mfCurrentUserEmail,
+					])?>;
+					var requestPriceModal = document.getElementById('mf-request-price-modal');
+					var requestPriceForm = document.getElementById('mf-request-price-form');
+					var requestPriceProduct = document.getElementById('mf-request-price-product');
+					var requestPriceMessage = document.getElementById('mf-request-price-message');
 					function mfSetHeaderBasketCount(cnt)
 					{
 						var n = 0;
@@ -552,10 +652,170 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							catch (e3) {}
 						}
 					}
+					function mfRequestPriceMessage(text, isError)
+					{
+						if (!requestPriceMessage) return;
+						requestPriceMessage.textContent = String(text || '');
+						requestPriceMessage.className = 'mf-search-modal__message' + (isError ? ' is-error' : ' is-success');
+						requestPriceMessage.hidden = !text;
+					}
+					function mfOpenRequestPrice(btn)
+					{
+						if (!requestPriceModal || !requestPriceForm) return;
+						requestPriceForm.elements.product_id.value = btn.getAttribute('data-product-id') || '';
+						requestPriceForm.elements.product_name.value = btn.getAttribute('data-product-name') || '';
+						requestPriceForm.elements.product_url.value = btn.getAttribute('data-product-url') || '';
+						if (requestPriceProduct)
+						{
+							requestPriceProduct.textContent = requestPriceForm.elements.product_name.value;
+						}
+						if (requestPriceCfg && requestPriceCfg.userName && requestPriceForm.elements.name && !requestPriceForm.elements.name.value)
+						{
+							requestPriceForm.elements.name.value = requestPriceCfg.userName;
+						}
+						if (requestPriceCfg && requestPriceCfg.userEmail && requestPriceForm.elements.email && !requestPriceForm.elements.email.value)
+						{
+							requestPriceForm.elements.email.value = requestPriceCfg.userEmail;
+						}
+						if (requestPriceForm.elements.comment)
+						{
+							requestPriceForm.elements.comment.value = '';
+						}
+						mfRequestPriceMessage('', false);
+						requestPriceModal.hidden = false;
+						document.documentElement.classList.add('mf-search-modal-open');
+						document.body.classList.add('mf-search-modal-open');
+						setTimeout(function(){
+							try
+							{
+								if (requestPriceForm.elements.comment) requestPriceForm.elements.comment.focus();
+							}
+							catch (e0) {}
+						}, 0);
+					}
+					function mfCloseRequestPrice()
+					{
+						if (!requestPriceModal) return;
+						requestPriceModal.hidden = true;
+						document.documentElement.classList.remove('mf-search-modal-open');
+						document.body.classList.remove('mf-search-modal-open');
+					}
+					function mfSubmitRequestPrice()
+					{
+						if (!requestPriceForm) return;
+						var submitBtn = requestPriceForm.querySelector('button[type="submit"]');
+						var oldText = submitBtn ? submitBtn.textContent : '';
+						if (submitBtn)
+						{
+							submitBtn.disabled = true;
+							submitBtn.textContent = 'Отправляем…';
+						}
+						mfRequestPriceMessage('', false);
+
+						var done = function(resp){
+							if (!resp || !resp.ok)
+							{
+								mfRequestPriceMessage((resp && resp.error) ? resp.error : 'Не удалось отправить сообщение.', true);
+								if (submitBtn)
+								{
+									submitBtn.disabled = false;
+									submitBtn.textContent = oldText;
+								}
+								return;
+							}
+							mfRequestPriceMessage('Сообщение отправлено. Мы свяжемся с вами.', false);
+							if (submitBtn)
+							{
+								submitBtn.disabled = false;
+								submitBtn.textContent = oldText;
+							}
+							setTimeout(function(){
+								mfCloseRequestPrice();
+							}, 900);
+						};
+
+						if (window.BX && BX.ajax)
+						{
+							BX.ajax({
+								url: '/ajax/mf_request_price.php',
+								method: 'POST',
+								dataType: 'json',
+								data: {
+									sessid: requestPriceForm.elements.sessid.value,
+									product_id: requestPriceForm.elements.product_id.value,
+									product_name: requestPriceForm.elements.product_name.value,
+									product_url: requestPriceForm.elements.product_url.value,
+									name: requestPriceForm.elements.name.value,
+									email: requestPriceForm.elements.email.value,
+									comment: requestPriceForm.elements.comment.value
+								},
+								onsuccess: done,
+								onfailure: function(){
+									done({ok: false, error: 'Не удалось отправить сообщение.'});
+								}
+							});
+							return;
+						}
+						if (window.fetch)
+						{
+							var fd = new FormData(requestPriceForm);
+							fetch('/ajax/mf_request_price.php', {
+								method: 'POST',
+								credentials: 'same-origin',
+								body: fd
+							}).then(function(r){ return r.json(); })
+								.then(done)
+								.catch(function(){
+									done({ok: false, error: 'Не удалось отправить сообщение.'});
+								});
+						}
+					}
 
 					// Initial sync after page render.
 					try { setTimeout(mfSyncBasketState, 0); } catch (e0) {}
 					document.addEventListener('click', function(e){
+						var requestBtn = e && e.target && e.target.closest ? e.target.closest('.js-mf-request-price') : null;
+						if (requestBtn)
+						{
+							e.preventDefault();
+							mfOpenRequestPrice(requestBtn);
+							return;
+						}
+						var closeBtn = e && e.target && e.target.closest ? e.target.closest('.js-mf-request-price-close') : null;
+						if (closeBtn)
+						{
+							e.preventDefault();
+							mfCloseRequestPrice();
+							return;
+						}
+						var minusBtn = e && e.target && e.target.closest ? e.target.closest('.js-mf-qty-minus') : null;
+						if (minusBtn)
+						{
+							e.preventDefault();
+							var minusWrap = minusBtn.closest('.mf-search-qty');
+							var minusInput = minusWrap ? minusWrap.querySelector('.js-mf-qty-input') : null;
+							if (minusInput)
+							{
+								var minusVal = parseInt(minusInput.value || '1', 10);
+								if (!isFinite(minusVal) || minusVal < 1) minusVal = 1;
+								minusInput.value = String(Math.max(1, minusVal - 1));
+							}
+							return;
+						}
+						var plusBtn = e && e.target && e.target.closest ? e.target.closest('.js-mf-qty-plus') : null;
+						if (plusBtn)
+						{
+							e.preventDefault();
+							var plusWrap = plusBtn.closest('.mf-search-qty');
+							var plusInput = plusWrap ? plusWrap.querySelector('.js-mf-qty-input') : null;
+							if (plusInput)
+							{
+								var plusVal = parseInt(plusInput.value || '1', 10);
+								if (!isFinite(plusVal) || plusVal < 1) plusVal = 1;
+								plusInput.value = String(plusVal + 1);
+							}
+							return;
+						}
 						var btn = e && e.target && e.target.closest ? e.target.closest('.js-mf-add-store') : null;
 						if (!btn) return;
 						e.preventDefault();
@@ -567,6 +827,17 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						var pid = btn.getAttribute('data-product-id') || '';
 						var sid = btn.getAttribute('data-store-id') || '';
 						var qty = btn.getAttribute('data-qty') || '1';
+						var actionCell = btn.closest ? btn.closest('td') : null;
+						var row = actionCell && actionCell.parentNode ? actionCell.parentNode : null;
+						var qtyWrap = row && row.querySelector ? row.querySelector('.mf-search-qty') : null;
+						var qtyInput = qtyWrap && qtyWrap.querySelector ? qtyWrap.querySelector('.js-mf-qty-input') : null;
+						if (qtyInput)
+						{
+							var qtyParsed = parseInt(qtyInput.value || '1', 10);
+							if (!isFinite(qtyParsed) || qtyParsed < 1) qtyParsed = 1;
+							qtyInput.value = String(qtyParsed);
+							qty = String(qtyParsed);
+						}
 						if (!pid || !sid) return;
 						if (btn.disabled) return;
 						btn.disabled = true;
@@ -608,6 +879,34 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							window.location.href = '/ajax/mf_add_to_basket_store.php?productId=' + encodeURIComponent(pid) + '&storeId=' + encodeURIComponent(sid) + '&qty=' + encodeURIComponent(qty);
 						}
 					}, true);
+					document.addEventListener('keydown', function(e){
+						if (e && e.key === 'Escape')
+						{
+							mfCloseRequestPrice();
+						}
+					});
+					document.addEventListener('input', function(e){
+						var input = e && e.target && e.target.closest ? e.target.closest('.js-mf-qty-input') : null;
+						if (!input) return;
+						var cleaned = String(input.value || '').replace(/[^\d]/g, '');
+						var val = parseInt(cleaned || '1', 10);
+						if (!isFinite(val) || val < 1) val = 1;
+						input.value = String(val);
+					});
+					document.addEventListener('blur', function(e){
+						var input = e && e.target && e.target.closest ? e.target.closest('.js-mf-qty-input') : null;
+						if (!input) return;
+						var val = parseInt(input.value || '1', 10);
+						if (!isFinite(val) || val < 1) val = 1;
+						input.value = String(val);
+					}, true);
+					if (requestPriceForm)
+					{
+						requestPriceForm.addEventListener('submit', function(e){
+							e.preventDefault();
+							mfSubmitRequestPrice();
+						});
+					}
 				})();
 				</script>
 

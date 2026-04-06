@@ -116,6 +116,15 @@ function mf_main(): int
 			'NEW_WINDOW' => 'N',
 			'HAVE_RESULT_RECEIVE' => 'Y',
 		],
+		[
+			'CODE' => 'MF_CASH_OFFICE_FIZ',
+			'NAME' => 'Наличными в офисе',
+			'PERSON_TYPE_ID' => 1,
+			'SORT' => 130,
+			'ACTION_FILE' => 'cash',
+			'NEW_WINDOW' => 'N',
+			'HAVE_RESULT_RECEIVE' => 'N',
+		],
 	];
 
 	$keepCodes = array_column($items, 'CODE');
@@ -190,6 +199,7 @@ function mf_main(): int
 			'MF_BILL_JUR' => [2],
 			'MF_PAYKEEPER_FIZ' => [1],
 			'MF_PAYKEEPER_JUR' => [2],
+			'MF_CASH_OFFICE_FIZ' => [1],
 		];
 		$class = '\\Bitrix\\Sale\\Services\\PaySystem\\Restrictions\\PersonType';
 

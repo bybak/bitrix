@@ -910,7 +910,8 @@ class CBitrixPersonalOrderListComponent extends CBitrixComponent
 				'DATE_BILL',
 				'ACCOUNT_NUMBER',
 				'TRACKING_NUMBER',
-				'XML_ID'
+				'XML_ID',
+				'COMMENTS',
 		);
 
 		$getListParams = array(
@@ -1088,6 +1089,51 @@ class CBitrixPersonalOrderListComponent extends CBitrixComponent
 				continue;
 
 			$listOrderBasket[$basket['ORDER_ID']][$basket['ID']] = $basket;
+		}
+
+		// Шаблоны списка заказов ожидают $basketItem['PROPS'] (как в детальном просмотре), иначе пустые бренд/артикул/склад.
+		if (!empty($listOrderBasket))
+		{
+			$basketIdList = [];
+			foreach ($listOrderBasket as $orderItems)
+			{
+				foreach ($orderItems as $bid => $row)
+				{
+					$basketIdList[] = (int)$bid;
+				}
+			}
+			$basketIdList = array_values(array_unique(array_filter($basketIdList)));
+			if (!empty($basketIdList))
+			{
+				$propsByBasket = [];
+				$propRes = Sale\Internals\BasketPropertyTable::getList([
+					'select' => ['BASKET_ID', 'NAME', 'VALUE', 'CODE', 'SORT'],
+					'filter' => ['@BASKET_ID' => $basketIdList],
+					'order' => ['SORT' => 'ASC', 'ID' => 'ASC'],
+				]);
+				while ($p = $propRes->fetch())
+				{
+					$bid = (int)$p['BASKET_ID'];
+					if (!isset($propsByBasket[$bid]))
+					{
+						$propsByBasket[$bid] = [];
+					}
+					$propsByBasket[$bid][] = [
+						'NAME' => $p['NAME'],
+						'VALUE' => $p['VALUE'],
+						'CODE' => $p['CODE'],
+						'SORT' => $p['SORT'],
+					];
+				}
+				foreach ($listOrderBasket as $orderId => $orderItems)
+				{
+					foreach ($orderItems as $bid => $brow)
+					{
+						$bid = (int)$bid;
+						$listOrderBasket[$orderId][$bid]['PROPS'] = $propsByBasket[$bid] ?? [];
+					}
+				}
+			}
 		}
 
 		$trackingManager = Sale\Delivery\Tracking\Manager::getInstance();

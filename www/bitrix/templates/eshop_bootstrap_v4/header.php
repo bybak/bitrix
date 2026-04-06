@@ -204,7 +204,6 @@ if (function_exists('mf_seo_apply_for_current_page'))
 					<div class="mf-top-links">
 						<a class="mf-top-link" href="/contacts/">Напишите нам</a>
 						<a class="mf-top-link" href="/contacts/">Обратный звонок</a>
-						<a class="mf-login" href="<?=SITE_DIR?>login/">Войти</a>
 					</div>
 				</div>
 			</div>

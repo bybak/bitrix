@@ -139,6 +139,70 @@
 }
 .mf-cart .basket-item-info-name-link:hover{ text-decoration: none; }
 
+.mf-cart .mf-cart-store-meta{
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(0,0,0,.10);
+}
+.mf-cart .mf-cart-store-meta__line{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(0,0,0,.74);
+}
+.mf-cart .mf-cart-store-meta__line + .mf-cart-store-meta__line{
+  margin-top: 2px;
+}
+.mf-cart .mf-cart-store-meta__label{
+  font-weight: 900;
+  color: rgba(0,0,0,.58);
+}
+.mf-cart .mf-cart-store-meta__value{
+  color: #000;
+}
+.mf-cart .mf-cart-store-meta__switch{
+  margin-top: 10px;
+}
+.mf-cart .mf-cart-store-meta__switch-title{
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(0,0,0,.58);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.mf-cart .mf-cart-store-meta__switch-controls{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mf-cart .mf-cart-store-meta__select{
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(0,0,0,.14);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 13px;
+  color: #000;
+}
+.mf-cart .mf-cart-store-meta__apply{
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--mf-yellow);
+  color: #000;
+  font-weight: 900;
+}
+.mf-cart .mf-cart-store-meta__apply:disabled{
+  opacity: .6;
+}
+
 /* Product image */
 .mf-cart .basket-item-image{
   width: 78px;
@@ -199,6 +263,11 @@
 }
 .mf-cart [data-entity="basket-total-block"] .basket-coupon-section{
   margin-bottom: 12px;
+}
+.mf-cart [data-entity="basket-total-block"] .basket-coupon-section,
+.mf-cart [data-entity="basket-total-block"] .basket-coupon-block-field,
+.mf-cart [data-entity="basket-total-block"] .basket-coupon-block-field-description{
+  display: none !important;
 }
 .mf-cart [data-entity="basket-total-block"] .basket-coupon-block-field-description{
   color: var(--mf-muted);
@@ -264,5 +333,15 @@
   .mf-cart #basket-root > .row > .col.mf-cart__warn{ grid-area: warn; }
   .mf-cart #basket-root > .row > .col.mf-cart__items{ grid-area: items; }
   .mf-cart #basket-root > .row > .col.mf-cart__total{ grid-area: total; }
+}
+
+@media (max-width: 767.98px){
+  .mf-cart .mf-cart-store-meta__switch-controls{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mf-cart .mf-cart-store-meta__apply{
+    width: 100%;
+  }
 }
 

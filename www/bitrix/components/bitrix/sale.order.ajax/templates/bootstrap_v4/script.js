@@ -39,9 +39,17 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					if (!ctx || !ctx.controls || !ctx.controls.scope || !ctx.properties)
 						return;
 
-					// If location was manually touched, reset profile selection so server doesn't restore profile's location.
+					// If location was manually touched, reset profile selection only for guests.
+					// For authorized users this clears buyer profile values in the "Покупатель" block.
 					try {
-						if (ctx.__mfLocationTouched)
+						var isAuthorized = !!(
+							window.BX
+							&& BX.Sale
+							&& BX.Sale.OrderAjaxComponent
+							&& BX.Sale.OrderAjaxComponent.result
+							&& BX.Sale.OrderAjaxComponent.result.IS_AUTHORIZED
+						);
+						if (ctx.__mfLocationTouched && !isAuthorized)
 						{
 							var form = BX('bx-soa-order-form');
 							if (form)
@@ -81,6 +89,13 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						hidden.disabled = false;
 						hidden.value = v;
 					}
+
+					try {
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.sync === 'function')
+						{
+							ctx.__mfBuyerAddress.sync();
+						}
+					} catch(e2) {}
 				});
 			}
 		} catch(e) {}
@@ -156,6 +171,18 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			mfEdost.offers = [];
 			mfEdost.selectedId = '';
 			mfEdost.selected = null;
+			mfEdost.isAuthorized = function(){
+				try {
+					return !!(
+						window.BX
+						&& BX.Sale
+						&& BX.Sale.OrderAjaxComponent
+						&& BX.Sale.OrderAjaxComponent.result
+						&& BX.Sale.OrderAjaxComponent.result.IS_AUTHORIZED
+					);
+				} catch(e) {}
+				return false;
+			};
 			mfEdost.isDeliveryActive = function(){
 				try {
 					var del = BX('bx-soa-delivery');
@@ -203,6 +230,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						nEl.value = mfEdost.selected && mfEdost.selected.name ? String(mfEdost.selected.name) : '';
 						pEl.value = mfEdost.selected && typeof mfEdost.selected.price !== 'undefined' ? String(mfEdost.selected.price) : '';
 					}
+					else if (!idEl.value && window.BX && BX.Sale && BX.Sale.OrderAjaxComponent && BX.Sale.OrderAjaxComponent.result && BX.Sale.OrderAjaxComponent.result.MF_EDOST_DEFAULT)
+					{
+						var d = BX.Sale.OrderAjaxComponent.result.MF_EDOST_DEFAULT;
+						idEl.value = String(d.id || '');
+						cEl.value = String(d.company || '');
+						nEl.value = String(d.name || d.company || '');
+						pEl.value = String(d.price || '');
+					}
 				} catch(e) {}
 
 				// Container in delivery section content (NOT before the title).
@@ -232,6 +267,55 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					}
 				} catch(e) {}
 
+				// Patch Bitrix collapsed delivery summary builder once.
+				// Bitrix recreates the collapsed "Доставка" summary from its technical delivery
+				// ("Стандартный / 0 ₽"), so we need to re-apply selected virtual eDost data
+				// immediately after that render point.
+				try {
+					if (!mfEdost._deliveryCollapsePatched)
+					{
+						mfEdost._deliveryCollapsePatched = true;
+						var patchCollapseSummary = function(){
+							try {
+								if (
+									!window.BX
+									|| !BX.Sale
+									|| !BX.Sale.OrderAjaxComponent
+									|| typeof BX.Sale.OrderAjaxComponent.editFadeDeliveryContent !== 'function'
+								)
+								{
+									return false;
+								}
+
+								if (BX.Sale.OrderAjaxComponent.editFadeDeliveryContent._mfEdostPatched)
+								{
+									return true;
+								}
+
+								var originalEditFadeDeliveryContent = BX.Sale.OrderAjaxComponent.editFadeDeliveryContent;
+								var wrappedEditFadeDeliveryContent = function(){
+									var result = originalEditFadeDeliveryContent.apply(this, arguments);
+									try {
+										mfEdost.deferApplyDeliverySummary();
+									} catch(ePatch) {}
+									return result;
+								};
+								wrappedEditFadeDeliveryContent._mfEdostPatched = true;
+								BX.Sale.OrderAjaxComponent.editFadeDeliveryContent = wrappedEditFadeDeliveryContent;
+								return true;
+							} catch(ePatchWrap) {}
+							return false;
+						};
+
+						if (!patchCollapseSummary())
+						{
+							setTimeout(patchCollapseSummary, 100);
+							setTimeout(patchCollapseSummary, 400);
+							setTimeout(patchCollapseSummary, 1000);
+						}
+					}
+				} catch(e) {}
+
 				// Do not render the virtual tariffs UI into collapsed delivery block.
 				// When delivery step is collapsed, Bitrix replaces its content with a summary container.
 				if (!mfEdost.isDeliveryActive())
@@ -243,7 +327,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (!box)
 				{
 					box = BX.create('DIV', {attrs: {id: 'mf-edost-box'}, style: {margin: '10px 0'}});
-					var note = BX.create('DIV', {text: 'Расчёт доставки ориентировочный. Финальная стоимость будет подтверждена менеджером после уточнения деталей.', style: {fontSize: '12px', opacity: '0.75', marginBottom: '10px'}});
+					var note = BX.create('DIV', {text: 'Расчёт доставки ориентировочный. Доставка оплачивается при получении. Финальная стоимость будет подтверждена менеджером после уточнения деталей.', style: {fontSize: '12px', opacity: '0.75', marginBottom: '10px'}});
 					var warn = BX.create('DIV', {attrs: {id: 'mf-edost-warning'}, style: {display: 'none', marginBottom: '10px'}});
 					var list = BX.create('DIV', {attrs: {id: 'mf-edost-list'}});
 					var sel = BX.create('DIV', {attrs: {id: 'mf-edost-selected'}, style: {marginTop: '10px', fontSize: '13px'}});
@@ -323,7 +407,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				mfEdost.selectedId = idEl.value;
 				cEl.value = (offer && offer.company) ? String(offer.company) : '';
 				nEl.value = (offer && offer.name) ? String(offer.name) : '';
-				pEl.value = (offer && typeof offer.price !== 'undefined') ? String(offer.price) : '';
+				pEl.value = (offer && typeof offer.price !== 'undefined' && offer.price !== null) ? String(offer.price) : '';
 
 				var root = BX('bx-soa-order') || document;
 				var sel = root && root.querySelector ? root.querySelector('#mf-edost-selected') : null;
@@ -331,7 +415,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				{
 					if (idEl.value)
 					{
-						sel.textContent = 'Выбрано: ' + (cEl.value ? (cEl.value + ' — ') : '') + nEl.value + ' — ' + pEl.value + ' ₽';
+						sel.textContent = 'Выбрано: ' + (cEl.value ? (cEl.value + ' — ') : '') + nEl.value + ' — ' + (pEl.value !== '' ? (pEl.value + ' ₽') : 'оплата при получении');
 					}
 					else
 					{
@@ -352,8 +436,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					mfEdost.updateGate(locNow);
 				} catch(e) {}
 
+				try { mfEdost.syncSelectedRadio(); } catch(eSync) {}
 				try { mfEdost.applyDeliverySummary(); } catch(e) {}
 				try { mfEdost.applyTotalDeliveryLine(); } catch(e2) {}
+				try { mfEdost.deferApplyDeliverySummary(); } catch(eDeferred) {}
 			};
 
 			mfEdost.clearSelection = function(){
@@ -398,7 +484,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 
 				var text = (company ? (company + ' — ') : '') + name;
-				var priceText = price !== '' ? (price + ' ₽') : '';
+				var priceText = price !== '' ? (price + ' ₽') : 'При получении';
 
 				var blocks = [];
 				try { BX('bx-soa-delivery') && blocks.push(BX('bx-soa-delivery')); } catch(e) {}
@@ -407,24 +493,19 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				for (var i = 0; i < blocks.length; i++)
 				{
 					var del = blocks[i];
-					if (!del || !del.querySelector) continue;
+					if (!del || !del.querySelectorAll) continue;
 
-					var nameBox = del.querySelector('.bx-soa-pp-company-selected');
-					if (nameBox)
+					var nameBoxes = del.querySelectorAll('.bx-soa-pp-company-selected');
+					for (var j = 0; j < nameBoxes.length; j++)
 					{
-						var strong = nameBox.querySelector('strong');
-						if (!strong)
-						{
-							strong = BX.create('STRONG', {text: ''});
-							nameBox.appendChild(strong);
-						}
-						strong.textContent = text;
+						BX.cleanNode(nameBoxes[j]);
+						nameBoxes[j].appendChild(BX.create('STRONG', {text: text}));
 					}
 
-					var priceBox = del.querySelector('.bx-soa-pp-price');
-					if (priceBox)
+					var priceBoxes = del.querySelectorAll('.bx-soa-pp-price');
+					for (var k = 0; k < priceBoxes.length; k++)
 					{
-						priceBox.textContent = priceText;
+						priceBoxes[k].textContent = priceText;
 					}
 				}
 			};
@@ -442,7 +523,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var text = 'Не выбрано';
 					if (tid)
 					{
-						text = price !== '' ? (price + ' ₽') : 'Не выбрано';
+						text = price !== '' ? (price + ' ₽') : 'При получении';
 					}
 
 					var roots = [];
@@ -482,6 +563,42 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				} catch(e) {}
 			};
 
+			mfEdost.deferApplyDeliverySummary = function(){
+				var delays = [0, 30, 120, 300];
+				for (var i = 0; i < delays.length; i++)
+				{
+					(function(delay){
+						setTimeout(function(){
+							try { mfEdost.applyDeliverySummary(); } catch(e1) {}
+							try { mfEdost.applyTotalDeliveryLine(); } catch(e2) {}
+							try { mfEdost.syncSelectedRadio(); } catch(e3) {}
+						}, delay);
+					})(delays[i]);
+				}
+			};
+
+			mfEdost.installSummaryObserver = function(){
+				try {
+					if (mfEdost._summaryObserver)
+						return;
+
+					var deliveryBlock = BX('bx-soa-delivery');
+					if (!deliveryBlock || typeof MutationObserver === 'undefined')
+						return;
+
+					mfEdost._summaryObserver = new MutationObserver(function(){
+						try {
+							mfEdost.deferApplyDeliverySummary();
+						} catch(e1) {}
+					});
+
+					mfEdost._summaryObserver.observe(deliveryBlock, {
+						childList: true,
+						subtree: true
+					});
+				} catch(e) {}
+			};
+
 			mfEdost.onEnterDelivery = function(){
 				try {
 					if (!mfEdost.isDeliveryActive())
@@ -505,6 +622,87 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					mfEdost.updateGate(loc);
 					mfEdost.applyDeliverySummary();
 				} catch(e) {}
+			};
+
+			mfEdost.renderCustomOption = function(list, selectedId){
+				if (!list) return;
+
+				var form = BX('bx-soa-order-form');
+				var companyEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_COMPANY"]') : null;
+				var nameEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_NAME"]') : null;
+				var currentCustomText = '';
+				if (selectedId === 'custom')
+				{
+					currentCustomText = String((nameEl && nameEl.value) || '');
+					if (String((companyEl && companyEl.value) || '') === 'Свой вариант' && currentCustomText.indexOf('Свой вариант') === 0)
+					{
+						currentCustomText = currentCustomText.replace(/^Свой вариант\s*[-:]\s*/i, '');
+					}
+				}
+
+				var row = BX.create('DIV', {style: {padding: '10px', border: '1px solid #e5e5e5', borderRadius: '6px', marginBottom: '8px'}});
+				var radio = BX.create('INPUT', {props: {type: 'radio', name: 'MF_EDOST_TARIF_UI', value: 'custom'}});
+				if (selectedId === 'custom')
+				{
+					radio.checked = true;
+				}
+				var label = BX.create('SPAN', {text: ' Свой вариант'});
+				var input = BX.create('INPUT', {
+					props: {
+						type: 'text',
+						placeholder: 'Укажите предпочитаемый способ доставки',
+						value: currentCustomText
+					},
+					style: {
+						display: 'block',
+						width: '100%',
+						marginTop: '8px',
+						padding: '8px 10px',
+						border: '1px solid #d9d9d9',
+						borderRadius: '4px'
+					}
+				});
+
+				var applyCustom = function(){
+					var text = BX.util.trim(String(input.value || ''));
+					if (!text)
+					{
+						if (radio.checked)
+						{
+							mfEdost.clearSelection();
+						}
+						return;
+					}
+
+					radio.checked = true;
+					mfEdost.setSelected({
+						id: 'custom',
+						company: 'Свой вариант',
+						name: text,
+						price: ''
+					});
+				};
+
+				BX.bind(radio, 'change', function(){
+					if (radio.checked)
+					{
+						applyCustom();
+						try { input.focus(); } catch(e) {}
+					}
+				});
+				BX.bind(input, 'input', applyCustom);
+				BX.bind(row, 'click', function(e){
+					if (e.target === input)
+						return;
+					radio.checked = true;
+					applyCustom();
+					try { input.focus(); } catch(e2) {}
+				});
+
+				row.appendChild(radio);
+				row.appendChild(label);
+				row.appendChild(input);
+				list.appendChild(row);
 			};
 
 			mfEdost.renderOffers = function(offers){
@@ -537,7 +735,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						}
 					} catch(e) {}
 
-					list.appendChild(BX.create('DIV', {text: 'Нет доступных способов доставки для выбранного адреса.', style: {opacity: '0.8'}}));
+					list.appendChild(BX.create('DIV', {text: 'Нет доступных способов доставки для выбранного адреса.', style: {opacity: '0.8', marginBottom: '8px'}}));
+					mfEdost.renderCustomOption(list, selectedId);
 					return;
 				}
 
@@ -586,6 +785,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					})(offers[i]);
 				}
 
+				mfEdost.renderCustomOption(list, selectedId);
+
 				// If selection exists, ensure it is checked after re-render.
 				try { mfEdost.syncSelectedRadio(); } catch(e) {}
 
@@ -603,9 +804,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				} catch(e) {}
 			};
 
-			mfEdost.fetchOffers = function(locationCode, zipDigits){
-				// Fetch/render offers only when Delivery step is open.
-				if (!mfEdost.isDeliveryActive())
+			mfEdost.fetchOffers = function(locationCode, zipDigits, options){
+				options = options || {};
+				var allowInactive = !!options.allowInactive;
+				var deliveryActive = mfEdost.isDeliveryActive();
+
+				// Normally we fetch/render only in the open Delivery step,
+				// but for authorized users we also allow background prefill.
+				if (!deliveryActive && !allowInactive)
 					return;
 
 				locationCode = String(locationCode || '');
@@ -618,8 +824,20 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (!mfEdost._inFlight && mfEdost._lastKey === key && mfEdost.offers && mfEdost.offers.length)
 				{
 					mfEdost.ensureFields();
-					mfEdost.renderOffers(mfEdost.offers);
-					mfEdost.hideBitrixDeliveryCards();
+					if (deliveryActive)
+					{
+						mfEdost.renderOffers(mfEdost.offers);
+						mfEdost.hideBitrixDeliveryCards();
+					}
+					try {
+						var formCached = BX('bx-soa-order-form');
+						var idElCached = formCached ? formCached.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
+						var hasSelectedCached = !!(idElCached && BX.type.isNotEmptyString(String(idElCached.value || '')));
+						if (!hasSelectedCached && mfEdost.isAuthorized())
+						{
+							mfEdost.setSelected(mfEdost.offers[0]);
+						}
+					} catch(eCached) {}
 					return;
 				}
 				if (mfEdost._inFlight)
@@ -648,25 +866,177 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						if (resp && resp.ok && resp.offers && resp.offers.length)
 						{
 							mfEdost.offers = resp.offers;
-							mfEdost.renderOffers(resp.offers);
-							mfEdost.hideBitrixDeliveryCards();
+							if (mfEdost.isDeliveryActive())
+							{
+								mfEdost.renderOffers(resp.offers);
+							}
+							try {
+								var form = BX('bx-soa-order-form');
+								var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
+								var hasSelectedTariff = !!(idEl && BX.type.isNotEmptyString(String(idEl.value || '')));
+								if (!hasSelectedTariff && mfEdost.isAuthorized())
+								{
+									mfEdost.setSelected(resp.offers[0]);
+								}
+							} catch(eAuto) {}
+							if (mfEdost.isDeliveryActive())
+							{
+								mfEdost.hideBitrixDeliveryCards();
+							}
 						}
 						else
 						{
 							mfEdost.offers = [];
-							mfEdost.renderOffers([]);
-							mfEdost.hideBitrixDeliveryCards();
+							if (mfEdost.isDeliveryActive())
+							{
+								mfEdost.renderOffers([]);
+								mfEdost.hideBitrixDeliveryCards();
+							}
 						}
 					},
 					onfailure: function(){
 						mfEdost._inFlight = false;
 						mfEdost.offers = [];
-						mfEdost.renderOffers([]);
-						mfEdost.hideBitrixDeliveryCards();
+						if (mfEdost.isDeliveryActive())
+						{
+							mfEdost.renderOffers([]);
+							mfEdost.hideBitrixDeliveryCards();
+						}
 					}
 				});
 			};
 		}
+
+		var mfBuyerAddress = ctx.__mfBuyerAddress || (ctx.__mfBuyerAddress = {});
+		mfBuyerAddress.getPropByCode = function(code){
+			try {
+				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+				var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+				for (var i = 0; i < props.length; i++)
+				{
+					if (String(props[i].CODE || '') === String(code))
+						return props[i];
+				}
+			} catch(e) {}
+			return null;
+		};
+		mfBuyerAddress.getInputByCode = function(code){
+			var prop = mfBuyerAddress.getPropByCode(code);
+			if (!prop || !prop.ID)
+				return false;
+			try {
+				return ctx.getInputByPropId(prop.ID);
+			} catch(e) {}
+			return false;
+		};
+		mfBuyerAddress.getLocationText = function(){
+			var locationText = '';
+			try {
+				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+				var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+				var locProp = null;
+				for (var i = 0; i < props.length; i++)
+				{
+					if ((props[i].IS_LOCATION || 'N') === 'Y')
+					{
+						locProp = props[i];
+						break;
+					}
+				}
+				if (locProp && locProp.ID)
+				{
+					var locRow = ctx.getRowByPropId(locProp.ID);
+					if (locRow && BX.Sale && BX.Sale.OrderAjaxComponent && typeof BX.Sale.OrderAjaxComponent.getLocationString === 'function')
+					{
+						locationText = String(BX.Sale.OrderAjaxComponent.getLocationString(locRow) || '');
+					}
+				}
+			} catch(e) {}
+			if (locationText === BX.message('SOA_NOT_SPECIFIED'))
+				locationText = '';
+			return locationText;
+		};
+		mfBuyerAddress.hideLegacyRows = function(){
+			var customLocationProp = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
+			var customAddressProp = mfBuyerAddress.getPropByCode('DELIVERY_ADDRESS');
+			var customZipProp = mfBuyerAddress.getPropByCode('DELIVERY_ZIP');
+			if (!customLocationProp || !customAddressProp)
+				return;
+
+			try {
+				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+				var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+				for (var i = 0; i < props.length; i++)
+				{
+					var code = String(props[i].CODE || '');
+					var row = props[i].ID ? ctx.getRowByPropId(props[i].ID) : null;
+					if (!row)
+						continue;
+					if ((code === 'ADDRESS' || code === 'ZIP' || code === 'CITY')
+						&& (!customZipProp || parseInt(props[i].ID, 10) !== parseInt(customZipProp.ID, 10))
+						&& parseInt(props[i].ID, 10) !== parseInt(customAddressProp.ID, 10)
+						&& parseInt(props[i].ID, 10) !== parseInt(customLocationProp.ID, 10))
+					{
+						BX.hide(row);
+					}
+				}
+			} catch(e) {}
+		};
+		mfBuyerAddress.sync = function(){
+			try {
+				var locationInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
+				var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
+				var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+				var locationText = mfBuyerAddress.getLocationText();
+
+				if (locationInput && locationInput !== false)
+				{
+					locationInput.value = locationText;
+					locationInput.readOnly = true;
+					locationInput.setAttribute('readonly', 'readonly');
+					locationInput.style.backgroundColor = '#f8f9fa';
+				}
+
+				if (streetInput && streetInput !== false)
+				{
+					streetInput.setAttribute('placeholder', 'Улица, дом, квартира');
+				}
+
+				if (zipInput && zipInput !== false)
+				{
+					if (!zipInput._mfBuyerZipBound)
+					{
+						zipInput._mfBuyerZipBound = true;
+						BX.bind(zipInput, 'input', function(){
+							ctx.__mfBuyerZipChangedManually = true;
+						});
+					}
+
+					var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+					var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+					var zipSourceProp = null;
+					for (var i = 0; i < props.length; i++)
+					{
+						if ((props[i].IS_ZIP || 'N') === 'Y' && String(props[i].CODE || '') !== 'DELIVERY_ZIP')
+						{
+							zipSourceProp = props[i];
+							break;
+						}
+					}
+					if (zipSourceProp && zipSourceProp.ID)
+					{
+						var zipSourceInput = ctx.getInputByPropId(zipSourceProp.ID);
+						var zipSourceValue = zipSourceInput && zipSourceInput !== false ? String(zipSourceInput.value || '') : '';
+						if (zipSourceValue !== '' && (!ctx.__mfBuyerZipChangedManually || String(zipInput.value || '') === ''))
+						{
+							zipInput.value = zipSourceValue;
+						}
+					}
+				}
+
+				mfBuyerAddress.hideLegacyRows();
+			} catch(e) {}
+		};
 
 		// first, init all controls
 		if(typeof window.BX.locationsDeferred != 'undefined'){
@@ -713,6 +1083,47 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					control = this.properties[k].control; // reference to sale.location.selector.*
 					code = control.getSysCode();
 
+					// Motor-Force customization:
+					// For authorized users we can already have LOCATION code in hidden ORDER_PROP_* input
+					// from the selected profile, but the visual selector may still render empty after
+					// our custom checkout block rearrangements. In that case, restore UI selection
+					// explicitly from the hidden field value.
+					try {
+						var hiddenLocationInput = this.controls.scope.querySelector('input[type="hidden"][name="ORDER_PROP_' + k + '"]');
+						var hiddenLocationValue = hiddenLocationInput ? String(hiddenLocationInput.value || '') : '';
+						var currentControlValue = '';
+						try { currentControlValue = String(control.getValue ? (control.getValue() || '') : ''); } catch(e0) {}
+						if (hiddenLocationValue !== '' && currentControlValue === '')
+						{
+							setTimeout(function(controlRef, locationCode){
+								try {
+									if (controlRef && typeof controlRef.setValueByLocationCode === 'function')
+									{
+										controlRef.setValueByLocationCode(locationCode);
+									}
+								} catch(e1) {}
+							}, 0, control, hiddenLocationValue);
+
+							// Motor-Force customization:
+							// On first load for authorized users, restore eDost tariffs immediately
+							// from the profile location instead of relying only on selector events.
+							setTimeout(function(locationCode){
+								try {
+									mfEdost.ensureFields();
+									mfEdost.fetchOffers(locationCode, '', {allowInactive: mfEdost.isAuthorized()});
+									mfEdost.deferApplyDeliverySummary();
+								} catch(e2) {}
+							}, 120, hiddenLocationValue);
+
+							setTimeout(function(locationCode){
+								try {
+									mfEdost.fetchOffers(locationCode, '', {allowInactive: mfEdost.isAuthorized()});
+									mfEdost.deferApplyDeliverySummary();
+								} catch(e3) {}
+							}, 400, hiddenLocationValue);
+						}
+					} catch(e) {}
+
 					// Motor-Force hardening:
 					// Some setups stop calling global submitFormProxy on location selection.
 					// Ensure we still refresh order when a real location is selected.
@@ -729,8 +1140,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 										var locVal = '';
 										try { locVal = control.getValue ? control.getValue() : ''; } catch(e2) {}
 										mfEdost.ensureFields();
-										mfEdost.fetchOffers(locVal, '');
+										mfEdost.fetchOffers(locVal, '', {allowInactive: mfEdost.isAuthorized()});
 										mfEdost.updateGate(locVal);
+										mfBuyerAddress.sync();
 									}, 50);
 								} catch(e) {}
 							});
@@ -858,8 +1270,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		} catch(e) {}
 
 		try {
-			// Force empty location on first load: user must choose destination manually.
-			if (!this.__mfEdostLocClearedOnce)
+			mfBuyerAddress.sync();
+		} catch(eBuyer) {}
+
+		try {
+			// Force empty location on first load only for guests.
+			// Authorized users should keep location restored from their selected profile.
+			var mfIsAuthorized = mfEdost.isAuthorized();
+			if (!mfIsAuthorized && !this.__mfEdostLocClearedOnce)
 			{
 				var locPropId0 = null;
 				var locCtrl0 = null;
@@ -903,10 +1321,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					try { locInit = this.properties[pid0].control.getValue() || ''; } catch(e0) {}
 				}
 			}
-			// Only fetch/render offers when Delivery step is open (bx-selected).
-			if (mfEdost.isDeliveryActive && mfEdost.isDeliveryActive())
+			// For authorized users, prefill eDost tariff in background even if Delivery is collapsed.
+			if (mfEdost.isDeliveryActive && (mfEdost.isDeliveryActive() || mfEdost.isAuthorized()))
 			{
-				mfEdost.fetchOffers(locInit, '');
+				mfEdost.fetchOffers(locInit, '', {allowInactive: mfEdost.isAuthorized()});
 			}
 			if (!BX.type.isNotEmptyString(String(locInit || '')))
 			{
@@ -915,6 +1333,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			mfEdost.updateGate(locInit);
 			mfEdost.applyDeliverySummary();
 			mfEdost.applyTotalDeliveryLine();
+			try { mfEdost.installSummaryObserver(); } catch(eObserver) {}
 			// If Delivery step is currently open, ensure offers are shown and selection is restored.
 			try { mfEdost.onEnterDelivery(); } catch(e) {}
 		} catch(e) {}

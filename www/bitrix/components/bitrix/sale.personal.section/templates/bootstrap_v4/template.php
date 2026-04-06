@@ -50,26 +50,6 @@ if ($arParams['SHOW_PRIVATE_PAGE'] === 'Y')
 	);
 }
 
-if ($arParams['SHOW_ORDER_PAGE'] === 'Y')
-{
-
-	$delimeter = ($arParams['SEF_MODE'] === 'Y') ? "?" : "&";
-	$availablePages[] = array(
-		"path" => $arResult['PATH_TO_ORDERS'].$delimeter."filter_history=Y",
-		"name" => Loc::getMessage("SPS_ORDER_PAGE_HISTORY"),
-		"icon" => '<i class="fa fa-list-alt"></i>'
-	);
-}
-
-if ($arParams['SHOW_PROFILE_PAGE'] === 'Y')
-{
-	$availablePages[] = array(
-		"path" => $arResult['PATH_TO_PROFILE'],
-		"name" => Loc::getMessage("SPS_PROFILE_PAGE_NAME"),
-		"icon" => '<i class="fa fa-list-ol"></i>'
-	);
-}
-
 if ($arParams['SHOW_BASKET_PAGE'] === 'Y')
 {
 	$availablePages[] = array(
