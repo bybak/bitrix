@@ -407,9 +407,72 @@ if (!function_exists('mf_admin_menu_order_coupon'))
 	}
 }
 
+// Admin menu: "Магазин" -> внешние прайсы (CSV), карта склад↔тип цены, история
+if (!function_exists('mf_admin_menu_external_price_upload'))
+{
+	function mf_admin_menu_external_price_upload(array &$aGlobalMenu, array &$aModuleMenu): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+
+		$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+		$parentMenu =
+			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
+				(isset($aGlobalMenu['global_menu_sale']) ? 'global_menu_sale' : 'global_menu_content'));
+
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_stock_import',
+			'sort' => 2052,
+			'text' => 'Загрузка внешних прайсов',
+			'title' => 'Импорт цен из CSV по складу (Производитель;Артикул;Наименование;Цена)',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_external_price_upload',
+			'url' => 'mf_external_price_upload.php?lang=' . urlencode($lang),
+			'more_url' => [
+				'mf_external_price_upload.php',
+				'mf_external_price_history.php',
+				'mf_store_price_map.php',
+			],
+		];
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_stock_import',
+			'sort' => 20525,
+			'text' => 'Склады ↔ типы цен',
+			'title' => 'Проверка совпадения XML_ID склада и NAME типа цены',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_store_price_map',
+			'url' => 'mf_store_price_map.php?lang=' . urlencode($lang),
+			'more_url' => [
+				'mf_store_price_map.php',
+			],
+		];
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_stock_import',
+			'sort' => 2053,
+			'text' => 'История внешних прайсов',
+			'title' => 'Журнал импортов CSV (настройки и результат)',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_external_price_history',
+			'url' => 'mf_external_price_history.php?lang=' . urlencode($lang),
+			'more_url' => [
+				'mf_external_price_history.php',
+			],
+		];
+	}
+}
+
 if (class_exists(\Bitrix\Main\EventManager::class))
 {
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_order_coupon');
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_external_price_upload');
 }
 
 // === SEO sync (static pages from top menu, excluding /products/*) ===
@@ -845,6 +908,115 @@ if (!function_exists('mf_ensure_store_markup_field'))
 
 mf_ensure_store_markup_field();
 
+// Stores: min/max delivery days (shown on product as "N–M дней" when set).
+if (!function_exists('mf_ensure_store_delivery_days_fields'))
+{
+	function mf_ensure_store_delivery_days_fields(): void
+	{
+		$optKey = 'mf_store_field_delivery_days_installed';
+
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('catalog'))
+		{
+			return;
+		}
+
+		if (class_exists(\Bitrix\Main\Config\Option::class))
+		{
+			try
+			{
+				if (\Bitrix\Main\Config\Option::get('main', $optKey, 'N') === 'Y')
+				{
+					return;
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		if (!class_exists(\CUserTypeEntity::class))
+		{
+			return;
+		}
+
+		$entityId = \Bitrix\Catalog\StoreTable::getUfId();
+
+		$ensureInt = static function (string $fieldName, int $sort, array $labels) use ($entityId): void {
+			$ex = \CUserTypeEntity::GetList([], ['ENTITY_ID' => $entityId, 'FIELD_NAME' => $fieldName])->Fetch();
+			if ($ex && (int)($ex['ID'] ?? 0) > 0)
+			{
+				return;
+			}
+			$ute = new \CUserTypeEntity();
+			$ute->Add([
+				'ENTITY_ID' => $entityId,
+				'FIELD_NAME' => $fieldName,
+				'USER_TYPE_ID' => 'integer',
+				'SORT' => $sort,
+				'MULTIPLE' => 'N',
+				'MANDATORY' => 'N',
+				'SHOW_FILTER' => 'I',
+				'SHOW_IN_LIST' => 'Y',
+				'EDIT_IN_LIST' => 'Y',
+				'IS_SEARCHABLE' => 'N',
+				'SETTINGS' => [
+					'DEFAULT_VALUE' => '',
+				],
+				'EDIT_FORM_LABEL' => $labels,
+				'LIST_COLUMN_LABEL' => $labels,
+				'LIST_FILTER_LABEL' => $labels,
+			]);
+		};
+
+		$ensureInt('UF_MF_DELIVERY_DAYS_MIN', 305, [
+			'ru' => 'Доставка: мин. дней',
+			'en' => 'Delivery: min days',
+		]);
+		$ensureInt('UF_MF_DELIVERY_DAYS_MAX', 306, [
+			'ru' => 'Доставка: макс. дней',
+			'en' => 'Delivery: max days',
+		]);
+
+		if (class_exists(\Bitrix\Main\Config\Option::class))
+		{
+			try
+			{
+				\Bitrix\Main\Config\Option::set('main', $optKey, 'Y');
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+	}
+}
+
+mf_ensure_store_delivery_days_fields();
+
+if (!function_exists('mf_store_decl_days_ru'))
+{
+	function mf_store_decl_days_ru(int $n): string
+	{
+		$n = abs($n) % 100;
+		$n1 = abs($n) % 10;
+		if ($n >= 11 && $n <= 14)
+		{
+			return 'дней';
+		}
+		if ($n1 === 1)
+		{
+			return 'день';
+		}
+		if ($n1 >= 2 && $n1 <= 4)
+		{
+			return 'дня';
+		}
+
+		return 'дней';
+	}
+}
+
 // Backfill store markup to 0 for existing stores (so admin UI isn't empty).
 if (!function_exists('mf_backfill_store_markup_defaults'))
 {
@@ -948,36 +1120,205 @@ if (!function_exists('mf_apply_markup'))
 	}
 }
 
+if (!function_exists('mf_supplier_store_to_price_group_reset'))
+{
+	function mf_supplier_store_to_price_group_reset(): void
+	{
+		unset($GLOBALS['MF_SUPPLIER_STORE_TO_PRICE_GROUP']);
+	}
+}
+
+if (!function_exists('mf_catalog_xml_price_group_name_candidates'))
+{
+	/**
+	 * Варианты CCatalogGroup.NAME для одного XML_ID склада (часто расходятся SUPPLIER_XXX и XXX).
+	 *
+	 * @return string[]
+	 */
+	function mf_catalog_xml_price_group_name_candidates(string $xmlRaw): array
+	{
+		$u = mb_strtoupper(trim($xmlRaw));
+		if ($u === '')
+		{
+			return [];
+		}
+		$out = [$u];
+		$p = 'SUPPLIER_';
+		$lenP = mb_strlen($p);
+		if (mb_substr($u, 0, $lenP) === $p)
+		{
+			$rest = mb_substr($u, $lenP);
+			if ($rest !== '')
+			{
+				$out[] = $rest;
+			}
+		}
+		else
+		{
+			$out[] = $p . $u;
+		}
+
+		return array_values(array_unique($out));
+	}
+}
+
+if (!function_exists('mf_catalog_group_id_by_store_xml_candidates'))
+{
+	/**
+	 * Подобрать ID типа цены по XML_ID склада, перебирая допустимые варианты имени.
+	 */
+	function mf_catalog_group_id_by_store_xml_candidates(string $xmlRaw): int
+	{
+		if (!class_exists(\CCatalogGroup::class))
+		{
+			return 0;
+		}
+		foreach (mf_catalog_xml_price_group_name_candidates($xmlRaw) as $name)
+		{
+			$name = mb_strtoupper(trim((string)$name));
+			if ($name === '')
+			{
+				continue;
+			}
+			$r = \CCatalogGroup::GetList([], ['=NAME' => $name], false, false, ['ID'])->Fetch();
+			$gid = (int)($r['ID'] ?? 0);
+			if ($gid > 0)
+			{
+				return $gid;
+			}
+		}
+
+		return 0;
+	}
+}
+
 if (!function_exists('mf_supplier_store_to_price_group'))
 {
 	/**
-	 * Map storeId => catalog group id, based on store XML_ID=SUPPLIER_* and group NAME=XML_ID.
+	 * Map storeId => catalog group id: group NAME совпадает с XML_ID склада (или альтернативой SUPPLIER_*).
+	 * Учитываются все склады, у которых есть соответствующий тип цены (в т.ч. внешние прайсы).
 	 */
 	function mf_supplier_store_to_price_group(): array
 	{
-		static $cache = null;
-		if (is_array($cache)) return $cache;
+		$key = 'MF_SUPPLIER_STORE_TO_PRICE_GROUP';
+		if (isset($GLOBALS[$key]) && is_array($GLOBALS[$key]))
+		{
+			return $GLOBALS[$key];
+		}
 		$cache = [];
 
 		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('catalog'))
 		{
+			$GLOBALS[$key] = $cache;
+
 			return $cache;
 		}
 
-		$rs = \CCatalogStore::GetList(['ID' => 'ASC'], ['%XML_ID' => 'SUPPLIER_'], false, false, ['ID', 'XML_ID']);
+		$rs = \CCatalogStore::GetList(['ID' => 'ASC'], [], false, false, ['ID', 'XML_ID']);
 		while ($s = $rs->Fetch())
 		{
 			$storeId = (int)($s['ID'] ?? 0);
-			$xmlId = mb_strtoupper(trim((string)($s['XML_ID'] ?? '')));
-			if ($storeId <= 0 || $xmlId === '') continue;
-			$g = \CCatalogGroup::GetList([], ['=NAME' => $xmlId], false, false, ['ID', 'NAME'])->Fetch();
-			$gid = (int)($g['ID'] ?? 0);
+			$xmlRaw = trim((string)($s['XML_ID'] ?? ''));
+			if ($storeId <= 0 || $xmlRaw === '')
+			{
+				continue;
+			}
+			$gid = function_exists('mf_catalog_group_id_by_store_xml_candidates')
+				? mf_catalog_group_id_by_store_xml_candidates($xmlRaw)
+				: 0;
 			if ($gid > 0)
 			{
 				$cache[$storeId] = $gid;
 			}
 		}
+		$GLOBALS[$key] = $cache;
+
 		return $cache;
+	}
+}
+
+if (!function_exists('mf_catalog_product_cluster_ids'))
+{
+	/**
+	 * ID элемента каталога для агрегации: родитель SKU + его офферы, или оффер + родитель.
+	 * Нужно, чтобы остатки и цены совпадали с тем, как импорты пишут на родителя или на SKU.
+	 */
+	function mf_catalog_product_cluster_ids(int $elementId): array
+	{
+		static $cache = [];
+		$elementId = (int)$elementId;
+		if ($elementId <= 0)
+		{
+			return [];
+		}
+		if (isset($cache[$elementId]))
+		{
+			return $cache[$elementId];
+		}
+
+		$ids = [$elementId];
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('catalog'))
+		{
+			$cache[$elementId] = $ids;
+
+			return $ids;
+		}
+
+		if (!class_exists(\Bitrix\Catalog\ProductTable::class))
+		{
+			$cache[$elementId] = $ids;
+
+			return $ids;
+		}
+
+		$row = \Bitrix\Catalog\ProductTable::getRow([
+			'filter' => ['=ID' => $elementId],
+			'select' => ['ID', 'TYPE'],
+		]);
+		if (!$row)
+		{
+			$cache[$elementId] = $ids;
+
+			return $ids;
+		}
+
+		$type = (int)($row['TYPE'] ?? 0);
+		if ($type === \Bitrix\Catalog\ProductTable::TYPE_SKU && class_exists(\CCatalogSKU::class))
+		{
+			$iblockId = (int)\CIBlockElement::GetIBlockByID($elementId);
+			if ($iblockId > 0)
+			{
+				$list = \CCatalogSKU::getOffersList($elementId, $iblockId, [], [], [], [], ['ID' => 'ASC']);
+				if (!empty($list[$elementId]) && is_array($list[$elementId]))
+				{
+					foreach ($list[$elementId] as $offerRow)
+					{
+						$oid = (int)($offerRow['ID'] ?? 0);
+						if ($oid > 0)
+						{
+							$ids[] = $oid;
+						}
+					}
+				}
+			}
+		}
+		elseif ($type === \Bitrix\Catalog\ProductTable::TYPE_OFFER && class_exists(\CCatalogSKU::class))
+		{
+			$info = \CCatalogSKU::GetProductInfo($elementId);
+			if (is_array($info) && !empty($info['ID']))
+			{
+				$pid = (int)$info['ID'];
+				if ($pid > 0 && $pid !== $elementId)
+				{
+					$ids[] = $pid;
+				}
+			}
+		}
+
+		$ids = array_values(array_unique(array_filter($ids, static fn($v) => (int)$v > 0)));
+		$cache[$elementId] = $ids;
+
+		return $ids;
 	}
 }
 
@@ -991,7 +1332,19 @@ if (!function_exists('mf_product_prices_by_group'))
 		if (isset($cache[$productId])) return $cache[$productId];
 
 		$map = [];
-		if (class_exists(\CPrice::class))
+		if (class_exists(\Bitrix\Catalog\PriceTable::class))
+		{
+			$rs = \Bitrix\Catalog\PriceTable::getList([
+				'filter' => ['=PRODUCT_ID' => $productId],
+				'select' => ['CATALOG_GROUP_ID', 'PRICE'],
+			]);
+			while ($p = $rs->fetch())
+			{
+				$gid = (int)$p['CATALOG_GROUP_ID'];
+				$map[$gid] = (float)$p['PRICE'];
+			}
+		}
+		elseif (class_exists(\CPrice::class))
 		{
 			$rs = \CPrice::GetList([], ['PRODUCT_ID' => $productId], false, false, ['CATALOG_GROUP_ID', 'PRICE']);
 			while ($p = $rs->Fetch())
@@ -1040,8 +1393,16 @@ if (!function_exists('mf_calc_store_price'))
 		$gid = (int)($storeToGroup[$storeId] ?? 0);
 		if ($gid <= 0) return null;
 
-		$prices = mf_product_prices_by_group($productId);
-		$raw = (float)($prices[$gid] ?? 0);
+		$raw = 0.0;
+		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
+		{
+			$prices = mf_product_prices_by_group((int)$cid);
+			$raw = (float)($prices[$gid] ?? 0);
+			if ($raw > 0)
+			{
+				break;
+			}
+		}
 		if ($raw <= 0) return null;
 
 		$pct = mf_store_markup_pct($storeId);
@@ -1070,12 +1431,31 @@ if (!function_exists('mf_min_price_from_available_stores'))
 		$min = null;
 		$minStoreId = 0;
 
-		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId, '>AMOUNT' => 0], false, false, ['STORE_ID', 'AMOUNT']);
-		while ($r = $rs->Fetch())
+		$byStore = [];
+		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
 		{
-			$storeId = (int)$r['STORE_ID'];
-			if ($storeId <= 0) continue;
-			if (!isset($storeToGroup[$storeId])) continue;
+			$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => (int)$cid, '>AMOUNT' => 0], false, false, ['STORE_ID', 'AMOUNT']);
+			while ($r = $rs->Fetch())
+			{
+				$sid = (int)($r['STORE_ID'] ?? 0);
+				if ($sid <= 0)
+				{
+					continue;
+				}
+				$byStore[$sid] = ($byStore[$sid] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
+			}
+		}
+
+		foreach ($byStore as $storeId => $amt)
+		{
+			if ($storeId <= 0 || $amt <= 0)
+			{
+				continue;
+			}
+			if (!isset($storeToGroup[$storeId]))
+			{
+				continue;
+			}
 
 			$computed = mf_calc_store_price($productId, $storeId);
 			if ($computed === null) continue;
@@ -1096,6 +1476,58 @@ if (!function_exists('mf_store_delivery_term'))
 {
 	function mf_store_delivery_term(int $storeId): string
 	{
+		$storeId = (int)$storeId;
+		if ($storeId <= 0)
+		{
+			return 'Срок уточнит менеджер';
+		}
+
+		global $USER_FIELD_MANAGER;
+		if (is_object($USER_FIELD_MANAGER) && class_exists(\Bitrix\Catalog\StoreTable::class))
+		{
+			try
+			{
+				$ufs = $USER_FIELD_MANAGER->GetUserFields(\Bitrix\Catalog\StoreTable::getUfId(), $storeId);
+				$min = $ufs['UF_MF_DELIVERY_DAYS_MIN']['VALUE'] ?? null;
+				$max = $ufs['UF_MF_DELIVERY_DAYS_MAX']['VALUE'] ?? null;
+				if (is_array($min))
+				{
+					$min = reset($min);
+				}
+				if (is_array($max))
+				{
+					$max = reset($max);
+				}
+				$min = (int)$min;
+				$max = (int)$max;
+
+				if ($min > 0 || $max > 0)
+				{
+					if ($min > 0 && $max > 0)
+					{
+						$lo = min($min, $max);
+						$hi = max($min, $max);
+						if ($lo === $hi)
+						{
+							return (string)$lo . ' ' . mf_store_decl_days_ru($lo);
+						}
+
+						return (string)$lo . '–' . (string)$hi . ' ' . mf_store_decl_days_ru($hi);
+					}
+					if ($min > 0)
+					{
+						return 'от ' . (string)$min . ' ' . mf_store_decl_days_ru($min);
+					}
+
+					return 'до ' . (string)$max . ' ' . mf_store_decl_days_ru($max);
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// fall through to legacy
+			}
+		}
+
 		$s = function_exists('mf_store_row') ? mf_store_row($storeId) : null;
 		if (!is_array($s))
 		{
@@ -1141,11 +1573,23 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 			return $out;
 		}
 
-		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId, '>AMOUNT' => 0], false, false, ['STORE_ID', 'AMOUNT']);
-		while ($r = $rs->Fetch())
+		$byStore = [];
+		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
 		{
-			$storeId = (int)($r['STORE_ID'] ?? 0);
-			$amount = (float)($r['AMOUNT'] ?? 0);
+			$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => (int)$cid, '>AMOUNT' => 0], false, false, ['STORE_ID', 'AMOUNT']);
+			while ($r = $rs->Fetch())
+			{
+				$sid = (int)($r['STORE_ID'] ?? 0);
+				if ($sid <= 0)
+				{
+					continue;
+				}
+				$byStore[$sid] = ($byStore[$sid] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
+			}
+		}
+
+		foreach ($byStore as $storeId => $amount)
+		{
 			if ($storeId <= 0 || $amount + 1e-9 < $qty)
 			{
 				continue;
@@ -1525,6 +1969,20 @@ if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 			$computed = round($computed * 0.9, 2);
 		}
 
+		if (function_exists('mf_ep_weight_surcharge_rub'))
+		{
+			$qty = (float)$item->getQuantity();
+			if ($qty <= 0)
+			{
+				$qty = 1.0;
+			}
+			$sur = mf_ep_weight_surcharge_rub($productId, $storeId, $qty);
+			if ($sur > 0)
+			{
+				$computed = round($computed + $sur, 2);
+			}
+		}
+
 		// Ensure store props are set for order visibility.
 		$s = mf_store_row($storeId);
 		$props = [
@@ -1730,6 +2188,24 @@ if (is_file($mfCatalogVisibilityInclude))
 	{
 		mf_ensure_iblock4_ext_images_property();
 	}
+}
+
+// --- External price CSV (admin + weight surcharge helpers) -----------------
+$mfExtPriceLib = __DIR__ . '/include/mf_external_price_lib.php';
+if (is_file($mfExtPriceLib))
+{
+	require_once $mfExtPriceLib;
+	if (function_exists('mf_ep_ensure_store_weight_ufs'))
+	{
+		mf_ep_ensure_store_weight_ufs();
+	}
+}
+
+// --- Admin: store edit — disable external-price weight UFs unless «Внешний склад» ---
+$mfCatStoreEditUfUi = __DIR__ . '/include/mf_cat_store_edit_uf_ui.php';
+if (is_file($mfCatStoreEditUfUi))
+{
+	require_once $mfCatStoreEditUfUi;
 }
 
 // --- Stock: deduct store amounts on checkout --------------------------------
