@@ -54,6 +54,13 @@ Loader::includeModule("iblock");
 Loader::includeModule("catalog");
 Loader::includeModule("highloadblock");
 
+// Тот же PRODUCT_ID, что и у импорта внешних прайсов (родитель SKU → первый оффер).
+$mfEpLib = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_external_price_lib.php';
+if (is_file($mfEpLib))
+{
+	require_once $mfEpLib;
+}
+
 // Ensure progress output is visible in CLI (no buffering).
 while (ob_get_level() > 0)
 {
@@ -589,10 +596,21 @@ function getOrCreatePriceGroupIdByStoreXmlId(string $storeXmlId, string $titleFa
 	$name = mb_strtoupper(trim($storeXmlId));
 	if ($name === '') throw new RuntimeException('Пустой storeXmlId');
 
-	$rs = CCatalogGroup::GetList([], ['=NAME' => $name], false, false, ['ID', 'NAME']);
-	if ($r = $rs->Fetch())
+	if (function_exists('mf_catalog_group_id_by_store_xml_candidates'))
 	{
-		return (int)$r['ID'];
+		$found = mf_catalog_group_id_by_store_xml_candidates($storeXmlId);
+		if ($found > 0)
+		{
+			return $found;
+		}
+	}
+	else
+	{
+		$rs = CCatalogGroup::GetList([], ['=NAME' => $name], false, false, ['ID', 'NAME']);
+		if ($r = $rs->Fetch())
+		{
+			return (int)$r['ID'];
+		}
 	}
 
 	if (!$create)
@@ -1317,6 +1335,14 @@ try
 		$price = ($priceRaw !== null) ? (float)$priceRaw : null;
 
 		$productId = findCanonicalProductIdByArticleBrand($iblockId, $articleNorm, $brandRaw, $brandNorm);
+		if ($productId && function_exists('mf_ep_resolve_catalog_trade_product_id'))
+		{
+			$resolved = mf_ep_resolve_catalog_trade_product_id((int)$productId);
+			if ($resolved > 0)
+			{
+				$productId = $resolved;
+			}
+		}
 		if (!$productId)
 		{
 			$notFound++;
