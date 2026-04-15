@@ -109,15 +109,39 @@ if (is_array($arResult) && \CModule::IncludeModule('catalog'))
 	if ($productId > 0)
 	{
 		$sum = 0.0;
-		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId], false, false, ['AMOUNT']);
-		while ($r = $rs->Fetch())
+		$cluster = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($productId)
+			: [$productId];
+		foreach ($cluster as $cid)
 		{
-			$sum += (float)($r['AMOUNT'] ?? 0);
+			$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => (int)$cid], false, false, ['AMOUNT']);
+			while ($r = $rs->Fetch())
+			{
+				$sum += (float)($r['AMOUNT'] ?? 0);
+			}
 		}
 		$canBuy = ($sum > 0);
 		$arResult['CAN_BUY'] = $canBuy;
 		$arResult['CATALOG_QUANTITY'] = $sum;
 		$arResult['CATALOG_AVAILABLE'] = $canBuy ? 'Y' : 'N';
+		// У товаров с SKU шаблон берёт $actualItem из $arResult['OFFERS'][*], не из корня — иначе CAN_BUY остаётся false.
+		if (!empty($arResult['OFFERS']) && is_array($arResult['OFFERS']))
+		{
+			foreach ($arResult['OFFERS'] as $k => $_offer)
+			{
+				$arResult['OFFERS'][$k]['CAN_BUY'] = $canBuy;
+				$arResult['OFFERS'][$k]['CATALOG_QUANTITY'] = $sum;
+				$arResult['OFFERS'][$k]['CATALOG_AVAILABLE'] = $canBuy ? 'Y' : 'N';
+				if (isset($arResult['OFFERS'][$k]['PRODUCT']) && is_array($arResult['OFFERS'][$k]['PRODUCT']))
+				{
+					$arResult['OFFERS'][$k]['PRODUCT']['QUANTITY'] = $sum;
+					if ($canBuy)
+					{
+						$arResult['OFFERS'][$k]['PRODUCT']['AVAILABLE'] = 'Y';
+					}
+				}
+			}
+		}
 	}
 }
 

@@ -224,18 +224,24 @@ $mfAnalogsTabHtml = '';
 if ($elementId > 0 && CModule::IncludeModule("catalog"))
 {
 	$storeAmounts = [];
-	$rsAmt = CCatalogStoreProduct::GetList(
-		[],
-		['PRODUCT_ID' => $elementId],
-		false,
-		false,
-		['STORE_ID', 'AMOUNT']
-	);
-	while ($r = $rsAmt->Fetch())
+	$clusterIds = function_exists('mf_catalog_product_cluster_ids')
+		? mf_catalog_product_cluster_ids($elementId)
+		: [$elementId];
+	foreach ($clusterIds as $cid)
 	{
-		$sid = (int)$r['STORE_ID'];
-		if ($sid <= 0) continue;
-		$storeAmounts[$sid] = (float)$r['AMOUNT'];
+		$rsAmt = CCatalogStoreProduct::GetList(
+			[],
+			['PRODUCT_ID' => (int)$cid],
+			false,
+			false,
+			['STORE_ID', 'AMOUNT']
+		);
+		while ($r = $rsAmt->Fetch())
+		{
+			$sid = (int)$r['STORE_ID'];
+			if ($sid <= 0) continue;
+			$storeAmounts[$sid] = ($storeAmounts[$sid] ?? 0.0) + (float)$r['AMOUNT'];
+		}
 	}
 
 	if (!empty($storeAmounts))
@@ -333,8 +339,9 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 						<?php $s = $stores[$sid] ?? []; ?>
 						<?php $amt = (float)($storeAmounts[$sid] ?? 0); ?>
 						<?php
+						// Цена по складу из RAW+наценка — показываем и при нулевом остатке (внешний прайс мог обновить только цену).
 						$storePrice = null;
-						if (function_exists('mf_calc_store_price') && $amt > 0)
+						if (function_exists('mf_calc_store_price'))
 						{
 							$storePrice = mf_calc_store_price($elementId, (int)$sid);
 							if ($storePrice !== null && function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
