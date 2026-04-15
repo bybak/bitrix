@@ -2,7 +2,7 @@
 dump.sql
 *.sql.gz
 
-# macOS
+# macOS (also run: git rm -r --cached .DS_Store **/.DS_Store if already tracked)
 .DS_Store
 **/.DS_Store
 
@@ -27,3 +27,7 @@ www/upload/resize_cache/
 .tmp_1cxml
 .repost_out
 logs/*
+mf_unf.log
+www/mf_unf.log
+www/catalog_btrix.csv
+www/catalog_bitrix.csv
