@@ -2833,6 +2833,40 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			node.style.display = '';
 
+			if (
+				this.result.MF_CHECKOUT
+				&& this.result.MF_CHECKOUT.ENABLED
+				&& !this.result.IS_AUTHORIZED
+				&& this.result.MF_CHECKOUT.LOGIN_HREF
+				&& this.result.MF_CHECKOUT.REGISTER_HREF
+			)
+			{
+				var authTop = BX.create('DIV', {
+					props: {className: 'mf-search-modal__auth mf-checkout-auth-top'}
+				});
+				authTop.appendChild(BX.create('P', {
+					props: {className: 'mf-search-modal__auth-text'},
+					text: 'Уже есть аккаунт? Войдите или зарегистрируйтесь — после возврата продолжите оформление заказа.'
+				}));
+				var authActions = BX.create('DIV', {props: {className: 'mf-search-modal__auth-actions'}});
+				authActions.appendChild(BX.create('A', {
+					props: {
+						href: this.result.MF_CHECKOUT.LOGIN_HREF,
+						className: 'btn btn-outline-dark mf-search-modal__auth-btn'
+					},
+					text: 'Войти'
+				}));
+				authActions.appendChild(BX.create('A', {
+					props: {
+						href: this.result.MF_CHECKOUT.REGISTER_HREF,
+						className: 'btn btn-outline-dark mf-search-modal__auth-btn'
+					},
+					text: 'Регистрация'
+				}));
+				authTop.appendChild(authActions);
+				node.appendChild(authTop);
+			}
+
 			node.appendChild(BX.create('DIV', {
 				props: {className: 'mf-checkout-meta__title'},
 				text: 'Параметры оформления'
@@ -2888,6 +2922,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				});
 
 				guestWrap.appendChild(guestCards);
+
 				node.appendChild(guestWrap);
 			}
 
@@ -5975,7 +6010,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					try {
 						if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
 						{
-							BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+							BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
 						}
 					} catch(e) {}
 				}, 0);

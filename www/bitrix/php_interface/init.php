@@ -1,5 +1,32 @@
 <?php
 
+// PHP 7.x: ниже используются str_starts_with / str_ends_with (встроены с PHP 8.0).
+if (!function_exists('str_starts_with'))
+{
+	function str_starts_with($haystack, $needle)
+	{
+		$haystack = (string)$haystack;
+		$needle = (string)$needle;
+
+		return $needle === '' || strncmp($haystack, $needle, strlen($needle)) === 0;
+	}
+}
+if (!function_exists('str_ends_with'))
+{
+	function str_ends_with($haystack, $needle)
+	{
+		$haystack = (string)$haystack;
+		$needle = (string)$needle;
+		if ($needle === '')
+		{
+			return true;
+		}
+		$len = strlen($needle);
+
+		return $len <= strlen($haystack) && substr($haystack, -$len) === $needle;
+	}
+}
+
 // Global config for external Motor-Force image host.
 // We intentionally generate URLs deterministically (no downloads into Bitrix).
 if (!defined('MF_MOTOR_FORCE_IMG_HOST'))
@@ -346,6 +373,43 @@ if (!function_exists('mf_admin_menu_stock_import_logs'))
 if (class_exists(\Bitrix\Main\EventManager::class))
 {
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_stock_import_logs');
+}
+
+// Admin menu: "Магазин" -> купон «скидка на корзину» (правило + промокод)
+if (!function_exists('mf_admin_menu_order_coupon'))
+{
+	function mf_admin_menu_order_coupon(array &$aGlobalMenu, array &$aModuleMenu): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+
+		$url = 'mf_sale_order_coupon.php?lang=' . (defined('LANGUAGE_ID') ? LANGUAGE_ID : 'ru');
+		$parentMenu =
+			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
+				(isset($aGlobalMenu['global_menu_sale']) ? 'global_menu_sale' : 'global_menu_content'));
+
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_sale',
+			'sort' => 2045,
+			'text' => 'Купон: скидка на заказ',
+			'title' => 'Создать правило корзины с промокодом (скидка на весь заказ)',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_sale_order_coupon',
+			'url' => $url,
+			'more_url' => [
+				'mf_sale_order_coupon.php',
+			],
+		];
+	}
+}
+
+if (class_exists(\Bitrix\Main\EventManager::class))
+{
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_order_coupon');
 }
 
 // === SEO sync (static pages from top menu, excluding /products/*) ===
@@ -1247,6 +1311,21 @@ if (is_file($mfCheckoutInclude))
 	}
 }
 
+// Частичное оформление заказа (отложить невыбранные позиции в корзине).
+$mfCartPartialInclude = __DIR__ . '/include/mf_cart_partial.php';
+if (is_file($mfCartPartialInclude))
+{
+	require_once $mfCartPartialInclude;
+	if (class_exists(\Bitrix\Main\EventManager::class))
+	{
+		\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleOrderSaved', 'mf_cart_partial_on_order_saved');
+	}
+	if (function_exists('mf_cart_partial_try_restore_from_request'))
+	{
+		mf_cart_partial_try_restore_from_request();
+	}
+}
+
 // === Basket/order: attach chosen store + set computed price dynamically ===
 if (!function_exists('mf_basket_get_prop'))
 {
@@ -1458,7 +1537,9 @@ if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 		}
 		mf_basket_set_props($item, $props);
 
-		$item->setField('CUSTOM_PRICE', 'Y');
+		// Не выставляем CUSTOM_PRICE=Y: в sale позиции с «ручной» ценой не участвуют в правилах корзины
+		// и купонах (Discount\Actions::filterBasketForAction). Цена со склада задаётся через PRICE/BASE_PRICE.
+		$item->setField('CUSTOM_PRICE', 'N');
 		$item->setField('PRICE', $computed);
 		$item->setField('BASE_PRICE', $computed);
 		$item->setField('CURRENCY', 'RUB');
@@ -1478,6 +1559,43 @@ if (!function_exists('mf_on_basket_item_before_saved'))
 		{
 			mf_assign_store_and_price_to_basket_item($basketItem);
 		}
+	}
+}
+
+if (!function_exists('mf_sale_order_prop_value_by_code'))
+{
+	/**
+	 * @param \Bitrix\Sale\PropertyValueCollectionBase|null $propertyCollection
+	 */
+	function mf_sale_order_prop_value_by_code($propertyCollection, string $code)
+	{
+		if (!$propertyCollection)
+		{
+			return null;
+		}
+		if (method_exists($propertyCollection, 'getItemByOrderPropertyCode'))
+		{
+			return $propertyCollection->getItemByOrderPropertyCode($code);
+		}
+		try
+		{
+			foreach ($propertyCollection as $propertyValue)
+			{
+				if (
+					$propertyValue
+					&& method_exists($propertyValue, 'getField')
+					&& (string)$propertyValue->getField('CODE') === $code
+				)
+				{
+					return $propertyValue;
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		return null;
 	}
 }
 
@@ -1510,11 +1628,33 @@ if (!function_exists('mf_on_order_before_saved'))
 
 		// Motor-Force customization:
 		// Save selected eDost delivery tariff into manager comment (hidden from customer).
+		// Служебные свойства: полный ответ Nominatim + город для eDost (не показываются покупателю, UTIL=Y).
 		try
 		{
 			if (class_exists(\Bitrix\Main\Application::class))
 			{
 				$req = \Bitrix\Main\Application::getInstance()->getContext()->getRequest();
+				$propCol = $order->getPropertyCollection();
+				if ($propCol)
+				{
+					if ($req->getPost('MF_NOMINATIM_JSON') !== null)
+					{
+						$p = mf_sale_order_prop_value_by_code($propCol, 'MF_NOMINATIM_JSON');
+						if ($p && method_exists($p, 'setValue'))
+						{
+							$p->setValue((string)$req->getPost('MF_NOMINATIM_JSON'));
+						}
+					}
+					if ($req->getPost('MF_EDOST_TO_CITY') !== null)
+					{
+						$p2 = mf_sale_order_prop_value_by_code($propCol, 'MF_EDOST_TO_CITY');
+						if ($p2 && method_exists($p2, 'setValue'))
+						{
+							$p2->setValue(trim((string)$req->getPost('MF_EDOST_TO_CITY')));
+						}
+					}
+				}
+
 				$tid = trim((string)$req->getPost('MF_EDOST_TARIF_ID'));
 				if ($tid !== '')
 				{

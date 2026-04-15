@@ -119,8 +119,10 @@ if (function_exists('mf_seo_apply_for_current_page'))
 		// Ensure catalog.element JS is loaded for detail pages (JCCatalogElement).
 		$catalogElementJs = $mfAssetVer('/bitrix/components/bitrix/catalog.element/templates/.default/script.js');
 		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-shop.css");
+		$cssSearchCard = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-search.css");
 		$js = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-shop.js");
 		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
+		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($cssSearchCard).'" />'."\n";
 		// Important: load synchronously (inline new JCCatalogItem(...) runs during parsing).
 		echo '<script src="'.htmlspecialcharsbx($catalogItemJs).'"></script>'."\n";
 		echo '<script src="'.htmlspecialcharsbx($catalogElementJs).'"></script>'."\n";

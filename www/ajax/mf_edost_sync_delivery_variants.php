@@ -54,34 +54,42 @@ try
 	$req = Application::getInstance()->getContext()->getRequest();
 	$locationCode = trim((string)$req->getPost('location_code'));
 	$zip = preg_replace('~\\D+~', '', (string)$req->getPost('zip'));
+	$mfEdostToCity = trim((string)$req->getPost('mf_edost_to_city'));
 
-	if ($locationCode === '')
+	if ($mfEdostToCity !== '')
 	{
-		try
-		{
-			if ($isLocal)
-			{
-				@file_put_contents($logFile, date('c') . " empty_location zip={$zip}\n", FILE_APPEND);
-			}
-		}
-		catch (\Throwable $e) {}
-		echo Json::encode(['ok' => false, 'error' => 'empty location_code']);
-		exit;
+		$toCity = $mfEdostToCity;
 	}
-
-	$toCity = \MF\Delivery\Edost::resolveCityNameRuByLocationCode($locationCode);
-	if ($toCity === '')
+	else
 	{
-		try
+		if ($locationCode === '')
 		{
-			if ($isLocal)
+			try
 			{
-				@file_put_contents($logFile, date('c') . " cannot_resolve_to_city location_code={$locationCode} zip={$zip}\n", FILE_APPEND);
+				if ($isLocal)
+				{
+					@file_put_contents($logFile, date('c') . " empty_location zip={$zip}\n", FILE_APPEND);
+				}
 			}
+			catch (\Throwable $e) {}
+			echo Json::encode(['ok' => false, 'error' => 'empty location_code']);
+			exit;
 		}
-		catch (\Throwable $e) {}
-		echo Json::encode(['ok' => false, 'error' => 'cannot resolve to_city']);
-		exit;
+
+		$toCity = \MF\Delivery\Edost::resolveCityNameRuByLocationCode($locationCode);
+		if ($toCity === '')
+		{
+			try
+			{
+				if ($isLocal)
+				{
+					@file_put_contents($logFile, date('c') . " cannot_resolve_to_city location_code={$locationCode} zip={$zip}\n", FILE_APPEND);
+				}
+			}
+			catch (\Throwable $e) {}
+			echo Json::encode(['ok' => false, 'error' => 'cannot resolve to_city']);
+			exit;
+		}
 	}
 
 	// Fetch offers once for destination; then split by company per base service.

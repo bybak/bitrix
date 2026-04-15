@@ -53,6 +53,9 @@ foreach ($this->basketItems as $row)
 		'MODULE' => $row['MODULE'],
 		'PRODUCT_PROVIDER_CLASS' => $row['PRODUCT_PROVIDER_CLASS'],
 		'NOT_AVAILABLE' => isset($row['NOT_AVAILABLE']) && $row['NOT_AVAILABLE'] === true,
+		'MF_PARTIAL_SELECTABLE' => ($row['CAN_BUY'] ?? 'N') === 'Y'
+			&& ($row['DELAY'] ?? 'N') !== 'Y'
+			&& !(isset($row['NOT_AVAILABLE']) && $row['NOT_AVAILABLE'] === true),
 		'DELAYED' => $row['DELAY'] === 'Y',
 		'SKU_BLOCK_LIST' => array(),
 		'COLUMN_LIST' => array(),
@@ -398,6 +401,7 @@ foreach ($this->basketItems as $row)
 
 $totalData = array(
 	'DISABLE_CHECKOUT' => (int)$result['ORDERABLE_BASKET_ITEMS_COUNT'] === 0,
+	'SHOW_PARTIAL_CHECKOUT' => (int)$result['ORDERABLE_BASKET_ITEMS_COUNT'] > 0,
 	'PRICE' => $result['allSum'],
 	'PRICE_FORMATED' => $result['allSum_FORMATED'],
 	'PRICE_WITHOUT_DISCOUNT_FORMATED' => $result['PRICE_WITHOUT_DISCOUNT'],

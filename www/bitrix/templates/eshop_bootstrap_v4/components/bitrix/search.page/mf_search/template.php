@@ -26,6 +26,26 @@ if ($mfIsAuthorized)
 	$mfCurrentUserEmail = trim((string)$USER->GetEmail());
 }
 
+global $APPLICATION;
+$mfAuthBackParamsDelete = [
+	'login',
+	'login_form',
+	'logout',
+	'register',
+	'forgot_password',
+	'change_password',
+	'confirm_registration',
+	'confirm_code',
+	'confirm_user_id',
+	'logout_butt',
+	'auth_service_id',
+	'clear_cache',
+	'backurl',
+];
+$mfRequestPriceBackUrlEnc = urlencode((string)$APPLICATION->GetCurPageParam('', $mfAuthBackParamsDelete));
+$mfLoginWithBackUrl = SITE_DIR . 'login/?login=yes&backurl=' . $mfRequestPriceBackUrlEnc;
+$mfRegisterWithBackUrl = SITE_DIR . 'login/?register=yes&backurl=' . $mfRequestPriceBackUrlEnc;
+
 // Motor-Force search cards helpers (catalog-only).
 $mfCatalogIblockId = 4;
 $mfPlaceholder = (function_exists('mf_mf_placeholder_img_url') ? mf_mf_placeholder_img_url() : '/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg');
@@ -77,23 +97,46 @@ $mfStoresForProduct = static function (int $productId) use ($mfMoney): array {
 			$price = round((float)$price * 0.9, 2);
 		}
 
+		$deliveryTerm = function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : '—';
+
 		$out[] = [
 			'store_id' => $storeId,
 			'title' => $title,
+			'delivery_term' => $deliveryTerm,
 			'amount' => $amt,
 			'price' => $price,
 			'price_fmt' => $mfMoney($price),
 		];
 	}
 
-	usort($out, static function ($a, $b) {
+	$isMotorForceInternal = static function (int $storeId): bool {
+		$s = function_exists('mf_store_row') ? mf_store_row($storeId) : null;
+		if (!is_array($s))
+		{
+			return false;
+		}
+		$code = mb_strtoupper(trim((string)($s['CODE'] ?? '')));
+		$xml = mb_strtoupper(trim((string)($s['XML_ID'] ?? '')));
+
+		return $code === 'MOTOR_FORCE_INTERNAL' || ($xml !== '' && mb_strpos($xml, 'MOTOR_FORCE_INTERNAL') !== false);
+	};
+
+	usort($out, static function ($a, $b) use ($isMotorForceInternal) {
+		$aid = (int)($a['store_id'] ?? 0);
+		$bid = (int)($b['store_id'] ?? 0);
+		$aInt = $isMotorForceInternal($aid);
+		$bInt = $isMotorForceInternal($bid);
+		if ($aInt !== $bInt)
+		{
+			return $bInt <=> $aInt;
+		}
 		$pa = (float)($a['price'] ?? 0);
 		$pb = (float)($b['price'] ?? 0);
 		if ($pa > 0 && $pb > 0 && $pa !== $pb)
 		{
 			return $pa <=> $pb;
 		}
-		return (int)($a['store_id'] ?? 0) <=> (int)($b['store_id'] ?? 0);
+		return $aid <=> $bid;
 	});
 
 	return $out;
@@ -143,6 +186,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					<thead>
 						<tr>
 							<th>Склад</th>
+							<th>Срок доставки</th>
 							<th class="mf-ta-r">Остаток</th>
 							<th class="mf-ta-r">Цена</th>
 							<th class="mf-ta-r">Кол-во</th>
@@ -153,6 +197,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						<?php foreach ($stores as $s): ?>
 							<tr>
 								<td><?=htmlspecialcharsbx((string)$s['title'])?></td>
+								<td class="mf-search-stock-table__delivery"><?=htmlspecialcharsbx((string)($s['delivery_term'] ?? '—'))?></td>
 								<td class="mf-ta-r"><?=htmlspecialcharsbx((string)round((float)$s['amount'], 3))?></td>
 								<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
 								<td class="mf-ta-r">
@@ -487,6 +532,15 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						<button type="button" class="mf-search-modal__close js-mf-request-price-close" aria-label="Закрыть">×</button>
 						<div class="mf-search-modal__title" id="mf-request-price-title">Запросить цену</div>
 						<div class="mf-search-modal__subtitle" id="mf-request-price-product"></div>
+						<?php if (!$mfIsAuthorized): ?>
+						<div class="mf-search-modal__auth">
+							<p class="mf-search-modal__auth-text">Войдите или зарегистрируйтесь — после возврата на эту страницу данные профиля подставятся в форму, и вы сможете отправить запрос.</p>
+							<div class="mf-search-modal__auth-actions">
+								<a class="btn btn-outline-dark mf-search-modal__auth-btn js-mf-request-price-auth-link" href="<?=htmlspecialcharsbx($mfLoginWithBackUrl)?>">Войти</a>
+								<a class="btn btn-outline-dark mf-search-modal__auth-btn js-mf-request-price-auth-link" href="<?=htmlspecialcharsbx($mfRegisterWithBackUrl)?>">Регистрация</a>
+							</div>
+						</div>
+						<?php endif; ?>
 						<div class="mf-search-modal__message" id="mf-request-price-message" hidden></div>
 						<form class="mf-search-modal__form" id="mf-request-price-form">
 							<input type="hidden" name="sessid" value="<?=htmlspecialcharsbx(bitrix_sessid())?>">
@@ -536,10 +590,75 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						'userName' => $mfCurrentUserName,
 						'userEmail' => $mfCurrentUserEmail,
 					])?>;
+					var MF_REQ_PRICE_RESUME_KEY = 'mf_request_price_resume';
 					var requestPriceModal = document.getElementById('mf-request-price-modal');
 					var requestPriceForm = document.getElementById('mf-request-price-form');
 					var requestPriceProduct = document.getElementById('mf-request-price-product');
 					var requestPriceMessage = document.getElementById('mf-request-price-message');
+					function mfSaveRequestPriceResumeForAuth()
+					{
+						if (!requestPriceForm) return;
+						try
+						{
+							sessionStorage.setItem(MF_REQ_PRICE_RESUME_KEY, JSON.stringify({
+								v: 1,
+								scope: 'search',
+								product_id: requestPriceForm.elements.product_id ? requestPriceForm.elements.product_id.value : '',
+								product_name: requestPriceForm.elements.product_name ? requestPriceForm.elements.product_name.value : '',
+								product_url: requestPriceForm.elements.product_url ? requestPriceForm.elements.product_url.value : ''
+							}));
+						}
+						catch (e0) {}
+					}
+					function mfOpenRequestPriceFromResume(data)
+					{
+						if (!requestPriceModal || !requestPriceForm || !data) return;
+						requestPriceForm.elements.product_id.value = data.product_id || '';
+						requestPriceForm.elements.product_name.value = data.product_name || '';
+						requestPriceForm.elements.product_url.value = data.product_url || '';
+						if (requestPriceProduct)
+						{
+							requestPriceProduct.textContent = requestPriceForm.elements.product_name.value;
+						}
+						if (requestPriceCfg && requestPriceForm.elements.name)
+						{
+							requestPriceForm.elements.name.value = requestPriceCfg.userName || '';
+							requestPriceForm.elements.name.readOnly = !!(requestPriceCfg.isAuthorized && requestPriceCfg.userName);
+						}
+						if (requestPriceCfg && requestPriceForm.elements.email)
+						{
+							requestPriceForm.elements.email.value = requestPriceCfg.userEmail || '';
+							requestPriceForm.elements.email.readOnly = !!(requestPriceCfg.isAuthorized && requestPriceCfg.userEmail);
+						}
+						if (requestPriceForm.elements.comment)
+						{
+							requestPriceForm.elements.comment.value = '';
+						}
+						mfRequestPriceMessage('', false);
+						requestPriceModal.hidden = false;
+						document.documentElement.classList.add('mf-search-modal-open');
+						document.body.classList.add('mf-search-modal-open');
+						setTimeout(function(){
+							try
+							{
+								if (requestPriceForm.elements.comment) requestPriceForm.elements.comment.focus();
+							}
+							catch (e1) {}
+						}, 0);
+					}
+					function mfTryResumeRequestPriceSearch()
+					{
+						try
+						{
+							var raw = sessionStorage.getItem(MF_REQ_PRICE_RESUME_KEY);
+							if (!raw) return;
+							var data = JSON.parse(raw);
+							if (!data || data.v !== 1 || data.scope !== 'search') return;
+							sessionStorage.removeItem(MF_REQ_PRICE_RESUME_KEY);
+							mfOpenRequestPriceFromResume(data);
+						}
+						catch (e2) {}
+					}
 					function mfSetHeaderBasketCount(cnt)
 					{
 						var n = 0;
@@ -907,6 +1026,12 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							mfSubmitRequestPrice();
 						});
 					}
+					document.addEventListener('click', function(e){
+						var a = e && e.target && e.target.closest ? e.target.closest('a.js-mf-request-price-auth-link') : null;
+						if (!a || !requestPriceModal || requestPriceModal.hidden || !requestPriceModal.contains(a)) return;
+						mfSaveRequestPriceResumeForAuth();
+					}, true);
+					try { setTimeout(mfTryResumeRequestPriceSearch, 0); } catch (e3) {}
 				})();
 				</script>
 

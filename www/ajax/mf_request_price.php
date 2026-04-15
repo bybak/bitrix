@@ -106,21 +106,23 @@ try
 	$lines[] = ($comment !== '' ? $comment : '—');
 	$body = implode("\n", $lines) . "\n";
 
-	$headers = [
-		'Content-Type: text/plain; charset=UTF-8',
-		'Reply-To: ' . $email,
+	// Bitrix\Main\Mail\Mail ожидает HEADER как массив имя => значение, плюс CHARSET и CONTENT_TYPE.
+	$header = [
+		'Reply-To' => $email,
 	];
+	if ($from !== '')
+	{
+		$header['From'] = $from;
+	}
 
 	$params = [
 		'TO' => $to,
 		'SUBJECT' => 'Запрос цены: ' . $productName,
 		'BODY' => $body,
-		'HEADER' => implode("\r\n", $headers) . "\r\n",
+		'CHARSET' => 'UTF-8',
+		'CONTENT_TYPE' => 'text',
+		'HEADER' => $header,
 	];
-	if ($from !== '')
-	{
-		$params['FROM'] = $from;
-	}
 
 	$sent = class_exists(Mail::class) ? (bool)Mail::send($params) : false;
 	if (!$sent)
@@ -132,7 +134,8 @@ try
 }
 catch (Throwable $e)
 {
-	http_response_code(400);
+	// Всегда 200 + JSON: иначе BX.ajax считает ответ «ошибкой сети» и не показывает поле error из тела ответа.
+	http_response_code(200);
 	echo json_encode([
 		'ok' => false,
 		'error' => $e->getMessage(),

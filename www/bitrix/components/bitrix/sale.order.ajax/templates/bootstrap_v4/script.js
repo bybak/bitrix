@@ -195,10 +195,64 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					{
 						if (!ctx.properties.hasOwnProperty(pid)) continue;
 						if (ctx.properties[pid].type !== 'LOCATION') continue;
-						if (!ctx.properties[pid].control || typeof ctx.properties[pid].control.getValue !== 'function') continue;
-						return String(ctx.properties[pid].control.getValue() || '');
+						if (ctx.properties[pid].control && typeof ctx.properties[pid].control.getValue === 'function')
+						{
+							var v = String(ctx.properties[pid].control.getValue() || '');
+							if (BX.type.isNotEmptyString(v))
+								return v;
+						}
+						var hidden = ctx.controls.scope
+							? ctx.controls.scope.querySelector('input[type="hidden"][name="ORDER_PROP_' + pid + '"]')
+							: null;
+						if (hidden && BX.type.isNotEmptyString(String(hidden.value || '')))
+							return String(hidden.value || '');
 					}
 				} catch(e) {}
+				return '';
+			};
+
+			mfEdost.getMfCheckout = function(){
+				try {
+					return (window.BX && BX.Sale && BX.Sale.OrderAjaxComponent && BX.Sale.OrderAjaxComponent.result
+						&& BX.Sale.OrderAjaxComponent.result.MF_CHECKOUT) ? BX.Sale.OrderAjaxComponent.result.MF_CHECKOUT : {};
+				} catch(e) {}
+				return {};
+			};
+
+			mfEdost.getFallbackLocationCode = function(){
+				return String(mfEdost.getMfCheckout().FALLBACK_LOCATION_CODE || '');
+			};
+
+			mfEdost.getEdostCity = function(){
+				var form = BX('bx-soa-order-form');
+				var el = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TO_CITY"]') : null;
+				var v = el ? String(el.value || '').trim() : '';
+				if (v !== '')
+					return v;
+				try {
+					if (ctx.__mfEdostCityLast && String(ctx.__mfEdostCityLast).trim() !== '')
+						return String(ctx.__mfEdostCityLast).trim();
+				} catch(eC) {}
+				try {
+					if (window.MF_CHECKOUT_GEO && window.MF_CHECKOUT_GEO.edostCity)
+						return String(window.MF_CHECKOUT_GEO.edostCity).trim();
+				} catch(eW) {}
+				return '';
+			};
+
+			mfEdost.getEffectiveLocationCode = function(){
+				var loc = mfEdost.getCurrentLocationCode();
+				if (BX.type.isNotEmptyString(loc))
+				{
+					return loc;
+				}
+				var fb = mfEdost.getFallbackLocationCode();
+				// Резервный CODE (напр. СПб): нужен для mf_edost_offers.php, даже пока нет города из Photon —
+				// иначе location_code пустой и тарифы не запрашиваются.
+				if (BX.type.isNotEmptyString(fb))
+				{
+					return fb;
+				}
 				return '';
 			};
 
@@ -220,6 +274,21 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var cEl = ensureHidden('MF_EDOST_TARIF_COMPANY');
 				var nEl = ensureHidden('MF_EDOST_TARIF_NAME');
 				var pEl = ensureHidden('MF_EDOST_TARIF_PRICE');
+				var jNom = ensureHidden('MF_NOMINATIM_JSON');
+				var cToCity = ensureHidden('MF_EDOST_TO_CITY');
+				try {
+					if (ctx.__mfNominatimJsonLast && String(jNom.value || '').trim() === '')
+						jNom.value = ctx.__mfNominatimJsonLast;
+					if (ctx.__mfEdostCityLast && String(cToCity.value || '').trim() === '')
+						cToCity.value = ctx.__mfEdostCityLast;
+					if (window.MF_CHECKOUT_GEO)
+					{
+						if (String(jNom.value || '').trim() === '' && window.MF_CHECKOUT_GEO.nominatimJson)
+							jNom.value = String(window.MF_CHECKOUT_GEO.nominatimJson);
+						if (String(cToCity.value || '').trim() === '' && window.MF_CHECKOUT_GEO.edostCity)
+							cToCity.value = String(window.MF_CHECKOUT_GEO.edostCity);
+					}
+				} catch(eMf) {}
 
 				// Restore selection after Bitrix re-renders the form.
 				try {
@@ -316,12 +385,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					}
 				} catch(e) {}
 
-				// Do not render the virtual tariffs UI into collapsed delivery block.
-				// When delivery step is collapsed, Bitrix replaces its content with a summary container.
-				if (!mfEdost.isDeliveryActive())
-				{
-					return;
-				}
+				// Контейнер тарифов создаём всегда (если блок доставки в DOM). Скрытие неактивного шага — в #mf-edost-style
+				// (#bx-soa-delivery:not(.bx-selected) #mf-edost-box). Раньше здесь был return при !isDeliveryActive() —
+				// из‑за этого #mf-edost-list не создавался, renderOffers выходил по if (!list) и тарифы eDost не показывались.
 
 				var box = content.querySelector('#mf-edost-box');
 				if (!box)
@@ -351,7 +417,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var form = BX('bx-soa-order-form');
 				var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 				var hasTariff = idEl && BX.type.isNotEmptyString(idEl.value);
-				var hasLoc = BX.type.isNotEmptyString(String(locationCode || ''));
+				var eff = mfEdost.getEffectiveLocationCode();
+				var hasLoc = BX.type.isNotEmptyString(String(eff || ''));
 
 				var nextBtn = del.querySelector('.bx-soa-more-btn button.pull-right.btn.btn-primary, .bx-soa-more-btn button.btn.btn-primary');
 				if (nextBtn)
@@ -424,16 +491,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 
 				try {
-					var locNow = '';
-					for (var pidX in ctx.properties)
-					{
-						if (!ctx.properties.hasOwnProperty(pidX)) continue;
-						if (ctx.properties[pidX].type !== 'LOCATION') continue;
-						if (!ctx.properties[pidX].control || typeof ctx.properties[pidX].control.getValue !== 'function') continue;
-						locNow = ctx.properties[pidX].control.getValue() || '';
-						break;
-					}
-					mfEdost.updateGate(locNow);
+					mfEdost.updateGate(mfEdost.getEffectiveLocationCode());
 				} catch(e) {}
 
 				try { mfEdost.syncSelectedRadio(); } catch(eSync) {}
@@ -599,19 +657,31 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				} catch(e) {}
 			};
 
-			mfEdost.onEnterDelivery = function(){
+			mfEdost.onEnterDelivery = function(force){
 				try {
-					if (!mfEdost.isDeliveryActive())
+					// После editActiveDeliveryBlock Bitrix может ещё не успеть повесить bx-selected на шаг «Доставка»;
+					// без force onEnterDelivery выходит раньше времени и не восстанавливает #mf-edost-box / список тарифов.
+					if (!force && !mfEdost.isDeliveryActive())
 						return;
 					mfEdost.ensureFields();
 					mfEdost.hideBitrixDeliveryCards();
 
-					var loc = mfEdost.getCurrentLocationCode();
+					var loc = mfEdost.getEffectiveLocationCode();
+					var zipDigits = '';
+					try {
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getInputByCode === 'function')
+						{
+							var zInp = ctx.__mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+							if (zInp && zInp !== false)
+								zipDigits = String(zInp.value || '').replace(/\D+/g, '');
+						}
+					} catch(eZ) {}
+					var fetchOpts = force ? { allowInactive: true } : {};
 					// Re-render cached offers for current location (fetchOffers already does a cheap re-render
 					// when key matches and offers are cached).
 					if (BX.type.isNotEmptyString(loc))
 					{
-						mfEdost.fetchOffers(loc, '');
+						mfEdost.fetchOffers(loc, zipDigits, fetchOpts);
 					}
 					else
 					{
@@ -706,9 +776,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			};
 
 			mfEdost.renderOffers = function(offers){
+				mfEdost.ensureFields();
 				var root = BX('bx-soa-order') || document;
 				var list = root && root.querySelector ? root.querySelector('#mf-edost-list') : null;
-				if (!list) return;
+				if (!list)
+					return;
 
 				BX.cleanNode(list);
 				offers = offers && offers.length ? offers : [];
@@ -716,15 +788,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (!offers.length)
 				{
 					try {
-						var locEmpty = '';
-						for (var pidZ in ctx.properties)
-						{
-							if (!ctx.properties.hasOwnProperty(pidZ)) continue;
-							if (ctx.properties[pidZ].type !== 'LOCATION') continue;
-							if (!ctx.properties[pidZ].control || typeof ctx.properties[pidZ].control.getValue !== 'function') continue;
-							locEmpty = ctx.properties[pidZ].control.getValue() || '';
-							break;
-						}
+						var locEmpty = mfEdost.getEffectiveLocationCode();
 						mfEdost.updateGate(locEmpty);
 
 						// If location is not chosen yet, don't show "no delivery options" message.
@@ -791,16 +855,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				try { mfEdost.syncSelectedRadio(); } catch(e) {}
 
 				try {
-					var locNow2 = '';
-					for (var pidY in ctx.properties)
-					{
-						if (!ctx.properties.hasOwnProperty(pidY)) continue;
-						if (ctx.properties[pidY].type !== 'LOCATION') continue;
-						if (!ctx.properties[pidY].control || typeof ctx.properties[pidY].control.getValue !== 'function') continue;
-						locNow2 = ctx.properties[pidY].control.getValue() || '';
-						break;
-					}
-					mfEdost.updateGate(locNow2);
+					mfEdost.updateGate(mfEdost.getEffectiveLocationCode());
 				} catch(e) {}
 			};
 
@@ -816,19 +871,17 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 				locationCode = String(locationCode || '');
 				zipDigits = String(zipDigits || '');
+				var edostCity = mfEdost.getEdostCity();
 				if (!BX || !BX.ajax || !BX.type || !BX.type.isNotEmptyString(locationCode))
 					return;
 
-				var key = locationCode + '|' + zipDigits;
+				var key = locationCode + '|' + zipDigits + '|' + edostCity;
 				// If form was re-rendered, we may need to re-render offers even without refetch.
 				if (!mfEdost._inFlight && mfEdost._lastKey === key && mfEdost.offers && mfEdost.offers.length)
 				{
 					mfEdost.ensureFields();
-					if (deliveryActive)
-					{
-						mfEdost.renderOffers(mfEdost.offers);
-						mfEdost.hideBitrixDeliveryCards();
-					}
+					mfEdost.renderOffers(mfEdost.offers);
+					mfEdost.hideBitrixDeliveryCards();
 					try {
 						var formCached = BX('bx-soa-order-form');
 						var idElCached = formCached ? formCached.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
@@ -852,6 +905,17 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				mfEdost._inFlight = true;
 				mfEdost._lastKey = key;
 
+				var nomJson = '';
+				try {
+					var formNj = BX('bx-soa-order-form');
+					var jElNj = formNj ? formNj.querySelector('input[name="MF_NOMINATIM_JSON"]') : null;
+					nomJson = jElNj ? String(jElNj.value || '') : '';
+					if (!nomJson && ctx.__mfNominatimJsonLast)
+						nomJson = String(ctx.__mfNominatimJsonLast);
+					if (!nomJson && window.MF_CHECKOUT_GEO && window.MF_CHECKOUT_GEO.nominatimJson)
+						nomJson = String(window.MF_CHECKOUT_GEO.nominatimJson);
+				} catch(eNj) {}
+
 				BX.ajax({
 					url: '/ajax/mf_edost_offers.php',
 					method: 'POST',
@@ -859,17 +923,17 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					data: {
 						sessid: BX.bitrix_sessid(),
 						location_code: locationCode,
-						zip: zipDigits
+						zip: zipDigits,
+						mf_edost_to_city: edostCity,
+						mf_nominatim_json: nomJson
 					},
 					onsuccess: function(resp){
 						mfEdost._inFlight = false;
 						if (resp && resp.ok && resp.offers && resp.offers.length)
 						{
 							mfEdost.offers = resp.offers;
-							if (mfEdost.isDeliveryActive())
-							{
-								mfEdost.renderOffers(resp.offers);
-							}
+							mfEdost.ensureFields();
+							mfEdost.renderOffers(resp.offers);
 							try {
 								var form = BX('bx-soa-order-form');
 								var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
@@ -879,32 +943,48 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 									mfEdost.setSelected(resp.offers[0]);
 								}
 							} catch(eAuto) {}
-							if (mfEdost.isDeliveryActive())
-							{
-								mfEdost.hideBitrixDeliveryCards();
-							}
+							mfEdost.hideBitrixDeliveryCards();
 						}
 						else
 						{
 							mfEdost.offers = [];
-							if (mfEdost.isDeliveryActive())
-							{
-								mfEdost.renderOffers([]);
-								mfEdost.hideBitrixDeliveryCards();
-							}
+							mfEdost.ensureFields();
+							try {
+								var warn = BX('bx-soa-delivery') ? BX('bx-soa-delivery').querySelector('#mf-edost-warning') : null;
+								if (warn && resp && !resp.ok)
+								{
+									warn.style.display = '';
+									warn.className = 'alert alert-warning';
+									var detail = String(resp.error || 'нет ответа');
+									if (resp.message)
+										detail += ' ' + String(resp.message);
+									warn.textContent = 'Не удалось получить тарифы eDost: ' + detail + '. Обновите страницу или проверьте адрес.';
+								}
+								else if (warn && resp && resp.ok && (!resp.offers || !resp.offers.length))
+								{
+									warn.style.display = '';
+									warn.className = 'alert alert-warning';
+									warn.textContent = 'eDost не вернул тарифов для «' + String(resp.to_city || '') + '». Проверьте логин/пароль eDost, ограничения по направлению или вес товаров в корзине.';
+								}
+							} catch(eWn) {}
+							mfEdost.renderOffers([]);
+							mfEdost.hideBitrixDeliveryCards();
 						}
 					},
 					onfailure: function(){
 						mfEdost._inFlight = false;
 						mfEdost.offers = [];
-						if (mfEdost.isDeliveryActive())
-						{
-							mfEdost.renderOffers([]);
-							mfEdost.hideBitrixDeliveryCards();
-						}
+						mfEdost.ensureFields();
+						mfEdost.renderOffers([]);
+						mfEdost.hideBitrixDeliveryCards();
 					}
 				});
 			};
+
+			try {
+				if (typeof BX !== 'undefined' && BX.saleOrderAjax)
+					BX.saleOrderAjax.__mfEdost = mfEdost;
+			} catch(ePub) {}
 		}
 
 		var mfBuyerAddress = ctx.__mfBuyerAddress || (ctx.__mfBuyerAddress = {});
@@ -929,6 +1009,43 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			} catch(e) {}
 			return false;
 		};
+
+		// Подсказки способа связи (datalist): пользователь может ввести произвольный текст.
+		mfBuyerAddress.installConfirmChannelHints = function(ctx){
+			var prop = mfBuyerAddress.getPropByCode('MF_CONFIRM_CHANNEL');
+			if (!prop || !prop.ID)
+				return;
+			var inp = ctx.getInputByPropId(prop.ID);
+			if (!inp || inp === false)
+				return;
+			var listId = 'mf-order-confirm-channel-datalist';
+			if (!document.getElementById(listId))
+			{
+				var dl = document.createElement('datalist');
+				dl.id = listId;
+				var presets = [
+					'Телефон: ',
+					'Email: ',
+					'WhatsApp: ',
+					'Viber: ',
+					'Telegram: ',
+					'Max: '
+				];
+				for (var i = 0; i < presets.length; i++)
+				{
+					var o = document.createElement('option');
+					o.value = presets[i];
+					dl.appendChild(o);
+				}
+				(document.body || document.documentElement).appendChild(dl);
+			}
+			inp.setAttribute('list', listId);
+			try {
+				if (!inp.getAttribute('placeholder'))
+					inp.setAttribute('placeholder', 'Например: Telegram @username, WhatsApp +7…');
+			} catch(ePh) {}
+		};
+
 		mfBuyerAddress.getLocationText = function(){
 			var locationText = '';
 			try {
@@ -982,6 +1099,39 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 			} catch(e) {}
 		};
+
+		// Bitrix locationsCompletion() делает locationNode.removeAttribute('style') — снимает BX.hide.
+		// Скрываем справочное «Местоположение» классом + !important (Photon заменяет ввод).
+		mfBuyerAddress.hideBitrixLocationSelector = function(ctx){
+			try {
+				var stId = 'mf-checkout-hide-location-css';
+				if (!document.getElementById(stId))
+				{
+					var st = document.createElement('style');
+					st.id = stId;
+					st.type = 'text/css';
+					st.appendChild(document.createTextNode(
+						'.mf-checkout-hide-location{' +
+						'position:absolute!important;left:-9999px!important;top:0!important;' +
+						'width:400px!important;min-height:120px!important;overflow:visible!important;' +
+						'opacity:0!important;pointer-events:none!important;z-index:-1!important;' +
+						'}'
+					));
+					(document.head || document.documentElement).appendChild(st);
+				}
+				for (var pidLoc in ctx.properties)
+				{
+					if (!ctx.properties.hasOwnProperty(pidLoc))
+						continue;
+					if (ctx.properties[pidLoc].type !== 'LOCATION')
+						continue;
+					var rowLoc = ctx.getRowByPropId(pidLoc);
+					if (rowLoc)
+						BX.addClass(rowLoc, 'mf-checkout-hide-location');
+				}
+			} catch(eHloc) {}
+		};
+
 		mfBuyerAddress.sync = function(){
 			try {
 				var locationInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
@@ -991,10 +1141,13 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 				if (locationInput && locationInput !== false)
 				{
-					locationInput.value = locationText;
-					locationInput.readOnly = true;
-					locationInput.setAttribute('readonly', 'readonly');
-					locationInput.style.backgroundColor = '#f8f9fa';
+					if (!ctx.__mfNominatimActive)
+					{
+						locationInput.value = locationText;
+						locationInput.readOnly = true;
+						locationInput.setAttribute('readonly', 'readonly');
+						locationInput.style.backgroundColor = '#f8f9fa';
+					}
 				}
 
 				if (streetInput && streetInput !== false)
@@ -1023,7 +1176,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							break;
 						}
 					}
-					if (zipSourceProp && zipSourceProp.ID)
+					if (!ctx.__mfNominatimActive && zipSourceProp && zipSourceProp.ID)
 					{
 						var zipSourceInput = ctx.getInputByPropId(zipSourceProp.ID);
 						var zipSourceValue = zipSourceInput && zipSourceInput !== false ? String(zipSourceInput.value || '') : '';
@@ -1035,7 +1188,396 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 
 				mfBuyerAddress.hideLegacyRows();
+				mfBuyerAddress.hideBitrixLocationSelector(ctx);
+
+				try {
+					var wrapNom = document.getElementById('mf-nominatim-wrap');
+					if (wrapNom && !ctx.__mfNominatimActive)
+					{
+						var nomInp = wrapNom.querySelector('input[type="text"]');
+						if (nomInp && !String(nomInp.value || '').trim())
+						{
+							var pre = '';
+							if (locationInput && locationInput !== false && BX.type.isNotEmptyString(String(locationInput.value || '')))
+								pre = String(locationInput.value || '').trim();
+							if (!pre)
+								pre = String(mfBuyerAddress.getLocationText() || '').trim();
+							if (pre)
+								nomInp.value = pre;
+						}
+					}
+				} catch(eNomPre) {}
 			} catch(e) {}
+		};
+
+		mfBuyerAddress.installNominatim = function(ctx){
+			mfBuyerAddress.hideBitrixLocationSelector(ctx);
+			if (document.getElementById('mf-nominatim-wrap'))
+				return;
+			var searchUrl = String(mfEdost.getMfCheckout().NOMINATIM_SEARCH_URL || '');
+			if (!searchUrl)
+				return;
+
+			var formatLocationLine = function(addr, displayName){
+				if (!addr || typeof addr !== 'object')
+					return displayName || '';
+				var parts = [];
+				if (addr.state)
+					parts.push(addr.state);
+				if (addr.region && addr.region !== addr.state)
+					parts.push(addr.region);
+				var city = addr.city || addr.town || addr.village || addr.locality || addr.hamlet || addr.municipality || addr.name;
+				if (city)
+					parts.push(city);
+				return parts.length ? parts.join(', ') : (displayName || '');
+			};
+
+			var formatStreetLine = function(addr){
+				if (!addr || typeof addr !== 'object')
+					return '';
+				var p = [];
+				if (addr.road)
+					p.push(addr.road);
+				if (addr.house_number)
+					p.push(addr.house_number);
+				if (addr.building)
+					p.push('к. ' + addr.building);
+				if (addr.flat)
+					p.push('кв. ' + addr.flat);
+				return p.join(', ');
+			};
+
+			var extractEdostCity = function(addr, displayName){
+				if (addr && typeof addr === 'object')
+				{
+					var v = addr.city || addr.town || addr.village || addr.locality || addr.hamlet || addr.municipality
+						|| addr.name || addr.city_district || addr.county || addr.state_district || '';
+					v = String(v).trim();
+					if (v !== '')
+						return v;
+				}
+				if (displayName)
+				{
+					var parts = String(displayName).split(',');
+					if (parts.length)
+						return String(parts[0]).trim();
+				}
+				return '';
+			};
+
+			// eDost ожидает русское название населённого пункта; Photon иногда даёт латиницу в display_name при том, что в полях — кириллица.
+			var pickCityRuForEdost = function(it, addr, displayName){
+				var base = extractEdostCity(addr, displayName);
+				if (base && /[\u0400-\u04FF]/.test(base))
+					return base.trim();
+				var blob = [
+					addr && addr.name,
+					addr && addr.city,
+					addr && addr.town,
+					addr && addr.locality,
+					addr && addr.village,
+					displayName,
+					it && it.display_name
+				].filter(function(x){ return x && String(x).trim() !== ''; }).join(', ');
+				var m = blob.match(/[\u0400-\u04FF][^,;]*/);
+				if (m)
+					return String(m[0]).replace(/\s+$/,'').trim();
+				return base ? base.trim() : '';
+			};
+
+			var applyFallbackBitrixLocation = function(fallbackCode){
+				if (!BX.type.isNotEmptyString(fallbackCode))
+					return;
+				try
+				{
+					for (var pidLoc in ctx.properties)
+					{
+						if (!ctx.properties.hasOwnProperty(pidLoc))
+							continue;
+						if (ctx.properties[pidLoc].type !== 'LOCATION')
+							continue;
+						var rowLoc = ctx.getRowByPropId(pidLoc);
+						var hidden = rowLoc ? rowLoc.querySelector('input[type="hidden"][name="ORDER_PROP_' + pidLoc + '"]') : null;
+						if (hidden)
+							hidden.value = fallbackCode;
+						var ctrl = ctx.properties[pidLoc].control;
+						if (ctrl && typeof ctrl.setValueByLocationCode === 'function')
+							ctrl.setValueByLocationCode(fallbackCode);
+						ctx.__mfLocationTouched = true;
+						break;
+					}
+					if (window.BX && BX.Sale && BX.Sale.OrderAjaxComponent && typeof BX.Sale.OrderAjaxComponent.sendRequest === 'function')
+					{
+						setTimeout(function(){
+							try {
+								BX.Sale.OrderAjaxComponent.sendRequest();
+							} catch(eSend) {}
+						}, 450);
+					}
+				} catch(eFb) {}
+			};
+
+			// Вставляем ПЕРЕД полем Bitrix «Местоположение», иначе пользователь ищет Майами во внутреннем справочнике (там часто нет зарубежных городов).
+			var anchorRow = null;
+			try
+			{
+				for (var pidAnchor in ctx.properties)
+				{
+					if (!ctx.properties.hasOwnProperty(pidAnchor))
+						continue;
+					if (ctx.properties[pidAnchor].type === 'LOCATION')
+					{
+						anchorRow = ctx.getRowByPropId(pidAnchor);
+						break;
+					}
+				}
+			} catch(eAnch) {}
+			if (!anchorRow)
+			{
+				var locPropFallback = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
+				if (!locPropFallback || !locPropFallback.ID)
+					return;
+				anchorRow = ctx.getRowByPropId(locPropFallback.ID);
+			}
+			if (!anchorRow || !anchorRow.parentNode || anchorRow.parentNode.querySelector('#mf-nominatim-wrap'))
+				return;
+
+			var wrap = BX.create('DIV', {attrs: {id: 'mf-nominatim-wrap'}, style: {marginBottom: '14px', padding: '12px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e8e8e8', position: 'relative', zIndex: '1200'}});
+			var lbl = BX.create('DIV', {text: 'Адрес доставки', style: {fontWeight: '600', marginBottom: '6px', fontSize: '14px'}});
+			var hint = BX.create('DIV', {
+				text: 'Начните вводить город, улицу или страну (Майами, Berlin, Санкт-Петербург…).',
+				style: {fontSize: '12px', opacity: '0.9', marginBottom: '8px', lineHeight: '1.45'}
+			});
+			var inp = BX.create('INPUT', {
+				props: {type: 'text', autocomplete: 'off', placeholder: 'Например: Miami, Майами, Berlin, Санкт-Петербург Невский'},
+				style: {width: '100%', padding: '8px 10px', border: '1px solid #d9d9d9', borderRadius: '4px', boxSizing: 'border-box', background: '#fff'}
+			});
+			var errBox = BX.create('DIV', {attrs: {id: 'mf-nominatim-err'}, style: {display: 'none', color: '#842029', fontSize: '12px', marginTop: '6px'}});
+			var list = BX.create('DIV', {
+				attrs: {id: 'mf-nominatim-list', className: 'mf-nominatim-list'},
+				style: {
+					display: 'none',
+					position: 'absolute',
+					left: '0',
+					right: '0',
+					top: '100%',
+					marginTop: '4px',
+					border: '1px solid #e5e5e5',
+					borderRadius: '4px',
+					maxHeight: '240px',
+					overflowY: 'auto',
+					background: '#fff',
+					zIndex: '1300',
+					boxShadow: '0 8px 24px rgba(0,0,0,.12)'
+				}
+			});
+			wrap.appendChild(lbl);
+			wrap.appendChild(hint);
+			wrap.appendChild(inp);
+			wrap.appendChild(errBox);
+			wrap.appendChild(list);
+			anchorRow.parentNode.insertBefore(wrap, anchorRow);
+
+			try {
+				if (!document.getElementById('mf-nominatim-overflow-fix'))
+				{
+					var st = document.createElement('style');
+					st.id = 'mf-nominatim-overflow-fix';
+					st.type = 'text/css';
+					st.appendChild(document.createTextNode(
+						'#bx-soa-properties .bx-soa-section-content{overflow:visible !important;}' +
+						'#bx-soa-region .bx-soa-section-content{overflow:visible !important;}' +
+						'#mf-nominatim-wrap{overflow:visible !important;}'
+					));
+					(document.head || document.documentElement).appendChild(st);
+				}
+			} catch(eSt) {}
+
+			var timer = null;
+			var showNominatimErr = function(msg){
+				if (!errBox)
+					return;
+				if (!msg)
+				{
+					errBox.style.display = 'none';
+					errBox.textContent = '';
+					return;
+				}
+				errBox.style.display = '';
+				errBox.textContent = msg;
+			};
+			var parseNominatimJson = function(raw){
+				if (raw === null || raw === undefined)
+					return null;
+				if (typeof raw === 'object')
+					return raw;
+				if (typeof raw === 'string')
+				{
+					try {
+						return JSON.parse(raw);
+					} catch (eP) {
+						return null;
+					}
+				}
+				return null;
+			};
+			var runSearch = function(q){
+				q = String(q || '').trim();
+				if (q.length < 2)
+				{
+					list.style.display = 'none';
+					BX.cleanNode(list);
+					showNominatimErr('');
+					return;
+				}
+				showNominatimErr('');
+				// Важно: BX.ajax с method GET не приклеивает data к URL (в отличие от BX.ajax.get),
+				// из‑за этого sessid не уходил на сервер → «bad sessid». POST — корректно.
+				BX.ajax({
+					url: searchUrl,
+					method: 'POST',
+					dataType: 'json',
+					data: {sessid: BX.bitrix_sessid(), q: q},
+					onsuccess: function(raw){
+						var resp = parseNominatimJson(raw);
+						BX.cleanNode(list);
+						if (!resp)
+						{
+							list.style.display = 'none';
+							showNominatimErr('Не удалось разобрать ответ сервера.');
+							return;
+						}
+						if (!resp.ok)
+						{
+							list.style.display = 'none';
+							showNominatimErr(String(resp.message || resp.error || 'Ошибка поиска адреса'));
+							return;
+						}
+						if (!resp.items || !resp.items.length)
+						{
+							list.style.display = 'none';
+							showNominatimErr('Ничего не найдено — уточните запрос.');
+							return;
+						}
+						showNominatimErr('');
+						list.style.display = '';
+						for (var i = 0; i < resp.items.length; i++)
+						{
+							(function(it){
+								var line = BX.create('DIV', {
+									style: {padding: '8px 10px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: '13px'},
+									text: it.display_name || ''
+								});
+								BX.bind(line, 'click', function(ev){
+									try {
+										if (ev && ev.stopPropagation)
+											ev.stopPropagation();
+									} catch(eStop) {}
+									list.style.display = 'none';
+									showNominatimErr('');
+									ctx.__mfNominatimActive = true;
+									mfEdost.ensureFields();
+									var form = BX('bx-soa-order-form');
+									var jEl = form ? form.querySelector('input[name="MF_NOMINATIM_JSON"]') : null;
+									var cEl = form ? form.querySelector('input[name="MF_EDOST_TO_CITY"]') : null;
+									try {
+										if (jEl)
+											jEl.value = JSON.stringify(it);
+									} catch(eJ) {}
+									var addr = it.address || {};
+									var cityRu = pickCityRuForEdost(it, addr, it.display_name);
+									if (!cityRu && it.display_name)
+										cityRu = String(it.display_name).split(',')[0].trim();
+									if (!cityRu && addr && addr.name)
+										cityRu = String(addr.name).trim();
+									try {
+										ctx.__mfNominatimJsonLast = JSON.stringify(it);
+										ctx.__mfEdostCityLast = cityRu;
+										window.MF_CHECKOUT_GEO = window.MF_CHECKOUT_GEO || {};
+										window.MF_CHECKOUT_GEO.nominatimJson = ctx.__mfNominatimJsonLast;
+										window.MF_CHECKOUT_GEO.edostCity = cityRu;
+									} catch(eCtx0) {}
+									if (cEl)
+										cEl.value = cityRu;
+									try {
+										inp.value = String(it.display_name || cityRu || '');
+									} catch(eInp) {}
+									var locInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
+									if (locInput && locInput !== false)
+									{
+										locInput.value = formatLocationLine(addr, it.display_name);
+										locInput.readOnly = true;
+									}
+									var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
+									if (streetInput && streetInput !== false)
+										streetInput.value = formatStreetLine(addr);
+									var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+									var zipDigits = '';
+									if (addr.postcode)
+										zipDigits = String(addr.postcode).replace(/\D+/g, '');
+									if (zipInput && zipInput !== false && zipDigits)
+										zipInput.value = zipDigits;
+
+									var fb = mfEdost.getFallbackLocationCode();
+									if (BX.type.isNotEmptyString(fb))
+										applyFallbackBitrixLocation(fb);
+
+									var runFetch = function(){
+										var locForFetch = '';
+										try {
+											locForFetch = String(mfEdost.getEffectiveLocationCode() || '');
+										} catch(eG) {}
+										if (!BX.type.isNotEmptyString(locForFetch) && BX.type.isNotEmptyString(fb))
+											locForFetch = fb;
+										if (BX.type.isNotEmptyString(locForFetch))
+										{
+											// Пока открыт не шаг «Доставка», иначе fetchOffers сразу выходил и тарифы не запрашивались.
+											mfEdost.fetchOffers(locForFetch, zipDigits, {allowInactive: true});
+										}
+										try {
+											mfEdost.updateGate(mfEdost.getEffectiveLocationCode());
+										} catch(eUg) {}
+									};
+									setTimeout(runFetch, 50);
+								});
+								list.appendChild(line);
+							})(resp.items[i]);
+						}
+					},
+					onfailure: function(){
+						BX.cleanNode(list);
+						list.style.display = 'none';
+						showNominatimErr('Запрос не выполнен. Проверьте сеть или обновите страницу.');
+					}
+				});
+			};
+
+			BX.bind(inp, 'input', function(){
+				var q = inp.value;
+				if (timer)
+					clearTimeout(timer);
+				timer = setTimeout(function(){ runSearch(q); }, 400);
+			});
+			BX.bind(document, 'click', function(ev){
+				try {
+					if (!wrap.contains(ev.target))
+						list.style.display = 'none';
+				} catch(e) {}
+			});
+
+			try {
+				if (!ctx.__mfNominatimActive && inp)
+				{
+					var preFill = '';
+					var lip0 = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
+					if (lip0 && lip0 !== false && BX.type.isNotEmptyString(String(lip0.value || '')))
+						preFill = String(lip0.value || '').trim();
+					if (!preFill)
+						preFill = String(mfBuyerAddress.getLocationText() || '').trim();
+					if (preFill)
+						inp.value = preFill;
+				}
+			} catch(ePreFill) {}
 		};
 
 		// first, init all controls
@@ -1135,6 +1677,19 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 								try {
 									if (!ctx.BXCallAllowed) return;
 									ctx.BXCallAllowed = false;
+									ctx.__mfNominatimActive = false;
+									try {
+										var form0 = BX('bx-soa-order-form');
+										if (form0)
+										{
+											var jEl0 = form0.querySelector('input[name="MF_NOMINATIM_JSON"]');
+											var cEl0 = form0.querySelector('input[name="MF_EDOST_TO_CITY"]');
+											if (jEl0)
+												jEl0.value = '';
+											if (cEl0)
+												cEl0.value = '';
+										}
+									} catch(eN0) {}
 									setTimeout(function(){
 										// Refresh virtual eDost offers for this destination.
 										var locVal = '';
@@ -1274,6 +1829,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		} catch(eBuyer) {}
 
 		try {
+			mfBuyerAddress.installNominatim(ctx);
+		} catch(eNom) {}
+
+		try {
+			mfBuyerAddress.installConfirmChannelHints(ctx);
+		} catch(eCc) {}
+
+		try {
 			// Force empty location on first load only for guests.
 			// Authorized users should keep location restored from their selected profile.
 			var mfIsAuthorized = mfEdost.isAuthorized();
@@ -1312,15 +1875,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			}
 
 			// Pull offers on each refresh using current LOCATION/ZIP values.
-			var locInit = '';
-			for (var pid0 in this.properties)
-			{
-				if (!this.properties.hasOwnProperty(pid0)) continue;
-				if (this.properties[pid0].type === 'LOCATION' && this.properties[pid0].control && typeof this.properties[pid0].control.getValue === 'function')
-				{
-					try { locInit = this.properties[pid0].control.getValue() || ''; } catch(e0) {}
-				}
-			}
+			var locInit = mfEdost.getEffectiveLocationCode();
 			// For authorized users, prefill eDost tariff in background even if Delivery is collapsed.
 			if (mfEdost.isDeliveryActive && (mfEdost.isDeliveryActive() || mfEdost.isAuthorized()))
 			{
@@ -1341,6 +1896,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		//set location initialized flag and refresh region & property actual content
 		if (BX.Sale.OrderAjaxComponent)
 			BX.Sale.OrderAjaxComponent.locationsCompletion();
+
+		try {
+			if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.hideBitrixLocationSelector === 'function')
+				ctx.__mfBuyerAddress.hideBitrixLocationSelector(ctx);
+		} catch(eLocFin) {}
 	},
 
 	checkMode: function(propId, mode){

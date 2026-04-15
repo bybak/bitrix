@@ -83,14 +83,23 @@ $mfRenderHtmlField = static function (string $value, string $type): string {
 	return strtolower(trim($type)) === 'html' ? $value : '<p>' . nl2br(htmlspecialcharsbx($value)) . '</p>';
 };
 
-$mfBriefDescription = $mfPlainText($mfPreviewText);
-if ($mfBriefDescription === '')
+// Верхний блок: форматированный анонс (PREVIEW_TEXT); если анонса нет — короткая выжимка из детального текста (без полного HTML, чтобы не дублировать вкладку «Описание»).
+$mfBriefDescriptionHtml = '';
+if (trim($mfPreviewText) !== '')
 {
-	$mfBriefDescription = $mfPlainText($mfDetailText);
+	$mfBriefDescriptionHtml = $mfRenderHtmlField($mfPreviewText, $mfPreviewTextType);
 }
-if ($mfBriefDescription !== '' && mb_strlen($mfBriefDescription) > 320)
+elseif (trim($mfDetailText) !== '')
 {
-	$mfBriefDescription = rtrim(mb_substr($mfBriefDescription, 0, 320), " \t\n\r\0\x0B.,;:") . '...';
+	$plainBrief = $mfPlainText($mfDetailText);
+	if ($plainBrief !== '' && mb_strlen($plainBrief) > 320)
+	{
+		$plainBrief = rtrim(mb_substr($plainBrief, 0, 320), " \t\n\r\0\x0B.,;:") . '…';
+	}
+	if ($plainBrief !== '')
+	{
+		$mfBriefDescriptionHtml = '<p>' . nl2br(htmlspecialcharsbx($plainBrief)) . '</p>';
+	}
 }
 
 $mfFullDescriptionParts = [];
@@ -256,6 +265,55 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 			}
 		}
 
+		$mfOrderedStoreIds = array_keys($storeAmounts);
+		usort($mfOrderedStoreIds, static function ($a, $b) use ($elementId, $storeAmounts, $stores) {
+			$a = (int)$a;
+			$b = (int)$b;
+			$sa = $stores[$a] ?? null;
+			$sb = $stores[$b] ?? null;
+			$codeA = is_array($sa) ? mb_strtoupper(trim((string)($sa['CODE'] ?? ''))) : '';
+			$codeB = is_array($sb) ? mb_strtoupper(trim((string)($sb['CODE'] ?? ''))) : '';
+			$xmlA = is_array($sa) ? mb_strtoupper(trim((string)($sa['XML_ID'] ?? ''))) : '';
+			$xmlB = is_array($sb) ? mb_strtoupper(trim((string)($sb['XML_ID'] ?? ''))) : '';
+			$aInt = $codeA === 'MOTOR_FORCE_INTERNAL' || ($xmlA !== '' && mb_strpos($xmlA, 'MOTOR_FORCE_INTERNAL') !== false);
+			$bInt = $codeB === 'MOTOR_FORCE_INTERNAL' || ($xmlB !== '' && mb_strpos($xmlB, 'MOTOR_FORCE_INTERNAL') !== false);
+			if ($aInt !== $bInt)
+			{
+				return $bInt <=> $aInt;
+			}
+			$amtA = (float)($storeAmounts[$a] ?? 0);
+			$amtB = (float)($storeAmounts[$b] ?? 0);
+			$pa = null;
+			$pb = null;
+			if ($amtA > 0 && function_exists('mf_calc_store_price'))
+			{
+				$pa = mf_calc_store_price($elementId, $a);
+			}
+			if ($amtB > 0 && function_exists('mf_calc_store_price'))
+			{
+				$pb = mf_calc_store_price($elementId, $b);
+			}
+			if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+			{
+				if ($pa !== null && (float)$pa > 0)
+				{
+					$pa = round((float)$pa * 0.9, 2);
+				}
+				if ($pb !== null && (float)$pb > 0)
+				{
+					$pb = round((float)$pb * 0.9, 2);
+				}
+			}
+			$fpa = (float)($pa ?? 0);
+			$fpb = (float)($pb ?? 0);
+			if ($fpa > 0 && $fpb > 0 && abs($fpa - $fpb) > 1e-9)
+			{
+				return $fpa <=> $fpb;
+			}
+
+			return $a <=> $b;
+		});
+
 		ob_start();
 		?>
 		<div class="mf-detail-stock-wrap">
@@ -264,13 +322,15 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 					<thead>
 					<tr>
 						<th>Склад</th>
+						<th>Срок доставки</th>
 						<th class="text-right">Цена</th>
 						<th class="text-right">Остаток</th>
 						<th class="text-right"></th>
 					</tr>
 					</thead>
 					<tbody>
-					<?php foreach ($stores as $sid => $s): ?>
+					<?php foreach ($mfOrderedStoreIds as $sid): ?>
+						<?php $s = $stores[$sid] ?? []; ?>
 						<?php $amt = (float)($storeAmounts[$sid] ?? 0); ?>
 						<?php
 						$storePrice = null;
@@ -286,6 +346,9 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 						<tr>
 							<td>
 								<?=htmlspecialcharsbx((string)($s['TITLE'] ?? ('Склад #' . $sid)))?>
+							</td>
+							<td class="mf-detail-stock-table__delivery">
+								<?=htmlspecialcharsbx(function_exists('mf_store_delivery_term') ? mf_store_delivery_term((int)$sid) : '—')?>
 							</td>
 							<td class="text-right">
 								<?php if ($storePrice !== null): ?>
@@ -334,9 +397,6 @@ if ($elementId > 0)
 			: mf_analogs_ids_for_product($elementId, 24);
 		if (!empty($analogIds))
 		{
-			$analogMeta = function_exists('mf_analogs_meta_map_for_product')
-				? mf_analogs_meta_map_for_product($elementId, $analogIds)
-				: [];
 			CModule::IncludeModule("iblock");
 			$analogRows = [];
 			$rs = CIBlockElement::GetList(
@@ -348,7 +408,7 @@ if ($elementId > 0)
 				],
 				false,
 				false,
-				['ID', 'NAME', 'CODE', 'PROPERTY_CML2_ARTICLE', 'PROPERTY_MF_BRAND']
+				['ID', 'NAME', 'CODE', 'PREVIEW_TEXT', 'DETAIL_TEXT', 'PROPERTY_CML2_ARTICLE', 'PROPERTY_MF_BRAND']
 			);
 			while ($r = $rs->Fetch())
 			{
@@ -359,44 +419,57 @@ if ($elementId > 0)
 				}
 			}
 
+			$mfCardLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/bitrix/php_interface/include/mf_product_search_card.php';
+			if (is_file($mfCardLib))
+			{
+				require_once $mfCardLib;
+			}
+
+			global $USER;
+			$mfAnalogReqName = '';
+			$mfAnalogReqEmail = '';
+			$mfAnalogReqLocked = is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized();
+			if ($mfAnalogReqLocked)
+			{
+				$mfAnalogReqName = trim((string)$USER->GetFirstName() . ' ' . (string)$USER->GetLastName());
+				if ($mfAnalogReqName === '')
+				{
+					$mfAnalogReqName = trim((string)$USER->GetLogin());
+				}
+				$mfAnalogReqEmail = trim((string)$USER->GetEmail());
+			}
+
 			ob_start();
 			?>
 			<div class="mf-product-analogs">
-				<div class="list-group mf-detail-analogs-list">
+				<div class="mf-search-analogs">
 					<?php foreach ($analogIds as $aid): ?>
 						<?php $r = $analogRows[$aid] ?? null; ?>
-						<?php if (!$r) continue; ?>
+						<?php if (!$r || !function_exists('mf_product_search_card_render')) continue; ?>
 						<?php
+						$analogId = (int)$aid;
 						$code = trim((string)($r['CODE'] ?? ''));
 						$url = ($code !== '' ? '/products/' . $code . '/' : '#');
-						$brand = trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ''));
-						$article = trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
-						$m = $analogMeta[(int)$aid] ?? null;
-						$mStock = is_array($m) ? ($m['stock'] ?? null) : null;
-						$mPrice = is_array($m) ? ($m['price'] ?? null) : null;
+						$name = (string)($r['NAME'] ?? '');
+						$titleHtml = htmlspecialcharsbx($name);
+						$descHtml = trim((string)($r['PREVIEW_TEXT'] ?? '') . "\n" . (string)($r['DETAIL_TEXT'] ?? ''));
+						$plainName = trim(html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+						if ($plainName === '')
+						{
+							$plainName = 'Товар #' . $analogId;
+						}
+						mf_product_search_card_render([
+							'id' => $analogId,
+							'url' => $url,
+							'code' => $code,
+							'title_html' => $titleHtml,
+							'desc_source_html' => $descHtml,
+							'product_name_plain' => $plainName,
+							'req_user_name' => $mfAnalogReqName,
+							'req_user_email' => $mfAnalogReqEmail,
+							'req_user_locked' => $mfAnalogReqLocked,
+						]);
 						?>
-						<a class="list-group-item list-group-item-action" href="<?=htmlspecialcharsbx($url)?>">
-							<div class="d-flex w-100 justify-content-between">
-								<div>
-									<strong><?=htmlspecialcharsbx((string)($r['NAME'] ?? ''))?></strong>
-									<?php if ($brand !== '' || $article !== ''): ?>
-										<div class="text-muted" style="font-size:13px;">
-											<?php if ($brand !== ''): ?>Бренд: <?=htmlspecialcharsbx($brand)?><?php endif; ?>
-											<?php if ($brand !== '' && $article !== ''): ?> · <?php endif; ?>
-											<?php if ($article !== ''): ?>Артикул: <?=htmlspecialcharsbx($article)?><?php endif; ?>
-										</div>
-									<?php endif; ?>
-									<?php if ($mStock !== null || $mPrice !== null): ?>
-										<div class="text-muted" style="font-size:13px;">
-											<?php if ($mStock !== null): ?>Остаток: <?=htmlspecialcharsbx((string)$mStock)?><?php endif; ?>
-											<?php if ($mStock !== null && $mPrice !== null): ?> · <?php endif; ?>
-											<?php if ($mPrice !== null): ?>Цена: <?=htmlspecialcharsbx(number_format((float)$mPrice, 2, '.', ' '))?> &#8381;<?php endif; ?>
-										</div>
-									<?php endif; ?>
-								</div>
-								<small class="text-muted">ID <?= (int)$aid ?></small>
-							</div>
-						</a>
 					<?php endforeach; ?>
 				</div>
 			</div>
@@ -408,8 +481,8 @@ if ($elementId > 0)
 
 ?>
 	<div id="mf-detail-shell" class="mf-detail-shell" hidden>
-		<?php if ($mfBriefDescription !== ''): ?>
-			<div class="mf-detail-shell__brief"><?=htmlspecialcharsbx($mfBriefDescription)?></div>
+		<?php if ($mfBriefDescriptionHtml !== ''): ?>
+			<div class="mf-detail-shell__brief"><?=$mfBriefDescriptionHtml?></div>
 		<?php endif; ?>
 
 		<?php if ($mfMinPriceText !== ''): ?>
@@ -471,8 +544,24 @@ if ($elementId > 0)
 			var pid = btn.getAttribute('data-product-id');
 			var sid = btn.getAttribute('data-store-id');
 			if(!pid || !sid) return;
+			var qty = '1';
+			var row = btn.closest ? btn.closest('tr') : null;
+			var qtyWrap = row && row.querySelector ? row.querySelector('.mf-search-qty') : null;
+			var qtyInput = qtyWrap && qtyWrap.querySelector ? qtyWrap.querySelector('.js-mf-qty-input') : null;
+			if (qtyInput) {
+				var maxQ = 0;
+				if (qtyWrap && qtyWrap.getAttribute) {
+					maxQ = parseFloat(qtyWrap.getAttribute('data-max-qty') || '0', 10);
+					if (!isFinite(maxQ)) maxQ = 0;
+				}
+				var q = parseInt(qtyInput.value || '1', 10);
+				if (!isFinite(q) || q < 1) q = 1;
+				if (maxQ > 0 && q > maxQ) q = Math.floor(maxQ);
+				qtyInput.value = String(q);
+				qty = String(q);
+			}
 			btn.disabled = true;
-			fetch('/ajax/mf_add_to_basket_store.php?productId='+encodeURIComponent(pid)+'&storeId='+encodeURIComponent(sid)+'&qty=1', {
+			fetch('/ajax/mf_add_to_basket_store.php?productId='+encodeURIComponent(pid)+'&storeId='+encodeURIComponent(sid)+'&qty='+encodeURIComponent(qty), {
 				credentials: 'same-origin'
 			}).then(function(r){ return r.json(); }).then(function(data){
 				if(!data || !data.ok){
@@ -532,12 +621,63 @@ if ($elementId > 0)
 		}
 
 		document.addEventListener('click', function(e){
-			var t = e.target;
-			if(t && t.classList && t.classList.contains('js-mf-add-store')){
+			var minusBtn = e.target && e.target.closest ? e.target.closest('.js-mf-qty-minus') : null;
+			if (minusBtn) {
+				e.preventDefault();
+				var mw = minusBtn.closest ? minusBtn.closest('.mf-search-qty') : null;
+				var inp = mw ? mw.querySelector('.js-mf-qty-input') : null;
+				if (!inp) return;
+				var mv = parseInt(inp.value || '1', 10);
+				if (!isFinite(mv) || mv < 1) mv = 1;
+				inp.value = String(Math.max(1, mv - 1));
+				return;
+			}
+			var plusBtn = e.target && e.target.closest ? e.target.closest('.js-mf-qty-plus') : null;
+			if (plusBtn) {
+				e.preventDefault();
+				var pw = plusBtn.closest ? plusBtn.closest('.mf-search-qty') : null;
+				var inp2 = pw ? pw.querySelector('.js-mf-qty-input') : null;
+				if (!inp2) return;
+				var maxQ = 0;
+				if (pw && pw.getAttribute) {
+					maxQ = parseFloat(pw.getAttribute('data-max-qty') || '0', 10);
+					if (!isFinite(maxQ)) maxQ = 0;
+				}
+				var pv = parseInt(inp2.value || '1', 10);
+				if (!isFinite(pv) || pv < 1) pv = 1;
+				var nx = pv + 1;
+				if (maxQ > 0 && nx > maxQ) nx = Math.floor(maxQ);
+				inp2.value = String(nx);
+				return;
+			}
+			var t = e.target && e.target.closest ? e.target.closest('.js-mf-add-store') : null;
+			if (t) {
 				e.preventDefault();
 				addToBasket(t);
 			}
 		});
+		document.addEventListener('input', function(e){
+			var input = e.target && e.target.classList && e.target.classList.contains('js-mf-qty-input') ? e.target : null;
+			if (!input) return;
+			var cleaned = String(input.value || '').replace(/[^\d]/g, '');
+			var val = parseInt(cleaned || '1', 10);
+			if (!isFinite(val) || val < 1) val = 1;
+			var wrap = input.closest ? input.closest('.mf-search-qty') : null;
+			var maxQ = 0;
+			if (wrap && wrap.getAttribute) {
+				maxQ = parseFloat(wrap.getAttribute('data-max-qty') || '0', 10);
+				if (!isFinite(maxQ)) maxQ = 0;
+			}
+			if (maxQ > 0 && val > maxQ) val = Math.floor(maxQ);
+			input.value = String(val);
+		});
+		document.addEventListener('blur', function(e){
+			var input = e.target && e.target.classList && e.target.classList.contains('js-mf-qty-input') ? e.target : null;
+			if (!input) return;
+			var val = parseInt(input.value || '1', 10);
+			if (!isFinite(val) || val < 1) val = 1;
+			input.value = String(val);
+		}, true);
 
 		if (document.readyState === 'loading'){
 			document.addEventListener('DOMContentLoaded', mountDetailShell);

@@ -77,6 +77,14 @@ use Bitrix\Main\Localization\Loc;
 						<?=Loc::getMessage('SBB_ORDER')?>
 					</button>
 				</div>
+				{{#SHOW_PARTIAL_CHECKOUT}}
+				<div class="basket-checkout-block basket-checkout-block-btn">
+					<button type="button" class="btn btn-lg btn-outline-primary basket-btn-checkout-selected"
+						data-entity="basket-checkout-selected-button">
+						Оформить выбранное
+					</button>
+				</div>
+				{{/SHOW_PARTIAL_CHECKOUT}}
 			</div>
 		</div>
 

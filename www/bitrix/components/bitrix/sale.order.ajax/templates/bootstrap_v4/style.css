@@ -483,11 +483,6 @@
 }
 
 /* Coupon */
-.bx-soa-coupon,
-.bx-soa-coupon-block {
-	display: none !important;
-}
-
 .bx-soa-coupon {
 	margin-top: 10px;
 	padding-top: 10px;

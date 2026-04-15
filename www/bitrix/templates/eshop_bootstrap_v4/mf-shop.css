@@ -626,6 +626,37 @@
   font-size: 14px;
   line-height: 1.45;
 }
+.mf-shop-modal__auth{
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.08);
+  background: #fafafa;
+}
+.mf-shop-modal__auth-text{
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(0,0,0,.75);
+}
+.mf-shop-modal__auth-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.mf-shop-modal__auth-btn{
+  font-weight: 800;
+  border-radius: 10px;
+}
+.mf-shop-modal__auth-btn:hover,
+.mf-shop-modal__auth-btn:focus{
+  background-color: #ebbd2f !important;
+  border-color: #ebbd2f !important;
+  color: #000 !important;
+}
+.mf-shop-modal__auth-btn:focus{
+  box-shadow: 0 0 0 3px rgba(235,189,47,.35);
+}
 .mf-shop-modal__message{
   margin-top: 14px;
   padding: 10px 12px;
@@ -991,8 +1022,31 @@
 .mf-detail-shell__brief{
   margin: 0 0 12px;
   font-size: 14px;
-  line-height: 1.55;
-  color: rgba(0,0,0,.78);
+  line-height: 1.6;
+  color: rgba(0,0,0,.82);
+}
+.mf-detail-shell__brief p{
+  margin: 0 0 10px;
+}
+.mf-detail-shell__brief p:last-child{
+  margin-bottom: 0;
+}
+.mf-detail-shell__brief ul,
+.mf-detail-shell__brief ol{
+  margin: 0 0 10px;
+  padding-left: 1.25rem;
+}
+.mf-detail-shell__brief li{
+  margin: 0.25em 0;
+}
+.mf-detail-shell__brief a{
+  color: inherit;
+  text-decoration: underline;
+}
+.mf-detail-shell__brief strong,
+.mf-detail-shell__brief b{
+  font-weight: 800;
+  color: rgba(0,0,0,.92);
 }
 .mf-detail-shell__min-price{
   margin: 0 0 12px;
@@ -1063,6 +1117,15 @@
 .mf-detail-stock-table th,
 .mf-detail-stock-table td{
   vertical-align: middle !important;
+}
+.mf-detail-stock-table__delivery{
+  color: rgba(0,0,0,.78);
+  white-space: nowrap;
+}
+@media (max-width: 575.98px){
+  .mf-detail-stock-table__delivery{
+    white-space: normal;
+  }
 }
 .mf-detail-analogs-list .list-group-item:first-child{
   border-top-left-radius: 12px;

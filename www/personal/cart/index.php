@@ -22,7 +22,7 @@ $APPLICATION->SetTitle("Корзина");
 	"AJAX_OPTION_STYLE" => "Y",
 	"AJAX_OPTION_HISTORY" => "N",
 	"PATH_TO_ORDER" => "/personal/order/make/",
-	"HIDE_COUPON" => "Y",
+	"HIDE_COUPON" => "N",
 	"USE_GIFTS" => "N",
 	"QUANTITY_FLOAT" => "N",
 	"PRICE_VAT_SHOW_VALUE" => "Y",

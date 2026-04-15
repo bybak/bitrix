@@ -164,7 +164,203 @@ if (!function_exists('mf_checkout_props_version'))
 {
 	function mf_checkout_props_version(): string
 	{
-		return '2026-04-06-02';
+		return '2026-04-06-03';
+	}
+}
+
+if (!function_exists('mf_checkout_ensure_confirm_channel_prop'))
+{
+	/**
+	 * Поле «удобный способ подтверждения заказа» в блоке покупателя (физ / юр).
+	 */
+	function mf_checkout_ensure_confirm_channel_prop(): void
+	{
+		static $done = false;
+		if ($done)
+		{
+			return;
+		}
+		$done = true;
+
+		try
+		{
+			if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+			{
+				return;
+			}
+			if (!class_exists(\Bitrix\Main\Config\Option::class) || !class_exists('CSaleOrderProps'))
+			{
+				return;
+			}
+
+			$version = mf_checkout_props_version() . '-confirm-channel-v2';
+			try
+			{
+				if (\Bitrix\Main\Config\Option::get('main', 'mf_checkout_confirm_channel_setup', '') === $version)
+				{
+					return;
+				}
+			}
+			catch (\Throwable $e)
+			{
+			}
+
+			$personTypes = mf_checkout_person_type_map();
+			$defs = [];
+			foreach (['fiz', 'jur'] as $personKey)
+			{
+				$personTypeId = (int)($personTypes[$personKey] ?? 0);
+				if ($personTypeId <= 0)
+				{
+					continue;
+				}
+
+				$propsGroupId = 1;
+				$sample = \CSaleOrderProps::GetList(
+					['SORT' => 'ASC'],
+					[
+						'PERSON_TYPE_ID' => $personTypeId,
+						'CODE' => 'EMAIL',
+					],
+					false,
+					false,
+					['ID', 'PROPS_GROUP_ID']
+				)->Fetch();
+				if (is_array($sample) && (int)($sample['PROPS_GROUP_ID'] ?? 0) > 0)
+				{
+					$propsGroupId = (int)$sample['PROPS_GROUP_ID'];
+				}
+
+				$sort = 265;
+				$phoneRow = \CSaleOrderProps::GetList(
+					['SORT' => 'DESC'],
+					[
+						'PERSON_TYPE_ID' => $personTypeId,
+						'CODE' => 'PHONE',
+					],
+					false,
+					false,
+					['SORT']
+				)->Fetch();
+				if (is_array($phoneRow) && (int)($phoneRow['SORT'] ?? 0) > 0)
+				{
+					$sort = (int)$phoneRow['SORT'] + 5;
+				}
+
+				$defs[] = [
+					'PERSON_TYPE_ID' => $personTypeId,
+					'NAME' => 'Удобный способ подтверждения заказа',
+					'TYPE' => 'STRING',
+					'SETTINGS' => [
+						'SIZE' => '60',
+						'MAXLENGTH' => '500',
+					],
+					'REQUIRED' => 'Y',
+					'SORT' => $sort,
+					'USER_PROPS' => 'Y',
+					'PROPS_GROUP_ID' => $propsGroupId,
+					'CODE' => 'MF_CONFIRM_CHANNEL',
+					'ACTIVE' => 'Y',
+					'UTIL' => 'N',
+					'ENTITY_TYPE' => 'ORDER',
+					'ENTITY_REGISTRY_TYPE' => 'ORDER',
+					'DESCRIPTION' => 'Например: телефон, email, WhatsApp, Viber, Telegram, Max — укажите способ и контакт (номер, ник и т.д.).',
+				];
+			}
+
+			if ($defs === [])
+			{
+				return;
+			}
+
+			foreach ($defs as $fields)
+			{
+				$current = \CSaleOrderProps::GetList(
+					[],
+					[
+						'PERSON_TYPE_ID' => (int)$fields['PERSON_TYPE_ID'],
+						'CODE' => (string)$fields['CODE'],
+					],
+					false,
+					false,
+					['ID', 'CODE', 'REQUIRED', 'PROPS_GROUP_ID', 'SORT', 'TYPE', 'NAME', 'DESCRIPTION', 'SETTINGS']
+				)->Fetch();
+
+				if (is_array($current) && (int)($current['ID'] ?? 0) > 0)
+				{
+					$updateFields = [];
+					foreach (['NAME', 'TYPE', 'REQUIRED', 'SORT', 'PROPS_GROUP_ID', 'DESCRIPTION'] as $fieldName)
+					{
+						$currentValue = (string)($current[$fieldName] ?? '');
+						$targetValue = (string)($fields[$fieldName] ?? '');
+						if ($currentValue !== $targetValue)
+						{
+							$updateFields[$fieldName] = $fields[$fieldName];
+						}
+					}
+					if (array_key_exists('SETTINGS', $fields) && is_array($fields['SETTINGS']))
+					{
+						$curSt = $current['SETTINGS'] ?? [];
+						if (is_string($curSt))
+						{
+							$curSt = @unserialize($curSt, ['allowed_classes' => false]);
+						}
+						$curSt = is_array($curSt) ? $curSt : [];
+						if ($curSt != $fields['SETTINGS'])
+						{
+							$updateFields['SETTINGS'] = $fields['SETTINGS'];
+						}
+					}
+					if ($updateFields !== [])
+					{
+						\CSaleOrderProps::Update((int)$current['ID'], $updateFields);
+					}
+					continue;
+				}
+
+				\CSaleOrderProps::Add($fields);
+			}
+
+			if (class_exists(\Bitrix\Main\Application::class))
+			{
+				$sqlHelper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+				foreach ($defs as $fields)
+				{
+					$updates = [];
+					foreach (['NAME', 'TYPE', 'REQUIRED', 'SORT', 'USER_PROPS', 'PROPS_GROUP_ID', 'ACTIVE', 'UTIL', 'ENTITY_TYPE', 'ENTITY_REGISTRY_TYPE', 'DESCRIPTION'] as $fieldName)
+					{
+						if (!array_key_exists($fieldName, $fields))
+						{
+							continue;
+						}
+						$updates[] = $fieldName . " = '" . $sqlHelper->forSql((string)$fields[$fieldName]) . "'";
+					}
+					if (empty($updates))
+					{
+						continue;
+					}
+
+					\Bitrix\Main\Application::getConnection()->queryExecute(
+						"UPDATE b_sale_order_props SET "
+						. implode(', ', $updates)
+						. " WHERE PERSON_TYPE_ID = " . (int)$fields['PERSON_TYPE_ID']
+						. " AND CODE = '" . $sqlHelper->forSql((string)$fields['CODE']) . "'"
+					);
+				}
+			}
+
+			try
+			{
+				\Bitrix\Main\Config\Option::set('main', 'mf_checkout_confirm_channel_setup', $version);
+			}
+			catch (\Throwable $e)
+			{
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
 	}
 }
 
@@ -337,7 +533,7 @@ if (!function_exists('mf_checkout_ensure_payment_systems'))
 	}
 }
 
-if (!function_exists('mf_checkout_ensure_company_order_props'))
+if (!function_exists('mf_checkout_ensure_delivery_address_props'))
 {
 	function mf_checkout_ensure_delivery_address_props(): void
 	{
@@ -501,7 +697,212 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 			// ignore
 		}
 	}
+}
 
+if (!function_exists('mf_checkout_ensure_nominatim_geo_props'))
+{
+	function mf_checkout_ensure_nominatim_geo_props(): void
+	{
+		static $done = false;
+		if ($done)
+		{
+			return;
+		}
+		$done = true;
+
+		try
+		{
+			if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+			{
+				return;
+			}
+			if (!class_exists(\Bitrix\Main\Config\Option::class) || !class_exists('CSaleOrderProps'))
+			{
+				return;
+			}
+
+			// v2: TYPE STRING + SETTINGS[MULTILINE] — в Sale\Internals\Input\Manager нет типа TEXTAREA (только STRING и др.).
+			$version = mf_checkout_props_version() . '-nominatim-geo-v2';
+			try
+			{
+				if (\Bitrix\Main\Config\Option::get('main', 'mf_checkout_nominatim_geo_setup', '') === $version)
+				{
+					return;
+				}
+			}
+			catch (\Throwable $e)
+			{
+			}
+
+			$personTypes = mf_checkout_person_type_map();
+			$defs = [];
+			foreach (['fiz', 'jur'] as $personKey)
+			{
+				$personTypeId = (int)($personTypes[$personKey] ?? 0);
+				if ($personTypeId <= 0)
+				{
+					continue;
+				}
+
+				$propsGroupId = 4;
+				$sample = \CSaleOrderProps::GetList(
+					['SORT' => 'ASC'],
+					[
+						'PERSON_TYPE_ID' => $personTypeId,
+						'CODE' => 'DELIVERY_LOCATION_TEXT',
+					],
+					false,
+					false,
+					['ID', 'PROPS_GROUP_ID']
+				)->Fetch();
+				if (is_array($sample) && (int)($sample['PROPS_GROUP_ID'] ?? 0) > 0)
+				{
+					$propsGroupId = (int)$sample['PROPS_GROUP_ID'];
+				}
+
+				$defs[] = [
+					'PERSON_TYPE_ID' => $personTypeId,
+					'NAME' => 'Геоданные адреса (OSM, служебное)',
+					'TYPE' => 'STRING',
+					'SETTINGS' => [
+						'MULTILINE' => 'Y',
+						'ROWS' => '12',
+						'COLS' => '96',
+						'MAXLENGTH' => '65000',
+					],
+					'REQUIRED' => 'N',
+					'SORT' => 292,
+					'USER_PROPS' => 'N',
+					'PROPS_GROUP_ID' => $propsGroupId,
+					'CODE' => 'MF_NOMINATIM_JSON',
+					'ACTIVE' => 'Y',
+					'UTIL' => 'Y',
+					'ENTITY_TYPE' => 'ORDER',
+					'ENTITY_REGISTRY_TYPE' => 'ORDER',
+				];
+				$defs[] = [
+					'PERSON_TYPE_ID' => $personTypeId,
+					'NAME' => 'Город для eDost (служебное)',
+					'TYPE' => 'STRING',
+					'REQUIRED' => 'N',
+					'SORT' => 293,
+					'USER_PROPS' => 'N',
+					'PROPS_GROUP_ID' => $propsGroupId,
+					'CODE' => 'MF_EDOST_TO_CITY',
+					'ACTIVE' => 'Y',
+					'UTIL' => 'Y',
+					'ENTITY_TYPE' => 'ORDER',
+					'ENTITY_REGISTRY_TYPE' => 'ORDER',
+				];
+			}
+
+			if (empty($defs))
+			{
+				return;
+			}
+
+			foreach ($defs as $fields)
+			{
+				$current = \CSaleOrderProps::GetList(
+					[],
+					[
+						'PERSON_TYPE_ID' => (int)$fields['PERSON_TYPE_ID'],
+						'CODE' => (string)$fields['CODE'],
+					],
+					false,
+					false,
+					['ID', 'CODE', 'REQUIRED', 'PROPS_GROUP_ID', 'SORT', 'TYPE', 'NAME', 'SETTINGS']
+				)->Fetch();
+
+				if (is_array($current) && (int)($current['ID'] ?? 0) > 0)
+				{
+					$updateFields = [];
+					foreach (['NAME', 'TYPE', 'REQUIRED', 'SORT', 'PROPS_GROUP_ID'] as $fieldName)
+					{
+						$currentValue = (string)($current[$fieldName] ?? '');
+						$targetValue = (string)($fields[$fieldName] ?? '');
+						if ($currentValue !== $targetValue)
+						{
+							$updateFields[$fieldName] = $fields[$fieldName];
+						}
+					}
+					if (array_key_exists('SETTINGS', $fields) && is_array($fields['SETTINGS']))
+					{
+						$curSt = $current['SETTINGS'] ?? [];
+						if (is_string($curSt))
+						{
+							$curSt = @unserialize($curSt, ['allowed_classes' => false]);
+						}
+						$curSt = is_array($curSt) ? $curSt : [];
+						if ($curSt != $fields['SETTINGS'])
+						{
+							$updateFields['SETTINGS'] = $fields['SETTINGS'];
+						}
+					}
+					// Исправление уже созданных свойств с устаревшим TYPE=TEXTAREA (не зарегистрирован в Input\Manager).
+					if ((string)($fields['CODE'] ?? '') === 'MF_NOMINATIM_JSON' && (string)($current['TYPE'] ?? '') === 'TEXTAREA')
+					{
+						$updateFields['TYPE'] = 'STRING';
+						if (isset($fields['SETTINGS']) && is_array($fields['SETTINGS']))
+						{
+							$updateFields['SETTINGS'] = $fields['SETTINGS'];
+						}
+					}
+					if (!empty($updateFields))
+					{
+						\CSaleOrderProps::Update((int)$current['ID'], $updateFields);
+					}
+					continue;
+				}
+
+				\CSaleOrderProps::Add($fields);
+			}
+
+			if (class_exists(\Bitrix\Main\Application::class))
+			{
+				$sqlHelper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+				foreach ($defs as $fields)
+				{
+					$updates = [];
+					foreach (['NAME', 'TYPE', 'REQUIRED', 'SORT', 'USER_PROPS', 'PROPS_GROUP_ID', 'ACTIVE', 'UTIL', 'ENTITY_TYPE', 'ENTITY_REGISTRY_TYPE'] as $fieldName)
+					{
+						if (!array_key_exists($fieldName, $fields))
+						{
+							continue;
+						}
+						$updates[] = $fieldName . " = '" . $sqlHelper->forSql((string)$fields[$fieldName]) . "'";
+					}
+					if (empty($updates))
+					{
+						continue;
+					}
+
+					\Bitrix\Main\Application::getConnection()->queryExecute(
+						"UPDATE b_sale_order_props SET "
+						. implode(', ', $updates)
+						. " WHERE PERSON_TYPE_ID = " . (int)$fields['PERSON_TYPE_ID']
+						. " AND CODE = '" . $sqlHelper->forSql((string)$fields['CODE']) . "'"
+					);
+				}
+			}
+
+			try
+			{
+				\Bitrix\Main\Config\Option::set('main', 'mf_checkout_nominatim_geo_setup', $version);
+			}
+			catch (\Throwable $e)
+			{
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// Не ломаем сайт, если создание свойств недоступно (БД, права, конфликт кодов).
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_ensure_company_order_props'))
+{
 	function mf_checkout_ensure_company_order_props(): void
 	{
 		static $done = false;
@@ -812,184 +1213,306 @@ if (!function_exists('mf_checkout_on_order_user_result'))
 	}
 }
 
-if (!function_exists('mf_checkout_on_order_js_data'))
+if (!function_exists('mf_checkout_default_edost_offer'))
 {
 	function mf_checkout_default_edost_offer(array $jsData): ?array
 	{
-		if (
-			!class_exists(\Bitrix\Main\Loader::class)
-			|| !\Bitrix\Main\Loader::includeModule('sale')
-		)
+		try
 		{
-			return null;
-		}
-
-		if (!class_exists(\Bitrix\Sale\Basket::class) || !class_exists(\Bitrix\Sale\Fuser::class))
-		{
-			return null;
-		}
-
-		$locationCode = '';
-		$properties = $jsData['ORDER_PROP']['properties'] ?? [];
-		if (is_array($properties))
-		{
-			foreach ($properties as $property)
+			if (
+				!class_exists(\Bitrix\Main\Loader::class)
+				|| !\Bitrix\Main\Loader::includeModule('sale')
+			)
 			{
-				if (($property['IS_LOCATION'] ?? 'N') !== 'Y')
-				{
-					continue;
-				}
-
-				$value = $property['VALUE'] ?? '';
-				if (is_array($value))
-				{
-					$value = reset($value);
-				}
-				$locationCode = trim((string)$value);
-				break;
+				return null;
 			}
-		}
 
-		if ($locationCode === '')
-		{
-			return null;
-		}
-
-		$tariffFile = $_SERVER['DOCUMENT_ROOT'] . '/mf_delivery_tariffed.php';
-		if (!is_file($tariffFile))
-		{
-			return null;
-		}
-		require_once $tariffFile;
-
-		if (!class_exists(\MF\Delivery\Edost::class))
-		{
-			return null;
-		}
-
-		$toCity = \MF\Delivery\Edost::resolveCityNameRuByLocationCode($locationCode);
-		if ($toCity === '')
-		{
-			return null;
-		}
-
-		$siteId = (string)(\Bitrix\Main\Application::getInstance()->getContext()->getSite() ?: 's1');
-		$fuserId = \Bitrix\Sale\Fuser::getId();
-		$basket = \Bitrix\Sale\Basket::loadItemsForFUser($fuserId, $siteId);
-
-		$weightGrams = 0.0;
-		foreach ($basket as $item)
-		{
-			$q = (float)$item->getQuantity();
-			$w = (float)$item->getWeight();
-			$weightGrams += max(0.0, $w) * max(0.0, $q);
-		}
-
-		$weightKg = $weightGrams > 0 ? ($weightGrams / 1000.0) : 0.001;
-		$resp = \MF\Delivery\Edost::calculate($toCity, $weightKg, 0.0, '');
-		if (!is_array($resp) || !($resp['ok'] ?? false) || empty($resp['offers']) || !is_array($resp['offers']))
-		{
-			return null;
-		}
-
-		$offers = array_values(array_filter($resp['offers'], static function ($offer) {
-			return is_array($offer) && trim((string)($offer['id'] ?? '')) !== '';
-		}));
-		if (empty($offers))
-		{
-			return null;
-		}
-
-		usort($offers, static function ($a, $b) {
-			$ca = mb_strtolower(trim((string)($a['company'] ?? '')));
-			$cb = mb_strtolower(trim((string)($b['company'] ?? '')));
-			if ($ca !== $cb)
+			if (!class_exists(\Bitrix\Sale\Basket::class) || !class_exists(\Bitrix\Sale\Fuser::class))
 			{
-				return $ca <=> $cb;
+				return null;
 			}
-			$pa = (float)($a['price'] ?? 0);
-			$pb = (float)($b['price'] ?? 0);
-			if ($pa !== $pb)
+
+			$locationCode = '';
+			$properties = $jsData['ORDER_PROP']['properties'] ?? [];
+			if (is_array($properties))
 			{
-				return $pa <=> $pb;
-			}
-			$na = mb_strtolower(trim((string)($a['name'] ?? '')));
-			$nb = mb_strtolower(trim((string)($b['name'] ?? '')));
-			return $na <=> $nb;
-		});
-
-		$offer = $offers[0];
-		$name = trim((string)($offer['name'] ?? ''));
-		$company = trim((string)($offer['company'] ?? ''));
-		if ($name === '')
-		{
-			$name = $company;
-		}
-
-		return [
-			'id' => (string)($offer['id'] ?? ''),
-			'company' => $company,
-			'name' => $name,
-			'price' => (string)($offer['price'] ?? ''),
-		];
-	}
-
-	function mf_checkout_on_order_js_data(array &$arResult, array &$arParams): void
-	{
-		if (!mf_checkout_custom_flow_enabled($arParams))
-		{
-			return;
-		}
-
-		if (empty($arResult['JS_DATA']) || !is_array($arResult['JS_DATA']))
-		{
-			return;
-		}
-
-		$personTypes = mf_checkout_person_type_map();
-		$invoiceIds = mf_checkout_invoice_pay_system_ids();
-		$currentPersonTypeId = 0;
-		if (!empty($arResult['JS_DATA']['PERSON_TYPE']) && is_array($arResult['JS_DATA']['PERSON_TYPE']))
-		{
-			foreach ($arResult['JS_DATA']['PERSON_TYPE'] as $personType)
-			{
-				if (($personType['CHECKED'] ?? 'N') === 'Y')
+				foreach ($properties as $property)
 				{
-					$currentPersonTypeId = (int)($personType['ID'] ?? 0);
+					if (($property['IS_LOCATION'] ?? 'N') !== 'Y')
+					{
+						continue;
+					}
+
+					$value = $property['VALUE'] ?? '';
+					if (is_array($value))
+					{
+						$value = reset($value);
+					}
+					$locationCode = trim((string)$value);
 					break;
 				}
 			}
+
+			if ($locationCode === '')
+			{
+				return null;
+			}
+
+			$tariffFile = $_SERVER['DOCUMENT_ROOT'] . '/mf_delivery_tariffed.php';
+			if (!is_file($tariffFile))
+			{
+				return null;
+			}
+			require_once $tariffFile;
+
+			if (!class_exists(\MF\Delivery\Edost::class))
+			{
+				return null;
+			}
+
+			$toCity = \MF\Delivery\Edost::resolveCityNameRuByLocationCode($locationCode);
+			if ($toCity === '')
+			{
+				return null;
+			}
+
+			$siteId = (string)(\Bitrix\Main\Application::getInstance()->getContext()->getSite() ?: 's1');
+			$fuserId = \Bitrix\Sale\Fuser::getId();
+			$basket = \Bitrix\Sale\Basket::loadItemsForFUser($fuserId, $siteId);
+
+			$weightGrams = 0.0;
+			foreach ($basket as $item)
+			{
+				$q = (float)$item->getQuantity();
+				$w = (float)$item->getWeight();
+				$weightGrams += max(0.0, $w) * max(0.0, $q);
+			}
+
+			$weightKg = $weightGrams > 0 ? ($weightGrams / 1000.0) : 0.001;
+			$resp = \MF\Delivery\Edost::calculate($toCity, $weightKg, 0.0, '');
+			if (!is_array($resp) || !($resp['ok'] ?? false) || empty($resp['offers']) || !is_array($resp['offers']))
+			{
+				return null;
+			}
+
+			$offers = array_values(array_filter($resp['offers'], static function ($offer) {
+				return is_array($offer) && trim((string)($offer['id'] ?? '')) !== '';
+			}));
+			if (empty($offers))
+			{
+				return null;
+			}
+
+			usort($offers, static function ($a, $b) {
+				$ca = mb_strtolower(trim((string)($a['company'] ?? '')));
+				$cb = mb_strtolower(trim((string)($b['company'] ?? '')));
+				if ($ca !== $cb)
+				{
+					return $ca <=> $cb;
+				}
+				$pa = (float)($a['price'] ?? 0);
+				$pb = (float)($b['price'] ?? 0);
+				if ($pa !== $pb)
+				{
+					return $pa <=> $pb;
+				}
+				$na = mb_strtolower(trim((string)($a['name'] ?? '')));
+				$nb = mb_strtolower(trim((string)($b['name'] ?? '')));
+				return $na <=> $nb;
+			});
+
+			$offer = $offers[0];
+			$name = trim((string)($offer['name'] ?? ''));
+			$company = trim((string)($offer['company'] ?? ''));
+			if ($name === '')
+			{
+				$name = $company;
+			}
+
+			return [
+				'id' => (string)($offer['id'] ?? ''),
+				'company' => $company,
+				'name' => $name,
+				'price' => (string)($offer['price'] ?? ''),
+			];
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_resolve_fallback_location_code'))
+{
+	/**
+	 * Резервный CODE местоположения Bitrix для скрытого поля + eDost: env / опция / авто «Санкт-Петербург» из БД.
+	 * Явный код в .env имеет приоритет; иначе подставляется первая найденная локация «Санкт-Петербург» (типичный кейс для РФ-магазина).
+	 */
+	function mf_checkout_resolve_fallback_location_code(): string
+	{
+		$envLoc = getenv('MF_CHECKOUT_FALLBACK_LOCATION_CODE');
+		if ($envLoc !== false && trim((string)$envLoc) !== '')
+		{
+			return trim((string)$envLoc);
 		}
 
-		$arResult['JS_DATA']['MF_CHECKOUT'] = array_merge(
-			is_array($arResult['JS_DATA']['MF_CHECKOUT'] ?? null) ? $arResult['JS_DATA']['MF_CHECKOUT'] : [],
-			[
-				'ENABLED' => true,
-				'FIZ_PERSON_TYPE_ID' => (int)($personTypes['fiz'] ?? 0),
-				'JUR_PERSON_TYPE_ID' => (int)($personTypes['jur'] ?? 0),
-				'INVOICE_PAY_SYSTEM_IDS' => $invoiceIds,
-				'CURRENT_PERSON_TYPE_ID' => $currentPersonTypeId,
-			]
-		);
-
-		if (
-			(int)($personTypes['jur'] ?? 0) > 0
-			&& $currentPersonTypeId === (int)$personTypes['jur']
-			&& !empty($arResult['JS_DATA']['PAY_SYSTEM'])
-			&& is_array($arResult['JS_DATA']['PAY_SYSTEM'])
-		)
+		try
 		{
-			mf_checkout_apply_pay_system_filter($arResult['JS_DATA']['PAY_SYSTEM'], $invoiceIds);
+			$opt = trim((string)\Bitrix\Main\Config\Option::get('mf.checkout', 'fallback_location_code', ''));
+			if ($opt !== '')
+			{
+				return $opt;
+			}
+		}
+		catch (\Throwable $e)
+		{
 		}
 
-		$defaultEdostOffer = mf_checkout_default_edost_offer($arResult['JS_DATA']);
-		if (
-			is_array($defaultEdostOffer)
-			&& !empty($defaultEdostOffer['id'])
-			&& (!empty($defaultEdostOffer['name']) || !empty($defaultEdostOffer['company']))
-		)
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
 		{
-			$arResult['JS_DATA']['MF_EDOST_DEFAULT'] = $defaultEdostOffer;
+			return '';
+		}
+
+		try
+		{
+			$conn = \Bitrix\Main\Application::getConnection();
+			$h = $conn->getSqlHelper();
+			$needle = $h->forSql('Санкт-Петербург');
+			$code = (string)$conn->queryScalar(
+				"SELECT l.CODE FROM b_sale_location l
+				INNER JOIN b_sale_loc_name n ON n.LOCATION_ID = l.ID AND n.LANGUAGE_ID = 'ru'
+				WHERE (n.NAME = '{$needle}' OR n.NAME LIKE '{$needle},%' OR n.NAME LIKE '%{$needle}%')
+					AND l.CODE IS NOT NULL AND l.CODE <> ''
+				ORDER BY l.DEPTH_LEVEL DESC, l.ID ASC
+				LIMIT 1"
+			);
+
+			return trim($code);
+		}
+		catch (\Throwable $e)
+		{
+			return '';
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_on_order_js_data'))
+{
+	function mf_checkout_on_order_js_data(array &$arResult, array &$arParams): void
+	{
+		try
+		{
+			if (empty($arResult['JS_DATA']) || !is_array($arResult['JS_DATA']))
+			{
+				return;
+			}
+
+			$fallbackLoc = mf_checkout_resolve_fallback_location_code();
+
+			$arResult['JS_DATA']['MF_CHECKOUT'] = array_merge(
+				is_array($arResult['JS_DATA']['MF_CHECKOUT'] ?? null) ? $arResult['JS_DATA']['MF_CHECKOUT'] : [],
+				[
+					'FALLBACK_LOCATION_CODE' => $fallbackLoc,
+					'NOMINATIM_SEARCH_URL' => '/ajax/mf_nominatim_search.php',
+				]
+			);
+
+			if (!mf_checkout_custom_flow_enabled($arParams))
+			{
+				return;
+			}
+
+			$personTypes = mf_checkout_person_type_map();
+			$invoiceIds = mf_checkout_invoice_pay_system_ids();
+			$currentPersonTypeId = 0;
+			if (!empty($arResult['JS_DATA']['PERSON_TYPE']) && is_array($arResult['JS_DATA']['PERSON_TYPE']))
+			{
+				foreach ($arResult['JS_DATA']['PERSON_TYPE'] as $personType)
+				{
+					if (($personType['CHECKED'] ?? 'N') === 'Y')
+					{
+						$currentPersonTypeId = (int)($personType['ID'] ?? 0);
+						break;
+					}
+				}
+			}
+
+			$orderReturnPath = (string)($arParams['PATH_TO_ORDER'] ?? '/personal/order/make/');
+			$orderReturnPath = '/' . ltrim(str_replace('\\', '/', $orderReturnPath), '/');
+			if ($orderReturnPath === '/' || $orderReturnPath === '')
+			{
+				$orderReturnPath = '/personal/order/make/';
+			}
+			$orderBackEnc = rawurlencode($orderReturnPath);
+
+			$arResult['JS_DATA']['MF_CHECKOUT'] = array_merge(
+				is_array($arResult['JS_DATA']['MF_CHECKOUT'] ?? null) ? $arResult['JS_DATA']['MF_CHECKOUT'] : [],
+				[
+					'ENABLED' => true,
+					'FIZ_PERSON_TYPE_ID' => (int)($personTypes['fiz'] ?? 0),
+					'JUR_PERSON_TYPE_ID' => (int)($personTypes['jur'] ?? 0),
+					'INVOICE_PAY_SYSTEM_IDS' => $invoiceIds,
+					'CURRENT_PERSON_TYPE_ID' => $currentPersonTypeId,
+					'LOGIN_HREF' => '/login/?login=yes&backurl=' . $orderBackEnc,
+					'REGISTER_HREF' => '/login/?register=yes&backurl=' . $orderBackEnc,
+				]
+			);
+
+			if (
+				(int)($personTypes['jur'] ?? 0) > 0
+				&& $currentPersonTypeId === (int)$personTypes['jur']
+				&& !empty($arResult['JS_DATA']['PAY_SYSTEM'])
+				&& is_array($arResult['JS_DATA']['PAY_SYSTEM'])
+			)
+			{
+				mf_checkout_apply_pay_system_filter($arResult['JS_DATA']['PAY_SYSTEM'], $invoiceIds);
+			}
+
+			$defaultEdostOffer = mf_checkout_default_edost_offer($arResult['JS_DATA']);
+			if (
+				is_array($defaultEdostOffer)
+				&& !empty($defaultEdostOffer['id'])
+				&& (!empty($defaultEdostOffer['name']) || !empty($defaultEdostOffer['company']))
+			)
+			{
+				$arResult['JS_DATA']['MF_EDOST_DEFAULT'] = $defaultEdostOffer;
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// Не роняем оформление заказа из-за вспомогательных данных в JS.
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_bootstrap_log'))
+{
+	function mf_checkout_bootstrap_log(string $step, \Throwable $e): void
+	{
+		$docRoot = (string)($_SERVER['DOCUMENT_ROOT'] ?? '');
+		if ($docRoot === '')
+		{
+			return;
+		}
+		$line = date('c')
+			. " [{$step}] "
+			. $e->getMessage()
+			. ' in ' . $e->getFile()
+			. ':' . (string)$e->getLine()
+			. "\n"
+			. $e->getTraceAsString()
+			. "\n\n";
+		$paths = [
+			rtrim($docRoot, '/') . '/upload/mf_checkout_bootstrap_errors.log',
+			rtrim($docRoot, '/') . '/bitrix/php_interface/mf_checkout_bootstrap_errors.log',
+		];
+		foreach ($paths as $path)
+		{
+			if (@file_put_contents($path, $line, FILE_APPEND | LOCK_EX) !== false)
+			{
+				break;
+			}
 		}
 	}
 }
@@ -998,9 +1521,50 @@ if (!function_exists('mf_checkout_bootstrap'))
 {
 	function mf_checkout_bootstrap(): void
 	{
-		mf_checkout_ensure_delivery_address_props();
-		mf_checkout_ensure_company_order_props();
-		mf_checkout_ensure_payment_systems();
+		try
+		{
+			mf_checkout_ensure_delivery_address_props();
+		}
+		catch (\Throwable $e)
+		{
+			mf_checkout_bootstrap_log('delivery_address_props', $e);
+		}
+
+		try
+		{
+			mf_checkout_ensure_nominatim_geo_props();
+		}
+		catch (\Throwable $e)
+		{
+			mf_checkout_bootstrap_log('nominatim_geo_props', $e);
+		}
+
+		try
+		{
+			mf_checkout_ensure_company_order_props();
+		}
+		catch (\Throwable $e)
+		{
+			mf_checkout_bootstrap_log('company_order_props', $e);
+		}
+
+		try
+		{
+			mf_checkout_ensure_confirm_channel_prop();
+		}
+		catch (\Throwable $e)
+		{
+			mf_checkout_bootstrap_log('confirm_channel_prop', $e);
+		}
+
+		try
+		{
+			mf_checkout_ensure_payment_systems();
+		}
+		catch (\Throwable $e)
+		{
+			mf_checkout_bootstrap_log('payment_systems', $e);
+		}
 
 		if (!class_exists(\Bitrix\Main\EventManager::class))
 		{

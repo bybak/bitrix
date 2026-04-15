@@ -45,11 +45,19 @@ $arParams['PICKUP_MAP_TYPE'] = (string)($arParams['PICKUP_MAP_TYPE'] ?? 'yandex'
 $arParams['HIDE_ORDER_DESCRIPTION'] = ($arParams['HIDE_ORDER_DESCRIPTION'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['ALLOW_USER_PROFILES'] = ($arParams['ALLOW_USER_PROFILES'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['ALLOW_NEW_PROFILE'] = ($arParams['ALLOW_NEW_PROFILE'] ?? 'N') === 'Y' ? 'Y' : 'N';
-// Motor-Force customization: полностью убираем блок "Применить купон" на всех формах оформления.
-$arParams['SHOW_COUPONS'] = 'N';
-$arParams['SHOW_COUPONS_BASKET'] = 'N';
-$arParams['SHOW_COUPONS_DELIVERY'] = 'N';
-$arParams['SHOW_COUPONS_PAY_SYSTEM'] = 'N';
+$arParams['SHOW_COUPONS'] = ($arParams['SHOW_COUPONS'] ?? 'Y') === 'N' ? 'N' : 'Y';
+if ($arParams['SHOW_COUPONS'] === 'Y')
+{
+	$arParams['SHOW_COUPONS_BASKET'] = ($arParams['SHOW_COUPONS_BASKET'] ?? 'Y') === 'N' ? 'N' : 'Y';
+	$arParams['SHOW_COUPONS_DELIVERY'] = ($arParams['SHOW_COUPONS_DELIVERY'] ?? 'N') === 'Y' ? 'Y' : 'N';
+	$arParams['SHOW_COUPONS_PAY_SYSTEM'] = ($arParams['SHOW_COUPONS_PAY_SYSTEM'] ?? 'N') === 'Y' ? 'Y' : 'N';
+}
+else
+{
+	$arParams['SHOW_COUPONS_BASKET'] = 'N';
+	$arParams['SHOW_COUPONS_DELIVERY'] = 'N';
+	$arParams['SHOW_COUPONS_PAY_SYSTEM'] = 'N';
+}
 
 $arParams['USE_YM_GOALS'] = ($arParams['USE_YM_GOALS'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['YM_GOALS_COUNTER'] = (string)($arParams['YM_GOALS_COUNTER'] ?? '');

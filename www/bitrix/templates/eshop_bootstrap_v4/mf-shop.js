@@ -39,6 +39,42 @@
   })();
 
   onReady(function () {
+    function mfBuildAuthUrlsWithBackUrl() {
+      try {
+        var u = new URL(window.location.href);
+        [
+          'login',
+          'login_form',
+          'logout',
+          'register',
+          'forgot_password',
+          'change_password',
+          'confirm_registration',
+          'confirm_code',
+          'confirm_user_id',
+          'logout_butt',
+          'auth_service_id',
+          'clear_cache',
+          'backurl'
+        ].forEach(function (k) {
+          u.searchParams.delete(k);
+        });
+        var back = encodeURIComponent(u.pathname + (u.search || ''));
+        return {
+          login: '/login/?login=yes&backurl=' + back,
+          register: '/login/?register=yes&backurl=' + back
+        };
+      } catch (e) {
+        var path = (window.location && window.location.pathname) ? window.location.pathname : '/';
+        var qs = (window.location && window.location.search) ? window.location.search : '';
+        var back2 = encodeURIComponent(path + qs);
+        return {
+          login: '/login/?login=yes&backurl=' + back2,
+          register: '/login/?register=yes&backurl=' + back2
+        };
+      }
+    }
+
     function ensureRequestPriceModal() {
       var modal = document.getElementById('mf-global-request-price-modal');
       if (modal) return modal;
@@ -51,6 +87,13 @@
         '    <button type="button" class="mf-shop-modal__close js-mf-shop-request-close" aria-label="Закрыть">×</button>',
         '    <div class="mf-shop-modal__title" id="mf-shop-request-title">Запросить цену</div>',
         '    <div class="mf-shop-modal__subtitle" id="mf-shop-request-product"></div>',
+        '    <div class="mf-shop-modal__auth js-mf-shop-request-auth" hidden>',
+        '      <p class="mf-shop-modal__auth-text">Войдите или зарегистрируйтесь — после возврата на эту страницу данные профиля подставятся в форму, и вы сможете отправить запрос.</p>',
+        '      <div class="mf-shop-modal__auth-actions">',
+        '        <a class="btn btn-outline-dark mf-shop-modal__auth-btn js-mf-request-price-auth-link js-mf-shop-login-link" href="/login/">Войти</a>',
+        '        <a class="btn btn-outline-dark mf-shop-modal__auth-btn js-mf-request-price-auth-link js-mf-shop-register-link" href="/login/">Регистрация</a>',
+        '      </div>',
+        '    </div>',
         '    <div class="mf-shop-modal__message" id="mf-shop-request-message" hidden></div>',
         '    <form class="mf-shop-modal__form" id="mf-shop-request-form">',
         '      <input type="hidden" name="sessid" value="' + ((window.BX && BX.bitrix_sessid) ? BX.bitrix_sessid() : '') + '">',
@@ -117,6 +160,17 @@
       form.elements.name.readOnly = locked && !!userName;
       form.elements.email.readOnly = locked && !!userEmail;
       if (subtitle) subtitle.textContent = productName;
+      var authBox = modal.querySelector('.js-mf-shop-request-auth');
+      if (authBox) {
+        authBox.hidden = locked;
+        if (!locked) {
+          var urls = mfBuildAuthUrlsWithBackUrl();
+          var aLogin = authBox.querySelector('.js-mf-shop-login-link');
+          var aReg = authBox.querySelector('.js-mf-shop-register-link');
+          if (aLogin) aLogin.href = urls.login;
+          if (aReg) aReg.href = urls.register;
+        }
+      }
       setRequestMessage('', false);
       modal.hidden = false;
       document.documentElement.classList.add('mf-shop-modal-open');
@@ -216,6 +270,94 @@
       e.preventDefault();
       submitRequestModal();
     }, true);
+
+    var MF_REQ_PRICE_RESUME_KEY = 'mf_request_price_resume';
+
+    function mfSaveShopRequestPriceResumeForAuth() {
+      var form = document.getElementById('mf-shop-request-form');
+      if (!form) return;
+      try {
+        sessionStorage.setItem(MF_REQ_PRICE_RESUME_KEY, JSON.stringify({
+          v: 1,
+          scope: 'shop',
+          product_id: form.elements.product_id ? form.elements.product_id.value : '',
+          product_name: form.elements.product_name ? form.elements.product_name.value : '',
+          product_url: form.elements.product_url ? form.elements.product_url.value : '',
+          user_name: form.elements.name ? form.elements.name.value : '',
+          user_email: form.elements.email ? form.elements.email.value : '',
+          user_locked: !!(form.elements.name && form.elements.name.readOnly)
+        }));
+      } catch (e) {}
+    }
+
+    function mfTryResumeRequestPriceShop() {
+      try {
+        var raw = sessionStorage.getItem(MF_REQ_PRICE_RESUME_KEY);
+        if (!raw) return;
+        var data = JSON.parse(raw);
+        if (!data || data.v !== 1 || data.scope !== 'shop') return;
+        sessionStorage.removeItem(MF_REQ_PRICE_RESUME_KEY);
+        var pid = String(data.product_id || '');
+        var btn = null;
+        if (pid) {
+          var nodes = document.querySelectorAll('.js-mf-request-price-global');
+          for (var i = 0; i < nodes.length; i++) {
+            if ((nodes[i].getAttribute('data-product-id') || '') === pid) {
+              btn = nodes[i];
+              break;
+            }
+          }
+        }
+        if (btn) {
+          openRequestModal(btn);
+          return;
+        }
+        var modal = ensureRequestPriceModal();
+        var form = document.getElementById('mf-shop-request-form');
+        if (!modal || !form) return;
+        form.elements.product_id.value = data.product_id || '';
+        form.elements.product_name.value = data.product_name || '';
+        form.elements.product_url.value = data.product_url || '';
+        form.elements.name.value = data.user_name || '';
+        form.elements.email.value = data.user_email || '';
+        form.elements.comment.value = '';
+        var locked = !!data.user_locked;
+        form.elements.name.readOnly = locked && !!(data.user_name);
+        form.elements.email.readOnly = locked && !!(data.user_email);
+        var subtitle = document.getElementById('mf-shop-request-product');
+        if (subtitle) subtitle.textContent = form.elements.product_name.value;
+        var authBox = modal.querySelector('.js-mf-shop-request-auth');
+        if (authBox) {
+          authBox.hidden = locked;
+          if (!locked) {
+            var urls = mfBuildAuthUrlsWithBackUrl();
+            var aLogin = authBox.querySelector('.js-mf-shop-login-link');
+            var aReg = authBox.querySelector('.js-mf-shop-register-link');
+            if (aLogin) aLogin.href = urls.login;
+            if (aReg) aReg.href = urls.register;
+          }
+        }
+        setRequestMessage('', false);
+        modal.hidden = false;
+        document.documentElement.classList.add('mf-shop-modal-open');
+        document.body.classList.add('mf-shop-modal-open');
+        setTimeout(function () {
+          try {
+            if (form.elements.comment) form.elements.comment.focus();
+          } catch (e2) {}
+        }, 0);
+      } catch (e1) {}
+    }
+
+    document.addEventListener('click', function (e) {
+      var a = e && e.target && e.target.closest ? e.target.closest('a.js-mf-request-price-auth-link') : null;
+      if (!a || !a.getAttribute('href')) return;
+      var modal = document.getElementById('mf-global-request-price-modal');
+      if (!modal || modal.hidden || !modal.contains(a)) return;
+      mfSaveShopRequestPriceResumeForAuth();
+    }, true);
+
+    setTimeout(mfTryResumeRequestPriceShop, 0);
 
     // Product detail: move the "small card" buy panel into the pay block (near gallery),
     // remove empty info blocks, and simplify tabs into a plain H2 heading.

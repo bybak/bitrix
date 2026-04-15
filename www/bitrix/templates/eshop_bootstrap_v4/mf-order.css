@@ -173,3 +173,39 @@
   border-color: rgba(0,0,0,.14);
 }
 
+/* Блок входа/регистрации (как в модалке «Запросить цену», mf-search-modal__auth) */
+.mf-order .mf-checkout-auth-top{
+  margin-bottom: 14px;
+}
+.mf-order .mf-search-modal__auth{
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.08);
+  background: #fafafa;
+}
+.mf-order .mf-search-modal__auth-text{
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(0,0,0,.75);
+}
+.mf-order .mf-search-modal__auth-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.mf-order .mf-search-modal__auth-btn{
+  font-weight: 800;
+  border-radius: 10px;
+}
+.mf-order .mf-search-modal__auth-btn:hover,
+.mf-order .mf-search-modal__auth-btn:focus{
+  background-color: #ebbd2f !important;
+  border-color: #ebbd2f !important;
+  color: #000 !important;
+}
+.mf-order .mf-search-modal__auth-btn:focus{
+  box-shadow: 0 0 0 3px rgba(235,189,47,.35);
+}
+

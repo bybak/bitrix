@@ -155,10 +155,11 @@ final class Edost
 			$name = trim((string)($tarif->name ?? ''));
 			$strah = (int)($tarif->strah ?? 0);
 
-			if ($id === '' || $price <= 0)
+			if ($id === '')
 			{
 				continue;
 			}
+			// Цена 0 допустима (акции, договорная доставка); иначе такие тарифы отбрасывались и список был пуст.
 
 			$offers[] = [
 				'id' => $id,
@@ -398,7 +399,21 @@ final class Tariffed extends Base
 				$companyFilter = trim((string)$this->getName());
 			}
 
-			$toCity = Edost::resolveCityNameRuByLocationCode($locationCode);
+			$toCityOverride = '';
+			try
+			{
+				$cityProp = $props->getItemByOrderPropertyCode('MF_EDOST_TO_CITY');
+				if ($cityProp)
+				{
+					$toCityOverride = trim((string)$cityProp->getValue());
+				}
+			}
+			catch (\Throwable $e)
+			{
+				$toCityOverride = '';
+			}
+
+			$toCity = $toCityOverride !== '' ? $toCityOverride : Edost::resolveCityNameRuByLocationCode($locationCode);
 			$insuranceMode = (string)($config['EDOST_INSURANCE'] ?? 'N');
 			$insurance = $insuranceMode === 'Y' ? $orderSum : Edost::defaultInsuranceRub();
 

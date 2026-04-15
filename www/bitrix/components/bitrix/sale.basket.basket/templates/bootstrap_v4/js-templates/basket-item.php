@@ -12,7 +12,7 @@ $usePriceInAdditionalColumn = in_array('PRICE', $arParams['COLUMNS_LIST']) && $a
 $useSumColumn = in_array('SUM', $arParams['COLUMNS_LIST']);
 $useActionColumn = in_array('DELETE', $arParams['COLUMNS_LIST']);
 
-$restoreColSpan = 2 + $usePriceInAdditionalColumn + $useSumColumn + $useActionColumn;
+$restoreColSpan = 3 + $usePriceInAdditionalColumn + $useSumColumn + $useActionColumn;
 
 $positionClassMap = array(
 	'left' => 'basket-item-label-left',
@@ -65,6 +65,13 @@ if (!empty($arParams['LABEL_PROP_POSITION']))
 			</td>
 		{{/SHOW_RESTORE}}
 		{{^SHOW_RESTORE}}
+			<td class="mf-cart-partial-select-cell">
+				{{#MF_PARTIAL_SELECTABLE}}
+					<label class="mf-cart-partial-select-label">
+						<input type="checkbox" class="mf-cart-partial-checkbox" data-entity="mf-cart-partial-checkbox" checked="checked" />
+					</label>
+				{{/MF_PARTIAL_SELECTABLE}}
+			</td>
 			<td class="basket-items-list-item-descriptions">
 				<div class="basket-items-list-item-descriptions-inner" id="basket-item-height-aligner-{{ID}}">
 					<?

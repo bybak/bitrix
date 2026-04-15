@@ -288,10 +288,64 @@
     fetchStoreMeta(cartRoot);
 
     cartRoot.addEventListener('click', function (e) {
-      var btn = e && e.target && e.target.closest ? e.target.closest('[data-entity="mf-cart-store-apply"]') : null;
-      if (!btn) return;
+      var storeBtn = e && e.target && e.target.closest ? e.target.closest('[data-entity="mf-cart-store-apply"]') : null;
+      if (storeBtn) {
+        e.preventDefault();
+        applyStoreChange(storeBtn);
+        return;
+      }
+
+      var partialBtn = e && e.target && e.target.closest ? e.target.closest('[data-entity="basket-checkout-selected-button"]') : null;
+      if (!partialBtn) return;
       e.preventDefault();
-      applyStoreChange(btn);
+
+      var ids = [];
+      var boxes = cartRoot.querySelectorAll('[data-entity="mf-cart-partial-checkbox"]');
+      for (var b = 0; b < boxes.length; b++) {
+        if (!boxes[b].checked) continue;
+        var row = boxes[b].closest ? boxes[b].closest('[data-entity="basket-item"]') : null;
+        var bid = row ? parseInt(row.getAttribute('data-id') || '0', 10) : 0;
+        if (bid) ids.push(bid);
+      }
+      if (!ids.length) {
+        alert('Отметьте хотя бы один товар для оформления.');
+        return;
+      }
+
+      if (partialBtn.disabled) return;
+      partialBtn.disabled = true;
+      var oldText = partialBtn.textContent;
+      partialBtn.textContent = 'Подготовка...';
+
+      var qs =
+        'sessid=' +
+        encodeURIComponent(BX.bitrix_sessid() || '') +
+        ids
+          .map(function (id) {
+            return '&selected_ids[]=' + encodeURIComponent(String(id));
+          })
+          .join('');
+
+      BX.ajax({
+        url: '/ajax/mf_cart_partial_checkout.php',
+        method: 'POST',
+        dataType: 'json',
+        data: qs,
+        onsuccess: function (resp) {
+          if (resp && resp.ok && resp.redirect) {
+            window.location.href = resp.redirect;
+            return;
+          }
+          alert((resp && resp.error) ? resp.error : 'Не удалось подготовить заказ');
+          partialBtn.disabled = false;
+          partialBtn.textContent = oldText;
+        },
+        onfailure: function () {
+          alert('Не удалось подготовить заказ');
+          partialBtn.disabled = false;
+          partialBtn.textContent = oldText;
+        },
+      });
     });
 
     // Basket UI re-renders via JS. Re-apply image patch on mutations.

@@ -5350,10 +5350,13 @@ class SaleOrderAjax extends \CBitrixComponent
 			!$USER->IsAuthorized()
 			&& $this->arParams['ALLOW_AUTO_REGISTER'] === 'N'
 			&& $this->arParams['MF_CUSTOM_GUEST_FLOW'] !== 'Y';
-		$result['MF_CHECKOUT'] = [
+		$existingMfCheckout = (isset($result['MF_CHECKOUT']) && is_array($result['MF_CHECKOUT']))
+			? $result['MF_CHECKOUT']
+			: [];
+		$result['MF_CHECKOUT'] = array_merge($existingMfCheckout, [
 			'ENABLED' => $this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y',
 			'MODE' => $checkoutMode,
-		];
+		]);
 		$result['SHOW_EMPTY_BASKET'] = $arResult['SHOW_EMPTY_BASKET'];
 		$result['AUTH'] = $arResult['AUTH'];
 		$result['SMS_AUTH'] = $arResult['SMS_AUTH'];

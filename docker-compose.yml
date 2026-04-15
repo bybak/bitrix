@@ -18,9 +18,12 @@ services:
     networks:
       - bitrix
 
+  # Локальный SMTP+веб-просмотр писем. На Apple Silicon у официального Mailhog нет arm64 —
+  # был warning linux/amd64 и возможны сбои. Mailpit — тот же сценарий (1025/8025), multi-arch.
+  # Письма НЕ уходят в интернет: смотреть http://localhost:8025
   mailhog:
-    image: mailhog/mailhog
-    container_name: bitrix_mailhog
+    image: axllent/mailpit:latest
+    container_name: bitrix_mailpit
     restart: unless-stopped
     ports:
       - "8025:8025"
