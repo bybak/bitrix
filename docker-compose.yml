@@ -39,8 +39,8 @@ services:
     restart: unless-stopped
     working_dir: /var/www/html
     user: www-data
-    env_file:
-      - ./.env
+    # env_file:
+    #   - ./.env
     environment:
       TZ: Europe/Moscow
       MF_UNF_ENABLED: "1"
