@@ -54,6 +54,7 @@ services:
       MF_UNF_TAXATION: "Не облагается (без НДС)"
     volumes:
       - ./www:/var/www/html
+      - /opt/mail_ingest/drop:/var/www/html/supplier_drop:ro
     depends_on:
       mysql:
         condition: service_healthy
