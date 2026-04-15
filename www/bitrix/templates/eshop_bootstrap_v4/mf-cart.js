@@ -121,6 +121,23 @@
     return ids;
   }
 
+  function mfDeliverySpbIconHtml(ok, title) {
+    var mod = ok ? 'ok' : 'bad';
+    var t = title || '';
+    var glyph = ok ? '\u2713' : '\u00D7';
+    return (
+      '<span class="mf-store-delivery-spb mf-store-delivery-spb--' +
+      mod +
+      '" title="' +
+      BX.util.htmlspecialchars(t) +
+      '" aria-label="' +
+      BX.util.htmlspecialchars(t) +
+      '"><span class="mf-store-delivery-spb__glyph" aria-hidden="true">' +
+      glyph +
+      '</span></span>'
+    );
+  }
+
   function ensureStoreMetaMount(item) {
     if (!item) return null;
     var info = item.querySelector('.basket-item-block-info');
@@ -144,6 +161,12 @@
     if (data.delivery_term) {
       html += '<div class="mf-cart-store-meta__line"><span class="mf-cart-store-meta__label">Срок доставки:</span><span class="mf-cart-store-meta__value">' + BX.util.htmlspecialchars(String(data.delivery_term)) + '</span></div>';
     }
+    if (typeof data.delivery_spb_ok !== 'undefined') {
+      html +=
+        '<div class="mf-cart-store-meta__line mf-cart-store-meta__line--delivery-spb"><span class="mf-cart-store-meta__label">Доставка:</span><span class="mf-cart-store-meta__value mf-cart-store-meta__value--delivery-spb">' +
+        mfDeliverySpbIconHtml(!!data.delivery_spb_ok, String(data.delivery_spb_title || '')) +
+        '</span></div>';
+    }
     if (data.can_switch && data.options && data.options.length > 1) {
       html += '<div class="mf-cart-store-meta__switch">';
       html += '<div class="mf-cart-store-meta__switch-title">Выбрать склад</div>';
@@ -155,6 +178,8 @@
         var label = String(opt.title || ('Склад #' + String(opt.store_id || '')));
         if (opt.price_fmt) label += ' • ' + String(opt.price_fmt);
         if (opt.delivery_term) label += ' • ' + String(opt.delivery_term);
+        if (opt.delivery_spb_ok === false) label += ' • СПб \u2717';
+        else if (opt.delivery_spb_ok === true) label += ' • СПб \u2713';
         html += '<option value="' + BX.util.htmlspecialchars(String(opt.store_id || '')) + '"' + (selected ? ' selected' : '') + '>' + BX.util.htmlspecialchars(label) + '</option>';
       }
       html += '</select>';

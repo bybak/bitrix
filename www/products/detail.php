@@ -244,6 +244,10 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 		}
 	}
 
+	$mfSingleExternal = ($elementId > 0
+		&& function_exists('mf_product_single_external_store_only')
+		&& mf_product_single_external_store_only($elementId));
+
 	if (!empty($storeAmounts))
 	{
 		$storeIds = array_keys($storeAmounts);
@@ -329,6 +333,7 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 					<tr>
 						<th>Склад</th>
 						<th>Срок доставки</th>
+						<th class="text-center mf-detail-stock-table__spb-col">Доставка</th>
 						<th class="text-right">Цена</th>
 						<th class="text-right">Остаток</th>
 						<th class="text-right"></th>
@@ -357,6 +362,18 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 							<td class="mf-detail-stock-table__delivery">
 								<?=htmlspecialcharsbx(function_exists('mf_store_delivery_term') ? mf_store_delivery_term((int)$sid) : '—')?>
 							</td>
+							<td class="text-center mf-detail-stock-table__spb">
+								<?php
+								if (function_exists('mf_store_delivery_spb_icon_html'))
+								{
+									echo mf_store_delivery_spb_icon_html((int)$sid);
+								}
+								else
+								{
+									echo '—';
+								}
+								?>
+							</td>
 							<td class="text-right">
 								<?php if ($storePrice !== null): ?>
 									<?=htmlspecialcharsbx(number_format((float)$storePrice, 2, '.', ' '))?> &#8381;
@@ -365,10 +382,18 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 								<?php endif; ?>
 							</td>
 							<td class="text-right">
-								<?=htmlspecialcharsbx((string)($amt))?>
+								<?php if ($mfSingleExternal): ?>
+									Под заказ
+								<?php else: ?>
+									<?=htmlspecialcharsbx((string)($amt))?>
+								<?php endif; ?>
 							</td>
 							<td class="text-right">
-								<?php if ($amt > 0 && $storePrice !== null): ?>
+								<?php
+								$mfRowExternal = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
+								$mfShowCartBtn = $storePrice !== null && ($amt > 0 || $mfSingleExternal || $mfRowExternal);
+								?>
+								<?php if ($mfShowCartBtn): ?>
 									<button
 										type="button"
 										class="btn btn-sm btn-warning js-mf-add-store"

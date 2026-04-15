@@ -77,18 +77,33 @@ if (function_exists('mf_min_price_from_available_stores'))
 
 // Force availability from store stocks (import writes per-store amounts).
 // We want: sum(store_amounts) > 0 => can buy; otherwise not.
+$mfChipOrderOnly = false;
 if (\CModule::IncludeModule('catalog'))
 {
 	$pid = (int)($actualItem['ID'] ?? 0);
 	if ($pid > 0)
 	{
 		$sum = 0.0;
-		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $pid], false, false, ['AMOUNT']);
-		while ($r = $rs->Fetch())
+		$clusterIds = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($pid)
+			: [$pid];
+		foreach ($clusterIds as $cid)
 		{
-			$sum += (float)($r['AMOUNT'] ?? 0);
+			$cid = (int)$cid;
+			if ($cid <= 0)
+			{
+				continue;
+			}
+			$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $cid], false, false, ['AMOUNT']);
+			while ($r = $rs->Fetch())
+			{
+				$sum += (float)($r['AMOUNT'] ?? 0);
+			}
 		}
 		$canBuy = ($sum > 0);
+		$mfChipOrderOnly = !$canBuy
+			&& function_exists('mf_product_single_external_store_only')
+			&& mf_product_single_external_store_only($pid);
 		$actualItem['CAN_BUY'] = $canBuy;
 		$item['CAN_BUY'] = $canBuy;
 	}
@@ -235,8 +250,8 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 						<?=-$price['PERCENT']?>%
 					</span>
 				<?php endif; ?>
-				<span class="mf-pcard__chip <?=$canBuy ? 'mf-pcard__chip--ok' : 'mf-pcard__chip--no'?>">
-					<?=$canBuy ? 'В наличии' : 'Нет в наличии'?>
+				<span class="mf-pcard__chip <?=$canBuy ? 'mf-pcard__chip--ok' : ($mfChipOrderOnly ? 'mf-pcard__chip--order' : 'mf-pcard__chip--no')?>">
+					<?php if ($canBuy): ?>В наличии<?php elseif ($mfChipOrderOnly): ?>Под заказ<?php else: ?>Нет в наличии<?php endif; ?>
 				</span>
 			</span>
 	<?php if ($itemHasDetailUrl): ?>

@@ -501,8 +501,8 @@ if (!function_exists('mf_ep_sync_catalog_qty_from_stores'))
 if (!function_exists('mf_ep_ensure_unit_if_zero_stock'))
 {
 	/**
-	 * Если на складе импорта остаток 0 или записи нет — ставим 1, чтобы витрина показывала склад при наличии цены.
-	 * Положительный остаток не уменьшаем.
+	 * Если на складе импорта остаток 0 или записи нет — фиксируем количество 0 (раньше подставлялась 1 «для витрины»).
+	 * Положительный остаток не трогаем.
 	 */
 	function mf_ep_ensure_unit_if_zero_stock(int $productId, int $storeId): void
 	{
@@ -535,14 +535,14 @@ if (!function_exists('mf_ep_ensure_unit_if_zero_stock'))
 
 		if ($rowId > 0)
 		{
-			\CCatalogStoreProduct::Update($rowId, ['AMOUNT' => 1.0]);
+			\CCatalogStoreProduct::Update($rowId, ['AMOUNT' => 0.0]);
 		}
 		else
 		{
 			$addId = \CCatalogStoreProduct::Add([
 				'PRODUCT_ID' => $productId,
 				'STORE_ID' => $storeId,
-				'AMOUNT' => 1.0,
+				'AMOUNT' => 0.0,
 			]);
 			if (!$addId && class_exists(\Bitrix\Catalog\StoreProductTable::class))
 			{
@@ -551,7 +551,7 @@ if (!function_exists('mf_ep_ensure_unit_if_zero_stock'))
 					$r = \Bitrix\Catalog\StoreProductTable::add([
 						'PRODUCT_ID' => $productId,
 						'STORE_ID' => $storeId,
-						'AMOUNT' => 1.0,
+						'AMOUNT' => 0.0,
 					]);
 					if (!$r->isSuccess())
 					{
@@ -1059,6 +1059,57 @@ if (!function_exists('mf_ep_store_is_external_warehouse'))
 		{
 			return false;
 		}
+	}
+}
+
+if (!function_exists('mf_store_delivery_spb_ui'))
+{
+	/**
+	 * Индикатор «доставка до склада СПб» для строки склада: внешний склад + UF «учитывать вес», иначе по правилам витрины.
+	 *
+	 * @return array{ok:bool,title:string}
+	 */
+	function mf_store_delivery_spb_ui(int $storeId): array
+	{
+		$storeId = (int)$storeId;
+		$titleOk = 'Доставка до склада СПб включена';
+		$titleBad = 'Доставка до склада СПб не включена';
+		if ($storeId <= 0)
+		{
+			return ['ok' => true, 'title' => $titleOk];
+		}
+
+		$external = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId);
+		if (!$external)
+		{
+			return ['ok' => true, 'title' => $titleOk];
+		}
+
+		$raw = function_exists('mf_ep_store_weight_uf_raw') ? mf_ep_store_weight_uf_raw($storeId) : ['use' => false];
+		if (!empty($raw['use']))
+		{
+			return ['ok' => true, 'title' => $titleOk];
+		}
+
+		return ['ok' => false, 'title' => $titleBad];
+	}
+}
+
+if (!function_exists('mf_store_delivery_spb_icon_html'))
+{
+	/**
+	 * Колонка «Доставка»: зелёная галочка или красный крестик в кружке + title для подсказки.
+	 */
+	function mf_store_delivery_spb_icon_html(int $storeId): string
+	{
+		$ui = mf_store_delivery_spb_ui($storeId);
+		$ok = !empty($ui['ok']);
+		$title = (string)($ui['title'] ?? '');
+		$mod = $ok ? 'ok' : 'bad';
+		$t = htmlspecialcharsbx($title);
+		$glyph = $ok ? '✓' : '×';
+
+		return '<span class="mf-store-delivery-spb mf-store-delivery-spb--'.$mod.'" title="'.$t.'" aria-label="'.$t.'"><span class="mf-store-delivery-spb__glyph" aria-hidden="true">'.$glyph.'</span></span>';
 	}
 }
 

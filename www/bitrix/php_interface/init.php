@@ -1322,6 +1322,67 @@ if (!function_exists('mf_catalog_product_cluster_ids'))
 	}
 }
 
+if (!function_exists('mf_product_distinct_store_ids_clustered'))
+{
+	/**
+	 * Уникальные STORE_ID по всем строкам b_catalog_store_product для кластера товара (родитель + SKU).
+	 */
+	function mf_product_distinct_store_ids_clustered(int $productId): array
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !class_exists(\CCatalogStoreProduct::class))
+		{
+			return [];
+		}
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('catalog'))
+		{
+			return [];
+		}
+
+		$clusterIds = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($productId)
+			: [$productId];
+		$seen = [];
+		foreach ($clusterIds as $cid)
+		{
+			$cid = (int)$cid;
+			if ($cid <= 0)
+			{
+				continue;
+			}
+			$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $cid], false, false, ['STORE_ID']);
+			while ($r = $rs->Fetch())
+			{
+				$sid = (int)($r['STORE_ID'] ?? 0);
+				if ($sid > 0)
+				{
+					$seen[$sid] = true;
+				}
+			}
+		}
+
+		return array_keys($seen);
+	}
+}
+
+if (!function_exists('mf_product_single_external_store_only'))
+{
+	/**
+	 * Ровно один склад в остатках и у него UF «Внешний склад» (mf_ep_store_is_external_warehouse).
+	 */
+	function mf_product_single_external_store_only(int $productId): bool
+	{
+		$ids = mf_product_distinct_store_ids_clustered($productId);
+		if (count($ids) !== 1)
+		{
+			return false;
+		}
+		$sid = (int)$ids[0];
+
+		return function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($sid);
+	}
+}
+
 if (!function_exists('mf_product_prices_by_group'))
 {
 	function mf_product_prices_by_group(int $productId): array
@@ -1553,7 +1614,7 @@ if (!function_exists('mf_store_delivery_term'))
 if (!function_exists('mf_product_available_stores_for_qty'))
 {
 	/**
-	 * @return array<int, array{store_id:int,title:string,code:string,xml_id:string,amount:float,price:float,price_fmt:string,delivery_term:string}>
+	 * @return array<int, array{store_id:int,title:string,code:string,xml_id:string,amount:float,price:float,price_fmt:string,delivery_term:string,delivery_spb_ok:bool,delivery_spb_title:string}>
 	 */
 	function mf_product_available_stores_for_qty(int $productId, float $qty = 1.0): array
 	{
@@ -1612,6 +1673,8 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 				$title = 'Склад #' . $storeId;
 			}
 
+			$spb = function_exists('mf_store_delivery_spb_ui') ? mf_store_delivery_spb_ui($storeId) : ['ok' => true, 'title' => 'Доставка до склада СПб включена'];
+
 			$out[] = [
 				'store_id' => $storeId,
 				'title' => $title,
@@ -1621,6 +1684,8 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 				'price' => (float)$price,
 				'price_fmt' => number_format((float)$price, 2, '.', ' ') . ' ₽',
 				'delivery_term' => function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : 'Срок уточнит менеджер',
+				'delivery_spb_ok' => !empty($spb['ok']),
+				'delivery_spb_title' => (string)($spb['title'] ?? ''),
 			];
 		}
 

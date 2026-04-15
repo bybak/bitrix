@@ -94,13 +94,17 @@ try
 			];
 		}
 
+		$spbTop = function_exists('mf_store_delivery_spb_ui') ? mf_store_delivery_spb_ui($currentStoreId) : ['ok' => true, 'title' => ''];
+
 		$result[(string)$basketItemId] = [
 			'basket_item_id' => $basketItemId,
 			'product_id' => $productId,
 			'quantity' => $qty,
 			'current_store_id' => $currentStoreId,
-			'current_store_title' => (string)($currentStore['title'] ?? ''),
-			'delivery_term' => (string)($currentStore['delivery_term'] ?? 'Срок уточнит менеджер'),
+			'current_store_title' => is_array($currentStore) ? (string)($currentStore['title'] ?? '') : '',
+			'delivery_term' => is_array($currentStore) ? (string)($currentStore['delivery_term'] ?? 'Срок уточнит менеджер') : 'Срок уточнит менеджер',
+			'delivery_spb_ok' => !empty($spbTop['ok']),
+			'delivery_spb_title' => (string)($spbTop['title'] ?? ''),
 			'options' => array_values($options),
 			'can_switch' => count($options) > 1,
 		];

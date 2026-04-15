@@ -206,6 +206,13 @@ $mfBasketStoreTerm = static function(array $item) use ($mfBasketPropByCodes): st
 	return '—';
 };
 
+$mfBasketStoreId = static function(array $item) use ($mfBasketPropByCodes): int
+{
+	$raw = $mfBasketPropByCodes($item, ['MF_STORE_ID']);
+
+	return (int)trim((string)$raw);
+};
+
 /** Полная строка выбранной eDost-доставки из комментария к заказу (до tarif_id). */
 $mfParseEdostFromComments = static function(string $comments): ?array
 {
@@ -541,6 +548,7 @@ else
 										<th>Наименование</th>
 										<th>Склад</th>
 										<th>Срок</th>
+										<th class="text-center">Доставка</th>
 										<th>Кол-во</th>
 										<th>Цена</th>
 										<th>Сумма</th>
@@ -556,6 +564,7 @@ else
 										$basketBrand = $mfBasketManufacturer($basketItem);
 										$basketStore = $mfBasketStoreTitle($basketItem);
 										$basketTerm = $mfBasketStoreTerm($basketItem);
+										$basketStoreId = $mfBasketStoreId($basketItem);
 										?>
 										<tr>
 											<td><?=htmlspecialcharsbx($basketBrand)?></td>
@@ -567,6 +576,16 @@ else
 											</td>
 											<td><?=htmlspecialcharsbx($basketStore)?></td>
 											<td><?=htmlspecialcharsbx($basketTerm)?></td>
+											<td class="text-center mf-order-items-table__spb"><?php
+											if ($basketStoreId > 0 && function_exists('mf_store_delivery_spb_icon_html'))
+											{
+												echo mf_store_delivery_spb_icon_html($basketStoreId);
+											}
+											else
+											{
+												echo '—';
+											}
+											?></td>
 											<td><?=htmlspecialcharsbx($basketQuantity !== '' ? $basketQuantity : '—')?></td>
 											<td><?=htmlspecialcharsbx($basketPriceText !== '' ? $basketPriceText : '—')?></td>
 											<td><strong><?=htmlspecialcharsbx($basketSumText !== '' ? $basketSumText : '—')?></strong></td>
