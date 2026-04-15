@@ -131,12 +131,11 @@ function mf_analogs_norm_brand(string $s): string
 }
 
 /**
- * Parse supplier CSV with header:
- *   Бренд;Артикул;Остаток;Цена;Картинки
+ * Parse supplier CSV with header (достаточно колонок Бренд и Артикул; прочие колонки игнорируются).
  *
  * Supports comment lines starting with "#".
  *
- * @return array<int, array{brand:string,article:string,stock:?float,price:?float,images:array<int,string>,raw:string}>
+ * @return array<int, array{brand:string,article:string,raw:string}>
  */
 function mf_analogs_parse_supplier_csv(string $text): array
 {
@@ -181,42 +180,9 @@ function mf_analogs_parse_supplier_csv(string $text): array
 			continue;
 		}
 
-		$stock = null;
-		$price = null;
-
-		$stockRaw = trim((string)($cols[$idx['Остаток'] ?? -1] ?? ''));
-		if ($stockRaw !== '' && is_numeric(str_replace(',', '.', $stockRaw)))
-		{
-			$stock = (float)str_replace(',', '.', $stockRaw);
-		}
-
-		$priceRaw = trim((string)($cols[$idx['Цена'] ?? -1] ?? ''));
-		if ($priceRaw !== '' && is_numeric(str_replace(',', '.', $priceRaw)))
-		{
-			$price = (float)str_replace(',', '.', $priceRaw);
-		}
-
-		$images = [];
-		$imgRaw = trim((string)($cols[$idx['Картинки'] ?? -1] ?? ''));
-		if ($imgRaw !== '')
-		{
-			$parts = preg_split('~\\s*,\\s*~', $imgRaw) ?: [];
-			foreach ($parts as $p)
-			{
-				$p = trim((string)$p);
-				if ($p !== '')
-				{
-					$images[] = $p;
-				}
-			}
-		}
-
 		$rows[] = [
 			'brand' => $brand,
 			'article' => $article,
-			'stock' => $stock,
-			'price' => $price,
-			'images' => $images,
 			'raw' => $line,
 		];
 	}
@@ -516,15 +482,13 @@ if ($requestMethod === 'POST' && check_bitrix_sessid())
 
 	$textUtf = mf_analogs_to_utf8($text);
 
-	// Autodetect supplier CSV by header.
+	// Autodetect supplier CSV by header (Бренд + Артикул).
 	$looksLikeSupplierCsv =
-		(stripos($textUtf, 'Бренд;') !== false && stripos($textUtf, ';Артикул') !== false)
-		|| (stripos($textUtf, 'Бренд') !== false && stripos($textUtf, 'Артикул') !== false && stripos($textUtf, 'Остаток') !== false);
+		(stripos($textUtf, 'Бренд') !== false && stripos($textUtf, 'Артикул') !== false);
 
 	$ids = [];
 	$notFound = [];
 	$matched = 0;
-	$metaByAnalog = [];
 	$created = 0;
 	$createMissing = ((string)($_POST['CREATE_MISSING'] ?? 'Y') === 'Y');
 
@@ -533,7 +497,7 @@ if ($requestMethod === 'POST' && check_bitrix_sessid())
 		$rows = mf_analogs_parse_supplier_csv($textUtf);
 		if (empty($rows))
 		{
-			$errors[] = 'CSV не распознан или пуст. Проверьте заголовок: Бренд;Артикул;Остаток;Цена;Картинки';
+			$errors[] = 'CSV не распознан или пуст. Нужны колонки: Бренд;Артикул';
 		}
 		else
 		{
@@ -542,7 +506,7 @@ if ($requestMethod === 'POST' && check_bitrix_sessid())
 				$aid = mf_analogs_find_product_id_by_brand_article($iblockId, (string)$row['brand'], (string)$row['article']);
 				if ((!$aid || $aid <= 0) && $createMissing)
 				{
-					$aid = mf_analogs_create_product_stub($iblockId, (string)$row['brand'], (string)$row['article'], (array)($row['images'] ?? []));
+					$aid = mf_analogs_create_product_stub($iblockId, (string)$row['brand'], (string)$row['article'], []);
 					if ($aid && $aid > 0)
 					{
 						$created++;
@@ -552,11 +516,6 @@ if ($requestMethod === 'POST' && check_bitrix_sessid())
 				{
 					$ids[] = (int)$aid;
 					$matched++;
-					$metaByAnalog[(int)$aid] = [
-						'stock' => $row['stock'],
-						'price' => $row['price'],
-						'images' => $row['images'],
-					];
 				}
 				else
 				{
@@ -596,42 +555,6 @@ if ($requestMethod === 'POST' && check_bitrix_sessid())
 		else
 		{
 			$res2 = mf_analogs_merge_for_product($elementId, $ids, $source);
-		}
-
-		// Save supplier metadata (stock/price/images) for directed (product -> analog) pairs.
-		if ($looksLikeSupplierCsv && !empty($metaByAnalog) && function_exists('mf_analogs_meta_upsert'))
-		{
-			foreach ($metaByAnalog as $aid => $m)
-			{
-				// only save for actually linked items
-				if (!in_array((int)$aid, $ids, true)) continue;
-				mf_analogs_meta_upsert(
-					$elementId,
-					(int)$aid,
-					isset($m['stock']) ? ($m['stock'] === null ? null : (float)$m['stock']) : null,
-					isset($m['price']) ? ($m['price'] === null ? null : (float)$m['price']) : null,
-					is_array($m['images'] ?? null) ? (array)$m['images'] : [],
-					$source,
-					'RUB'
-				);
-
-				// Also store images on the analog product itself (so its own detail page can show them).
-				$imgs = is_array($m['images'] ?? null) ? array_values(array_filter(array_map('trim', (array)$m['images']), static fn($s) => $s !== '')) : [];
-				if (!empty($imgs))
-				{
-					$has = false;
-					$rsP = \CIBlockElement::GetProperty($iblockId, (int)$aid, ['sort' => 'asc'], ['CODE' => 'MF_EXT_IMAGES']);
-					while ($pp = $rsP->Fetch())
-					{
-						$v = trim((string)($pp['VALUE'] ?? ''));
-						if ($v !== '') { $has = true; break; }
-					}
-					if (!$has)
-					{
-						\CIBlockElement::SetPropertyValuesEx((int)$aid, $iblockId, ['MF_EXT_IMAGES' => $imgs]);
-					}
-				}
-			}
 		}
 
 		$report = [
@@ -725,7 +648,7 @@ $contextMenu->Show();
 					<div style="margin-top:6px;color:#666;">
 						Поддерживается:
 						<ul style="margin:6px 0 0 18px;">
-							<li>CSV поставщика: <code>Бренд;Артикул;Остаток;Цена;Картинки</code> (каждая строка добавится как аналог к этому товару)</li>
+							<li>CSV поставщика: колонки <code>Бренд</code> и <code>Артикул</code> (разделитель <code>;</code>; каждая строка — аналог к этому товару)</li>
 							<li>Простой список: по одному значению на строку (ID/XML_ID/CODE/…)</li>
 						</ul>
 					</div>

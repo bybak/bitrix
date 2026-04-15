@@ -88,7 +88,6 @@ if ($backUrl !== '')
 (new \CAdminContextMenu($aContext))->Show();
 
 $analogIds = function_exists('mf_analogs_ids_for_product') ? mf_analogs_ids_for_product($elementId, 200) : [];
-$metaMap = function_exists('mf_analogs_meta_map_for_product') ? mf_analogs_meta_map_for_product($elementId, $analogIds) : [];
 $analogs = [];
 if (!empty($analogIds))
 {
@@ -125,8 +124,6 @@ if (!empty($analogIds))
 				<td class="adm-list-table-cell">Название</td>
 				<td class="adm-list-table-cell">Бренд</td>
 				<td class="adm-list-table-cell">Артикул</td>
-				<td class="adm-list-table-cell">Остаток</td>
-				<td class="adm-list-table-cell">Цена</td>
 				<td class="adm-list-table-cell" style="width:1%;">Действия</td>
 			</tr>
 			</thead>
@@ -138,9 +135,6 @@ if (!empty($analogIds))
 				$code = is_array($row) ? (string)($row['CODE'] ?? '') : '';
 				$brand = is_array($row) ? (string)($row['PROPERTY_MF_BRAND_VALUE'] ?? '') : '';
 				$article = is_array($row) ? (string)($row['PROPERTY_CML2_ARTICLE_VALUE'] ?? '') : '';
-				$m = $metaMap[(int)$aid] ?? null;
-				$mStock = is_array($m) ? ($m['stock'] ?? null) : null;
-				$mPrice = is_array($m) ? ($m['price'] ?? null) : null;
 				$edit = 'iblock_element_edit.php?lang=' . urlencode((string)LANGUAGE_ID) . '&IBLOCK_ID=' . $iblockId . '&type=catalog&ID=' . (int)$aid . '&WF=Y';
 				$del = $APPLICATION->GetCurPageParam('action=delete&analog_id=' . (int)$aid . '&sessid=' . bitrix_sessid(), ['action', 'analog_id', 'sessid']);
 				?>
@@ -154,12 +148,6 @@ if (!empty($analogIds))
 					</td>
 					<td class="adm-list-table-cell"><?= mf_analogs_escape($brand) ?></td>
 					<td class="adm-list-table-cell"><?= mf_analogs_escape($article) ?></td>
-					<td class="adm-list-table-cell">
-						<?php if ($mStock !== null): ?><?= mf_analogs_escape((string)$mStock) ?><?php else: ?>—<?php endif; ?>
-					</td>
-					<td class="adm-list-table-cell">
-						<?php if ($mPrice !== null): ?><?= mf_analogs_escape(number_format((float)$mPrice, 2, '.', ' ')) ?><?php else: ?>—<?php endif; ?>
-					</td>
 					<td class="adm-list-table-cell">
 						<a href="<?= mf_analogs_escape($del) ?>" onclick="return confirm('Удалить связь аналога?')">Удалить</a>
 					</td>
