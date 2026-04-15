@@ -1,0 +1,1306 @@
+<?php
+
+/**
+ * Внешние прайсы: курсы ЦБ (кэш), матчинг товара, пересчёт BASE, обнуление, наценка по весу.
+ */
+
+declare(strict_types=1);
+
+use Bitrix\Main\Application;
+use Bitrix\Main\Config\Option;
+use Bitrix\Main\Loader;
+
+if (!function_exists('mf_ep_invalidate_catalog_price_group_cache'))
+{
+	/**
+	 * После создания типа цены (CCatalogGroup::Add) кэш GroupTable::getList (TTL сутки) и статический
+	 * кэш Catalog\Model\Price могут не содержать новый CATALOG_GROUP_ID — CPrice::Add тогда возвращает false.
+	 */
+	function mf_ep_invalidate_catalog_price_group_cache(): void
+	{
+		if (class_exists(\Bitrix\Catalog\Model\Price::class) && method_exists(\Bitrix\Catalog\Model\Price::class, 'clearSettings'))
+		{
+			\Bitrix\Catalog\Model\Price::clearSettings();
+		}
+		if (class_exists(\Bitrix\Catalog\GroupTable::class))
+		{
+			\Bitrix\Catalog\GroupTable::cleanCache();
+		}
+	}
+}
+
+if (!function_exists('mf_ep_norm_article'))
+{
+	function mf_ep_norm_article(string $s): string
+	{
+		$s = mb_strtoupper(trim($s));
+		$s = preg_replace('~[^A-Z0-9]+~', '', $s) ?? '';
+
+		return $s;
+	}
+}
+
+if (!function_exists('mf_ep_norm_brand'))
+{
+	function mf_ep_norm_brand(string $s): string
+	{
+		$s = mb_strtoupper(trim($s));
+		$s = str_replace('Ё', 'Е', $s);
+		$s = preg_replace('~[^A-ZА-Я0-9]+~u', '', $s) ?? '';
+
+		return $s;
+	}
+}
+
+if (!function_exists('mf_ep_make_uniq_key'))
+{
+	function mf_ep_make_uniq_key(string $articleNorm, string $brandNorm): string
+	{
+		$articleNorm = trim($articleNorm);
+		$brandNorm = trim($brandNorm);
+		if ($brandNorm === '')
+		{
+			$brandNorm = 'UNKNOWNBRAND';
+		}
+
+		return $articleNorm . '_' . $brandNorm;
+	}
+}
+
+if (!function_exists('mf_ep_find_product'))
+{
+	/**
+	 * Поиск товара каталога (как mf_update_supplier_stock / findCanonicalProductIdByArticleBrand).
+	 */
+	function mf_ep_find_product(int $iblockId, string $articleNorm, string $brandRaw, string $brandNorm): ?int
+	{
+		$articleNorm = trim($articleNorm);
+		$brandRaw = trim($brandRaw);
+		$brandNorm = trim($brandNorm);
+		if ($articleNorm === '' || !class_exists(\CIBlockElement::class))
+		{
+			return null;
+		}
+
+		$filter = [
+			'IBLOCK_ID' => $iblockId,
+			'=PROPERTY_MF_ARTICLE_NORM' => $articleNorm,
+			'!PROPERTY_MF_IS_REDIRECT' => 'Y',
+		];
+
+		$brandProvided = ($brandNorm !== '' || $brandRaw !== '');
+
+		if ($brandProvided && $brandNorm !== '')
+		{
+			$uniqKey = mf_ep_make_uniq_key($articleNorm, $brandNorm);
+			$r = \CIBlockElement::GetList(
+				[],
+				$filter + ['=PROPERTY_MF_UNIQ_KEY' => $uniqKey],
+				false,
+				['nTopCount' => 1],
+				['ID']
+			)->Fetch();
+			if ($r && (int)$r['ID'] > 0)
+			{
+				return (int)$r['ID'];
+			}
+		}
+
+		if ($brandNorm !== '')
+		{
+			$r = \CIBlockElement::GetList(
+				[],
+				$filter + ['%PROPERTY_MF_BRAND_NORM' => $brandNorm],
+				false,
+				['nTopCount' => 1],
+				['ID']
+			)->Fetch();
+			if ($r && (int)$r['ID'] > 0)
+			{
+				return (int)$r['ID'];
+			}
+		}
+
+		if ($brandRaw !== '')
+		{
+			$r = \CIBlockElement::GetList(
+				[],
+				$filter + ['%PROPERTY_MF_BRAND' => $brandRaw],
+				false,
+				['nTopCount' => 1],
+				['ID']
+			)->Fetch();
+			if ($r && (int)$r['ID'] > 0)
+			{
+				return (int)$r['ID'];
+			}
+		}
+
+		if ($brandProvided)
+		{
+			return null;
+		}
+
+		$r = \CIBlockElement::GetList(
+			[],
+			$filter,
+			false,
+			['nTopCount' => 1],
+			['ID']
+		)->Fetch();
+
+		return ($r && (int)$r['ID'] > 0) ? (int)$r['ID'] : null;
+	}
+}
+
+if (!function_exists('mf_ep_get_or_create_price_group'))
+{
+	function mf_ep_get_or_create_price_group(string $storeXmlId, string $titleFallback, bool $create): int
+	{
+		$name = mb_strtoupper(trim($storeXmlId));
+		if ($name === '')
+		{
+			return 0;
+		}
+
+		if (function_exists('mf_catalog_group_id_by_store_xml_candidates'))
+		{
+			$found = mf_catalog_group_id_by_store_xml_candidates($storeXmlId);
+			if ($found > 0)
+			{
+				return $found;
+			}
+		}
+		else
+		{
+			$rs = \CCatalogGroup::GetList([], ['=NAME' => $name], false, false, ['ID', 'NAME']);
+			if ($r = $rs->Fetch())
+			{
+				return (int)$r['ID'];
+			}
+		}
+
+		if (!$create)
+		{
+			return 0;
+		}
+
+		$cg = new \CCatalogGroup();
+		$id = $cg->Add([
+			'NAME' => $name,
+			'BASE' => 'N',
+			'SORT' => 2000,
+			'USER_GROUP' => [2],
+			'USER_GROUP_BUY' => [2],
+			'LANG' => [
+				'ru' => ['NAME' => $titleFallback],
+				'en' => ['NAME' => $titleFallback],
+			],
+		]);
+		if (!$id)
+		{
+			return 0;
+		}
+
+		mf_ep_invalidate_catalog_price_group_cache();
+
+		return (int)$id;
+	}
+}
+
+if (!function_exists('mf_ep_resolve_catalog_trade_product_id'))
+{
+	/**
+	 * Для товара с торговыми предложениями (TYPE_SKU) цены и остатки в продаже ведутся на SKU (оффер),
+	 * а mf_ep_find_product возвращает элемент инфоблока — часто родителя. Пишем RAW на первый оффер.
+	 */
+	function mf_ep_resolve_catalog_trade_product_id(int $elementId): int
+	{
+		$elementId = (int)$elementId;
+		if ($elementId <= 0)
+		{
+			return 0;
+		}
+		if (!class_exists(Loader::class) || !Loader::includeModule('catalog') || !class_exists(\Bitrix\Catalog\ProductTable::class))
+		{
+			return $elementId;
+		}
+
+		$row = \Bitrix\Catalog\ProductTable::getRow([
+			'filter' => ['=ID' => $elementId],
+			'select' => ['TYPE'],
+		]);
+		if (!$row)
+		{
+			return $elementId;
+		}
+
+		if ((int)($row['TYPE'] ?? 0) !== \Bitrix\Catalog\ProductTable::TYPE_SKU)
+		{
+			return $elementId;
+		}
+
+		if (!class_exists(\CCatalogSKU::class))
+		{
+			return $elementId;
+		}
+
+		if (class_exists(Loader::class))
+		{
+			Loader::includeModule('iblock');
+		}
+
+		$iblockId = (int)\CIBlockElement::GetIBlockByID($elementId);
+		if ($iblockId <= 0)
+		{
+			return $elementId;
+		}
+
+		$list = \CCatalogSKU::getOffersList($elementId, $iblockId, [], [], [], [], ['ID' => 'ASC']);
+		if (empty($list[$elementId]) || !is_array($list[$elementId]))
+		{
+			return $elementId;
+		}
+
+		$first = reset($list[$elementId]);
+		$oid = (int)($first['ID'] ?? 0);
+
+		return $oid > 0 ? $oid : $elementId;
+	}
+}
+
+if (!function_exists('mf_ep_set_raw_price'))
+{
+	/**
+	 * @return bool true, если запись/обновление/удаление прошли без ошибки API
+	 */
+	function mf_ep_set_raw_price(int $productId, int $priceGroupId, float $price): bool
+	{
+		$productId = (int)$productId;
+		$priceGroupId = (int)$priceGroupId;
+		if ($productId <= 0 || $priceGroupId <= 0)
+		{
+			return false;
+		}
+
+		$apply = static function (int $productId, int $priceGroupId, float $price): bool {
+			if ($price <= 0)
+			{
+				if (class_exists(\Bitrix\Catalog\PriceTable::class))
+				{
+					$rs = \Bitrix\Catalog\PriceTable::getList([
+						'filter' => ['=PRODUCT_ID' => $productId, '=CATALOG_GROUP_ID' => $priceGroupId],
+						'select' => ['ID'],
+					]);
+					$ok = true;
+					while ($row = $rs->fetch())
+					{
+						$del = \Bitrix\Catalog\PriceTable::delete((int)$row['ID']);
+						if (!$del->isSuccess())
+						{
+							$ok = false;
+						}
+					}
+
+					return $ok;
+				}
+
+				$rs = \CPrice::GetList(
+					[],
+					['PRODUCT_ID' => $productId, 'CATALOG_GROUP_ID' => $priceGroupId],
+					false,
+					false,
+					['ID']
+				);
+				while ($p = $rs->Fetch())
+				{
+					\CPrice::Delete((int)$p['ID']);
+				}
+
+				return true;
+			}
+
+			$rs = \CPrice::GetList(
+				[],
+				['PRODUCT_ID' => $productId, 'CATALOG_GROUP_ID' => $priceGroupId],
+				false,
+				false,
+				['ID']
+			);
+			if ($p = $rs->Fetch())
+			{
+				$res = \CPrice::Update((int)$p['ID'], ['PRICE' => $price, 'CURRENCY' => 'RUB']);
+
+				return $res !== false;
+			}
+
+			$addId = \CPrice::Add([
+				'PRODUCT_ID' => $productId,
+				'CATALOG_GROUP_ID' => $priceGroupId,
+				'PRICE' => $price,
+				'CURRENCY' => 'RUB',
+			]);
+
+			return $addId !== false && (int)$addId > 0;
+		};
+
+		$ok = $apply($productId, $priceGroupId, $price);
+		if (!$ok && $price > 0)
+		{
+			mf_ep_invalidate_catalog_price_group_cache();
+			$ok = $apply($productId, $priceGroupId, $price);
+		}
+
+		return $ok;
+	}
+}
+
+if (!function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
+{
+	/**
+	 * Записывает RAW в b_catalog_price (поля PRODUCT_ID, CATALOG_GROUP_ID, PRICE, CURRENCY) для всех
+	 * связанных позиций каталога: элемент из mf_ep_find_product (карточка в URL) + офферы SKU + торговый ID.
+	 * Иначе цена могла оказаться только на оффере, а остаток на родителе — mf_calc_store_price не находил RAW.
+	 */
+	/**
+	 * @return int число неудачных mf_ep_set_raw_price по кластеру (для статистики импорта)
+	 */
+	function mf_ep_set_raw_price_for_catalog_cluster(int $foundElementId, int $priceGroupId, float $price): int
+	{
+		$foundElementId = (int)$foundElementId;
+		$priceGroupId = (int)$priceGroupId;
+		if ($foundElementId <= 0 || $priceGroupId <= 0)
+		{
+			return 0;
+		}
+
+		$ids = [$foundElementId];
+		if (function_exists('mf_catalog_product_cluster_ids'))
+		{
+			$cluster = mf_catalog_product_cluster_ids($foundElementId);
+			if (!empty($cluster))
+			{
+				$ids = $cluster;
+			}
+		}
+		if (function_exists('mf_ep_resolve_catalog_trade_product_id'))
+		{
+			$trade = mf_ep_resolve_catalog_trade_product_id($foundElementId);
+			if ($trade > 0)
+			{
+				$ids[] = $trade;
+			}
+		}
+
+		$ids = array_values(array_unique(array_filter($ids, static fn($v) => (int)$v > 0)));
+		$fail = 0;
+		foreach ($ids as $productId)
+		{
+			if (!mf_ep_set_raw_price((int)$productId, $priceGroupId, $price))
+			{
+				$fail++;
+			}
+		}
+
+		return $fail;
+	}
+}
+
+if (!function_exists('mf_ep_recalc_base_one'))
+{
+	/**
+	 * BASE = минимум наценок по складам с остатком > 0 (как при импорте поставщика).
+	 */
+	function mf_ep_recalc_base_one(int $productId): void
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !function_exists('mf_supplier_store_to_price_group'))
+		{
+			return;
+		}
+
+		$storeToGroup = mf_supplier_store_to_price_group();
+		if (empty($storeToGroup))
+		{
+			return;
+		}
+
+		$prices = [];
+		if (class_exists(\CPrice::class))
+		{
+			$rsP = \CPrice::GetList([], ['PRODUCT_ID' => $productId], false, false, ['CATALOG_GROUP_ID', 'PRICE']);
+			while ($p = $rsP->Fetch())
+			{
+				$prices[(int)$p['CATALOG_GROUP_ID']] = (float)$p['PRICE'];
+			}
+		}
+		$min = null;
+
+		$rsS = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId], false, false, ['STORE_ID', 'AMOUNT']);
+		while ($sp = $rsS->Fetch())
+		{
+			$storeId = (int)$sp['STORE_ID'];
+			$amount = (float)$sp['AMOUNT'];
+			if ($amount <= 0)
+			{
+				continue;
+			}
+			if (!isset($storeToGroup[$storeId]))
+			{
+				continue;
+			}
+			$gid = (int)$storeToGroup[$storeId];
+			$raw = (float)($prices[$gid] ?? 0);
+			if ($raw <= 0)
+			{
+				continue;
+			}
+			$pct = function_exists('mf_store_markup_pct') ? mf_store_markup_pct($storeId) : 0.0;
+			$computed = function_exists('mf_apply_markup') ? mf_apply_markup($raw, $pct) : $raw;
+			if ($computed <= 0)
+			{
+				continue;
+			}
+			if ($min === null || $computed < $min)
+			{
+				$min = $computed;
+			}
+		}
+
+		if ($min !== null && $min > 0)
+		{
+			\CPrice::SetBasePrice($productId, $min, 'RUB');
+		}
+	}
+}
+
+if (!function_exists('mf_ep_sync_catalog_qty_from_stores'))
+{
+	function mf_ep_sync_catalog_qty_from_stores(int $productId): void
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !class_exists(\CCatalogStoreProduct::class) || !class_exists(\CCatalogProduct::class))
+		{
+			return;
+		}
+
+		$sum = 0.0;
+		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId], false, false, ['AMOUNT']);
+		while ($r = $rs->Fetch())
+		{
+			$sum += (float)($r['AMOUNT'] ?? 0);
+		}
+
+		\CCatalogProduct::Update($productId, [
+			'QUANTITY' => $sum,
+			'AVAILABLE' => ($sum > 0 ? 'Y' : 'N'),
+		]);
+	}
+}
+
+if (!function_exists('mf_ep_ensure_unit_if_zero_stock'))
+{
+	/**
+	 * Если на складе импорта остаток 0 или записи нет — ставим 1, чтобы витрина показывала склад при наличии цены.
+	 * Положительный остаток не уменьшаем.
+	 */
+	function mf_ep_ensure_unit_if_zero_stock(int $productId, int $storeId): void
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		if ($productId <= 0 || $storeId <= 0 || !class_exists(\CCatalogStoreProduct::class))
+		{
+			return;
+		}
+
+		$rowId = 0;
+		$amount = 0.0;
+		$rs = \CCatalogStoreProduct::GetList(
+			[],
+			['PRODUCT_ID' => $productId, 'STORE_ID' => $storeId],
+			false,
+			false,
+			['ID', 'AMOUNT']
+		);
+		if ($row = $rs->Fetch())
+		{
+			$rowId = (int)$row['ID'];
+			$amount = (float)($row['AMOUNT'] ?? 0);
+		}
+
+		if ($amount > 0)
+		{
+			return;
+		}
+
+		if ($rowId > 0)
+		{
+			\CCatalogStoreProduct::Update($rowId, ['AMOUNT' => 1.0]);
+		}
+		else
+		{
+			$addId = \CCatalogStoreProduct::Add([
+				'PRODUCT_ID' => $productId,
+				'STORE_ID' => $storeId,
+				'AMOUNT' => 1.0,
+			]);
+			if (!$addId && class_exists(\Bitrix\Catalog\StoreProductTable::class))
+			{
+				try
+				{
+					$r = \Bitrix\Catalog\StoreProductTable::add([
+						'PRODUCT_ID' => $productId,
+						'STORE_ID' => $storeId,
+						'AMOUNT' => 1.0,
+					]);
+					if (!$r->isSuccess())
+					{
+						// оставляем как есть — остаток не создан
+					}
+				}
+				catch (\Throwable $e)
+				{
+					// ignore
+				}
+			}
+		}
+	}
+}
+
+if (!function_exists('mf_ep_cbr_fetch_rates'))
+{
+	/**
+	 * @return array{USD: float, EUR: float}|null курс: рублей за 1 единицу валюты
+	 */
+	function mf_ep_cbr_fetch_rates(): ?array
+	{
+		$date = date('d/m/Y');
+		$url = 'https://www.cbr.ru/scripts/XML_daily.asp?date_req=' . rawurlencode($date);
+		$ctx = stream_context_create([
+			'http' => [
+				'timeout' => 15,
+				'header' => "User-Agent: BitrixMF/1.0\r\n",
+			],
+			'ssl' => [
+				'verify_peer' => true,
+				'verify_peer_name' => true,
+			],
+		]);
+		$xmlStr = @file_get_contents($url, false, $ctx);
+		if ((!is_string($xmlStr) || $xmlStr === '') && function_exists('curl_init'))
+		{
+			$ch = curl_init($url);
+			if ($ch !== false)
+			{
+				curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+				curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+				curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+				curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+				curl_setopt($ch, CURLOPT_HTTPHEADER, ['User-Agent: BitrixMF/1.0']);
+				$xmlStr = (string)curl_exec($ch);
+				curl_close($ch);
+			}
+		}
+		if (!is_string($xmlStr) || $xmlStr === '')
+		{
+			return null;
+		}
+
+		$xml = @simplexml_load_string($xmlStr);
+		if ($xml === false)
+		{
+			return null;
+		}
+
+		$out = ['USD' => 0.0, 'EUR' => 0.0];
+		foreach ($xml->Valute ?? [] as $v)
+		{
+			$code = (string)($v->CharCode ?? '');
+			if ($code !== 'USD' && $code !== 'EUR')
+			{
+				continue;
+			}
+			$nominal = (float)str_replace(',', '.', (string)($v->Nominal ?? '1'));
+			if ($nominal <= 0)
+			{
+				$nominal = 1.0;
+			}
+			$val = (float)str_replace(',', '.', (string)($v->Value ?? '0'));
+			if ($val <= 0)
+			{
+				continue;
+			}
+			$out[$code] = round($val / $nominal, 6);
+		}
+
+		if ($out['USD'] <= 0 || $out['EUR'] <= 0)
+		{
+			return null;
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_ep_get_cbr_rates_cached'))
+{
+	/**
+	 * Курсы ЦБ с кэшем (по умолчанию обновление не чаще раза в ~23 ч).
+	 *
+	 * @return array{USD: float, EUR: float}
+	 */
+	function mf_ep_get_cbr_rates_cached(bool $forceRefresh = false): array
+	{
+		$maxAge = 82800;
+		if (class_exists(Option::class))
+		{
+			try
+			{
+				$at = (int)Option::get('main', 'mf_cbr_rates_at', '0');
+				$json = (string)Option::get('main', 'mf_cbr_rates_json', '');
+				if (!$forceRefresh && $at > 0 && (time() - $at) < $maxAge && $json !== '')
+				{
+					$d = json_decode($json, true);
+					if (is_array($d) && isset($d['USD'], $d['EUR'])
+						&& (float)$d['USD'] > 0 && (float)$d['EUR'] > 0)
+					{
+						return ['USD' => (float)$d['USD'], 'EUR' => (float)$d['EUR']];
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		$fresh = mf_ep_cbr_fetch_rates();
+		if ($fresh === null)
+		{
+			try
+			{
+				$json = (string)Option::get('main', 'mf_cbr_rates_json', '');
+				$d = json_decode($json, true);
+				if (is_array($d) && isset($d['USD'], $d['EUR']))
+				{
+					return ['USD' => (float)$d['USD'], 'EUR' => (float)$d['EUR']];
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+
+			throw new RuntimeException('Не удалось получить курсы USD/EUR с сайта ЦБ РФ.');
+		}
+
+		if (class_exists(Option::class))
+		{
+			try
+			{
+				Option::set('main', 'mf_cbr_rates_json', json_encode($fresh, JSON_UNESCAPED_UNICODE));
+				Option::set('main', 'mf_cbr_rates_at', (string)time());
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		return $fresh;
+	}
+}
+
+if (!function_exists('mf_ep_bitrix_convert_to_rub'))
+{
+	/**
+	 * Перевод в базовую валюту сайта через модуль currency (курсы из админки Bitrix).
+	 *
+	 * @return float|null null если модуля нет или курс не задан / нулевой
+	 */
+	function mf_ep_bitrix_convert_to_rub(float $amount, string $currencyCode): ?float
+	{
+		$c = mb_strtoupper(trim($currencyCode));
+		if ($c === 'RUB' || $c === 'RUR' || $c === '')
+		{
+			return round($amount, 2);
+		}
+
+		if (!Loader::includeModule('currency') || !class_exists(\CCurrencyRates::class))
+		{
+			return null;
+		}
+
+		$base = 'RUB';
+		if (class_exists(\CCurrency::class))
+		{
+			$b = (string)\CCurrency::GetBaseCurrency();
+			if ($b !== '')
+			{
+				$base = $b;
+			}
+		}
+		elseif (class_exists(\Bitrix\Currency\CurrencyManager::class))
+		{
+			try
+			{
+				$b = (string)\Bitrix\Currency\CurrencyManager::getBaseCurrency();
+				if ($b !== '')
+				{
+					$base = $b;
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// keep RUB
+			}
+		}
+
+		$r = \CCurrencyRates::ConvertCurrency($amount, $c, $base);
+		if (!is_finite($r) || (float)$r <= 0)
+		{
+			return null;
+		}
+
+		return round((float)$r, 2);
+	}
+}
+
+if (!function_exists('mf_ep_cbr_fallback_disabled'))
+{
+	/**
+	 * Опция main.mf_external_price_no_cbr = Y — не обращаться к API ЦБ, только курсы Bitrix.
+	 */
+	function mf_ep_cbr_fallback_disabled(): bool
+	{
+		if (!class_exists(Option::class))
+		{
+			return false;
+		}
+		try
+		{
+			return Option::get('main', 'mf_external_price_no_cbr', 'N') === 'Y';
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_ep_convert_to_rub'))
+{
+	/**
+	 * Сначала курс из модуля «Валюты» (Настройки → Валюты → Курсы валют).
+	 * Для USD/EUR при отсутствии курса в БД — опционально подстановка по API ЦБ (если не отключено mf_external_price_no_cbr).
+	 */
+	function mf_ep_convert_to_rub(float $amount, string $currencyCode): float
+	{
+		$c = mb_strtoupper(trim($currencyCode));
+		if ($c === 'RUB' || $c === 'RUR' || $c === '')
+		{
+			return round($amount, 2);
+		}
+
+		if (abs($amount) < 1e-12)
+		{
+			return 0.0;
+		}
+
+		$bitrix = mf_ep_bitrix_convert_to_rub($amount, $c);
+		if ($bitrix !== null && $bitrix > 0)
+		{
+			return $bitrix;
+		}
+
+		if (($c === 'USD' || $c === 'EUR') && !mf_ep_cbr_fallback_disabled())
+		{
+			$rates = mf_ep_get_cbr_rates_cached(false);
+
+			return round($amount * (float)$rates[$c], 2);
+		}
+
+		throw new RuntimeException(
+			'Не задан курс ' . $c . ' к рублю в модуле валют Bitrix '
+			. '(Настройки → Настройки продукта → Настройки модулей → Валюты → курсы валют). '
+			. 'Либо включите резервный курс ЦБ: удалите в main опции mf_external_price_no_cbr.'
+		);
+	}
+}
+
+if (!function_exists('mf_ep_product_weight_kg'))
+{
+	/**
+	 * Масса позиции (кг) = вес единицы × количество; учёт sale weight_koef как в оформлении заказа.
+	 */
+	function mf_ep_product_weight_kg(int $productId, float $qty): float
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || $qty <= 0)
+		{
+			return 0.0;
+		}
+
+		if (!class_exists(\CCatalogProduct::class))
+		{
+			return 0.0;
+		}
+
+		$row = \CCatalogProduct::GetByID($productId);
+		if (!is_array($row))
+		{
+			return 0.0;
+		}
+
+		$w = (float)($row['WEIGHT'] ?? 0);
+		if ($w <= 0)
+		{
+			return 0.0;
+		}
+
+		$koef = 1.0;
+		if (class_exists(Option::class))
+		{
+			try
+			{
+				$koef = (float)Option::get('sale', 'weight_koef', 1);
+			}
+			catch (\Throwable $e)
+			{
+				$koef = 1.0;
+			}
+		}
+		if ($koef <= 0)
+		{
+			$koef = 1.0;
+		}
+
+		return ($w * $qty) / $koef;
+	}
+}
+
+if (!function_exists('mf_ep_store_weight_uf_raw'))
+{
+	/**
+	 * Значения UF склада как в базе (для админки / отображения).
+	 * Для расчёта доплаты см. mf_ep_store_weight_fields — там «вкл.» учитывается только при rub_per_kg > 0.
+	 *
+	 * @return array{use: bool, rub_per_kg: float, min_rub: float}
+	 */
+	function mf_ep_store_weight_uf_raw(int $storeId): array
+	{
+		$storeId = (int)$storeId;
+		if ($storeId <= 0)
+		{
+			return ['use' => false, 'rub_per_kg' => 0.0, 'min_rub' => 0.0];
+		}
+
+		global $USER_FIELD_MANAGER;
+		if (!is_object($USER_FIELD_MANAGER) || !class_exists(\Bitrix\Catalog\StoreTable::class))
+		{
+			return ['use' => false, 'rub_per_kg' => 0.0, 'min_rub' => 0.0];
+		}
+
+		try
+		{
+			$ufs = $USER_FIELD_MANAGER->GetUserFields(\Bitrix\Catalog\StoreTable::getUfId(), $storeId);
+			$u = $ufs['UF_MF_EXT_WEIGHT_USE']['VALUE'] ?? '';
+			if (is_array($u))
+			{
+				$u = reset($u);
+			}
+			$use = ($u === 1 || $u === '1' || $u === true || $u === 'Y' || $u === 'y');
+
+			$rp = $ufs['UF_MF_EXT_WEIGHT_RUB_PER_KG']['VALUE'] ?? 0;
+			if (is_array($rp))
+			{
+				$rp = reset($rp);
+			}
+			$rubPerKg = (float)str_replace(',', '.', (string)$rp);
+
+			$mn = $ufs['UF_MF_EXT_WEIGHT_MIN_RUB']['VALUE'] ?? 0;
+			if (is_array($mn))
+			{
+				$mn = reset($mn);
+			}
+			$minRub = (float)str_replace(',', '.', (string)$mn);
+
+			return [
+				'use' => $use,
+				'rub_per_kg' => $rubPerKg,
+				'min_rub' => max(0.0, $minRub),
+			];
+		}
+		catch (\Throwable $e)
+		{
+			return ['use' => false, 'rub_per_kg' => 0.0, 'min_rub' => 0.0];
+		}
+	}
+}
+
+if (!function_exists('mf_ep_store_weight_fields'))
+{
+	function mf_ep_store_weight_fields(int $storeId): array
+	{
+		$r = mf_ep_store_weight_uf_raw($storeId);
+
+		return [
+			'use' => $r['use'] && $r['rub_per_kg'] > 0,
+			'rub_per_kg' => $r['rub_per_kg'],
+			'min_rub' => $r['min_rub'],
+		];
+	}
+}
+
+if (!function_exists('mf_ep_weight_surcharge_rub'))
+{
+	function mf_ep_weight_surcharge_rub(int $productId, int $storeId, float $qty): float
+	{
+		$w = mf_ep_store_weight_fields($storeId);
+		if (!$w['use'])
+		{
+			return 0.0;
+		}
+
+		$kg = mf_ep_product_weight_kg($productId, $qty);
+		if ($kg <= 0)
+		{
+			return 0.0;
+		}
+
+		$calc = $kg * (float)$w['rub_per_kg'];
+
+		return round(max((float)$w['min_rub'], $calc), 2);
+	}
+}
+
+if (!function_exists('mf_ep_ensure_store_weight_ufs'))
+{
+	function mf_ep_ensure_store_weight_ufs(): void
+	{
+		if (!class_exists(\CUserTypeEntity::class) || !class_exists(\Bitrix\Catalog\StoreTable::class))
+		{
+			return;
+		}
+
+		$entityId = \Bitrix\Catalog\StoreTable::getUfId();
+		$ute = new \CUserTypeEntity();
+
+		$ensure = static function (string $fieldName, string $type, array $labels, int $sort, array $settings = []) use ($ute, $entityId): void {
+			$ex = \CUserTypeEntity::GetList([], ['ENTITY_ID' => $entityId, 'FIELD_NAME' => $fieldName])->Fetch();
+			if ($ex)
+			{
+				return;
+			}
+			$ute->Add([
+				'ENTITY_ID' => $entityId,
+				'FIELD_NAME' => $fieldName,
+				'USER_TYPE_ID' => $type,
+				'SORT' => $sort,
+				'MULTIPLE' => 'N',
+				'MANDATORY' => 'N',
+				'SHOW_FILTER' => 'I',
+				'SHOW_IN_LIST' => 'Y',
+				'EDIT_IN_LIST' => 'Y',
+				'IS_SEARCHABLE' => 'N',
+				'SETTINGS' => $settings,
+				'EDIT_FORM_LABEL' => $labels,
+				'LIST_COLUMN_LABEL' => $labels,
+				'LIST_FILTER_LABEL' => $labels,
+			]);
+		};
+
+		$ensure('UF_MF_EXTERNAL_STORE', 'boolean', ['ru' => 'Внешний склад', 'en' => 'External warehouse'], 300, []);
+		$ensure('UF_MF_EXT_WEIGHT_USE', 'boolean', ['ru' => 'Внешний прайс: учитывать вес (доставка)', 'en' => 'Ext price: weight surcharge'], 310, []);
+		$ensure('UF_MF_EXT_WEIGHT_RUB_PER_KG', 'double', ['ru' => 'Доп. ₽ за кг веса', 'en' => 'RUB per kg'], 320, [
+			'DEFAULT_VALUE' => 0,
+			'PRECISION' => 2,
+			'SIZE' => 10,
+		]);
+		$ensure('UF_MF_EXT_WEIGHT_MIN_RUB', 'double', ['ru' => 'Мин. доплата по весу, ₽', 'en' => 'Min weight surcharge RUB'], 330, [
+			'DEFAULT_VALUE' => 0,
+			'PRECISION' => 2,
+			'SIZE' => 10,
+		]);
+	}
+}
+
+if (!function_exists('mf_ep_store_is_external_warehouse'))
+{
+	/**
+	 * Склад участвует во внешних прайсах (UF «Внешний склад»).
+	 */
+	function mf_ep_store_is_external_warehouse(int $storeId): bool
+	{
+		$storeId = (int)$storeId;
+		if ($storeId <= 0)
+		{
+			return false;
+		}
+
+		global $USER_FIELD_MANAGER;
+		if (!is_object($USER_FIELD_MANAGER) || !class_exists(\Bitrix\Catalog\StoreTable::class))
+		{
+			return false;
+		}
+
+		try
+		{
+			$ufs = $USER_FIELD_MANAGER->GetUserFields(\Bitrix\Catalog\StoreTable::getUfId(), $storeId);
+			$u = $ufs['UF_MF_EXTERNAL_STORE']['VALUE'] ?? '';
+			if (is_array($u))
+			{
+				$u = reset($u);
+			}
+
+			return ($u === 1 || $u === '1' || $u === true || $u === 'Y' || $u === 'y');
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_ep_collect_candidates_for_store'))
+{
+	/**
+	 * Товары, у которых есть строка остатка по складу или ненулевая цена типа склада.
+	 *
+	 * @return int[]
+	 */
+	function mf_ep_collect_candidates_for_store(int $storeId, int $priceGroupId): array
+	{
+		$storeId = (int)$storeId;
+		$priceGroupId = (int)$priceGroupId;
+		if ($storeId <= 0 || $priceGroupId <= 0)
+		{
+			return [];
+		}
+
+		$ids = [];
+		if (class_exists(\CCatalogStoreProduct::class))
+		{
+			$rs = \CCatalogStoreProduct::GetList([], ['STORE_ID' => $storeId], false, false, ['PRODUCT_ID']);
+			while ($r = $rs->Fetch())
+			{
+				$ids[(int)$r['PRODUCT_ID']] = true;
+			}
+		}
+
+		if (class_exists(\CPrice::class))
+		{
+			$rs = \CPrice::GetList(
+				[],
+				['CATALOG_GROUP_ID' => $priceGroupId, '>PRICE' => 0],
+				false,
+				false,
+				['PRODUCT_ID']
+			);
+			while ($r = $rs->Fetch())
+			{
+				$ids[(int)$r['PRODUCT_ID']] = true;
+			}
+		}
+
+		return array_map('intval', array_keys($ids));
+	}
+}
+
+if (!function_exists('mf_ep_zero_product_on_store'))
+{
+	function mf_ep_zero_product_on_store(int $productId, int $storeId, int $priceGroupId): void
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		$priceGroupId = (int)$priceGroupId;
+		if ($productId <= 0 || $storeId <= 0 || $priceGroupId <= 0)
+		{
+			return;
+		}
+
+		if (class_exists(\CCatalogStoreProduct::class))
+		{
+			$rs = \CCatalogStoreProduct::GetList(
+				[],
+				['PRODUCT_ID' => $productId, 'STORE_ID' => $storeId],
+				false,
+				false,
+				['ID']
+			);
+			if ($row = $rs->Fetch())
+			{
+				\CCatalogStoreProduct::Update((int)$row['ID'], ['AMOUNT' => 0]);
+			}
+		}
+
+		mf_ep_set_raw_price($productId, $priceGroupId, 0.0);
+		mf_ep_sync_catalog_qty_from_stores($productId);
+		mf_ep_recalc_base_one($productId);
+	}
+}
+
+// --- История импортов внешних прайсов (MySQL) ---------------------------------
+
+if (!function_exists('mf_external_price_import_log_conn'))
+{
+	function mf_external_price_import_log_conn(): ?\Bitrix\Main\DB\Connection
+	{
+		if (!class_exists(\Bitrix\Main\Application::class))
+		{
+			return null;
+		}
+		try
+		{
+			return \Bitrix\Main\Application::getConnection();
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_log_ensure_table'))
+{
+	function mf_external_price_import_log_ensure_table(): bool
+	{
+		$conn = mf_external_price_import_log_conn();
+		if (!$conn)
+		{
+			return false;
+		}
+
+		$driver = method_exists($conn, 'getType') ? (string)$conn->getType() : '';
+		if ($driver !== '' && stripos($driver, 'mysql') === false)
+		{
+			return false;
+		}
+
+		$sql = "CREATE TABLE IF NOT EXISTS mf_external_price_import_log (
+			ID BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			UF_STARTED_AT DATETIME NOT NULL,
+			UF_FINISHED_AT DATETIME NULL,
+			UF_DURATION_MS INT UNSIGNED NULL,
+			UF_STATUS VARCHAR(24) NOT NULL DEFAULT 'ok',
+
+			UF_USER_ID INT UNSIGNED NULL,
+			UF_USER_LOGIN VARCHAR(64) NULL,
+
+			UF_STORE_ID INT NULL,
+			UF_STORE_XML_ID VARCHAR(128) NULL,
+			UF_STORE_TITLE VARCHAR(255) NULL,
+			UF_PRICE_GROUP_ID INT NULL,
+
+			UF_INPUT_FILENAME VARCHAR(512) NULL,
+			UF_FILE_SIZE BIGINT NULL,
+
+			UF_CURRENCY VARCHAR(8) NULL,
+			UF_ZERO_MISSING CHAR(1) NULL,
+			UF_WEIGHT_USE CHAR(1) NULL,
+			UF_WEIGHT_RUB_PER_KG DOUBLE NULL,
+			UF_WEIGHT_MIN_RUB DOUBLE NULL,
+
+			UF_TOTAL_DATA_ROWS INT UNSIGNED NULL,
+			UF_MATCHED INT UNSIGNED NULL,
+			UF_NOT_FOUND INT UNSIGNED NULL,
+			UF_BAD_ROWS INT UNSIGNED NULL,
+			UF_ZEROED INT UNSIGNED NULL,
+
+			UF_HEADER_LINE VARCHAR(1024) NULL,
+			UF_EXAMPLES_NOT_FOUND MEDIUMTEXT NULL,
+			UF_ERROR_MESSAGE VARCHAR(1024) NULL,
+
+			PRIMARY KEY (ID),
+			KEY IX_EP_LOG_STARTED (UF_STARTED_AT),
+			KEY IX_EP_LOG_STORE (UF_STORE_ID),
+			KEY IX_EP_LOG_STATUS (UF_STATUS)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+		try
+		{
+			$conn->queryExecute($sql);
+
+			return true;
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_log_quote'))
+{
+	function mf_external_price_import_log_quote(\Bitrix\Main\DB\Connection $conn, $value): string
+	{
+		if ($value === null)
+		{
+			return 'NULL';
+		}
+
+		return "'" . $conn->getSqlHelper()->forSql((string)$value) . "'";
+	}
+}
+
+if (!function_exists('mf_external_price_import_log_insert'))
+{
+	/**
+	 * @param array<string, mixed> $fields
+	 */
+	function mf_external_price_import_log_insert(array $fields): int
+	{
+		if (!mf_external_price_import_log_ensure_table())
+		{
+			return 0;
+		}
+
+		$conn = mf_external_price_import_log_conn();
+		if (!$conn)
+		{
+			return 0;
+		}
+
+		$cols = [];
+		$vals = [];
+		foreach ($fields as $k => $v)
+		{
+			$k = trim((string)$k);
+			if ($k === '')
+			{
+				continue;
+			}
+			$cols[] = '`' . str_replace('`', '', $k) . '`';
+			if ($v === null)
+			{
+				$vals[] = 'NULL';
+			}
+			elseif (is_int($v) || is_float($v))
+			{
+				$vals[] = is_finite((float)$v) ? (string)$v : 'NULL';
+			}
+			else
+			{
+				$vals[] = mf_external_price_import_log_quote($conn, $v);
+			}
+		}
+		if (empty($cols))
+		{
+			return 0;
+		}
+
+		try
+		{
+			$conn->queryExecute(
+				'INSERT INTO mf_external_price_import_log (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $vals) . ')'
+			);
+			$r = $conn->query('SELECT LAST_INSERT_ID() AS ID')->fetch();
+
+			return (int)($r['ID'] ?? 0);
+		}
+		catch (\Throwable $e)
+		{
+			return 0;
+		}
+	}
+}
