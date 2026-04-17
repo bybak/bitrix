@@ -406,6 +406,58 @@ if (!function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
 	}
 }
 
+if (!function_exists('mf_ep_set_weight_for_catalog_cluster'))
+{
+	/**
+	 * Записывает WEIGHT (граммы) в b_catalog_product для родителя SKU, офферов и торгового ID — по той же схеме, что RAW-цены.
+	 *
+	 * @return int число неудачных CCatalogProduct::Update
+	 */
+	function mf_ep_set_weight_for_catalog_cluster(int $foundElementId, int $weightGrams): int
+	{
+		$foundElementId = (int)$foundElementId;
+		$weightGrams = (int)$weightGrams;
+		if ($foundElementId <= 0 || $weightGrams < 0)
+		{
+			return 0;
+		}
+		if (!class_exists(\CCatalogProduct::class))
+		{
+			return 1;
+		}
+
+		$ids = [$foundElementId];
+		if (function_exists('mf_catalog_product_cluster_ids'))
+		{
+			$cluster = mf_catalog_product_cluster_ids($foundElementId);
+			if (!empty($cluster))
+			{
+				$ids = $cluster;
+			}
+		}
+		if (function_exists('mf_ep_resolve_catalog_trade_product_id'))
+		{
+			$trade = mf_ep_resolve_catalog_trade_product_id($foundElementId);
+			if ($trade > 0)
+			{
+				$ids[] = $trade;
+			}
+		}
+
+		$ids = array_values(array_unique(array_filter($ids, static fn($v) => (int)$v > 0)));
+		$fail = 0;
+		foreach ($ids as $productId)
+		{
+			if (!\CCatalogProduct::Update((int)$productId, ['WEIGHT' => $weightGrams]))
+			{
+				$fail++;
+			}
+		}
+
+		return $fail;
+	}
+}
+
 if (!function_exists('mf_ep_recalc_base_one'))
 {
 	/**
@@ -885,20 +937,20 @@ if (!function_exists('mf_ep_store_weight_uf_raw'))
 	 * Значения UF склада как в базе (для админки / отображения).
 	 * Для расчёта доплаты см. mf_ep_store_weight_fields — там «вкл.» учитывается только при rub_per_kg > 0.
 	 *
-	 * @return array{use: bool, rub_per_kg: float, min_rub: float}
+	 * @return array{use: bool, rub_per_kg: float}
 	 */
 	function mf_ep_store_weight_uf_raw(int $storeId): array
 	{
 		$storeId = (int)$storeId;
 		if ($storeId <= 0)
 		{
-			return ['use' => false, 'rub_per_kg' => 0.0, 'min_rub' => 0.0];
+			return ['use' => false, 'rub_per_kg' => 0.0];
 		}
 
 		global $USER_FIELD_MANAGER;
 		if (!is_object($USER_FIELD_MANAGER) || !class_exists(\Bitrix\Catalog\StoreTable::class))
 		{
-			return ['use' => false, 'rub_per_kg' => 0.0, 'min_rub' => 0.0];
+			return ['use' => false, 'rub_per_kg' => 0.0];
 		}
 
 		try
@@ -918,22 +970,14 @@ if (!function_exists('mf_ep_store_weight_uf_raw'))
 			}
 			$rubPerKg = (float)str_replace(',', '.', (string)$rp);
 
-			$mn = $ufs['UF_MF_EXT_WEIGHT_MIN_RUB']['VALUE'] ?? 0;
-			if (is_array($mn))
-			{
-				$mn = reset($mn);
-			}
-			$minRub = (float)str_replace(',', '.', (string)$mn);
-
 			return [
 				'use' => $use,
 				'rub_per_kg' => $rubPerKg,
-				'min_rub' => max(0.0, $minRub),
 			];
 		}
 		catch (\Throwable $e)
 		{
-			return ['use' => false, 'rub_per_kg' => 0.0, 'min_rub' => 0.0];
+			return ['use' => false, 'rub_per_kg' => 0.0];
 		}
 	}
 }
@@ -947,7 +991,6 @@ if (!function_exists('mf_ep_store_weight_fields'))
 		return [
 			'use' => $r['use'] && $r['rub_per_kg'] > 0,
 			'rub_per_kg' => $r['rub_per_kg'],
-			'min_rub' => $r['min_rub'],
 		];
 	}
 }
@@ -970,7 +1013,48 @@ if (!function_exists('mf_ep_weight_surcharge_rub'))
 
 		$calc = $kg * (float)$w['rub_per_kg'];
 
-		return round(max((float)$w['min_rub'], $calc), 2);
+		return round($calc, 2);
+	}
+}
+
+if (!function_exists('mf_ep_display_price_for_store'))
+{
+	/**
+	 * Цена для показа на сайте и для строки корзины (за qty шт.): RAW+наценка, при опте −10%, затем доплата по весу склада.
+	 * Совпадает с расчётом в mf_assign_store_and_price_to_basket_item.
+	 */
+	function mf_ep_display_price_for_store(int $productId, int $storeId, float $qty = 1.0): ?float
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		if ($productId <= 0 || $storeId <= 0)
+		{
+			return null;
+		}
+		if ($qty <= 0)
+		{
+			$qty = 1.0;
+		}
+		if (!function_exists('mf_calc_store_price'))
+		{
+			return null;
+		}
+		$computed = mf_calc_store_price($productId, $storeId);
+		if ($computed === null || $computed <= 0)
+		{
+			return null;
+		}
+		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+		{
+			$computed = round((float)$computed * 0.9, 2);
+		}
+		if (function_exists('mf_ep_weight_surcharge_rub'))
+		{
+			$sur = mf_ep_weight_surcharge_rub($productId, $storeId, $qty);
+			$computed = round((float)$computed + (float)$sur, 2);
+		}
+
+		return $computed > 0 ? $computed : null;
 	}
 }
 
@@ -1013,11 +1097,6 @@ if (!function_exists('mf_ep_ensure_store_weight_ufs'))
 		$ensure('UF_MF_EXTERNAL_STORE', 'boolean', ['ru' => 'Внешний склад', 'en' => 'External warehouse'], 300, []);
 		$ensure('UF_MF_EXT_WEIGHT_USE', 'boolean', ['ru' => 'Внешний прайс: учитывать вес (доставка)', 'en' => 'Ext price: weight surcharge'], 310, []);
 		$ensure('UF_MF_EXT_WEIGHT_RUB_PER_KG', 'double', ['ru' => 'Доп. ₽ за кг веса', 'en' => 'RUB per kg'], 320, [
-			'DEFAULT_VALUE' => 0,
-			'PRECISION' => 2,
-			'SIZE' => 10,
-		]);
-		$ensure('UF_MF_EXT_WEIGHT_MIN_RUB', 'double', ['ru' => 'Мин. доплата по весу, ₽', 'en' => 'Min weight surcharge RUB'], 330, [
 			'DEFAULT_VALUE' => 0,
 			'PRECISION' => 2,
 			'SIZE' => 10,
