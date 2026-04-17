@@ -99,7 +99,7 @@ if (!function_exists('mf_product_search_card_stores'))
 		}
 
 		// Внешние склады с ценой по прайсу должны попадать в выдачу, даже без строки остатка / при нуле на складе.
-		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_store_is_external_warehouse') && function_exists('mf_calc_store_price'))
+		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_store_is_external_warehouse') && function_exists('mf_ep_display_price_for_store'))
 		{
 			foreach (array_keys(mf_supplier_store_to_price_group()) as $extSid)
 			{
@@ -108,7 +108,7 @@ if (!function_exists('mf_product_search_card_stores'))
 				{
 					continue;
 				}
-				$p = mf_calc_store_price($productId, $extSid);
+				$p = mf_ep_display_price_for_store($productId, $extSid, 1.0);
 				if ($p === null || $p <= 0)
 				{
 					continue;
@@ -130,11 +130,9 @@ if (!function_exists('mf_product_search_card_stores'))
 				$title = 'Склад ' . $storeId;
 			}
 
-			$price = function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null;
-			if (function_exists('mf_user_is_wholesale') && function_exists('mf_calc_store_price') && mf_user_is_wholesale() && $price !== null && $price > 0)
-			{
-				$price = round((float)$price * 0.9, 2);
-			}
+			$price = function_exists('mf_ep_display_price_for_store')
+				? mf_ep_display_price_for_store($productId, $storeId, 1.0)
+				: (function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null);
 
 			$deliveryTerm = function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : '—';
 
@@ -158,9 +156,9 @@ if (!function_exists('mf_product_search_card_stores'))
 				$out[] = $makeRow($storeId, $amt);
 				continue;
 			}
-			if (function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId) && function_exists('mf_calc_store_price'))
+			if (function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId) && function_exists('mf_ep_display_price_for_store'))
 			{
-				$p = mf_calc_store_price($productId, $storeId);
+				$p = mf_ep_display_price_for_store($productId, $storeId, 1.0);
 				if ($p !== null && $p > 0)
 				{
 					$out[] = $makeRow($storeId, 0.0);

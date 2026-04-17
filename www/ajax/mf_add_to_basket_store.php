@@ -28,19 +28,15 @@ try
 		throw new RuntimeException('Bad params');
 	}
 
-	if (!function_exists('mf_calc_store_price'))
+	if (!function_exists('mf_ep_display_price_for_store'))
 	{
 		throw new RuntimeException('Pricing functions not loaded');
 	}
 
-	$price = mf_calc_store_price($productId, $storeId);
+	$price = mf_ep_display_price_for_store($productId, $storeId, $qty);
 	if ($price === null || $price <= 0)
 	{
 		throw new RuntimeException('No price for store');
-	}
-	if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-	{
-		$price = round((float)$price * 0.9, 2);
 	}
 
 	$fUserId = \Bitrix\Sale\Fuser::getId(true);
