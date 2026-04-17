@@ -62,23 +62,36 @@ $mfMoney = static function (?float $price): string {
 	return number_format($p, 0, '.', ' ') . ' ₽';
 };
 
-$mfTrimText = static function (string $html, int $limit = 160): string {
-	$s = trim((string)strip_tags($html));
-	if ($s === '') return '';
-	if (mb_strlen($s) <= $limit) return $s;
-	return rtrim(mb_substr($s, 0, $limit), " \t\n\r\0\x0B.,;:") . '…';
+$mfSearchMinPricePrint = static function (int $productId): string {
+	if ($productId <= 0 || !function_exists('mf_min_price_from_available_stores'))
+	{
+		return '';
+	}
+	[$minP] = mf_min_price_from_available_stores($productId);
+	if ($minP === null || (float)$minP <= 0)
+	{
+		return '';
+	}
+	$minP = (float)$minP;
+	if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+	{
+		$minP = round($minP * 0.9, 2);
+	}
+
+	return number_format($minP, 2, '.', ' ') . ' ₽';
 };
 
 $mfStoresForProduct = static function (int $productId): array {
 	return function_exists('mf_product_search_card_stores') ? mf_product_search_card_stores($productId) : [];
 };
 
-$mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard, $mfPlaceholder, $mfTrimText, $mfStoresForProduct) {
+$mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard, $mfPlaceholder, $mfStoresForProduct, $mfSearchMinPricePrint) {
 	$id = (int)($data['id'] ?? 0);
 	$url = (string)($data['url'] ?? '');
 	$titleHtml = (string)($data['title_html'] ?? '');
-	$descHtml = (string)($data['desc_html'] ?? '');
 	$code = trim((string)($data['code'] ?? ''));
+	$brand = trim((string)($data['brand'] ?? ''));
+	$article = trim((string)($data['article'] ?? ''));
 	$isAnalog = !empty($data['is_analog']);
 	$analogs = (is_array($data['analogs'] ?? null) ? (array)$data['analogs'] : []);
 
@@ -89,7 +102,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 		if ($u !== '') $img = $u;
 	}
 
-	$desc = $mfTrimText($descHtml, 170);
+	$priceFrom = $mfSearchMinPricePrint($id);
 	$stores = $mfStoresForProduct($id);
 	$wrapTag = $isAnalog ? 'div' : 'article';
 	$titlePlain = trim(html_entity_decode(strip_tags($titleHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
@@ -105,9 +118,20 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 			</a>
 			<div class="mf-search-card__main">
 				<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
-				<?php if ($desc !== ''): ?>
-					<div class="mf-search-card__desc"><?=htmlspecialcharsbx($desc)?></div>
-				<?php endif; ?>
+				<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">От</span>
+						<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : '—' ?></span>
+					</div>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">Бренд</span>
+						<span class="mf-product-meta__value"><?= $brand !== '' ? htmlspecialcharsbx($brand) : '—' ?></span>
+					</div>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">Артикул</span>
+						<span class="mf-product-meta__value"><?= $article !== '' ? htmlspecialcharsbx($article) : '—' ?></span>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -310,7 +334,16 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							['IBLOCK_ID' => $mfCatalogIblockId, 'ID' => $mfProductIds, 'ACTIVE' => 'Y'],
 							false,
 							false,
-							['ID', 'NAME', 'CODE', 'PREVIEW_TEXT', 'DETAIL_TEXT']
+							[
+								'ID',
+								'NAME',
+								'CODE',
+								'PREVIEW_TEXT',
+								'DETAIL_TEXT',
+								'PROPERTY_CML2_ARTICLE',
+								'PROPERTY_MF_BRAND',
+								'PROPERTY_MF_BRAND_NORM',
+							]
 						);
 						while ($r = $rsP->Fetch())
 						{
@@ -354,7 +387,16 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								],
 								false,
 								false,
-								['ID', 'NAME', 'CODE', 'PREVIEW_TEXT', 'DETAIL_TEXT', 'PROPERTY_CML2_ARTICLE', 'PROPERTY_MF_BRAND']
+								[
+									'ID',
+									'NAME',
+									'CODE',
+									'PREVIEW_TEXT',
+									'DETAIL_TEXT',
+									'PROPERTY_CML2_ARTICLE',
+									'PROPERTY_MF_BRAND',
+									'PROPERTY_MF_BRAND_NORM',
+								]
 							);
 							while ($r = $rsA->Fetch())
 							{
@@ -429,18 +471,12 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						$mfItemId = (int)($arItem['ITEM_ID'] ?? 0);
 						$mfRow = ($mfItemId > 0 && isset($mfProductRowsById[$mfItemId])) ? $mfProductRowsById[$mfItemId] : null;
 						$mfCode = is_array($mfRow) ? trim((string)($mfRow['CODE'] ?? '')) : '';
-						$mfDesc = '';
+						$mfBrand = '';
+						$mfArticle = '';
 						if (is_array($mfRow))
 						{
-							$mfDesc = (string)($mfRow['PREVIEW_TEXT'] ?? '');
-							if (trim($mfDesc) === '')
-							{
-								$mfDesc = (string)($mfRow['DETAIL_TEXT'] ?? '');
-							}
-						}
-						if (trim($mfDesc) === '')
-						{
-							$mfDesc = (string)($arItem['BODY_FORMATED'] ?? '');
+							$mfBrand = trim((string)($mfRow['PROPERTY_MF_BRAND_VALUE'] ?? ($mfRow['PROPERTY_MF_BRAND_NORM_VALUE'] ?? '')));
+							$mfArticle = trim((string)($mfRow['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
 						}
 
 						// Prepare analog cards to render inside the main card.
@@ -458,17 +494,13 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								$urlA = ($codeA !== '' ? '/products/' . rawurlencode($codeA) . '/' : '');
 								if ($urlA === '') continue;
 								$nameA = (string)($rA['NAME'] ?? ('ID ' . $aid2));
-								$descA = (string)($rA['PREVIEW_TEXT'] ?? '');
-								if (trim($descA) === '')
-								{
-									$descA = (string)($rA['DETAIL_TEXT'] ?? '');
-								}
 								$analogsData[] = [
 									'id' => $aid2,
 									'url' => $urlA,
 									'code' => $codeA,
 									'title_html' => htmlspecialcharsbx($nameA),
-									'desc_html' => $descA,
+									'brand' => trim((string)($rA['PROPERTY_MF_BRAND_VALUE'] ?? ($rA['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
+									'article' => trim((string)($rA['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
 									'is_analog' => true,
 								];
 							}
@@ -479,7 +511,8 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							'url' => $href,
 							'code' => $mfCode,
 							'title_html' => (string)($arItem['TITLE_FORMATED'] ?? htmlspecialcharsbx((string)($arItem['TITLE'] ?? ''))),
-							'desc_html' => $mfDesc,
+							'brand' => $mfBrand,
+							'article' => $mfArticle,
 							'is_analog' => false,
 							'analogs' => $analogsData,
 						]);

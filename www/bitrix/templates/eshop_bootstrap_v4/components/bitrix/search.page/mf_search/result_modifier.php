@@ -132,6 +132,10 @@ if ($missingIds !== [])
 		{
 			$body = trim((string)($e['DETAIL_TEXT'] ?? ''));
 		}
+		if (function_exists('mf_catalog_strip_stock_disclaimer'))
+		{
+			$body = mf_catalog_strip_stock_disclaimer($body);
+		}
 		$prefill[] = [
 			'MODULE_ID' => 'iblock',
 			'ITEM_ID' => $eid,

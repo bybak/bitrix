@@ -122,6 +122,17 @@ if (is_array($arResult) && function_exists('mf_mf_product_img_url'))
 	}
 }
 
+if (function_exists('mf_catalog_strip_stock_disclaimer') && is_array($arResult ?? null))
+{
+	foreach (['PREVIEW_TEXT', '~PREVIEW_TEXT', 'DETAIL_TEXT', '~DETAIL_TEXT'] as $mfTextKey)
+	{
+		if (!empty($arResult[$mfTextKey]) && is_string($arResult[$mfTextKey]))
+		{
+			$arResult[$mfTextKey] = mf_catalog_strip_stock_disclaimer($arResult[$mfTextKey]);
+		}
+	}
+}
+
 // Delegate rendering to the stock Bitrix template.
 $templateFolder = '/bitrix/components/bitrix/catalog.element/templates/.default';
 include($_SERVER['DOCUMENT_ROOT'] . $templateFolder . '/template.php');

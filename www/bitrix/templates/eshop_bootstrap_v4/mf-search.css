@@ -177,6 +177,36 @@
 .mf-search-card__main .mf-search-card__title{
   margin: 0 0 6px;
 }
+
+/* Как на карточке товара (mf-shop.css): бренд/артикул + строка «От …» */
+.mf-search-card .mf-product-meta{
+  margin: 4px 0 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mf-search-card .mf-product-meta__item{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(235,189,47,.14);
+}
+.mf-search-card .mf-product-meta__label{
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  text-transform: uppercase;
+  color: rgba(0,0,0,.55);
+}
+.mf-search-card .mf-product-meta__value{
+  font-size: 13px;
+  font-weight: 900;
+  color: #000;
+}
+
 .mf-search-card__desc{
   font-size: 13px;
   line-height: 1.35;

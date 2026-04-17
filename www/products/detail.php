@@ -56,6 +56,11 @@ if ($elementCode)
 		$mfPreviewTextType = (string)($e['PREVIEW_TEXT_TYPE'] ?? 'text');
 		$mfDetailText = (string)($e['DETAIL_TEXT'] ?? '');
 		$mfDetailTextType = (string)($e['DETAIL_TEXT_TYPE'] ?? 'text');
+		if (function_exists('mf_catalog_strip_stock_disclaimer'))
+		{
+			$mfPreviewText = mf_catalog_strip_stock_disclaimer($mfPreviewText);
+			$mfDetailText = mf_catalog_strip_stock_disclaimer($mfDetailText);
+		}
 	}
 
 	if ($e && ($e['PROPERTY_MF_IS_REDIRECT_VALUE'] === 'Y' || $e['PROPERTY_MF_IS_REDIRECT_VALUE'] === '1'))
@@ -440,7 +445,16 @@ if ($elementId > 0)
 				],
 				false,
 				false,
-				['ID', 'NAME', 'CODE', 'PREVIEW_TEXT', 'DETAIL_TEXT', 'PROPERTY_CML2_ARTICLE', 'PROPERTY_MF_BRAND']
+				[
+					'ID',
+					'NAME',
+					'CODE',
+					'PREVIEW_TEXT',
+					'DETAIL_TEXT',
+					'PROPERTY_CML2_ARTICLE',
+					'PROPERTY_MF_BRAND',
+					'PROPERTY_MF_BRAND_NORM',
+				]
 			);
 			while ($r = $rs->Fetch())
 			{
@@ -484,7 +498,8 @@ if ($elementId > 0)
 						$url = ($code !== '' ? '/products/' . $code . '/' : '#');
 						$name = (string)($r['NAME'] ?? '');
 						$titleHtml = htmlspecialcharsbx($name);
-						$descHtml = trim((string)($r['PREVIEW_TEXT'] ?? '') . "\n" . (string)($r['DETAIL_TEXT'] ?? ''));
+						$anBrand = trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ($r['PROPERTY_MF_BRAND_NORM_VALUE'] ?? '')));
+						$anArticle = trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
 						$plainName = trim(html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 						if ($plainName === '')
 						{
@@ -495,7 +510,8 @@ if ($elementId > 0)
 							'url' => $url,
 							'code' => $code,
 							'title_html' => $titleHtml,
-							'desc_source_html' => $descHtml,
+							'brand' => $anBrand,
+							'article' => $anArticle,
 							'product_name_plain' => $plainName,
 							'req_user_name' => $mfAnalogReqName,
 							'req_user_email' => $mfAnalogReqEmail,
@@ -513,10 +529,6 @@ if ($elementId > 0)
 
 ?>
 	<div id="mf-detail-shell" class="mf-detail-shell" hidden>
-		<?php if ($mfBriefDescriptionHtml !== ''): ?>
-			<div class="mf-detail-shell__brief"><?=$mfBriefDescriptionHtml?></div>
-		<?php endif; ?>
-
 		<?php if ($mfMinPriceText !== ''): ?>
 			<div class="mf-detail-shell__min-price">От <span><?=$mfMinPriceText?></span></div>
 		<?php endif; ?>
@@ -568,6 +580,10 @@ if ($elementId > 0)
 				</div>
 			</div>
 		</div>
+
+		<?php if ($mfBriefDescriptionHtml !== ''): ?>
+			<div class="mf-detail-shell__brief mf-detail-shell__brief--below-tabs" role="region" aria-label="Краткое описание"><?=$mfBriefDescriptionHtml?></div>
+		<?php endif; ?>
 	</div>
 
 	<script>

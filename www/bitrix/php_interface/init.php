@@ -2240,6 +2240,13 @@ if (is_file($mfAnalogsInclude))
 	require_once $mfAnalogsInclude;
 }
 
+// --- Catalog: strip boilerplate phrases from preview/detail text (display only) ---
+$mfCatalogTextInclude = __DIR__ . '/include/mf_catalog_text.php';
+if (is_file($mfCatalogTextInclude))
+{
+	require_once $mfCatalogTextInclude;
+}
+
 // --- Catalog visibility flag (MF_SHOW_IN_CATALOG) ---------------------------
 $mfCatalogVisibilityInclude = __DIR__ . '/include/mf_catalog_visibility.php';
 if (is_file($mfCatalogVisibilityInclude))

@@ -18,21 +18,28 @@ if (!function_exists('mf_product_search_card_money'))
 	}
 }
 
-if (!function_exists('mf_product_search_card_trim_text'))
+if (!function_exists('mf_product_search_card_min_price_print'))
 {
-	function mf_product_search_card_trim_text(string $html, int $limit = 170): string
+	/** Минимальная цена по складам («От …»), с оптовой скидкой как на детальной. */
+	function mf_product_search_card_min_price_print(int $productId): string
 	{
-		$s = trim((string)strip_tags($html));
-		if ($s === '')
+		$productId = (int)$productId;
+		if ($productId <= 0 || !function_exists('mf_min_price_from_available_stores'))
 		{
 			return '';
 		}
-		if (mb_strlen($s) <= $limit)
+		[$minP] = mf_min_price_from_available_stores($productId);
+		if ($minP === null || (float)$minP <= 0)
 		{
-			return $s;
+			return '';
+		}
+		$minP = (float)$minP;
+		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+		{
+			$minP = round($minP * 0.9, 2);
 		}
 
-		return rtrim(mb_substr($s, 0, $limit), " \t\n\r\0\x0B.,;:") . '…';
+		return number_format($minP, 2, '.', ' ') . ' ₽';
 	}
 }
 
@@ -218,7 +225,8 @@ if (!function_exists('mf_product_search_card_render'))
 	 *   url:string,
 	 *   code?:string,
 	 *   title_html:string,
-	 *   desc_source_html?:string,
+	 *   brand?:string,
+	 *   article?:string,
 	 *   product_name_plain:string,
 	 *   req_user_name?:string,
 	 *   req_user_email?:string,
@@ -231,7 +239,8 @@ if (!function_exists('mf_product_search_card_render'))
 		$url = (string)($p['url'] ?? '');
 		$code = trim((string)($p['code'] ?? ''));
 		$titleHtml = (string)($p['title_html'] ?? '');
-		$descSource = (string)($p['desc_source_html'] ?? '');
+		$brand = trim((string)($p['brand'] ?? ''));
+		$article = trim((string)($p['article'] ?? ''));
 		$productNamePlain = trim((string)($p['product_name_plain'] ?? ''));
 		$reqName = trim((string)($p['req_user_name'] ?? ''));
 		$reqEmail = trim((string)($p['req_user_email'] ?? ''));
@@ -255,7 +264,7 @@ if (!function_exists('mf_product_search_card_render'))
 			}
 		}
 
-		$desc = mf_product_search_card_trim_text($descSource, 170);
+		$priceFrom = mf_product_search_card_min_price_print($id);
 		$stores = mf_product_search_card_stores($id);
 
 		if ($productNamePlain === '')
@@ -270,9 +279,20 @@ if (!function_exists('mf_product_search_card_render'))
 				</a>
 				<div class="mf-search-card__main">
 					<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
-					<?php if ($desc !== ''): ?>
-						<div class="mf-search-card__desc"><?=htmlspecialcharsbx($desc)?></div>
-					<?php endif; ?>
+					<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
+						<div class="mf-product-meta__item">
+							<span class="mf-product-meta__label">От</span>
+							<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : '—' ?></span>
+						</div>
+						<div class="mf-product-meta__item">
+							<span class="mf-product-meta__label">Бренд</span>
+							<span class="mf-product-meta__value"><?= $brand !== '' ? htmlspecialcharsbx($brand) : '—' ?></span>
+						</div>
+						<div class="mf-product-meta__item">
+							<span class="mf-product-meta__label">Артикул</span>
+							<span class="mf-product-meta__value"><?= $article !== '' ? htmlspecialcharsbx($article) : '—' ?></span>
+						</div>
+					</div>
 				</div>
 			</div>
 

@@ -1030,6 +1030,12 @@
   line-height: 1.6;
   color: rgba(0,0,0,.82);
 }
+/* Под вкладками: краткое описание не отталкивает таб «Склад» вниз */
+.mf-detail-shell__brief--below-tabs{
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(0,0,0,.08);
+}
 .mf-detail-shell__brief p{
   margin: 0 0 10px;
 }

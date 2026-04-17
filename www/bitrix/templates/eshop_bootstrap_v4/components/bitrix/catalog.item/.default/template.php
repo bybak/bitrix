@@ -138,6 +138,17 @@ if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('
 	}
 }
 
+if (function_exists('mf_catalog_strip_stock_disclaimer') && isset($arResult['ITEM']) && is_array($arResult['ITEM']))
+{
+	foreach (['PREVIEW_TEXT', '~PREVIEW_TEXT', 'DETAIL_TEXT', '~DETAIL_TEXT'] as $mfItemTextKey)
+	{
+		if (!empty($arResult['ITEM'][$mfItemTextKey]) && is_string($arResult['ITEM'][$mfItemTextKey]))
+		{
+			$arResult['ITEM'][$mfItemTextKey] = mf_catalog_strip_stock_disclaimer($arResult['ITEM'][$mfItemTextKey]);
+		}
+	}
+}
+
 // Delegate rendering to the stock Bitrix template, but force $templateFolder to module path
 // so sub-templates (card/line) keep working without copying assets.
 // IMPORTANT: we include the stock main template, but we keep $templateFolder pointing to THIS template folder.
