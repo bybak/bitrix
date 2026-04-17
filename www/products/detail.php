@@ -194,17 +194,13 @@ $APPLICATION->IncludeComponent(
     false
 );
 
-// Replace the component price with dynamic min-store price (RAW+markup; optional wholesale -10%).
-if ($elementId > 0 && function_exists('mf_min_price_from_available_stores'))
+// Replace the component price with storefront display price (same as listings: in-stock min, else min by mapped stores).
+if ($elementId > 0 && function_exists('mf_catalog_listing_display_price'))
 {
-	[$minP] = mf_min_price_from_available_stores($elementId);
+	$minP = mf_catalog_listing_display_price($elementId);
 	if ($minP !== null && (float)$minP > 0)
 	{
 		$minP = (float)$minP;
-		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-		{
-			$minP = round($minP * 0.9, 2);
-		}
 		$mfMinPriceValue = $minP;
 		$mfMinPriceText = number_format($minP, 2, '.', ' ') . ' &#8381;';
 		$minPPrint = number_format($minP, 2, '.', ' ') . ' &#8381;';
@@ -216,6 +212,22 @@ if ($elementId > 0 && function_exists('mf_min_price_from_available_stores'))
 			if (el) el.innerHTML = price;
 			var meta = document.querySelector("meta[itemprop='price']");
 			if (meta) meta.setAttribute("content", "<?=CUtil::JSEscape((string)$minP)?>");
+		})();
+		</script>
+		<?php
+	}
+	elseif (
+		function_exists('mf_catalog_use_bitrix_base_price_fallback')
+		&& !mf_catalog_use_bitrix_base_price_fallback()
+	)
+	{
+		?>
+		<script>
+		(function(){
+			var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
+			if (el) el.innerHTML = "Цена по запросу";
+			var meta = document.querySelector("meta[itemprop='price']");
+			if (meta) meta.setAttribute("content", "");
 		})();
 		</script>
 		<?php
@@ -300,24 +312,13 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 			$amtB = (float)($storeAmounts[$b] ?? 0);
 			$pa = null;
 			$pb = null;
-			if ($amtA > 0 && function_exists('mf_calc_store_price'))
+			if ($amtA > 0 && function_exists('mf_ep_display_price_for_store'))
 			{
-				$pa = mf_calc_store_price($elementId, $a);
+				$pa = mf_ep_display_price_for_store($elementId, $a, 1.0);
 			}
-			if ($amtB > 0 && function_exists('mf_calc_store_price'))
+			if ($amtB > 0 && function_exists('mf_ep_display_price_for_store'))
 			{
-				$pb = mf_calc_store_price($elementId, $b);
-			}
-			if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-			{
-				if ($pa !== null && (float)$pa > 0)
-				{
-					$pa = round((float)$pa * 0.9, 2);
-				}
-				if ($pb !== null && (float)$pb > 0)
-				{
-					$pb = round((float)$pb * 0.9, 2);
-				}
+				$pb = mf_ep_display_price_for_store($elementId, $b, 1.0);
 			}
 			$fpa = (float)($pa ?? 0);
 			$fpb = (float)($pb ?? 0);
@@ -351,13 +352,9 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 						<?php
 						// Цена по складу из RAW+наценка — показываем и при нулевом остатке (внешний прайс мог обновить только цену).
 						$storePrice = null;
-						if (function_exists('mf_calc_store_price'))
+						if (function_exists('mf_ep_display_price_for_store'))
 						{
-							$storePrice = mf_calc_store_price($elementId, (int)$sid);
-							if ($storePrice !== null && function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-							{
-								$storePrice = round((float)$storePrice * 0.9, 2);
-							}
+							$storePrice = mf_ep_display_price_for_store($elementId, (int)$sid, 1.0);
 						}
 						?>
 						<tr>

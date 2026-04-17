@@ -1482,7 +1482,8 @@ if (!function_exists('mf_min_price_from_available_stores'))
 		static $cache = [];
 		$productId = (int)$productId;
 		if ($productId <= 0) return [null, 0];
-		if (isset($cache[$productId])) return $cache[$productId];
+		$cacheKey = $productId . '|' . (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale() ? '1' : '0');
+		if (isset($cache[$cacheKey])) return $cache[$cacheKey];
 
 		if (!class_exists(\CCatalogStoreProduct::class)) return [null, 0];
 
@@ -1518,7 +1519,9 @@ if (!function_exists('mf_min_price_from_available_stores'))
 				continue;
 			}
 
-			$computed = mf_calc_store_price($productId, $storeId);
+			$computed = function_exists('mf_ep_display_price_for_store')
+				? mf_ep_display_price_for_store($productId, $storeId, 1.0)
+				: mf_calc_store_price($productId, $storeId);
 			if ($computed === null) continue;
 
 			if ($min === null || $computed < $min)
@@ -1528,8 +1531,131 @@ if (!function_exists('mf_min_price_from_available_stores'))
 			}
 		}
 
-		$cache[$productId] = [$min, $minStoreId];
-		return $cache[$productId];
+		$cache[$cacheKey] = [$min, $minStoreId];
+		return $cache[$cacheKey];
+	}
+}
+
+if (!function_exists('mf_catalog_listing_display_price'))
+{
+	/**
+	 * Цена для витрины (списки, блоки): сначала минимум среди складов с остатком, иначе — минимум
+	 * по всем складам из mf_supplier_store_to_price_group с валидным RAW (без каталожного BASE).
+	 */
+	function mf_catalog_listing_display_price(int $productId): ?float
+	{
+		static $cache = [];
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return null;
+		}
+		$cacheKey = $productId . '|' . (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale() ? '1' : '0');
+		if (array_key_exists($cacheKey, $cache))
+		{
+			return $cache[$cacheKey];
+		}
+
+		[$minInStock] = function_exists('mf_min_price_from_available_stores')
+			? mf_min_price_from_available_stores($productId)
+			: [null, 0];
+		if ($minInStock !== null && (float)$minInStock > 0)
+		{
+			$cache[$cacheKey] = (float)$minInStock;
+
+			return $cache[$cacheKey];
+		}
+
+		if (!function_exists('mf_supplier_store_to_price_group') || !function_exists('mf_ep_display_price_for_store'))
+		{
+			$cache[$cacheKey] = null;
+
+			return null;
+		}
+		$map = mf_supplier_store_to_price_group();
+		if (empty($map))
+		{
+			$cache[$cacheKey] = null;
+
+			return null;
+		}
+
+		$best = null;
+		foreach (array_keys($map) as $sid)
+		{
+			$sid = (int)$sid;
+			if ($sid <= 0)
+			{
+				continue;
+			}
+			$p = mf_ep_display_price_for_store($productId, $sid, 1.0);
+			if ($p === null || $p <= 0)
+			{
+				continue;
+			}
+			if ($best === null || $p < $best)
+			{
+				$best = $p;
+			}
+		}
+		$cache[$cacheKey] = $best;
+
+		return $best;
+	}
+}
+
+if (!function_exists('mf_catalog_use_bitrix_base_price_fallback'))
+{
+	/**
+	 * Показывать ли каталожную цену (BASE), когда внешняя схема не настроена.
+	 */
+	function mf_catalog_use_bitrix_base_price_fallback(): bool
+	{
+		if (!function_exists('mf_supplier_store_to_price_group'))
+		{
+			return true;
+		}
+
+		return empty(mf_supplier_store_to_price_group());
+	}
+}
+
+if (!function_exists('mf_catalog_patch_bitrix_min_price_display'))
+{
+	/**
+	 * Подмена полей MIN_PRICE компонента на расчётную сумму (для блоков без catalog.item).
+	 */
+	function mf_catalog_patch_bitrix_min_price_display(array &$minPrice, float $displayValue): void
+	{
+		if ($displayValue <= 0 || !is_array($minPrice))
+		{
+			return;
+		}
+		$cur = (string)($minPrice['CURRENCY_ID'] ?? '');
+		if ($cur === '' && class_exists('\CCurrency'))
+		{
+			$cur = \CCurrency::GetBaseCurrency();
+		}
+		if ($cur === '')
+		{
+			$cur = 'RUB';
+		}
+		$minPrice['VALUE'] = $displayValue;
+		$minPrice['DISCOUNT_VALUE'] = $displayValue;
+		if (class_exists('\CCurrencyLang'))
+		{
+			$fmt = \CCurrencyLang::FormatCurrency($displayValue, $cur);
+		}
+		else
+		{
+			$fmt = number_format($displayValue, 2, '.', ' ') . ' ₽';
+		}
+		$minPrice['PRINT_VALUE'] = $fmt;
+		$minPrice['PRINT_DISCOUNT_VALUE'] = $fmt;
+		if (isset($minPrice['DISCOUNT_DIFF_PERCENT']))
+		{
+			$minPrice['DISCOUNT_DIFF_PERCENT'] = 0;
+		}
 	}
 }
 
@@ -1656,14 +1782,12 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 				continue;
 			}
 
-			$price = function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null;
+			$price = function_exists('mf_ep_display_price_for_store')
+				? mf_ep_display_price_for_store($productId, $storeId, $qty)
+				: (function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null);
 			if ($price === null || $price <= 0)
 			{
 				continue;
-			}
-			if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-			{
-				$price = round((float)$price * 0.9, 2);
 			}
 
 			$s = function_exists('mf_store_row') ? mf_store_row($storeId) : null;
@@ -2027,25 +2151,19 @@ if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 
 		if ($storeId <= 0) return;
 
-		$computed = mf_calc_store_price($productId, $storeId);
-		if ($computed === null || $computed <= 0) return;
-		if (mf_user_is_wholesale())
+		$qty = (float)$item->getQuantity();
+		if ($qty <= 0)
 		{
-			$computed = round($computed * 0.9, 2);
+			$qty = 1.0;
 		}
-
-		if (function_exists('mf_ep_weight_surcharge_rub'))
+		if (!function_exists('mf_ep_display_price_for_store'))
 		{
-			$qty = (float)$item->getQuantity();
-			if ($qty <= 0)
-			{
-				$qty = 1.0;
-			}
-			$sur = mf_ep_weight_surcharge_rub($productId, $storeId, $qty);
-			if ($sur > 0)
-			{
-				$computed = round($computed + $sur, 2);
-			}
+			return;
+		}
+		$computed = mf_ep_display_price_for_store($productId, $storeId, $qty);
+		if ($computed === null || $computed <= 0)
+		{
+			return;
 		}
 
 		// Ensure store props are set for order visibility.

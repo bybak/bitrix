@@ -60,18 +60,14 @@ if ($mfReqIsAuthorized)
 $mfReqProductName = trim(html_entity_decode(strip_tags((string)($item['NAME'] ?? $productTitle ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 $mfReqProductUrl = (string)($item['DETAIL_PAGE_URL'] ?? '');
 
-// Dynamic min price across available stores (RAW per store + markup), optional wholesale -10%.
+// Витринная цена: склады с остатком, иначе минимум по привязанным складам (не каталожный BASE).
 $mfDynPrice = null;
-if (function_exists('mf_min_price_from_available_stores'))
+if (function_exists('mf_catalog_listing_display_price'))
 {
-	[$p] = mf_min_price_from_available_stores((int)($actualItem['ID'] ?? 0));
+	$p = mf_catalog_listing_display_price((int)($actualItem['ID'] ?? 0));
 	if ($p !== null && (float)$p > 0)
 	{
 		$mfDynPrice = (float)$p;
-		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-		{
-			$mfDynPrice = round($mfDynPrice * 0.9, 2);
-		}
 	}
 }
 
@@ -295,7 +291,7 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 					{
 						echo htmlspecialcharsbx(number_format((float)$mfDynPrice, 2, '.', ' ')) . ' &#8381;';
 					}
-					elseif (!empty($price))
+					elseif (function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price))
 					{
 						echo $price['PRINT_RATIO_PRICE'];
 					}
