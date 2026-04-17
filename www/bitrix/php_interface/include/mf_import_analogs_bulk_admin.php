@@ -183,10 +183,13 @@ function mf_parse_bulk_analogs_csv(string $text): array
 $errors = [];
 $report = null;
 
+/** Пока только каталог с этим ID; поле в форме отключено. */
+$catalogIblockIdForBulkAnalogs = 4;
+
 $requestMethod = (string)($_SERVER['REQUEST_METHOD'] ?? 'GET');
 if ($requestMethod === 'POST' && check_bitrix_sessid())
 {
-	$iblockId = (int)($_POST['IBLOCK_ID'] ?? 4);
+	$iblockId = $catalogIblockIdForBulkAnalogs;
 
 	$text = '';
 	if (!empty($_FILES['FILE']['tmp_name']) && is_uploaded_file($_FILES['FILE']['tmp_name']))
@@ -221,6 +224,7 @@ if ($requestMethod === 'POST' && check_bitrix_sessid())
 				continue;
 			}
 
+			$origIds = [];
 			foreach ((array)$row['originals'] as $o)
 			{
 				$ob = trim((string)($o['brand'] ?? ''));
@@ -238,8 +242,29 @@ if ($requestMethod === 'POST' && check_bitrix_sessid())
 					continue;
 				}
 
-				mf_analogs_merge_for_product((int)$origId, [(int)$analogId], $source);
+				$origIds[] = (int)$origId;
+			}
+
+			$origIds = array_values(array_unique(array_filter($origIds, static fn($x) => (int)$x > 0)));
+
+			foreach ($origIds as $oid)
+			{
+				mf_analogs_merge_for_product($oid, [(int)$analogId], $source);
 				$linked++;
+			}
+
+			// Попарные связи только между оригиналами этой строки CSV (не между строками файла).
+			$nOrig = count($origIds);
+			if ($nOrig >= 2)
+			{
+				for ($i = 0; $i < $nOrig; $i++)
+				{
+					for ($j = $i + 1; $j < $nOrig; $j++)
+					{
+						mf_analogs_merge_for_product((int)$origIds[$i], [(int)$origIds[$j]], $source);
+						$linked++;
+					}
+				}
 			}
 		}
 
@@ -281,15 +306,17 @@ if (is_array($report))
 <div style="max-width: 980px;">
 	<div style="margin: 8px 0 12px 0; color:#666;">
 		Связываются только уже существующие в каталоге товары (по бренду и артикулу); новые карточки здесь не создаются.
+		<br>Если <b>в одной строке файла</b> указано несколько оригиналов, они дополнительно связываются <b>между собой</b> как аналоги (попарно). Другие строки файла на это не влияют.
 		<br><br>
-		Формат CSV (разделитель <code>;</code>). <b>Порядок колонок не важен</b>, распознаём по заголовкам. Варианты:
+		Формат CSV (разделитель <code>;</code>): заголовки <code>Бренд</code>, <code>Артикул</code>, <code>Оригиналы</code> — порядок колонок может быть любым, строка распознаётся по именам колонок.
 		<pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">Бренд;Артикул;Оригиналы
 Yamaha;123;Yamaha:1HP-F582T-00-00, Yamaha:BB5-F514A-00-00</pre>
-		Оригиналы в ячейке: <code>Бренд:Артикул</code> (или <code>Бренд|Артикул</code>), несколько через запятую.
-		<br><br>
-		Или (если у оригиналов один бренд, но много артикулов):
-		<pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">Бренд;Артикул;ОригиналБренд;ОригиналАртикул
-Yamaha;123;Yamaha;1HP-F582T-00-00, BB5-F514A-00-00</pre>
+		В колонке <b>Оригиналы</b> — через запятую пары <code>Бренд:Артикул</code> (допустимо <code>Бренд|Артикул</code>).
+		<p style="margin:14px 0 10px 0;">
+			<strong>Шаблон:</strong>
+			<a href="mf_import_analogs_bulk_template.csv" download="import_analogov_shablon.csv">скачать CSV</a>
+			<span style="color:#666;"> — колонки <code>Бренд</code>, <code>Артикул</code>, <code>Оригиналы</code> (UTF‑8); в файле комментарии с <code>#</code>.</span>
+		</p>
 	</div>
 
 	<form method="post" enctype="multipart/form-data">
@@ -300,7 +327,8 @@ Yamaha;123;Yamaha;1HP-F582T-00-00, BB5-F514A-00-00</pre>
 			<tr>
 				<td class="adm-detail-content-cell-l" width="40%">Инфоблок каталога</td>
 				<td class="adm-detail-content-cell-r">
-					<input type="number" name="IBLOCK_ID" value="4" min="1" step="1" style="width:120px;">
+					<input type="number" value="<?= (int)$catalogIblockIdForBulkAnalogs ?>" min="1" step="1" style="width:120px;" disabled title="Пока зафиксировано в коде">
+					<span style="margin-left:8px;color:#888;font-size:12px;">сейчас не меняется</span>
 				</td>
 			</tr>
 			<tr>
