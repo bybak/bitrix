@@ -167,7 +167,7 @@ while ($s = $rs->Fetch())
 	$stores[] = $s;
 }
 
-/** @var array<int, array{use: bool, rub_per_kg: float, min_rub: float}> */
+/** @var array<int, array{use: bool, rub_per_kg: float}> */
 $mfEpStoreWeightJson = [];
 foreach ($stores as $s)
 {
@@ -178,7 +178,7 @@ foreach ($stores as $s)
 	}
 	$mfEpStoreWeightJson[$sid] = function_exists('mf_ep_store_weight_uf_raw')
 		? mf_ep_store_weight_uf_raw($sid)
-		: ['use' => false, 'rub_per_kg' => 0.0, 'min_rub' => 0.0];
+		: ['use' => false, 'rub_per_kg' => 0.0];
 }
 
 $stats = null;
@@ -197,11 +197,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		$zeroMissing = isset($_POST['zero_missing']) && $_POST['zero_missing'] === 'Y';
 		$weightUse = isset($_POST['weight_use']) && $_POST['weight_use'] === 'Y';
 		$weightRubKg = (float)str_replace(',', '.', (string)($_POST['weight_rub_kg'] ?? '0'));
-		$weightMinRub = (float)str_replace(',', '.', (string)($_POST['weight_min_rub'] ?? '0'));
 		if (!$weightUse)
 		{
 			$weightRubKg = 0.0;
-			$weightMinRub = 0.0;
 		}
 
 		$importLogWritten = false;
@@ -405,7 +403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 								$uf = [
 									'UF_MF_EXT_WEIGHT_USE' => $weightUse ? 1 : 0,
 									'UF_MF_EXT_WEIGHT_RUB_PER_KG' => $weightRubKg,
-									'UF_MF_EXT_WEIGHT_MIN_RUB' => $weightMinRub,
+									'UF_MF_EXT_WEIGHT_MIN_RUB' => 0,
 								];
 								$USER_FIELD_MANAGER->Update(StoreTable::getUfId(), $storeId, $uf);
 							}
@@ -445,7 +443,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
 									'UF_WEIGHT_RUB_PER_KG' => $weightRubKg,
-									'UF_WEIGHT_MIN_RUB' => $weightMinRub,
+									'UF_WEIGHT_MIN_RUB' => 0.0,
 									'UF_TOTAL_DATA_ROWS' => $totalDataRows,
 									'UF_MATCHED' => $ok,
 									'UF_NOT_FOUND' => $notFound,
@@ -487,7 +485,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
 									'UF_WEIGHT_RUB_PER_KG' => $weightRubKg,
-									'UF_WEIGHT_MIN_RUB' => $weightMinRub,
+									'UF_WEIGHT_MIN_RUB' => 0.0,
 									'UF_TOTAL_DATA_ROWS' => isset($totalDataRows) ? $totalDataRows : null,
 									'UF_MATCHED' => isset($ok) ? $ok : null,
 									'UF_NOT_FOUND' => isset($notFound) ? $notFound : null,
@@ -533,7 +531,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 					'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 					'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
 					'UF_WEIGHT_RUB_PER_KG' => $weightRubKg,
-					'UF_WEIGHT_MIN_RUB' => $weightMinRub,
+					'UF_WEIGHT_MIN_RUB' => 0.0,
 					'UF_TOTAL_DATA_ROWS' => null,
 					'UF_MATCHED' => null,
 					'UF_NOT_FOUND' => null,
@@ -558,7 +556,6 @@ $wfRepost = ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_extern
 $formStoreId = $wfRepost ? (int)($_POST['store_id'] ?? 0) : 0;
 $wfUseChecked = $wfRepost && (string)($_POST['weight_use'] ?? '') === 'Y';
 $wfRubKgStr = $wfRepost ? (string)($_POST['weight_rub_kg'] ?? '0') : '0';
-$wfMinRubStr = $wfRepost ? (string)($_POST['weight_min_rub'] ?? '0') : '0';
 $wfWeightInputsDisabled = !$wfUseChecked;
 
 ?>
@@ -604,10 +601,26 @@ if ($stats)
 		(<em>Настройки → Настройки продукта → Настройки модулей → Валюты</em> — валюты и курсы к базовой, обычно рублю).
 		Если курса в базе нет, подставляется курс ЦБ РФ (кэш в опции <code>mf_cbr_rates_*</code>), кроме случая, когда в <code>main</code> задано <code>mf_external_price_no_cbr=Y</code> — тогда только курсы Bitrix, без запросов к ЦБ.</p>
 
+	<?php
+	$mfEpSampleHref = '/bitrix/admin/mf_external_price_upload_sample.csv';
+	?>
 	<table class="adm-detail-content-table edit-table" style="max-width:720px">
 		<tr>
-			<td class="adm-detail-content-cell-l" width="40%">Файл CSV</td>
-			<td><input type="file" name="price_file" accept=".csv,.txt" required /></td>
+			<td class="adm-detail-content-cell-l" width="40%" style="vertical-align:top">Файл CSV</td>
+			<td style="vertical-align:top">
+				<input type="file" name="price_file" accept=".csv,.txt" required />
+				<div style="margin-top:8px;max-width:560px;color:#555;font-size:12px;line-height:1.45;">
+					Ожидаются колонки с заголовками вроде <strong>Производитель</strong>, <strong>Артикул</strong>, <strong>Наименование</strong>, <strong>Цена</strong> (разделитель <code>;</code> или <code>,</code>).
+					<a href="<?= mf_epu_escape($mfEpSampleHref) ?>" download="mf_external_price_upload_sample.csv" style="white-space:nowrap;">Скачать шаблон примера</a>
+				</div>
+				<details style="margin-top:6px;max-width:560px;font-size:12px;">
+					<summary style="cursor:pointer;color:#1d54a8;">Показать пример содержимого</summary>
+					<pre style="margin:8px 0 0;padding:8px;background:#f5f9fc;border:1px solid #dce7f2;overflow:auto;white-space:pre-wrap;">Производитель;Артикул;Наименование;Цена
+Delta;CT12025;Аккумулятор Дельта;5,04
+BRP;420256454;OIL FILTER;11,04
+BRP;420256455;OIL FILTER;11,04</pre>
+				</details>
+			</td>
 		</tr>
 		<tr>
 			<td>Склад (внешний)</td>
@@ -653,12 +666,16 @@ if ($stats)
 		<tr>
 			<td>Учитывать вес товара</td>
 			<td>
-				<label><input type="checkbox" name="weight_use" id="mf_ep_weight_use" value="Y"<?= $wfUseChecked ? ' checked' : '' ?> /> при оформлении заказа к позиции добавляется доплата по весу из каталога (поле веса товара, коэффициент из настроек магазина sale/weight_koef)</label>
+				<label><input type="checkbox" name="weight_use" id="mf_ep_weight_use" value="Y"<?= $wfUseChecked ? ' checked' : '' ?> />
+					доплата за доставку по весу: к цене из файла на витрине и в корзине добавляется отдельная строка расчёта по весу товара из каталога (модуль sale → коэффициент единицы веса). В тип цены из CSV эта доплата <strong>не</strong> входит.</label>
 			</td>
 		</tr>
 		<tr>
-			<td>₽ за 1 кг веса</td>
-			<td><input type="text" name="weight_rub_kg" id="mf_ep_weight_rub_kg" value="<?= mf_epu_escape($wfRubKgStr) ?>" size="10"<?= $wfWeightInputsDisabled ? ' disabled' : '' ?> /> и минимальная доплата, ₽: <input type="text" name="weight_min_rub" id="mf_ep_weight_min_rub" value="<?= mf_epu_escape($wfMinRubStr) ?>" size="8"<?= $wfWeightInputsDisabled ? ' disabled' : '' ?> /></td>
+			<td>Тариф: ₽ за 1 кг</td>
+			<td>
+				<input type="text" name="weight_rub_kg" id="mf_ep_weight_rub_kg" value="<?= mf_epu_escape($wfRubKgStr) ?>" size="10"<?= $wfWeightInputsDisabled ? ' disabled' : '' ?> />
+				<span style="color:#666;font-size:12px;margin-left:6px;">Доплата = вес позиции (кг) × эта ставка. Сохраняется в поле склада «Доп. ₽ за кг веса».</span>
+			</td>
 		</tr>
 	</table>
 
@@ -691,26 +708,22 @@ if ($jsMapJson === false)
 		return MAP[sid] || MAP[Number(sid)] || null;
 	}
 	function hintHtml(w) {
-		return '<strong>Сохранённые поля склада</strong> (те же, что в карточке склада):<br>'
+		return '<strong>Текущие настройки склада</strong> (карточка склада → поля внешнего прайса):<br>'
 			+ '«Внешний прайс: учитывать вес (доставка)» — <strong>' + (w.use ? 'да' : 'нет') + '</strong>;<br>'
-			+ '«Доп. ₽ за кг веса» — <strong>' + fmtRub(w.rub_per_kg) + '</strong>;<br>'
-			+ '«Мин. доплата по весу, ₽» — <strong>' + fmtRub(w.min_rub) + '</strong>.<br>'
+			+ '«Доп. ₽ за кг веса» (тариф) — <strong>' + fmtRub(w.rub_per_kg) + '</strong>.<br>'
 			+ '<span style="color:#555">При смене склада поля ниже подставляются из базы. После успешного импорта введённые значения записываются на выбранный склад.</span>';
 	}
 	function syncWeightInputsEnabled() {
 		var chk = document.getElementById('mf_ep_weight_use');
 		var rub = document.getElementById('mf_ep_weight_rub_kg');
-		var min = document.getElementById('mf_ep_weight_min_rub');
-		if (!chk || !rub || !min) return;
+		if (!chk || !rub) return;
 		var on = chk.checked;
 		rub.disabled = !on;
-		min.disabled = !on;
 	}
 	function applyFromMap(sid, touchInputs) {
 		var hint = document.getElementById('mf_ep_store_weight_hint');
 		var chk = document.getElementById('mf_ep_weight_use');
 		var rub = document.getElementById('mf_ep_weight_rub_kg');
-		var min = document.getElementById('mf_ep_weight_min_rub');
 		sid = String(sid || '');
 		if (!hint) return;
 		var w = pickWeight(sid);
@@ -720,10 +733,9 @@ if ($jsMapJson === false)
 			return;
 		}
 		hint.innerHTML = hintHtml(w);
-		if (touchInputs && chk && rub && min) {
+		if (touchInputs && chk && rub) {
 			chk.checked = !!w.use;
 			rub.value = fmtInput(w.rub_per_kg);
-			min.value = fmtInput(w.min_rub);
 		}
 		syncWeightInputsEnabled();
 	}

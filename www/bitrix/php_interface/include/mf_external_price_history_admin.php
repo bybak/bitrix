@@ -149,7 +149,6 @@ if ($isView && mf_eh_table_exists())
 	$kv('Обнулять отсутствующие', $row['UF_ZERO_MISSING'] ?? '');
 	$kv('Учёт веса', $row['UF_WEIGHT_USE'] ?? '');
 	$kv('₽ за кг', $row['UF_WEIGHT_RUB_PER_KG'] ?? '');
-	$kv('Мин. доплата по весу', $row['UF_WEIGHT_MIN_RUB'] ?? '');
 	$kv('Строк данных в файле (непустых)', $row['UF_TOTAL_DATA_ROWS'] ?? '');
 	$kv('Сопоставлено (обновлено цен)', $row['UF_MATCHED'] ?? '');
 	$kv('Не найдено в каталоге', $row['UF_NOT_FOUND'] ?? '');

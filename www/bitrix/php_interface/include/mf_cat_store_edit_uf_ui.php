@@ -29,7 +29,7 @@ if (!function_exists('mf_admin_cat_store_edit_uf_dependent_fields'))
 <script>
 (function () {
 	var MASTER = 'UF_MF_EXTERNAL_STORE';
-	var DEP = ['UF_MF_EXT_WEIGHT_USE', 'UF_MF_EXT_WEIGHT_RUB_PER_KG', 'UF_MF_EXT_WEIGHT_MIN_RUB'];
+	var DEP = ['UF_MF_EXT_WEIGHT_USE', 'UF_MF_EXT_WEIGHT_RUB_PER_KG'];
 
 	function extOn() {
 		var cb = document.querySelector('input[type="checkbox"][name="' + MASTER + '"]');
@@ -101,6 +101,15 @@ if (!function_exists('mf_admin_cat_store_edit_uf_dependent_fields'))
 		);
 	}
 
+	function hideLegacyMinWeightRow() {
+		document.querySelectorAll('[name="UF_MF_EXT_WEIGHT_MIN_RUB"]').forEach(function (el) {
+			var tr = el.closest ? el.closest('tr') : null;
+			if (tr) {
+				tr.style.display = 'none';
+			}
+		});
+	}
+
 	function init() {
 		if (!document.forms.store_edit) {
 			return;
@@ -108,6 +117,7 @@ if (!function_exists('mf_admin_cat_store_edit_uf_dependent_fields'))
 		bindMaster();
 		sync();
 		bindSubmit();
+		hideLegacyMinWeightRow();
 	}
 
 	if (document.readyState === 'loading') {
