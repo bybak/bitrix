@@ -477,15 +477,6 @@ if (!function_exists('mf_ep_recalc_base_one'))
 			return;
 		}
 
-		$prices = [];
-		if (class_exists(\CPrice::class))
-		{
-			$rsP = \CPrice::GetList([], ['PRODUCT_ID' => $productId], false, false, ['CATALOG_GROUP_ID', 'PRICE']);
-			while ($p = $rsP->Fetch())
-			{
-				$prices[(int)$p['CATALOG_GROUP_ID']] = (float)$p['PRICE'];
-			}
-		}
 		$min = null;
 
 		$rsS = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId], false, false, ['STORE_ID', 'AMOUNT']);
@@ -501,15 +492,12 @@ if (!function_exists('mf_ep_recalc_base_one'))
 			{
 				continue;
 			}
-			$gid = (int)$storeToGroup[$storeId];
-			$raw = (float)($prices[$gid] ?? 0);
-			if ($raw <= 0)
+			if (!function_exists('mf_calc_store_price'))
 			{
 				continue;
 			}
-			$pct = function_exists('mf_store_markup_pct') ? mf_store_markup_pct($storeId) : 0.0;
-			$computed = function_exists('mf_apply_markup') ? mf_apply_markup($raw, $pct) : $raw;
-			if ($computed <= 0)
+			$computed = mf_calc_store_price($productId, $storeId);
+			if ($computed === null || $computed <= 0)
 			{
 				continue;
 			}
@@ -997,6 +985,10 @@ if (!function_exists('mf_ep_store_weight_fields'))
 
 if (!function_exists('mf_ep_weight_surcharge_rub'))
 {
+	/**
+	 * Стоимость доставки по весу за позицию (кг × ₽/кг), без наценки.
+	 * В розничной цене вес уже учтён внутри mf_calc_store_price: (Закуп + вес×тариф) × (1+наценка/100).
+	 */
 	function mf_ep_weight_surcharge_rub(int $productId, int $storeId, float $qty): float
 	{
 		$w = mf_ep_store_weight_fields($storeId);
@@ -1020,8 +1012,8 @@ if (!function_exists('mf_ep_weight_surcharge_rub'))
 if (!function_exists('mf_ep_display_price_for_store'))
 {
 	/**
-	 * Цена для показа на сайте и для строки корзины (за qty шт.): RAW+наценка, при опте −10%, затем доплата по весу склада.
-	 * Совпадает с расчётом в mf_assign_store_and_price_to_basket_item.
+	 * Цена за единицу для витрины и корзины: mf_calc_store_price (закуп×(1+наценка/100) или (закуп+вес×тариф)×(1+наценка/100)), опт −10%.
+	 * Параметр qty зарезервирован (API), на цену за штуку не влияет.
 	 */
 	function mf_ep_display_price_for_store(int $productId, int $storeId, float $qty = 1.0): ?float
 	{
@@ -1030,10 +1022,6 @@ if (!function_exists('mf_ep_display_price_for_store'))
 		if ($productId <= 0 || $storeId <= 0)
 		{
 			return null;
-		}
-		if ($qty <= 0)
-		{
-			$qty = 1.0;
 		}
 		if (!function_exists('mf_calc_store_price'))
 		{
@@ -1047,11 +1035,6 @@ if (!function_exists('mf_ep_display_price_for_store'))
 		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
 		{
 			$computed = round((float)$computed * 0.9, 2);
-		}
-		if (function_exists('mf_ep_weight_surcharge_rub'))
-		{
-			$sur = mf_ep_weight_surcharge_rub($productId, $storeId, $qty);
-			$computed = round((float)$computed + (float)$sur, 2);
 		}
 
 		return $computed > 0 ? $computed : null;

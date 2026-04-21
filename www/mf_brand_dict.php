@@ -14,10 +14,18 @@
  * - UF_SORT             (integer)  Sort/priority (higher first)
  * - UF_CREATED_AT       (datetime)
  * - UF_UPDATED_AT       (datetime)
+ *
+ * Требуется модуль Bitrix «highloadblock».
  */
 
 use Bitrix\Highloadblock\HighloadBlockTable;
+use Bitrix\Main\Loader;
 use Bitrix\Main\Type\DateTime;
+
+if (class_exists(Loader::class))
+{
+	Loader::includeModule('highloadblock');
+}
 
 function mf_brand_norm(string $s): string
 {

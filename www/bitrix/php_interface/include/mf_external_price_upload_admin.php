@@ -196,11 +196,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		$currency = mb_strtoupper(trim((string)($_POST['currency'] ?? 'RUB')));
 		$zeroMissing = isset($_POST['zero_missing']) && $_POST['zero_missing'] === 'Y';
 		$weightUse = isset($_POST['weight_use']) && $_POST['weight_use'] === 'Y';
-		$weightRubKg = (float)str_replace(',', '.', (string)($_POST['weight_rub_kg'] ?? '0'));
-		if (!$weightUse)
-		{
-			$weightRubKg = 0.0;
-		}
+		/** В валюте прайса (см. «Валюта цен в файле»); пересчёт в ₽ перед записью на склад. */
+		$weightTariffInput = (float)str_replace(',', '.', (string)($_POST['weight_rub_kg'] ?? '0'));
+		$weightTariffRubPerKg = 0.0;
 
 		$importLogWritten = false;
 		$importLogT0 = microtime(true);
@@ -235,12 +233,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		{
 			$error = 'Недопустимая валюта.';
 		}
-		elseif ($weightUse && $weightRubKg <= 0)
-		{
-			$error = 'Укажите ставку ₽ за кг (больше нуля), если включена опция учёта веса.';
-		}
 		else
 		{
+			if ($weightUse)
+			{
+				if ($weightTariffInput <= 0)
+				{
+					$error = 'Укажите тариф за 1 кг в валюте прайса (поле «Валюта цен в файле» выше), больше нуля.';
+				}
+				elseif (!function_exists('mf_ep_convert_to_rub'))
+				{
+					$error = 'Конвертация валют недоступна (mf_ep_convert_to_rub).';
+				}
+				else
+				{
+					try
+					{
+						$weightTariffRubPerKg = mf_ep_convert_to_rub($weightTariffInput, $currency);
+					}
+					catch (\Throwable $e)
+					{
+						$error = 'Тариф за 1 кг: ' . $e->getMessage();
+					}
+				}
+			}
+
+			if (!empty($error))
+			{
+				// Ошибка валидации тарифа за вес — импорт не выполняем.
+			}
+			else
+			{
 			$st = \CCatalogStore::GetList([], ['ID' => $storeId], false, false, ['ID', 'TITLE', 'XML_ID'])->Fetch();
 			if (!$st)
 			{
@@ -402,7 +425,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 							{
 								$uf = [
 									'UF_MF_EXT_WEIGHT_USE' => $weightUse ? 1 : 0,
-									'UF_MF_EXT_WEIGHT_RUB_PER_KG' => $weightRubKg,
+									'UF_MF_EXT_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
 									'UF_MF_EXT_WEIGHT_MIN_RUB' => 0,
 								];
 								$USER_FIELD_MANAGER->Update(StoreTable::getUfId(), $storeId, $uf);
@@ -442,7 +465,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_CURRENCY' => $currency,
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-									'UF_WEIGHT_RUB_PER_KG' => $weightRubKg,
+									'UF_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
 									'UF_WEIGHT_MIN_RUB' => 0.0,
 									'UF_TOTAL_DATA_ROWS' => $totalDataRows,
 									'UF_MATCHED' => $ok,
@@ -484,7 +507,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_CURRENCY' => $currency,
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-									'UF_WEIGHT_RUB_PER_KG' => $weightRubKg,
+									'UF_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
 									'UF_WEIGHT_MIN_RUB' => 0.0,
 									'UF_TOTAL_DATA_ROWS' => isset($totalDataRows) ? $totalDataRows : null,
 									'UF_MATCHED' => isset($ok) ? $ok : null,
@@ -500,6 +523,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 						}
 					}
 				}
+			}
 			}
 		}
 
@@ -530,7 +554,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 					'UF_CURRENCY' => $currency,
 					'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 					'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-					'UF_WEIGHT_RUB_PER_KG' => $weightRubKg,
+					'UF_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
 					'UF_WEIGHT_MIN_RUB' => 0.0,
 					'UF_TOTAL_DATA_ROWS' => null,
 					'UF_MATCHED' => null,
@@ -556,6 +580,11 @@ $wfRepost = ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_extern
 $formStoreId = $wfRepost ? (int)($_POST['store_id'] ?? 0) : 0;
 $wfUseChecked = $wfRepost && (string)($_POST['weight_use'] ?? '') === 'Y';
 $wfRubKgStr = $wfRepost ? (string)($_POST['weight_rub_kg'] ?? '0') : '0';
+$wfCurrency = $wfRepost ? mb_strtoupper(trim((string)($_POST['currency'] ?? 'RUB'))) : 'RUB';
+if ($wfCurrency !== 'RUB' && $wfCurrency !== 'USD' && $wfCurrency !== 'EUR')
+{
+	$wfCurrency = 'RUB';
+}
 $wfWeightInputsDisabled = !$wfUseChecked;
 
 ?>
@@ -651,9 +680,9 @@ BRP;420256455;OIL FILTER;11,04</pre>
 			<td>Валюта цен в файле</td>
 			<td>
 				<select name="currency">
-					<option value="RUB">Рубли (RUB)</option>
-					<option value="USD">Доллары (USD), курс ЦБ</option>
-					<option value="EUR">Евро (EUR), курс ЦБ</option>
+					<option value="RUB"<?= $wfCurrency === 'RUB' ? ' selected' : '' ?>>Рубли (RUB)</option>
+					<option value="USD"<?= $wfCurrency === 'USD' ? ' selected' : '' ?>>Доллары (USD), курс ЦБ</option>
+					<option value="EUR"<?= $wfCurrency === 'EUR' ? ' selected' : '' ?>>Евро (EUR), курс ЦБ</option>
 				</select>
 			</td>
 		</tr>
@@ -667,14 +696,14 @@ BRP;420256455;OIL FILTER;11,04</pre>
 			<td>Учитывать вес товара</td>
 			<td>
 				<label><input type="checkbox" name="weight_use" id="mf_ep_weight_use" value="Y"<?= $wfUseChecked ? ' checked' : '' ?> />
-					доплата за доставку по весу: к цене из файла на витрине и в корзине добавляется отдельная строка расчёта по весу товара из каталога (модуль sale → коэффициент единицы веса). В тип цены из CSV эта доплата <strong>не</strong> входит.</label>
+					учитывать доставку по весу в розничной цене: <strong>(Закуп_₽ + вес_кг×тариф_₽/кг) × (1+Наценка/100)</strong>, где вес единицы из каталога (sale → коэффициент единицы веса). В тип цены из CSV по-прежнему только закуп без этой надбавки.</label>
 			</td>
 		</tr>
 		<tr>
-			<td>Тариф: ₽ за 1 кг</td>
+			<td>Тариф за 1 кг веса</td>
 			<td>
 				<input type="text" name="weight_rub_kg" id="mf_ep_weight_rub_kg" value="<?= mf_epu_escape($wfRubKgStr) ?>" size="10"<?= $wfWeightInputsDisabled ? ' disabled' : '' ?> />
-				<span style="color:#666;font-size:12px;margin-left:6px;">Доплата = вес позиции (кг) × эта ставка. Сохраняется в поле склада «Доп. ₽ за кг веса».</span>
+				<span style="color:#666;font-size:12px;margin-left:6px;">В той же валюте, что и колонка «Цена» в файле. Пересчёт в рубли — как у цен из CSV; на складе хранится тариф ₽/кг. Он входит в базу до наценки: (закуп + вес×тариф) × (1+наценка/100).</span>
 			</td>
 		</tr>
 	</table>

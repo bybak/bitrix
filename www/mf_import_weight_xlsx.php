@@ -6,6 +6,8 @@
  *   php /var/www/html/mf_import_weight_xlsx.php --xlsx=/path/to/vesa.xlsx
  *   php /var/www/html/mf_import_weight_xlsx.php --xlsx=/path/to/file.xlsx --grams
  *
+ * Требуется модуль Bitrix «highloadblock» (справочник брендов mf_brand_dict.php).
+ *
  * Опции:
  *   --xlsx=/path/file.xlsx   обязательно
  *   --iblock-id=4            каталог (по умолчанию 4)
@@ -25,6 +27,11 @@ use Bitrix\Main\Loader;
 
 Loader::includeModule('iblock');
 Loader::includeModule('catalog');
+if (!Loader::includeModule('highloadblock'))
+{
+	fwrite(STDERR, "Модуль highloadblock не подключён (нужен для справочника брендов mf_brand_dict.php).\n");
+	exit(1);
+}
 
 $libEp = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_external_price_lib.php';
 $libWxi = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_weight_xlsx_import_lib.php';

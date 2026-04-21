@@ -777,7 +777,36 @@ function setBasePrice(int $productId, float $price): void
 
 function recalcBasePriceFromAvailableStores(int $productId, array $storeToGroup): ?float
 {
-	// prices by group
+	if (function_exists('mf_calc_store_price'))
+	{
+		$min = null;
+		$rsS = CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $productId], false, false, ['STORE_ID', 'AMOUNT']);
+		while ($sp = $rsS->Fetch())
+		{
+			$storeId = (int)$sp['STORE_ID'];
+			$amount = (float)$sp['AMOUNT'];
+			if ($amount <= 0)
+			{
+				continue;
+			}
+			if (!isset($storeToGroup[$storeId]))
+			{
+				continue;
+			}
+			$c = mf_calc_store_price($productId, $storeId);
+			if ($c === null || $c <= 0)
+			{
+				continue;
+			}
+			if ($min === null || $c < $min)
+			{
+				$min = $c;
+			}
+		}
+
+		return $min;
+	}
+
 	$prices = [];
 	$rsP = CPrice::GetList([], ['PRODUCT_ID' => $productId], false, false, ['CATALOG_GROUP_ID', 'PRICE']);
 	while ($p = $rsP->Fetch())
@@ -798,8 +827,6 @@ function recalcBasePriceFromAvailableStores(int $productId, array $storeToGroup)
 		$raw = (float)($prices[$gid] ?? 0);
 		if ($raw <= 0) continue;
 
-		// IMPORTANT: store price group keeps RAW import price.
-		// Retail price used for BASE is computed as raw + store markup.
 		$markupPct = getStoreMarkupPct($storeId);
 		$computed = applyMarkup($raw, $markupPct);
 		if ($computed <= 0) continue;
@@ -818,9 +845,53 @@ function recalcBasePriceFromAvailableStores(int $productId, array $storeToGroup)
 function recalcBasePricesSql(array $productIds, array $storeToGroup): array
 {
 	$out = [];
+	if (empty($productIds) || empty($storeToGroup)) return $out;
+
+	if (function_exists('mf_calc_store_price'))
+	{
+		foreach ($productIds as $pid)
+		{
+			$pid = (int)$pid;
+			if ($pid <= 0)
+			{
+				continue;
+			}
+			$min = null;
+			$rsS = CCatalogStoreProduct::GetList(
+				[],
+				['PRODUCT_ID' => $pid, '>AMOUNT' => 0],
+				false,
+				false,
+				['STORE_ID']
+			);
+			while ($sp = $rsS->Fetch())
+			{
+				$storeId = (int)$sp['STORE_ID'];
+				if (!isset($storeToGroup[$storeId]))
+				{
+					continue;
+				}
+				$c = mf_calc_store_price($pid, $storeId);
+				if ($c === null || $c <= 0)
+				{
+					continue;
+				}
+				if ($min === null || $c < $min)
+				{
+					$min = $c;
+				}
+			}
+			if ($min !== null)
+			{
+				$out[$pid] = $min;
+			}
+		}
+
+		return $out;
+	}
+
 	$conn = mf_supplier_stock_log_conn(); // Application::getConnection()
 	if (!$conn) return $out;
-	if (empty($productIds) || empty($storeToGroup)) return $out;
 
 	$parts = [];
 	foreach ($storeToGroup as $storeId => $groupId)

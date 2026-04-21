@@ -469,10 +469,42 @@ if (!function_exists('mf_admin_menu_external_price_upload'))
 	}
 }
 
+if (!function_exists('mf_admin_menu_catalog_export'))
+{
+	function mf_admin_menu_catalog_export(array &$aGlobalMenu, array &$aModuleMenu): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+
+		$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+		$parentMenu =
+			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
+				(isset($aGlobalMenu['global_menu_sale']) ? 'global_menu_sale' : 'global_menu_content'));
+
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_catalog_export',
+			'sort' => 20545,
+			'text' => 'Выгрузка товаров',
+			'title' => 'Экспорт каталога в CSV или XLSX с выбором полей',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_catalog_export',
+			'url' => 'mf_catalog_export.php?lang=' . urlencode($lang),
+			'more_url' => [
+				'mf_catalog_export.php',
+			],
+		];
+	}
+}
+
 if (class_exists(\Bitrix\Main\EventManager::class))
 {
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_order_coupon');
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_external_price_upload');
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_catalog_export');
 }
 
 // === SEO sync (static pages from top menu, excluding /products/*) ===
@@ -1438,21 +1470,26 @@ if (!function_exists('mf_store_row'))
 	}
 }
 
-if (!function_exists('mf_calc_store_price'))
+if (!function_exists('mf_raw_store_price'))
 {
 	/**
-	 * Computed price for конкретного склада: RAW(store price type) + markup(store UF).
-	 * Returns null if no raw price.
+	 * Закупочная цена в рублях по типу цены склада (без наценки). Валюта на импорте уже пересчитана в ₽.
 	 */
-	function mf_calc_store_price(int $productId, int $storeId): ?float
+	function mf_raw_store_price(int $productId, int $storeId): ?float
 	{
 		$productId = (int)$productId;
 		$storeId = (int)$storeId;
-		if ($productId <= 0 || $storeId <= 0) return null;
+		if ($productId <= 0 || $storeId <= 0)
+		{
+			return null;
+		}
 
 		$storeToGroup = mf_supplier_store_to_price_group();
 		$gid = (int)($storeToGroup[$storeId] ?? 0);
-		if ($gid <= 0) return null;
+		if ($gid <= 0)
+		{
+			return null;
+		}
 
 		$raw = 0.0;
 		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
@@ -1464,10 +1501,45 @@ if (!function_exists('mf_calc_store_price'))
 				break;
 			}
 		}
-		if ($raw <= 0) return null;
+
+		return ($raw > 0 ? $raw : null);
+	}
+}
+
+if (!function_exists('mf_calc_store_price'))
+{
+	/**
+	 * Розничная цена за единицу по складу:
+	 * без веса: Закуп_₽ × (1 + Наценка/100);
+	 * с весом (внешний склад, UF): (Закуп_₽ + вес_кг_единицы × ₽/кг) × (1 + Наценка/100).
+	 * Закуп_₽ уже с курсом, если прайс в валюте (пересчёт при импорте).
+	 */
+	function mf_calc_store_price(int $productId, int $storeId): ?float
+	{
+		$raw = mf_raw_store_price($productId, $storeId);
+		if ($raw === null)
+		{
+			return null;
+		}
 
 		$pct = mf_store_markup_pct($storeId);
-		$computed = mf_apply_markup($raw, $pct);
+		$base = $raw;
+
+		if (function_exists('mf_ep_store_weight_fields') && function_exists('mf_ep_product_weight_kg'))
+		{
+			$wf = mf_ep_store_weight_fields($storeId);
+			if ($wf['use'] && (float)$wf['rub_per_kg'] > 0)
+			{
+				$kgPerUnit = mf_ep_product_weight_kg($productId, 1.0);
+				if ($kgPerUnit > 0)
+				{
+					$base = $raw + $kgPerUnit * (float)$wf['rub_per_kg'];
+				}
+			}
+		}
+
+		$computed = mf_apply_markup($base, $pct);
+
 		return ($computed > 0 ? $computed : null);
 	}
 }
