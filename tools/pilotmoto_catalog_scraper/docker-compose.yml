@@ -1,0 +1,7 @@
+services:
+  pilotmoto-scraper:
+    build: .
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PILOTMOTO_CONFIG=/app/config.yaml

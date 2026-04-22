@@ -1,0 +1,13 @@
+services:
+  outdoorworld-scraper:
+    build: .
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OUTDOORWORLD_CONFIG=/app/config.yaml
+    # при необходимости ограничить ресурсы:
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "2"
+    #       memory: 1G

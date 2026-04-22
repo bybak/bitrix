@@ -31,3 +31,10 @@ mf_unf.log
 www/mf_unf.log
 www/catalog_btrix.csv
 www/catalog_bitrix.csv
+
+# Инструменты: скраперы каталогов — SQLite (состояние) и выгрузки в data/ (см. также tools/*/.gitignore)
+tools/pilotmoto_catalog_scraper/data/
+tools/outdoorworld_catalog_scraper/data/
+tools/*_catalog_scraper/**/*.sqlite3
+tools/*_catalog_scraper/**/*.sqlite3-wal
+tools/*_catalog_scraper/**/*.sqlite3-shm

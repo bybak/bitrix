@@ -1,0 +1,45 @@
+# Парсер каталога pilotmoto.ru → SQLite + CSV (как outdoorworld)
+
+base_url: "https://pilotmoto.ru"
+catalog_path: "/catalog/"
+
+excluded_path_prefixes: []
+excluded_paths_exact: []
+
+site_currency: RUB
+
+user_agent: "Mozilla/5.0 (compatible; PilotMotoCatalogMirror/1.0)"
+http2: false
+http_max_retries: 5
+http_retry_delay_sec: 0.5
+timeout_seconds: 45
+max_connections: 8
+request_delay_sec: 0.35
+max_concurrent_requests: 4
+
+# При sqlite3.OperationalError: disk I/O — поставьте путь вне iCloud/сети, напр. /tmp/pilotmoto_state.sqlite3
+state_db: "data/state.sqlite3"
+output_csv: "data/eternal_price.csv"
+output_csv_alley: "data/stock_and_price.csv"
+export_encoding: "utf-8-sig"
+
+# Для site_currency: KZT — как у outdoorworld (Bitrix курс). Для RUB не используется.
+bitrix_kzt_use_docker: false
+
+stock_text_map:
+  "Нет в наличии": 0
+  "Очень мало": 1
+  "Мало": 2
+  "Достаточно": 10
+  "Много": 50
+  "В наличии": 5
+stock_stack_map: {}
+stock_default_instock: 1
+
+# Остаток: сумма по магазинам из ответа ajax (как модалка «Посмотреть наличие в магазинах»). Если false — только текст «Наличие:» на карточке / JSON-LD.
+stock_modal_sum_enabled: true
+
+# Обход каждой карточки товара (дополнительные HTTP-запросы). Основные поля берутся с листинга — по умолчанию false.
+detail_enrichment: false
+
+playwright_headless: true

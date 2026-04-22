@@ -1,0 +1,79 @@
+# Парсер каталога outdoorworld.kz → выгрузка как mf_external_price_upload (CSV ;)
+
+base_url: "https://outdoorworld.kz"
+catalog_path: "/catalog/"
+
+# Не обходить эти разделы и всё внутри них (префиксы пути)
+excluded_path_prefixes:
+  - "/catalog/tekhnika/"
+  - "/catalog/uslugi/"
+  - "/catalog/servis_1/"
+
+# Точные URL верхнего уровня (без подкаталогов), если нужно исключить только корень
+excluded_paths_exact:
+  - "/catalog/tekhnika/"
+  - "/catalog/uslugi/"
+  - "/catalog/servis_1/"
+
+# HTTP
+user_agent: "Mozilla/5.0 (compatible; OutdoorWorldCatalogMirror/1.0; educational use)"
+# HTTP/2 на части серверов даёт RemoteProtocolError (обрыв с NO_ERROR) — по умолчанию выключен.
+http2: false
+http_max_retries: 5
+http_retry_delay_sec: 0.5
+timeout_seconds: 45
+max_connections: 8
+# Задержка между запросами к одному хосту (сек) — «незаметно» для сайта
+request_delay_sec: 0.35
+# Параллельные запросы (категории/страницы). Уменьшите при 429/503
+max_concurrent_requests: 4
+
+# Хранилище состояния (для возобновления)
+state_db: "data/state.sqlite3"
+
+# Выход
+# Легаси (mf_external_price_upload): Производитель;Артикул;Наименование;Цена (как на витрине, KZT)
+# С наименованием (mf_external): Производитель;Артикул;Наименование;Цена — при --both-formats
+output_csv: "data/eternal_price.csv"
+# Остаток и цена: Бренд;Артикул;Остаток;Цена — по умолчанию пишется только этот файл
+output_csv_alley: "data/stock_and_price.csv"
+export_encoding: "utf-8-sig"
+
+# Курс в stock_and_price: KZT → RUB через CCurrencyRates (скрипт mf_kzt_to_rub*), не «в базовую валюту».
+# На Mac хост `mysql` из .settings.php не резолвится — для курса из Bitrix включите и держите Docker запущенным:
+#   1) bitrix_kzt_use_docker: true — Python вызовет docker compose exec php …
+#   2) Или вручную: docker compose exec php php /var/www/html/bitrix/php_interface/mf_kzt_to_rub_cli.php 1000000
+bitrix_kzt_use_docker: true
+# Каталог с docker-compose.yml (пусто = на четыре уровня выше outdoorworld_scraper/export_csv.py)
+# bitrix_docker_compose_dir: "/abs/path/to/bitrix/www"
+# bitrix_docker_service: "php"
+# 2) Или локальный php, если БД доступна с хоста (127.0.0.1:3306): bitrix_kzt_use_docker: false
+# bitrix_php_binary: "php"
+# Путь к скрипту вручную: bitrix_kzt_script: "/path/to/mf_kzt_to_rub_cli.php"
+# Если курса нет — вручную рублей за 1 KZT:
+# fallback_rub_per_kzt: 0.18
+
+# Список .i_item уже содержит бренд/артикул/цену/остаток; обход /product/ не требуется, только если detail_enrichment: true или --with-detail
+detail_enrichment: false
+
+# Учитывать data-quan у .i_buy_succes (если в вёрстке есть). Если цифра ведёт себя как «добавлено в корзину», поставьте false
+listing_prefer_data_quan: true
+
+# Остаток: на сайте нет точного числа, только подписи и классы *_stack. Ниже — перевод в число для CSV.
+stock_text_map:
+  "Нет в наличии": 0
+  "Очень мало": 1
+  "Мало": 2
+  "Достаточно": 10
+  "Много": 50
+  "В наличии": 5
+stock_stack_map:
+  one_stack: 1
+  two_stack: 3
+  three_stack: 10
+  four_stack: 50
+# Если schema.org InStock, а текст/класс не сопоставились — подставить число (или null, чтобы оставить пусто)
+stock_default_instock: 1
+
+# Playwright (опционально): только если --playwright и не хватает статики
+playwright_headless: true
