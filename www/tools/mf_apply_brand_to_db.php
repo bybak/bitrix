@@ -16,6 +16,7 @@
  *   --apply      писать в БД (без этого — --dry-run)
  *   --verify-old=Y|N  по умолчанию N; если Y — обновлять только если MF_BRAND совпадает с «Бренд сайта старые» в CSV
  *   --skip-unchanged=Y|N  по умолчанию Y — не писать, если бренд уже равен новому
+ *   --progress-every=2000  сколько строк CSV между сообщениями прогресса; 0 = только по времени (раз в 2 с)
  */
 declare(strict_types=1);
 
@@ -49,10 +50,19 @@ const DEFAULT_IBLOCK = 4;
 
 function arg(string $name): ?string
 {
-	$p = $name . '=';
+	$dd = '--' . $name . '=';
+	$l = strlen($dd);
 	foreach ($_SERVER['argv'] as $a) {
-		if (strncmp($a, $p, strlen($p)) === 0) {
-			return substr($a, strlen($p));
+		if (strncmp($a, $dd, $l) === 0) {
+			return substr($a, $l);
+		}
+	}
+	// без «--» (как --csv, совместимость)
+	$p = $name . '=';
+	$l2 = strlen($p);
+	foreach ($_SERVER['argv'] as $a) {
+		if (strncmp($a, $p, $l2) === 0) {
+			return substr($a, $l2);
 		}
 	}
 	return null;
@@ -89,6 +99,10 @@ $apply = hasFlag('apply');
 $dry = !$apply;
 $verifyOld = yorn(arg('verify-old'), false);
 $skipUnchanged = yorn(arg('skip-unchanged'), true);
+$progressEvery = (int)(arg('progress-every') ?? 2000);
+if ($progressEvery < 0) {
+	$progressEvery = 2000;
+}
 
 if ($csv === '' || !is_file($csv)) {
 	fwrite(STDERR, "Укажите существующий файл: --csv=/полный/путь.csv\n");
@@ -141,7 +155,41 @@ out('IBLOCK_ID: ' . $iblockId);
 out('Режим: ' . ($dry ? 'DRY-RUN (без записи)' : 'APPLY'));
 out('Проверка «' . COL_OLD . '» == MF_BRAND: ' . ($verifyOld ? 'Y' : 'N'));
 out('Пропуск без изменений: ' . ($skipUnchanged ? 'Y' : 'N'));
+out('Прогресс: каждые ' . ($progressEvery > 0 ? (string)$progressEvery : 'N') . ' строк и/или не реже 2 с');
 out('---');
+
+$lastProgressAt = microtime(true);
+$progressTimeSec = 2.0;
+
+$maybeProgress = function () use ($dry, &$readCount, &$updateCount, &$lineNo, &$lastProgressAt, $progressEvery, $progressTimeSec): void {
+	$label = $dry ? 'DRY' : 'APPLY';
+	$now = microtime(true);
+	$emit = false;
+	if ($readCount === 1) {
+		$emit = true;
+	} elseif ($progressEvery > 0 && $readCount > 0 && ($readCount % $progressEvery) === 0) {
+		$emit = true;
+	} elseif (($now - $lastProgressAt) >= $progressTimeSec) {
+		$emit = true;
+	}
+	if (!$emit) {
+		return;
+	}
+	$ts = date('H:i:s');
+	echo sprintf(
+		"[%s] %s: строка %d, записей в CSV обработано %d, %s: %d (пропуски: пуст.бренд/вериф/без.изм./пл.ID/ош. — см. итог)\n",
+		$ts,
+		$label,
+		$lineNo,
+		$readCount,
+		$dry ? 'к обновлению' : 'обновлено/применено',
+		$updateCount
+	);
+	if (function_exists('flush')) {
+		flush();
+	}
+	$lastProgressAt = $now;
+};
 
 while (($row = fgetcsv($fp, 0, ';', '"')) !== false) {
 	$lineNo++;
@@ -156,11 +204,11 @@ while (($row = fgetcsv($fp, 0, ';', '"')) !== false) {
 
 	if ($id <= 0) {
 		$skipBadId++;
-		continue;
+		goto end_row;
 	}
 	if ($new === '') {
 		$skipEmpty++;
-		continue;
+		goto end_row;
 	}
 
 	$res = CIBlockElement::GetList(
@@ -174,7 +222,7 @@ while (($row = fgetcsv($fp, 0, ';', '"')) !== false) {
 	if (!$e || (int)($e['ID'] ?? 0) !== $id) {
 		$errors++;
 		fwrite(STDERR, "ID=$id: элемент не найден в iblock $iblockId (строка $lineNo)\n");
-		continue;
+		goto end_row;
 	}
 
 	$curBrand = trim((string)($e['PROPERTY_MF_BRAND_VALUE'] ?? ''));
@@ -182,11 +230,11 @@ while (($row = fgetcsv($fp, 0, ';', '"')) !== false) {
 
 	if ($verifyOld && $hasOldCol && $oldCsv !== '' && $curBrand !== $oldCsv) {
 		$skipVerify++;
-		continue;
+		goto end_row;
 	}
 	if ($skipUnchanged && $curBrand === $new && $curNorm === mf_brand_norm($new)) {
 		$skipSame++;
-		continue;
+		goto end_row;
 	}
 
 	$norm = mf_brand_norm($new);
@@ -195,7 +243,7 @@ while (($row = fgetcsv($fp, 0, ';', '"')) !== false) {
 		if ($updateCount <= 5) {
 			out("DRY: ID=$id  MF_BRAND: '$curBrand' -> '$new' (norm: $norm)");
 		}
-		continue;
+		goto end_row;
 	}
 
 	$ok = $el->SetPropertyValuesEx($id, $iblockId, [
@@ -205,9 +253,12 @@ while (($row = fgetcsv($fp, 0, ';', '"')) !== false) {
 	if ($ok === false) {
 		$errors++;
 		fwrite(STDERR, "ID=$id: SetPropertyValuesEx: " . $el->LAST_ERROR . "\n");
-		continue;
+		goto end_row;
 	}
 	$updateCount++;
+
+	end_row:
+	$maybeProgress();
 }
 
 fclose($fp);
