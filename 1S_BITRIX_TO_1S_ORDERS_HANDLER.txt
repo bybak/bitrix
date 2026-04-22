@@ -6,11 +6,19 @@
 //    `1S_BITRIX_TO_1S_ORDER_CREATE.txt`
 // 2) Создай общий модуль `MfBitrixUnfOrdersUpdate` (Сервер, Экспорт) и вставь в него код из:
 //    `1S_BITRIX_TO_1S_ORDER_UPDATE.txt`
-// 3) В модуле HTTP-сервиса (ROOT_URL=orders) вставь код из ЭТОГО файла.
+// 3) Создай общий модуль с кодом из `1S_BITRIX_TO_1S_SUPPLIER_ORDERS.txt` (заказы поставщикам).
+//    Имя должно совпадать с вызовом ниже (по умолчанию `MfBitrixUnfSupplierOrdersGet`):
+//    Сервер, Сервер (вызов), Глобальный — иначе HTTP-сервис не увидит модуль.
+// 4) Модуль HTTP-сервиса:
+//    либо ВСЁ в одном сервисе (ROOT=orders) — вставь код из ЭТОГО файла;
+//    либо ОТДЕЛЬНЫЙ сервис `supplier_order_get` (как сейчас) — в его модуле оставьте только delegating
+//    на SupplierOrders (блок внизу); URL снаружи: https://<хост>/unf/hs/supplier_order_get/<шаблон>
+//    (корневой сегмент = имя HTTP-сервиса в 1С, не "orders").
 //
 // Контракты методов сохраняются:
 // - MfScriptVersion(), Ping(Запрос), Orders(Запрос) -> create-логика
-// - UpdateOrder(Запрос, Ответ) -> update-логика
+// - UpdateOrder(Запрос) -> update-логика
+// - SupplierOrders(Запрос) -> список проведённых заказов поставщикам (см. SUPPLIER_ORDERS)
 
 &НаСервере
 Функция MfScriptVersion() Экспорт
@@ -30,5 +38,12 @@
 &НаСервере
 Функция UpdateOrder(Запрос) Экспорт
 	Возврат MfBitrixUnfOrdersUpdate.UpdateOrder(Запрос);
+КонецФункции
+
+// SupplierOrders: если «переменная не определена» у имени модуля — имя должно совпадать с деревом метаданных;
+// у общего модуля: сервер + «Глобальный»; либо замените Get на своё имя в строке Возврат ниже.
+&НаСервере
+Функция SupplierOrders(Запрос) Экспорт
+	Возврат MfBitrixUnfSupplierOrdersGet.SupplierOrders(Запрос);
 КонецФункции
 
