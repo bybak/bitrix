@@ -269,12 +269,31 @@ if (!function_exists('mf_ep_resolve_catalog_trade_product_id'))
 	}
 }
 
+if (!function_exists('mf_ep_normalize_catalog_currency'))
+{
+	/**
+	 * Код валюты для b_catalog_price (как в модуле «Валюты» Bitrix).
+	 */
+	function mf_ep_normalize_catalog_currency(string $currency): string
+	{
+		$c = mb_strtoupper(trim($currency));
+		if ($c === 'RUR')
+		{
+			$c = 'RUB';
+		}
+
+		return $c !== '' ? $c : 'RUB';
+	}
+}
+
 if (!function_exists('mf_ep_set_raw_price'))
 {
 	/**
+	 * Сохраняет закупочную цену в типе цены: сумма и валюта как в прайсе (пересчёт в ₽ — при показе, mf_raw_store_price).
+	 *
 	 * @return bool true, если запись/обновление/удаление прошли без ошибки API
 	 */
-	function mf_ep_set_raw_price(int $productId, int $priceGroupId, float $price): bool
+	function mf_ep_set_raw_price(int $productId, int $priceGroupId, float $price, string $currency = 'RUB'): bool
 	{
 		$productId = (int)$productId;
 		$priceGroupId = (int)$priceGroupId;
@@ -283,7 +302,9 @@ if (!function_exists('mf_ep_set_raw_price'))
 			return false;
 		}
 
-		$apply = static function (int $productId, int $priceGroupId, float $price): bool {
+		$ccy = mf_ep_normalize_catalog_currency($currency);
+
+		$apply = static function (int $productId, int $priceGroupId, float $price, string $ccy): bool {
 			if ($price <= 0)
 			{
 				if (class_exists(\Bitrix\Catalog\PriceTable::class))
@@ -329,7 +350,7 @@ if (!function_exists('mf_ep_set_raw_price'))
 			);
 			if ($p = $rs->Fetch())
 			{
-				$res = \CPrice::Update((int)$p['ID'], ['PRICE' => $price, 'CURRENCY' => 'RUB']);
+				$res = \CPrice::Update((int)$p['ID'], ['PRICE' => $price, 'CURRENCY' => $ccy]);
 
 				return $res !== false;
 			}
@@ -338,17 +359,17 @@ if (!function_exists('mf_ep_set_raw_price'))
 				'PRODUCT_ID' => $productId,
 				'CATALOG_GROUP_ID' => $priceGroupId,
 				'PRICE' => $price,
-				'CURRENCY' => 'RUB',
+				'CURRENCY' => $ccy,
 			]);
 
 			return $addId !== false && (int)$addId > 0;
 		};
 
-		$ok = $apply($productId, $priceGroupId, $price);
+		$ok = $apply($productId, $priceGroupId, $price, $ccy);
 		if (!$ok && $price > 0)
 		{
 			mf_ep_invalidate_catalog_price_group_cache();
-			$ok = $apply($productId, $priceGroupId, $price);
+			$ok = $apply($productId, $priceGroupId, $price, $ccy);
 		}
 
 		return $ok;
@@ -365,7 +386,7 @@ if (!function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
 	/**
 	 * @return int число неудачных mf_ep_set_raw_price по кластеру (для статистики импорта)
 	 */
-	function mf_ep_set_raw_price_for_catalog_cluster(int $foundElementId, int $priceGroupId, float $price): int
+	function mf_ep_set_raw_price_for_catalog_cluster(int $foundElementId, int $priceGroupId, float $price, string $currency = 'RUB'): int
 	{
 		$foundElementId = (int)$foundElementId;
 		$priceGroupId = (int)$priceGroupId;
@@ -396,7 +417,7 @@ if (!function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
 		$fail = 0;
 		foreach ($ids as $productId)
 		{
-			if (!mf_ep_set_raw_price((int)$productId, $priceGroupId, $price))
+			if (!mf_ep_set_raw_price((int)$productId, $priceGroupId, $price, $currency))
 			{
 				$fail++;
 			}
@@ -925,20 +946,20 @@ if (!function_exists('mf_ep_store_weight_uf_raw'))
 	 * Значения UF склада как в базе (для админки / отображения).
 	 * Для расчёта доплаты см. mf_ep_store_weight_fields — там «вкл.» учитывается только при rub_per_kg > 0.
 	 *
-	 * @return array{use: bool, rub_per_kg: float}
+	 * @return array{use: bool, amount_per_kg: float, currency: string}
 	 */
 	function mf_ep_store_weight_uf_raw(int $storeId): array
 	{
 		$storeId = (int)$storeId;
 		if ($storeId <= 0)
 		{
-			return ['use' => false, 'rub_per_kg' => 0.0];
+			return ['use' => false, 'amount_per_kg' => 0.0, 'currency' => 'RUB'];
 		}
 
 		global $USER_FIELD_MANAGER;
 		if (!is_object($USER_FIELD_MANAGER) || !class_exists(\Bitrix\Catalog\StoreTable::class))
 		{
-			return ['use' => false, 'rub_per_kg' => 0.0];
+			return ['use' => false, 'amount_per_kg' => 0.0, 'currency' => 'RUB'];
 		}
 
 		try
@@ -956,29 +977,53 @@ if (!function_exists('mf_ep_store_weight_uf_raw'))
 			{
 				$rp = reset($rp);
 			}
-			$rubPerKg = (float)str_replace(',', '.', (string)$rp);
+			$amountPerKg = (float)str_replace(',', '.', (string)$rp);
+
+			$ccyRaw = $ufs['UF_MF_EXT_WEIGHT_TARIFF_CCY']['VALUE'] ?? '';
+			if (is_array($ccyRaw))
+			{
+				$ccyRaw = reset($ccyRaw);
+			}
+			$ccyStr = trim((string)$ccyRaw);
+			$ccy = $ccyStr !== '' ? mf_ep_normalize_catalog_currency($ccyStr) : 'RUB';
 
 			return [
 				'use' => $use,
-				'rub_per_kg' => $rubPerKg,
+				'amount_per_kg' => $amountPerKg,
+				'currency' => $ccy,
 			];
 		}
 		catch (\Throwable $e)
 		{
-			return ['use' => false, 'rub_per_kg' => 0.0];
+			return ['use' => false, 'amount_per_kg' => 0.0, 'currency' => 'RUB'];
 		}
 	}
 }
 
 if (!function_exists('mf_ep_store_weight_fields'))
 {
+	/**
+	 * @return array{use: bool, rub_per_kg: float} rub_per_kg — тариф в рублях за кг по текущему курсу
+	 */
 	function mf_ep_store_weight_fields(int $storeId): array
 	{
 		$r = mf_ep_store_weight_uf_raw($storeId);
+		$rubPerKg = 0.0;
+		if ($r['amount_per_kg'] > 0 && function_exists('mf_ep_convert_to_rub'))
+		{
+			try
+			{
+				$rubPerKg = mf_ep_convert_to_rub($r['amount_per_kg'], $r['currency']);
+			}
+			catch (\Throwable $e)
+			{
+				$rubPerKg = 0.0;
+			}
+		}
 
 		return [
-			'use' => $r['use'] && $r['rub_per_kg'] > 0,
-			'rub_per_kg' => $r['rub_per_kg'],
+			'use' => $r['use'] && $rubPerKg > 0,
+			'rub_per_kg' => $rubPerKg,
 		];
 	}
 }
@@ -1079,10 +1124,14 @@ if (!function_exists('mf_ep_ensure_store_weight_ufs'))
 
 		$ensure('UF_MF_EXTERNAL_STORE', 'boolean', ['ru' => 'Внешний склад', 'en' => 'External warehouse'], 300, []);
 		$ensure('UF_MF_EXT_WEIGHT_USE', 'boolean', ['ru' => 'Внешний прайс: учитывать вес (доставка)', 'en' => 'Ext price: weight surcharge'], 310, []);
-		$ensure('UF_MF_EXT_WEIGHT_RUB_PER_KG', 'double', ['ru' => 'Доп. ₽ за кг веса', 'en' => 'RUB per kg'], 320, [
+		$ensure('UF_MF_EXT_WEIGHT_RUB_PER_KG', 'double', ['ru' => 'Тариф за кг веса (число)', 'en' => 'Tariff per kg'], 320, [
 			'DEFAULT_VALUE' => 0,
 			'PRECISION' => 2,
 			'SIZE' => 10,
+		]);
+		$ensure('UF_MF_EXT_WEIGHT_TARIFF_CCY', 'string', ['ru' => 'Валюта тарифа за кг (пусто = RUB)', 'en' => 'Tariff currency'], 325, [
+			'DEFAULT_VALUE' => '',
+			'SIZE' => 8,
 		]);
 	}
 }

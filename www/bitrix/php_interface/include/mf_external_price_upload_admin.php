@@ -167,7 +167,7 @@ while ($s = $rs->Fetch())
 	$stores[] = $s;
 }
 
-/** @var array<int, array{use: bool, rub_per_kg: float}> */
+/** @var array<int, array{use: bool, amount_per_kg: float, currency: string, rub_per_kg: float}> */
 $mfEpStoreWeightJson = [];
 foreach ($stores as $s)
 {
@@ -176,9 +176,26 @@ foreach ($stores as $s)
 	{
 		continue;
 	}
-	$mfEpStoreWeightJson[$sid] = function_exists('mf_ep_store_weight_uf_raw')
-		? mf_ep_store_weight_uf_raw($sid)
-		: ['use' => false, 'rub_per_kg' => 0.0];
+	if (function_exists('mf_ep_store_weight_uf_raw') && function_exists('mf_ep_store_weight_fields'))
+	{
+		$wr = mf_ep_store_weight_uf_raw($sid);
+		$wf = mf_ep_store_weight_fields($sid);
+		$mfEpStoreWeightJson[$sid] = [
+			'use' => $wr['use'],
+			'amount_per_kg' => $wr['amount_per_kg'],
+			'currency' => $wr['currency'],
+			'rub_per_kg' => $wf['rub_per_kg'],
+		];
+	}
+	else
+	{
+		$mfEpStoreWeightJson[$sid] = [
+			'use' => false,
+			'amount_per_kg' => 0.0,
+			'currency' => 'RUB',
+			'rub_per_kg' => 0.0,
+		];
+	}
 }
 
 $stats = null;
@@ -196,9 +213,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		$currency = mb_strtoupper(trim((string)($_POST['currency'] ?? 'RUB')));
 		$zeroMissing = isset($_POST['zero_missing']) && $_POST['zero_missing'] === 'Y';
 		$weightUse = isset($_POST['weight_use']) && $_POST['weight_use'] === 'Y';
-		/** В валюте прайса (см. «Валюта цен в файле»); пересчёт в ₽ перед записью на склад. */
+		/** В валюте прайса (см. «Валюта цен в файле»); на склад — число и код валюты, в ₽ пересчитывается при заказе. */
 		$weightTariffInput = (float)str_replace(',', '.', (string)($_POST['weight_rub_kg'] ?? '0'));
-		$weightTariffRubPerKg = 0.0;
 
 		$importLogWritten = false;
 		$importLogT0 = microtime(true);
@@ -235,27 +251,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		}
 		else
 		{
-			if ($weightUse)
+			if ($weightUse && $weightTariffInput <= 0)
 			{
-				if ($weightTariffInput <= 0)
-				{
-					$error = 'Укажите тариф за 1 кг в валюте прайса (поле «Валюта цен в файле» выше), больше нуля.';
-				}
-				elseif (!function_exists('mf_ep_convert_to_rub'))
-				{
-					$error = 'Конвертация валют недоступна (mf_ep_convert_to_rub).';
-				}
-				else
-				{
-					try
-					{
-						$weightTariffRubPerKg = mf_ep_convert_to_rub($weightTariffInput, $currency);
-					}
-					catch (\Throwable $e)
-					{
-						$error = 'Тариф за 1 кг: ' . $e->getMessage();
-					}
-				}
+				$error = 'Укажите тариф за 1 кг в валюте прайса (поле «Валюта цен в файле» выше), больше нуля.';
 			}
 
 			if (!empty($error))
@@ -376,20 +374,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									$catalogPid = (int)$pid;
 								}
 
-								$rub = mf_ep_convert_to_rub($priceVal, $currency);
-								// b_catalog_price: одна и та же RAW на родителе и на SKU, чтобы цена находилась с любого PRODUCT_ID.
+								// b_catalog_price: сумма и валюта как в файле; в ₽ — при расчёте mf_raw_store_price.
 								if (function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
 								{
-									$priceWriteFail += mf_ep_set_raw_price_for_catalog_cluster((int)$pid, $priceGroupId, $rub);
+									$priceWriteFail += mf_ep_set_raw_price_for_catalog_cluster((int)$pid, $priceGroupId, $priceVal, $currency);
 								}
 								else
 								{
-									if (!mf_ep_set_raw_price($catalogPid, $priceGroupId, $rub))
+									if (!mf_ep_set_raw_price($catalogPid, $priceGroupId, $priceVal, $currency))
 									{
 										$priceWriteFail++;
 									}
 								}
-								if ($rub > 0 && function_exists('mf_ep_ensure_unit_if_zero_stock'))
+								if ($priceVal > 0 && function_exists('mf_ep_ensure_unit_if_zero_stock'))
 								{
 									mf_ep_ensure_unit_if_zero_stock($catalogPid, $storeId);
 								}
@@ -425,7 +422,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 							{
 								$uf = [
 									'UF_MF_EXT_WEIGHT_USE' => $weightUse ? 1 : 0,
-									'UF_MF_EXT_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
+									'UF_MF_EXT_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0,
+									'UF_MF_EXT_WEIGHT_TARIFF_CCY' => ($weightUse && $weightTariffInput > 0) ? $currency : '',
 									'UF_MF_EXT_WEIGHT_MIN_RUB' => 0,
 								];
 								$USER_FIELD_MANAGER->Update(StoreTable::getUfId(), $storeId, $uf);
@@ -465,7 +463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_CURRENCY' => $currency,
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-									'UF_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
+									'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
 									'UF_WEIGHT_MIN_RUB' => 0.0,
 									'UF_TOTAL_DATA_ROWS' => $totalDataRows,
 									'UF_MATCHED' => $ok,
@@ -507,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_CURRENCY' => $currency,
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-									'UF_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
+									'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
 									'UF_WEIGHT_MIN_RUB' => 0.0,
 									'UF_TOTAL_DATA_ROWS' => isset($totalDataRows) ? $totalDataRows : null,
 									'UF_MATCHED' => isset($ok) ? $ok : null,
@@ -554,7 +552,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 					'UF_CURRENCY' => $currency,
 					'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 					'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-					'UF_WEIGHT_RUB_PER_KG' => $weightTariffRubPerKg,
+					'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
 					'UF_WEIGHT_MIN_RUB' => 0.0,
 					'UF_TOTAL_DATA_ROWS' => null,
 					'UF_MATCHED' => null,
@@ -626,9 +624,7 @@ if ($stats)
 		]);
 	}
 	?>
-	<p><strong>Валюта прайса (USD/EUR):</strong> сначала используется курс из модуля Bitrix
-		(<em>Настройки → Настройки продукта → Настройки модулей → Валюты</em> — валюты и курсы к базовой, обычно рублю).
-		Если курса в базе нет, подставляется курс ЦБ РФ (кэш в опции <code>mf_cbr_rates_*</code>), кроме случая, когда в <code>main</code> задано <code>mf_external_price_no_cbr=Y</code> — тогда только курсы Bitrix, без запросов к ЦБ.</p>
+	<p><strong>Валюта прайса (USD/EUR/RUB):</strong> в тип цены склада записываются <strong>исходная сумма и валюта</strong> из файла; в рубли для заказа цена переводится по <strong>текущему</strong> курсу (модуль «Валюты» Bitrix, при необходимости — ЦБ для USD/EUR, см. <code>mf_cbr_rates_*</code> и опцию <code>mf_external_price_no_cbr</code>).</p>
 
 	<?php
 	$mfEpSampleHref = '/bitrix/admin/mf_external_price_upload_sample.csv';
@@ -703,7 +699,7 @@ BRP;420256455;OIL FILTER;11,04</pre>
 			<td>Тариф за 1 кг веса</td>
 			<td>
 				<input type="text" name="weight_rub_kg" id="mf_ep_weight_rub_kg" value="<?= mf_epu_escape($wfRubKgStr) ?>" size="10"<?= $wfWeightInputsDisabled ? ' disabled' : '' ?> />
-				<span style="color:#666;font-size:12px;margin-left:6px;">В той же валюте, что и колонка «Цена» в файле. Пересчёт в рубли — как у цен из CSV; на складе хранится тариф ₽/кг. Он входит в базу до наценки: (закуп + вес×тариф) × (1+наценка/100).</span>
+				<span style="color:#666;font-size:12px;margin-left:6px;">В той же валюте, что и «Валюта цен в файле». На складе сохраняются число и валюта; в ₽ тариф переводится при расчёте цены. Формула: (закуп + вес×тариф) × (1+наценка/100) после пересчёта в рубли по курсу на момент заказа.</span>
 			</td>
 		</tr>
 	</table>
@@ -737,9 +733,14 @@ if ($jsMapJson === false)
 		return MAP[sid] || MAP[Number(sid)] || null;
 	}
 	function hintHtml(w) {
+		var cur = (w.currency || 'RUB');
+		var amt = Number(w.amount_per_kg);
+		var rub = Number(w.rub_per_kg);
+		var lineTar = isFinite(amt) ? (fmtRub(amt) + ' ' + cur + '/кг') : '—';
+		var lineRub = isFinite(rub) ? ('сейчас ≈ ' + fmtRub(rub) + ' ₽/кг по курсу') : '';
 		return '<strong>Текущие настройки склада</strong> (карточка склада → поля внешнего прайса):<br>'
 			+ '«Внешний прайс: учитывать вес (доставка)» — <strong>' + (w.use ? 'да' : 'нет') + '</strong>;<br>'
-			+ '«Доп. ₽ за кг веса» (тариф) — <strong>' + fmtRub(w.rub_per_kg) + '</strong>.<br>'
+			+ 'Тариф за кг — <strong>' + lineTar + '</strong>' + (lineRub ? ('; ' + lineRub) : '') + '.<br>'
 			+ '<span style="color:#555">При смене склада поля ниже подставляются из базы. После успешного импорта введённые значения записываются на выбранный склад.</span>';
 	}
 	function syncWeightInputsEnabled() {
@@ -764,7 +765,7 @@ if ($jsMapJson === false)
 		hint.innerHTML = hintHtml(w);
 		if (touchInputs && chk && rub) {
 			chk.checked = !!w.use;
-			rub.value = fmtInput(w.rub_per_kg);
+			rub.value = fmtInput(w.amount_per_kg);
 		}
 		syncWeightInputsEnabled();
 	}

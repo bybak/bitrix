@@ -1415,39 +1415,62 @@ if (!function_exists('mf_product_single_external_store_only'))
 	}
 }
 
-if (!function_exists('mf_product_prices_by_group'))
+if (!function_exists('mf_product_prices_catalog_maps'))
 {
-	function mf_product_prices_by_group(int $productId): array
+	/**
+	 * @return array{prices: array<int, float>, currencies: array<int, string>}
+	 */
+	function mf_product_prices_catalog_maps(int $productId): array
 	{
 		static $cache = [];
 		$productId = (int)$productId;
-		if ($productId <= 0) return [];
-		if (isset($cache[$productId])) return $cache[$productId];
+		if ($productId <= 0)
+		{
+			return ['prices' => [], 'currencies' => []];
+		}
+		if (isset($cache[$productId]))
+		{
+			return $cache[$productId];
+		}
 
 		$map = [];
+		$cur = [];
 		if (class_exists(\Bitrix\Catalog\PriceTable::class))
 		{
 			$rs = \Bitrix\Catalog\PriceTable::getList([
 				'filter' => ['=PRODUCT_ID' => $productId],
-				'select' => ['CATALOG_GROUP_ID', 'PRICE'],
+				'select' => ['CATALOG_GROUP_ID', 'PRICE', 'CURRENCY'],
 			]);
 			while ($p = $rs->fetch())
 			{
 				$gid = (int)$p['CATALOG_GROUP_ID'];
 				$map[$gid] = (float)$p['PRICE'];
+				$c = isset($p['CURRENCY']) ? trim((string)$p['CURRENCY']) : '';
+				$cur[$gid] = $c !== '' ? $c : 'RUB';
 			}
 		}
 		elseif (class_exists(\CPrice::class))
 		{
-			$rs = \CPrice::GetList([], ['PRODUCT_ID' => $productId], false, false, ['CATALOG_GROUP_ID', 'PRICE']);
+			$rs = \CPrice::GetList([], ['PRODUCT_ID' => $productId], false, false, ['CATALOG_GROUP_ID', 'PRICE', 'CURRENCY']);
 			while ($p = $rs->Fetch())
 			{
 				$gid = (int)$p['CATALOG_GROUP_ID'];
 				$map[$gid] = (float)$p['PRICE'];
+				$c = isset($p['CURRENCY']) ? trim((string)$p['CURRENCY']) : '';
+				$cur[$gid] = $c !== '' ? $c : 'RUB';
 			}
 		}
-		$cache[$productId] = $map;
-		return $map;
+		$cache[$productId] = ['prices' => $map, 'currencies' => $cur];
+
+		return $cache[$productId];
+	}
+}
+
+if (!function_exists('mf_product_prices_by_group'))
+{
+	function mf_product_prices_by_group(int $productId): array
+	{
+		return mf_product_prices_catalog_maps($productId)['prices'];
 	}
 }
 
@@ -1473,7 +1496,8 @@ if (!function_exists('mf_store_row'))
 if (!function_exists('mf_raw_store_price'))
 {
 	/**
-	 * Закупочная цена в рублях по типу цены склада (без наценки). Валюта на импорте уже пересчитана в ₽.
+	 * Закупочная цена в рублях по типу цены склада (без наценки). Сумма в каталоге может быть в USD/EUR —
+	 * пересчёт в ₽ по текущему курсу (mf_ep_convert_to_rub / модуль «Валюты»).
 	 */
 	function mf_raw_store_price(int $productId, int $storeId): ?float
 	{
@@ -1491,18 +1515,39 @@ if (!function_exists('mf_raw_store_price'))
 			return null;
 		}
 
-		$raw = 0.0;
+		$amount = 0.0;
+		$currency = 'RUB';
 		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
 		{
-			$prices = mf_product_prices_by_group((int)$cid);
-			$raw = (float)($prices[$gid] ?? 0);
-			if ($raw > 0)
+			$maps = mf_product_prices_catalog_maps((int)$cid);
+			$prices = $maps['prices'];
+			$currencies = $maps['currencies'];
+			$amount = (float)($prices[$gid] ?? 0);
+			if ($amount > 0)
 			{
+				$currency = (string)($currencies[$gid] ?? 'RUB');
 				break;
 			}
 		}
 
-		return ($raw > 0 ? $raw : null);
+		if ($amount <= 0)
+		{
+			return null;
+		}
+
+		if (!function_exists('mf_ep_convert_to_rub'))
+		{
+			return $amount;
+		}
+
+		try
+		{
+			return mf_ep_convert_to_rub($amount, $currency);
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
 	}
 }
 
@@ -1512,7 +1557,7 @@ if (!function_exists('mf_calc_store_price'))
 	 * Розничная цена за единицу по складу:
 	 * без веса: Закуп_₽ × (1 + Наценка/100);
 	 * с весом (внешний склад, UF): (Закуп_₽ + вес_кг_единицы × ₽/кг) × (1 + Наценка/100).
-	 * Закуп_₽ уже с курсом, если прайс в валюте (пересчёт при импорте).
+	 * Закуп в ₽ по текущему курсу из суммы в b_catalog_price (любая валюта типа цены).
 	 */
 	function mf_calc_store_price(int $productId, int $storeId): ?float
 	{
