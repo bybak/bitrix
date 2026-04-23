@@ -154,6 +154,23 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							<?php
 							$mfOrdOnly = !empty($s['order_only']);
 							$mfAmtRounded = round((float)$s['amount'], 3);
+							$mfPendingDisp = trim((string)($s['pending_supplier_display'] ?? ''));
+							$mfStockCell = '';
+							if ($mfOrdOnly)
+							{
+								$mfStockCell = 'Под заказ';
+							}
+							elseif ($mfPendingDisp !== '')
+							{
+								$mfStockCell = htmlspecialcharsbx($mfPendingDisp);
+							}
+							else
+							{
+								$mfStockCell = htmlspecialcharsbx((string)$mfAmtRounded);
+							}
+							$mfMaxQtyRounded = isset($s['pending_supplier_qty'])
+								? round((float)$s['pending_supplier_qty'], 3)
+								: $mfAmtRounded;
 							?>
 							<tr>
 								<td><?=htmlspecialcharsbx((string)$s['title'])?></td>
@@ -166,14 +183,14 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 										echo '—';
 									}
 								?></td>
-								<td class="mf-ta-r"><?=$mfOrdOnly ? 'Под заказ' : htmlspecialcharsbx((string)$mfAmtRounded)?></td>
+								<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
 								<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
 								<td class="mf-ta-r">
 									<?php if ($mfOrdOnly): ?>
 										<span class="mf-search-stock__order-only">Под заказ</span>
 									<?php else: ?>
 										<div class="mf-search-stock__actions">
-											<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfAmtRounded)?>">
+											<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
 												<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
 												<input
 													type="number"

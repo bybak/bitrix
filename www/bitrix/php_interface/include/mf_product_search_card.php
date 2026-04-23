@@ -192,7 +192,7 @@ if (!function_exists('mf_product_search_card_stores'))
 			return $code === 'MOTOR_FORCE_INTERNAL' || ($xml !== '' && mb_strpos($xml, 'MOTOR_FORCE_INTERNAL') !== false);
 		};
 
-		usort($out, static function ($a, $b) use ($isMotorForceInternal) {
+		$storeSortFn = static function ($a, $b) use ($isMotorForceInternal) {
 			$aid = (int)($a['store_id'] ?? 0);
 			$bid = (int)($b['store_id'] ?? 0);
 			$aInt = $isMotorForceInternal($aid);
@@ -209,7 +209,43 @@ if (!function_exists('mf_product_search_card_stores'))
 			}
 
 			return $aid <=> $bid;
-		});
+		};
+
+		usort($out, $storeSortFn);
+
+		if (function_exists('mf_supplier_orders_internal_store_id')
+			&& function_exists('mf_supplier_orders_cluster_amount_on_store')
+			&& function_exists('mf_supplier_orders_pending_arrival_for_product'))
+		{
+			$mfIntSid = mf_supplier_orders_internal_store_id();
+			if ($mfIntSid > 0 && mf_supplier_orders_cluster_amount_on_store($productId, $mfIntSid) <= 1e-9)
+			{
+				$mfPen = mf_supplier_orders_pending_arrival_for_product($productId);
+				if (is_array($mfPen) && (float)($mfPen['qty'] ?? 0) > 1e-9 && ($mfPen['label'] ?? '') !== '')
+				{
+					$mfFound = false;
+					foreach ($out as &$mfRow)
+					{
+						if ((int)($mfRow['store_id'] ?? 0) === $mfIntSid)
+						{
+							$mfFound = true;
+							$mfRow['pending_supplier_display'] = (string)$mfPen['label'];
+							$mfRow['pending_supplier_qty'] = (float)$mfPen['qty'];
+							break;
+						}
+					}
+					unset($mfRow);
+					if (!$mfFound)
+					{
+						$mfNew = $makeRow($mfIntSid, 0.0);
+						$mfNew['pending_supplier_display'] = (string)$mfPen['label'];
+						$mfNew['pending_supplier_qty'] = (float)$mfPen['qty'];
+						$out[] = $mfNew;
+						usort($out, $storeSortFn);
+					}
+				}
+			}
+		}
 
 		return $out;
 	}
@@ -313,6 +349,23 @@ if (!function_exists('mf_product_search_card_render'))
 								<?php
 								$mfOrdOnly = !empty($s['order_only']);
 								$mfAmtRounded = round((float)$s['amount'], 3);
+								$mfPendingDisp = trim((string)($s['pending_supplier_display'] ?? ''));
+								$mfStockCell = '';
+								if ($mfOrdOnly)
+								{
+									$mfStockCell = 'Под заказ';
+								}
+								elseif ($mfPendingDisp !== '')
+								{
+									$mfStockCell = htmlspecialcharsbx($mfPendingDisp);
+								}
+								else
+								{
+									$mfStockCell = htmlspecialcharsbx((string)$mfAmtRounded);
+								}
+								$mfMaxQtyRounded = isset($s['pending_supplier_qty'])
+									? round((float)$s['pending_supplier_qty'], 3)
+									: $mfAmtRounded;
 								?>
 								<tr>
 									<td><?=htmlspecialcharsbx((string)$s['title'])?></td>
@@ -325,14 +378,14 @@ if (!function_exists('mf_product_search_card_render'))
 											echo '—';
 										}
 									?></td>
-									<td class="mf-ta-r"><?=$mfOrdOnly ? 'Под заказ' : htmlspecialcharsbx((string)$mfAmtRounded)?></td>
+									<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
 									<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
 									<td class="mf-ta-r">
 										<?php if ($mfOrdOnly): ?>
 											<span class="mf-search-stock__order-only">Под заказ</span>
 										<?php else: ?>
 											<div class="mf-search-stock__actions">
-												<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfAmtRounded)?>">
+												<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
 													<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
 													<input
 														type="number"

@@ -261,6 +261,24 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 		}
 	}
 
+	// Таб «Склад» на detail.php не использует mf_product_search_card_stores — дублируем логику ожидания из заказов поставщику.
+	// Если по motor_force_internal нет строки в b_catalog_store_product, но в mf_supplier_order_line есть matched — добавляем склад с нулём.
+	if ($elementId > 0
+		&& function_exists('mf_supplier_orders_internal_store_id')
+		&& function_exists('mf_supplier_orders_cluster_amount_on_store')
+		&& function_exists('mf_supplier_orders_pending_arrival_for_product'))
+	{
+		$mfIntSidRow = mf_supplier_orders_internal_store_id();
+		if ($mfIntSidRow > 0 && mf_supplier_orders_cluster_amount_on_store($elementId, $mfIntSidRow) <= 1e-9)
+		{
+			$mfPenRow = mf_supplier_orders_pending_arrival_for_product($elementId);
+			if (is_array($mfPenRow) && (float)($mfPenRow['qty'] ?? 0) > 1e-9 && !isset($storeAmounts[$mfIntSidRow]))
+			{
+				$storeAmounts[$mfIntSidRow] = 0.0;
+			}
+		}
+	}
+
 	$mfSingleExternal = ($elementId > 0
 		&& function_exists('mf_product_single_external_store_only')
 		&& mf_product_single_external_store_only($elementId));
@@ -383,9 +401,26 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 									—
 								<?php endif; ?>
 							</td>
-							<td class="text-right">
+							<td class="text-right mf-detail-stock-table__qty">
+								<?php
+								$mfCodeRow = mb_strtoupper(trim((string)($s['CODE'] ?? '')));
+								$mfXmlRow = mb_strtoupper(trim((string)($s['XML_ID'] ?? '')));
+								$mfIsInternalSku = ($mfCodeRow === 'MOTOR_FORCE_INTERNAL'
+									|| ($mfXmlRow !== '' && mb_strpos($mfXmlRow, 'MOTOR_FORCE_INTERNAL') !== false));
+								$mfPendingTxt = '';
+								if (!$mfSingleExternal && $mfIsInternalSku && $amt <= 1e-9 && function_exists('mf_supplier_orders_pending_arrival_for_product'))
+								{
+									$mfPr = mf_supplier_orders_pending_arrival_for_product($elementId);
+									if (is_array($mfPr) && trim((string)($mfPr['label'] ?? '')) !== '')
+									{
+										$mfPendingTxt = (string)$mfPr['label'];
+									}
+								}
+								?>
 								<?php if ($mfSingleExternal): ?>
 									Под заказ
+								<?php elseif ($mfPendingTxt !== ''): ?>
+									<?=htmlspecialcharsbx($mfPendingTxt)?>
 								<?php else: ?>
 									<?=htmlspecialcharsbx((string)($amt))?>
 								<?php endif; ?>

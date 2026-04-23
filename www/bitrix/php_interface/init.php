@@ -375,6 +375,44 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_stock_import_logs');
 }
 
+// Admin menu: "Магазин" -> заказы поставщику (UNF sync, mf_supplier_order*)
+if (!function_exists('mf_admin_menu_supplier_orders'))
+{
+	function mf_admin_menu_supplier_orders(array &$aGlobalMenu, array &$aModuleMenu): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+
+		$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+		$url = 'mf_supplier_orders.php?lang=' . urlencode($lang);
+		$parentMenu =
+			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
+				(isset($aGlobalMenu['global_menu_sale']) ? 'global_menu_sale' : 'global_menu_content'));
+
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_stock_import',
+			'sort' => 20518,
+			'text' => 'Заказы поставщику (UNF)',
+			'title' => 'Заказы в работе из 1С (таблицы mf_supplier_order)',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_supplier_orders',
+			'url' => $url,
+			'more_url' => [
+				'mf_supplier_orders.php',
+			],
+		];
+	}
+}
+
+if (class_exists(\Bitrix\Main\EventManager::class))
+{
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_supplier_orders');
+}
+
 // Admin menu: "Магазин" -> купон «скидка на корзину» (правило + промокод)
 if (!function_exists('mf_admin_menu_order_coupon'))
 {
@@ -2506,6 +2544,13 @@ if (is_file($mfExtPriceLib))
 	{
 		mf_ep_ensure_store_weight_ufs();
 	}
+}
+
+// --- UNF: заказы поставщику (sync из API; таблицы mf_supplier_order*) -------
+$mfSupplierOrdersLib = __DIR__ . '/include/mf_supplier_orders_lib.php';
+if (is_file($mfSupplierOrdersLib))
+{
+	require_once $mfSupplierOrdersLib;
 }
 
 // --- Admin: store edit — disable external-price weight UFs unless «Внешний склад» ---

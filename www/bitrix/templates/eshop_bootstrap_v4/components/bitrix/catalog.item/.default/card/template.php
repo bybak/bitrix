@@ -74,6 +74,7 @@ if (function_exists('mf_catalog_listing_display_price'))
 // Force availability from store stocks (import writes per-store amounts).
 // We want: sum(store_amounts) > 0 => can buy; otherwise not.
 $mfChipOrderOnly = false;
+$mfChipSupplierPending = false;
 if (\CModule::IncludeModule('catalog'))
 {
 	$pid = (int)($actualItem['ID'] ?? 0);
@@ -100,6 +101,19 @@ if (\CModule::IncludeModule('catalog'))
 		$mfChipOrderOnly = !$canBuy
 			&& function_exists('mf_product_single_external_store_only')
 			&& mf_product_single_external_store_only($pid);
+		$mfChipSupplierPending = false;
+		if (!$canBuy && !$mfChipOrderOnly
+			&& function_exists('mf_supplier_orders_internal_store_id')
+			&& function_exists('mf_supplier_orders_cluster_amount_on_store')
+			&& function_exists('mf_supplier_orders_pending_arrival_for_product'))
+		{
+			$mfIsid = mf_supplier_orders_internal_store_id();
+			if ($mfIsid > 0 && mf_supplier_orders_cluster_amount_on_store($pid, $mfIsid) <= 1e-9)
+			{
+				$mfPend = mf_supplier_orders_pending_arrival_for_product($pid);
+				$mfChipSupplierPending = is_array($mfPend) && (float)($mfPend['qty'] ?? 0) > 1e-9;
+			}
+		}
 		$actualItem['CAN_BUY'] = $canBuy;
 		$item['CAN_BUY'] = $canBuy;
 	}
@@ -246,8 +260,8 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 						<?=-$price['PERCENT']?>%
 					</span>
 				<?php endif; ?>
-				<span class="mf-pcard__chip <?=$canBuy ? 'mf-pcard__chip--ok' : ($mfChipOrderOnly ? 'mf-pcard__chip--order' : 'mf-pcard__chip--no')?>">
-					<?php if ($canBuy): ?>В наличии<?php elseif ($mfChipOrderOnly): ?>Под заказ<?php else: ?>Нет в наличии<?php endif; ?>
+				<span class="mf-pcard__chip <?=$canBuy ? 'mf-pcard__chip--ok' : ($mfChipOrderOnly ? 'mf-pcard__chip--order' : (!empty($mfChipSupplierPending) ? 'mf-pcard__chip--order' : 'mf-pcard__chip--no'))?>">
+					<?php if ($canBuy): ?>В наличии<?php elseif ($mfChipOrderOnly): ?>Под заказ<?php elseif (!empty($mfChipSupplierPending)): ?>Ожидается<?php else: ?>Нет в наличии<?php endif; ?>
 				</span>
 			</span>
 	<?php if ($itemHasDetailUrl): ?>
