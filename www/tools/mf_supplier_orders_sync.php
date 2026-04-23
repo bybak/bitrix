@@ -9,6 +9,12 @@
  *   MF_SUPPLIER_ORDERS_STATE_KEY — фильтр state.key (по умолчанию «в работе», сравнение без регистра).
  *   MF_SUPPLIER_ORDERS_IBLOCK_ID — инфоблок каталога для матчинга (по умолчанию 4).
  *   MF_SUPPLIER_ORDERS_LOG=Y — писать php_interface/logs/mf_supplier_orders.log
+ *   MF_SUPPLIER_ORDERS_FILL_BASE_PRICE — 0|off: не проставлять закуп из 1С, если в строке есть price.unit_price
+ *   MF_SUPPLIER_ORDERS_PRICE_CURRENCY — валюта RAW в b_catalog_price (по умолчанию RUB)
+ *
+ * Строки JSON: price.unit_price; при сопоставлении с товаром, если в типе цены склада MOTOR_FORCE_INTERNAL
+ * (mf_supplier_store_to_price_group) ещё нет закупочной цены — пишется RAW для кластера товара (как внешние прайсы).
+ * В --dry-run каталог не меняется, в JSON — prices_would_fill.
  *
  * Прогресс (по умолчанию вкл., в STDERR; JSON результата — в STDOUT):
  *   --quiet — без сообщений прогресса
@@ -18,6 +24,7 @@
  * Запуск из контейнера (DOCUMENT_ROOT = корень сайта):
  *   php /var/www/html/tools/mf_supplier_orders_sync.php
  *   php /var/www/html/tools/mf_supplier_orders_sync.php --dry-run
+ *   php /var/www/html/tools/mf_supplier_orders_sync.php --no-fill-base-price
  *   php /var/www/html/tools/mf_supplier_orders_sync.php --url=https://host/unf/hs/orders/supplier_order_get/
  *
  * С хоста рядом с репозиторием:
@@ -143,6 +150,14 @@ function mf_sos_stderr_progress(string $phase, array $ctx): void
 			{
 				fwrite(STDERR, ', совпало с каталогом ' . (int)$ctx['lines_matched']);
 			}
+			if (isset($ctx['prices_filled']) && (int)$ctx['prices_filled'] > 0)
+			{
+				fwrite(STDERR, ', закуп (склад MOTOR_FORCE_INTERNAL) проставлена в каталог: ' . (int)$ctx['prices_filled']);
+			}
+			if (isset($ctx['prices_would_fill']) && (int)$ctx['prices_would_fill'] > 0)
+			{
+				fwrite(STDERR, ', было бы проставлено закупов: ' . (int)$ctx['prices_would_fill']);
+			}
 			fwrite(STDERR, "\n");
 			break;
 		case 'abort':
@@ -169,6 +184,10 @@ function mf_sos_stderr_progress(string $phase, array $ctx): void
 }
 
 $dryRun = mf_sos_has_flag('--dry-run');
+if (mf_sos_has_flag('--no-fill-base-price'))
+{
+	putenv('MF_SUPPLIER_ORDERS_FILL_BASE_PRICE=0');
+}
 $urlOverride = mf_sos_arg('url');
 if ($urlOverride !== null && trim($urlOverride) !== '')
 {

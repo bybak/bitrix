@@ -5,6 +5,7 @@ declare(strict_types=1);
 /**
  * Заказы поставщику из UNF HTTP API (supplier_order_get): локальное зеркало в MySQL.
  * Храним только заказы в статусе «в работе»; при исчезновении из выборки — удаляем из БД (без истории).
+ * price.unit_price при отсутствии закупа в типе цены склада MOTOR_FORCE_INTERNAL — через mf_ep_set_raw_price_for_catalog_cluster.
  */
 
 use Bitrix\Main\Application;
@@ -215,6 +216,7 @@ if (!function_exists('mf_supplier_orders_ensure_schema'))
 					`RECEIPT_DATE` DATE NULL,
 					`PRODUCT_ID` INT NULL,
 					`MATCH_STATUS` VARCHAR(16) NOT NULL DEFAULT 'not_found',
+					`UNIT_PRICE` DECIMAL(18,4) NULL,
 					PRIMARY KEY (`ID`),
 					UNIQUE KEY `UX_MF_SOL_ORDER_LINE` (`ORDER_ID`, `LINE_NO`),
 					KEY `IX_MF_SOL_PRODUCT` (`PRODUCT_ID`),
@@ -222,6 +224,17 @@ if (!function_exists('mf_supplier_orders_ensure_schema'))
 				) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 			";
 			$conn->queryExecute($sql);
+		}
+		if ($conn->isTableExists('mf_supplier_order_line'))
+		{
+			$lineTable = $helper->quote('mf_supplier_order_line');
+			$hasUnit = $conn->query('SHOW COLUMNS FROM ' . $lineTable . " LIKE 'UNIT_PRICE'")->fetch();
+			if (!$hasUnit)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE ' . $lineTable . ' ADD COLUMN `UNIT_PRICE` DECIMAL(18,4) NULL DEFAULT NULL'
+				);
+			}
 		}
 	}
 }
@@ -368,6 +381,218 @@ if (!function_exists('mf_supplier_orders_parse_datetime'))
 	}
 }
 
+if (!function_exists('mf_supplier_orders_parse_line_unit_price'))
+{
+	/**
+	 * Цена единицы из строки 1С: price.unit_price.
+	 */
+	function mf_supplier_orders_parse_line_unit_price(array $line): ?float
+	{
+		$pb = is_array($line['price'] ?? null) ? $line['price'] : [];
+		if (!\array_key_exists('unit_price', $pb))
+		{
+			return null;
+		}
+		$v = (float)($pb['unit_price'] ?? 0.0);
+		if (!is_finite($v) || $v <= 0.0)
+		{
+			return null;
+		}
+
+		return round($v, 4);
+	}
+}
+
+if (!function_exists('mf_supplier_orders_fill_base_price_enabled'))
+{
+	function mf_supplier_orders_fill_base_price_enabled(): bool
+	{
+		$e = getenv('MF_SUPPLIER_ORDERS_FILL_BASE_PRICE');
+		if ($e !== false && in_array(mb_strtolower(trim((string)$e)), ['0', 'false', 'n', 'no', 'off'], true))
+		{
+			return false;
+		}
+
+		return true;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_base_price_currency'))
+{
+	function mf_supplier_orders_base_price_currency(): string
+	{
+		$e = getenv('MF_SUPPLIER_ORDERS_PRICE_CURRENCY');
+		if ($e !== false && trim((string)$e) !== '')
+		{
+			return strtoupper(trim((string)$e));
+		}
+
+		return 'RUB';
+	}
+}
+
+if (!function_exists('mf_supplier_orders_internal_store_price_group_id'))
+{
+	/**
+	 * CATALOG_GROUP_ID для склада MOTOR_FORCE_INTERNAL (см. mf_supplier_store_to_price_group).
+	 */
+	function mf_supplier_orders_internal_store_price_group_id(): int
+	{
+		$storeId = function_exists('mf_supplier_orders_internal_store_id')
+			? mf_supplier_orders_internal_store_id()
+			: 0;
+		if ($storeId <= 0)
+		{
+			return 0;
+		}
+		$map = function_exists('mf_supplier_store_to_price_group') ? mf_supplier_store_to_price_group() : [];
+
+		return (int)($map[$storeId] ?? 0);
+	}
+}
+
+if (!function_exists('mf_supplier_orders_catalog_ids_for_store_raw_price'))
+{
+	/**
+	 * Те же ID, что и mf_ep_set_raw_price_for_catalog_cluster (кластер + торговый ID).
+	 *
+	 * @return int[]
+	 */
+	function mf_supplier_orders_catalog_ids_for_store_raw_price(int $foundElementId): array
+	{
+		$foundElementId = (int)$foundElementId;
+		if ($foundElementId <= 0)
+		{
+			return [];
+		}
+		$ids = [$foundElementId];
+		if (function_exists('mf_catalog_product_cluster_ids'))
+		{
+			$cluster = mf_catalog_product_cluster_ids($foundElementId);
+			if (!empty($cluster))
+			{
+				$ids = $cluster;
+			}
+		}
+		if (function_exists('mf_ep_resolve_catalog_trade_product_id'))
+		{
+			$trade = mf_ep_resolve_catalog_trade_product_id($foundElementId);
+			if ($trade > 0)
+			{
+				$ids[] = $trade;
+			}
+		}
+
+		return array_values(array_unique(array_filter($ids, static function ($v): bool {
+			return (int)$v > 0;
+		})));
+	}
+}
+
+if (!function_exists('mf_supplier_orders_internal_store_raw_price_missing'))
+{
+	/**
+	 * true — ни у одного ID кластера нет положительной цены в данном типе (закуп по складу).
+	 */
+	function mf_supplier_orders_internal_store_raw_price_missing(int $productId, int $priceGroupId): bool
+	{
+		$productId = (int)$productId;
+		$priceGroupId = (int)$priceGroupId;
+		if ($productId <= 0 || $priceGroupId <= 0)
+		{
+			return true;
+		}
+		if (!Loader::includeModule('catalog') || !class_exists(\CPrice::class))
+		{
+			return true;
+		}
+		foreach (mf_supplier_orders_catalog_ids_for_store_raw_price($productId) as $cid)
+		{
+			$db = \CPrice::GetList(
+				['ID' => 'ASC'],
+				['PRODUCT_ID' => (int)$cid, 'CATALOG_GROUP_ID' => $priceGroupId],
+				false,
+				false,
+				['PRICE']
+			);
+			if (!($row = $db->Fetch()) || !is_array($row))
+			{
+				continue;
+			}
+			$p = (float)($row['PRICE'] ?? 0.0);
+			if (is_finite($p) && $p > 0.0)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_try_set_internal_store_raw_price_from_1c'))
+{
+	/**
+	 * Закуп из 1С (price.unit_price) в RAW для склада MOTOR_FORCE_INTERNAL, если в типе цены этого склада ещё пусто.
+	 * Пишет по кластеру каталога, как внешние прайсы (mf_ep_set_raw_price_for_catalog_cluster).
+	 *
+	 * @return bool true, если dry-run сработал «бы проставил» или реальная запись без ошибок
+	 */
+	function mf_supplier_orders_try_set_internal_store_raw_price_from_1c(int $productId, ?float $unitPrice, bool $dryRun): bool
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || $unitPrice === null || $unitPrice <= 0.0)
+		{
+			return false;
+		}
+		if (!mf_supplier_orders_fill_base_price_enabled())
+		{
+			return false;
+		}
+		$gid = mf_supplier_orders_internal_store_price_group_id();
+		if ($gid <= 0)
+		{
+			mf_supplier_orders_log('internal store price type not found (map store→CATALOG_GROUP_ID)', [
+				'store_id' => function_exists('mf_supplier_orders_internal_store_id') ? mf_supplier_orders_internal_store_id() : 0,
+			]);
+
+			return false;
+		}
+		if (!mf_supplier_orders_internal_store_raw_price_missing($productId, $gid))
+		{
+			return false;
+		}
+		if ($dryRun)
+		{
+			return true;
+		}
+		if (!function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
+		{
+			mf_supplier_orders_log('mf_ep_set_raw_price_for_catalog_cluster missing', ['product_id' => $productId]);
+
+			return false;
+		}
+		$cur = mf_supplier_orders_base_price_currency();
+		$price = round($unitPrice, 2);
+		if ($price <= 0.0)
+		{
+			return false;
+		}
+		$fail = mf_ep_set_raw_price_for_catalog_cluster($productId, $gid, $price, $cur);
+		if ($fail > 0)
+		{
+			mf_supplier_orders_log('mf_ep_set_raw_price_for_catalog_cluster partial fail', [
+				'product_id' => $productId,
+				'price_group_id' => $gid,
+				'price' => $price,
+				'fail' => $fail,
+			]);
+		}
+
+		return $fail === 0;
+	}
+}
+
 if (!function_exists('mf_supplier_orders_match_product_id'))
 {
 	function mf_supplier_orders_match_product_id(int $iblockId, string $articleRaw, string $brandRaw): array
@@ -413,7 +638,9 @@ if (!function_exists('mf_supplier_orders_sync'))
 	 *   lines_saved: int,
 	 *   lines_matched: int,
 	 *   orders_removed: int,
-	 *   dry_run: bool
+	 *   dry_run: bool,
+	 *   prices_filled: int,
+	 *   prices_would_fill: int
 	 * }
 	 */
 	function mf_supplier_orders_sync(bool $dryRun = false, ?callable $progress = null, array $progressOpts = []): array
@@ -467,6 +694,8 @@ if (!function_exists('mf_supplier_orders_sync'))
 			'lines_matched' => 0,
 			'orders_removed' => 0,
 			'dry_run' => $dryRun,
+			'prices_filled' => 0,
+			'prices_would_fill' => 0,
 		];
 
 		$url = mf_supplier_orders_api_url();
@@ -615,6 +844,12 @@ if (!function_exists('mf_supplier_orders_sync'))
 					{
 						$matched++;
 					}
+					$unitDry = mf_supplier_orders_parse_line_unit_price($ln);
+					$pidDry = isset($m['product_id']) ? (int)$m['product_id'] : 0;
+					if ($pidDry > 0 && mf_supplier_orders_try_set_internal_store_raw_price_from_1c($pidDry, $unitDry, true))
+					{
+						$out['prices_would_fill']++;
+					}
 					if ($everyLine > 0 && $lines % $everyLine === 0)
 					{
 						$p('lines', ['processed' => $lines, 'matched_so_far' => $matched, 'dry_run' => true]);
@@ -630,6 +865,7 @@ if (!function_exists('mf_supplier_orders_sync'))
 				'orders_kept' => $out['orders_kept'],
 				'lines_processed' => $lines,
 				'lines_matched' => $matched,
+				'prices_would_fill' => $out['prices_would_fill'],
 			]);
 
 			return $out;
@@ -754,6 +990,9 @@ if (!function_exists('mf_supplier_orders_sync'))
 						continue;
 					}
 
+					$unitPrice = mf_supplier_orders_parse_line_unit_price($ln);
+					$uPriceSql = $unitPrice !== null ? sprintf('%.4F', $unitPrice) : 'NULL';
+
 					$match = mf_supplier_orders_match_product_id($iblockId, $article, $brand);
 					$pid = $match['product_id'];
 					$mstat = $match['status'];
@@ -762,7 +1001,7 @@ if (!function_exists('mf_supplier_orders_sync'))
 
 					$conn->queryExecute(
 						'INSERT INTO ' . $helper->quote('mf_supplier_order_line') . "
-						(`ORDER_ID`,`LINE_NO`,`NOM_UUID`,`NOM_NAME`,`ARTICLE`,`BRAND`,`QTY`,`UNIT`,`RECEIPT_DATE`,`PRODUCT_ID`,`MATCH_STATUS`)
+						(`ORDER_ID`,`LINE_NO`,`NOM_UUID`,`NOM_NAME`,`ARTICLE`,`BRAND`,`QTY`,`UNIT`,`RECEIPT_DATE`,`PRODUCT_ID`,`MATCH_STATUS`,`UNIT_PRICE`)
 						VALUES (
 							{$orderId},
 							{$lineNo},
@@ -774,8 +1013,9 @@ if (!function_exists('mf_supplier_orders_sync'))
 							" . ($unit !== '' ? "'" . $helper->forSql(mb_substr($unit, 0, 32)) . "'" : 'NULL') . ",
 							{$rdSql},
 							" . ($pid !== null && $pid > 0 ? (string)(int)$pid : 'NULL') . ",
-							'" . $helper->forSql($mstat) . "'
-						)"
+							'" . $helper->forSql($mstat) . "',
+							" . $uPriceSql . '
+						)'
 					);
 
 					$linesInserted++;
@@ -783,6 +1023,11 @@ if (!function_exists('mf_supplier_orders_sync'))
 					if ($mstat === 'matched')
 					{
 						$out['lines_matched']++;
+					}
+					if ($mstat === 'matched' && $pid !== null && (int)$pid > 0
+						&& mf_supplier_orders_try_set_internal_store_raw_price_from_1c((int)$pid, $unitPrice, false))
+					{
+						$out['prices_filled']++;
 					}
 
 					if ($everyLine > 0 && $out['lines_saved'] % $everyLine === 0)
@@ -854,11 +1099,13 @@ if (!function_exists('mf_supplier_orders_sync'))
 				'lines_saved' => $out['lines_saved'],
 				'lines_matched' => $out['lines_matched'],
 				'orders_removed' => $out['orders_removed'],
+				'prices_filled' => $out['prices_filled'],
 			]);
 			mf_supplier_orders_log('sync ok', [
 				'orders_kept' => $out['orders_kept'],
 				'lines_saved' => $out['lines_saved'],
 				'lines_matched' => $out['lines_matched'],
+				'prices_filled' => $out['prices_filled'],
 			]);
 		}
 		catch (\Throwable $e)
