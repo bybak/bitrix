@@ -473,18 +473,17 @@ if (!function_exists('mf_admin_menu_external_price_upload'))
 			'more_url' => [
 				'mf_external_price_upload.php',
 				'mf_external_price_history.php',
-				'mf_store_price_map.php',
 			],
 		];
 		$aModuleMenu[] = [
 			'parent_menu' => $parentMenu,
-			'section' => 'mf_stock_import',
+			'section' => 'mf_clear_external_warehouse',
 			'sort' => 20525,
-			'text' => 'Склады ↔ типы цен',
-			'title' => 'Проверка совпадения XML_ID склада и NAME типа цены',
+			'text' => 'Очистка внешних складов',
+			'title' => 'Снятие остатков с внешнего склада (необратимо)',
 			'icon' => 'sale_menu_icon',
 			'page_icon' => 'sale_menu_icon',
-			'items_id' => 'menu_mf_store_price_map',
+			'items_id' => 'menu_mf_clear_external_warehouse',
 			'url' => 'mf_store_price_map.php?lang=' . urlencode($lang),
 			'more_url' => [
 				'mf_store_price_map.php',
@@ -533,6 +532,20 @@ if (!function_exists('mf_admin_menu_catalog_export'))
 			'url' => 'mf_catalog_export.php?lang=' . urlencode($lang),
 			'more_url' => [
 				'mf_catalog_export.php',
+			],
+		];
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_weights_io',
+			'sort' => 20547,
+			'text' => 'Выгрузка / загрузка весов',
+			'title' => 'CSV: бренд, артикул, вес (г). Импорт обновляет вес в каталоге',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_weights_io',
+			'url' => 'mf_weights_import_export.php?lang=' . urlencode($lang),
+			'more_url' => [
+				'mf_weights_import_export.php',
 			],
 		];
 	}
@@ -1453,6 +1466,80 @@ if (!function_exists('mf_product_single_external_store_only'))
 	}
 }
 
+if (!function_exists('mf_product_has_any_external_warehouse'))
+{
+	/**
+	 * Участвует ли в отображаемой матрице товара хотя бы один внешний склад.
+	 * Для плитки: при нуле суммы остатков вместо «Нет в наличии» — «Под заказ» (когда есть внешний).
+	 * Учитываем кластер и внешние склады с валидной ценой без строки b_catalog_store_product.
+	 */
+	function mf_product_has_any_external_warehouse(int $productId): bool
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !class_exists(\CCatalogStoreProduct::class))
+		{
+			return false;
+		}
+		if (!function_exists('mf_ep_store_is_external_warehouse'))
+		{
+			return false;
+		}
+
+		$byStore = [];
+		$clusterIds = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($productId)
+			: [$productId];
+		foreach ($clusterIds as $cid)
+		{
+			$cid = (int)$cid;
+			if ($cid <= 0)
+			{
+				continue;
+			}
+			$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $cid], false, false, ['STORE_ID', 'AMOUNT']);
+			while ($r = $rs->Fetch())
+			{
+				$sid = (int)($r['STORE_ID'] ?? 0);
+				if ($sid <= 0)
+				{
+					continue;
+				}
+				$byStore[$sid] = ($byStore[$sid] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
+			}
+		}
+		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_display_price_for_store'))
+		{
+			foreach (array_keys(mf_supplier_store_to_price_group()) as $extSid)
+			{
+				$extSid = (int)$extSid;
+				if ($extSid <= 0 || !mf_ep_store_is_external_warehouse($extSid))
+				{
+					continue;
+				}
+				$p = mf_ep_display_price_for_store($productId, $extSid, 1.0);
+				if ($p === null || $p <= 0)
+				{
+					continue;
+				}
+				if (!array_key_exists($extSid, $byStore))
+				{
+					$byStore[$extSid] = 0.0;
+				}
+			}
+		}
+
+		foreach (array_keys($byStore) as $sid)
+		{
+			if (mf_ep_store_is_external_warehouse((int)$sid))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
 if (!function_exists('mf_product_prices_catalog_maps'))
 {
 	/**
@@ -1694,8 +1781,8 @@ if (!function_exists('mf_min_price_from_available_stores'))
 if (!function_exists('mf_catalog_listing_display_price'))
 {
 	/**
-	 * Цена для витрины (списки, блоки): сначала минимум среди складов с остатком, иначе — минимум
-	 * по всем складам из mf_supplier_store_to_price_group с валидным RAW (без каталожного BASE).
+	 * Цена для витрины (списки, блоки, «От» на карточке): минимум по всем складам из
+	 * mf_supplier_store_to_price_group с валидной ценой (mf_ep_display_price_for_store), независимо от остатка.
 	 */
 	function mf_catalog_listing_display_price(int $productId): ?float
 	{
@@ -1708,16 +1795,6 @@ if (!function_exists('mf_catalog_listing_display_price'))
 		$cacheKey = $productId . '|' . (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale() ? '1' : '0');
 		if (array_key_exists($cacheKey, $cache))
 		{
-			return $cache[$cacheKey];
-		}
-
-		[$minInStock] = function_exists('mf_min_price_from_available_stores')
-			? mf_min_price_from_available_stores($productId)
-			: [null, 0];
-		if ($minInStock !== null && (float)$minInStock > 0)
-		{
-			$cache[$cacheKey] = (float)$minInStock;
-
 			return $cache[$cacheKey];
 		}
 
@@ -1952,7 +2029,9 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 				$title = 'Склад #' . $storeId;
 			}
 
-			$spb = function_exists('mf_store_delivery_spb_ui') ? mf_store_delivery_spb_ui($storeId) : ['ok' => true, 'title' => 'Доставка до склада СПб включена'];
+			$spb = function_exists('mf_store_delivery_spb_ui')
+				? mf_store_delivery_spb_ui($storeId, $productId)
+				: ['ok' => true, 'title' => 'Доставка до склада СПб включена'];
 
 			$out[] = [
 				'store_id' => $storeId,

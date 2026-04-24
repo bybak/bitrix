@@ -63,22 +63,17 @@ $mfMoney = static function (?float $price): string {
 };
 
 $mfSearchMinPricePrint = static function (int $productId): string {
-	if ($productId <= 0 || !function_exists('mf_min_price_from_available_stores'))
+	if ($productId <= 0 || !function_exists('mf_catalog_listing_display_price'))
 	{
 		return '';
 	}
-	[$minP] = mf_min_price_from_available_stores($productId);
+	$minP = mf_catalog_listing_display_price($productId);
 	if ($minP === null || (float)$minP <= 0)
 	{
 		return '';
 	}
-	$minP = (float)$minP;
-	if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-	{
-		$minP = round($minP * 0.9, 2);
-	}
 
-	return number_format($minP, 2, '.', ' ') . ' ₽';
+	return number_format((float)$minP, 2, '.', ' ') . ' ₽';
 };
 
 $mfStoresForProduct = static function (int $productId): array {
@@ -178,7 +173,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								<td class="mf-search-stock-table__spb text-center"><?php
 									$mfSpbSid = (int)($s['store_id'] ?? 0);
 									if ($mfSpbSid > 0 && function_exists('mf_store_delivery_spb_icon_html')) {
-										echo mf_store_delivery_spb_icon_html($mfSpbSid);
+										echo mf_store_delivery_spb_icon_html($mfSpbSid, $id);
 									} else {
 										echo '—';
 									}

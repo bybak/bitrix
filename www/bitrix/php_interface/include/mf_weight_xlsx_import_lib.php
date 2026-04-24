@@ -398,3 +398,272 @@ if (!function_exists('mf_wxi_import_file'))
 		];
 	}
 }
+
+if (!function_exists('mf_wxi_map_csv_weight_headers'))
+{
+	/**
+	 * @return array{brand?:int, article?:int, name?:int, weight?:int}
+	 */
+	function mf_wxi_map_csv_weight_headers(array $headerCells): array
+	{
+		$map = [];
+		foreach ($headerCells as $i => $cell)
+		{
+			$h = mb_strtolower(trim((string)$cell));
+			$h = preg_replace('~^\xEF\xBB\xBF~', '', $h) ?? $h;
+			$h = trim($h);
+			if ($h === '')
+			{
+				continue;
+			}
+			if (preg_match('~(бренд|brand|производитель|vendor)~u', $h))
+			{
+				$map['brand'] = (int)$i;
+			}
+			elseif (preg_match('~(артикул|article|sku|oem)~u', $h))
+			{
+				$map['article'] = (int)$i;
+			}
+			elseif (preg_match('~(наименование|название|наим|name|title|товар)~u', $h))
+			{
+				$map['name'] = (int)$i;
+			}
+			elseif (preg_match('~(^вес|вес\(|^weight|масса|грамм|грам\.)~u', $h))
+			{
+				$map['weight'] = (int)$i;
+			}
+		}
+
+		return $map;
+	}
+}
+
+if (!function_exists('mf_wxi_detect_csv_delimiter'))
+{
+	function mf_wxi_detect_csv_delimiter(string $firstLine): string
+	{
+		$firstLine = preg_replace('~^\xEF\xBB\xBF~', '', $firstLine) ?? $firstLine;
+		$sc = substr_count($firstLine, ';');
+		$cc = substr_count($firstLine, ',');
+		$tc = substr_count($firstLine, "\t");
+		if ($tc >= $sc && $tc >= $cc && $tc > 0)
+		{
+			return "\t";
+		}
+
+		return $sc >= $cc ? ';' : ',';
+	}
+}
+
+if (!function_exists('mf_wxi_import_csv_file'))
+{
+	/**
+	 * Импорт веса из CSV: бренд, артикул, [наименование], вес (по заголовкам; иначе 3 или 4 колонки по порядку). Наименование не используется для поиска товара.
+	 * Разделитель ; или , первая строка — заголовок.
+	 *
+	 * @return array{
+	 *   ok: int, not_found: int, bad: int, skipped_header: int, weight_fail: int, rows_seen: int,
+	 *   examples_not_found: list<string>
+	 * }
+	 */
+	function mf_wxi_import_csv_file(
+		string $csvPath,
+		int $iblockId,
+		bool $weightInKilograms
+	): array
+	{
+		$iblockId = (int)$iblockId;
+		if ($iblockId <= 0)
+		{
+			return [
+				'ok' => 0,
+				'not_found' => 0,
+				'bad' => 1,
+				'skipped_header' => 0,
+				'weight_fail' => 0,
+				'rows_seen' => 0,
+				'examples_not_found' => [],
+			];
+		}
+
+		$ok = 0;
+		$notFound = 0;
+		$bad = 0;
+		$skippedHeader = 1;
+		$weightFail = 0;
+		$rowsSeen = 0;
+		$examplesNotFound = [];
+
+		if (!is_file($csvPath) || !is_readable($csvPath))
+		{
+			return [
+				'ok' => 0,
+				'not_found' => 0,
+				'bad' => 0,
+				'skipped_header' => 0,
+				'weight_fail' => 0,
+				'rows_seen' => 0,
+				'examples_not_found' => [],
+			];
+		}
+
+		$lib = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_external_price_lib.php';
+		if (is_file($lib))
+		{
+			require_once $lib;
+		}
+
+		$brandDict = $_SERVER['DOCUMENT_ROOT'] . '/mf_brand_dict.php';
+		if (is_file($brandDict))
+		{
+			require_once $brandDict;
+		}
+
+		$h = fopen($csvPath, 'rb');
+		if ($h === false)
+		{
+			return [
+				'ok' => 0,
+				'not_found' => 0,
+				'bad' => 1,
+				'skipped_header' => 0,
+				'weight_fail' => 0,
+				'rows_seen' => 0,
+				'examples_not_found' => [],
+			];
+		}
+
+		$line1 = fgets($h);
+		if ($line1 === false || trim($line1) === '')
+		{
+			fclose($h);
+
+			return [
+				'ok' => 0,
+				'not_found' => 0,
+				'bad' => 1,
+				'skipped_header' => 0,
+				'weight_fail' => 0,
+				'rows_seen' => 0,
+				'examples_not_found' => [],
+			];
+		}
+
+		$delim = mf_wxi_detect_csv_delimiter($line1);
+		$line1 = preg_replace('~^\xEF\xBB\xBF~', '', $line1) ?? $line1;
+		$header = str_getcsv($line1, $delim);
+		$map = mf_wxi_map_csv_weight_headers($header);
+		if (!isset($map['brand'], $map['article'], $map['weight']) && count($header) >= 4)
+		{
+			$map = [
+				'brand' => 0,
+				'article' => 1,
+				'name' => 2,
+				'weight' => 3,
+			];
+		}
+		if (!isset($map['brand'], $map['article'], $map['weight']) && count($header) >= 3)
+		{
+			$map = ['brand' => 0, 'article' => 1, 'weight' => 2];
+		}
+		if (!isset($map['brand'], $map['article'], $map['weight']))
+		{
+			fclose($h);
+
+			return [
+				'ok' => 0,
+				'not_found' => 0,
+				'bad' => 1,
+				'skipped_header' => 0,
+				'weight_fail' => 0,
+				'rows_seen' => 0,
+				'examples_not_found' => [],
+			];
+		}
+
+		while (($row = fgetcsv($h, 0, $delim)) !== false)
+		{
+			$isEmpty = true;
+			foreach ($row as $c)
+			{
+				if (trim((string)$c) !== '')
+				{
+					$isEmpty = false;
+					break;
+				}
+			}
+			if ($isEmpty)
+			{
+				continue;
+			}
+
+			$weightRaw = (string)($row[$map['weight']] ?? '');
+			$articleRaw = (string)($row[$map['article']] ?? '');
+			$brandRaw = (string)($row[$map['brand']] ?? '');
+
+			$rowsSeen++;
+
+			$wVal = mf_wxi_parse_weight($weightRaw);
+			$article = mf_wxi_clean_article_string($articleRaw);
+			$brandTrim = trim($brandRaw);
+
+			if ($wVal === null || $article === '' || $brandTrim === '')
+			{
+				$bad++;
+			}
+			else
+			{
+				$grams = $weightInKilograms ? (int)round($wVal * 1000.0) : (int)round($wVal);
+				if ($grams < 0)
+				{
+					$bad++;
+				}
+				else
+				{
+					$canon = function_exists('mf_brand_find') ? mf_brand_find($brandTrim, false) : '';
+					$bRaw = $canon !== '' ? $canon : $brandTrim;
+					$articleNorm = function_exists('mf_ep_norm_article') ? mf_ep_norm_article($article) : mb_strtoupper(preg_replace('~[^A-Z0-9]+~', '', mb_strtoupper($article)) ?? '');
+					$brandNorm = function_exists('mf_ep_norm_brand') ? mf_ep_norm_brand($bRaw) : '';
+
+					if (!function_exists('mf_ep_find_product'))
+					{
+						$bad++;
+					}
+					else
+					{
+						$pid = mf_ep_find_product($iblockId, $articleNorm, $bRaw, $brandNorm);
+						if ($pid === null || $pid <= 0)
+						{
+							$notFound++;
+							if (count($examplesNotFound) < 20)
+							{
+								$examplesNotFound[] = $brandTrim . ' / ' . $article;
+							}
+						}
+						elseif (function_exists('mf_ep_set_weight_for_catalog_cluster'))
+						{
+							$f = mf_ep_set_weight_for_catalog_cluster((int)$pid, $grams);
+							$weightFail += $f;
+							$ok++;
+						}
+						else
+						{
+							$bad++;
+						}
+					}
+				}
+			}
+		}
+		fclose($h);
+
+		return [
+			'ok' => $ok,
+			'not_found' => $notFound,
+			'bad' => $bad,
+			'skipped_header' => $skippedHeader,
+			'weight_fail' => $weightFail,
+			'rows_seen' => $rowsSeen,
+			'examples_not_found' => $examplesNotFound,
+		];
+	}
+}

@@ -99,8 +99,8 @@ if (\CModule::IncludeModule('catalog'))
 		}
 		$canBuy = ($sum > 0);
 		$mfChipOrderOnly = !$canBuy
-			&& function_exists('mf_product_single_external_store_only')
-			&& mf_product_single_external_store_only($pid);
+			&& function_exists('mf_product_has_any_external_warehouse')
+			&& mf_product_has_any_external_warehouse($pid);
 		$mfChipSupplierPending = false;
 		if (!$canBuy && !$mfChipOrderOnly
 			&& function_exists('mf_supplier_orders_internal_store_id')

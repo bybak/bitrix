@@ -1173,24 +1173,67 @@ if (!function_exists('mf_ep_store_is_external_warehouse'))
 	}
 }
 
+if (!function_exists('mf_ep_product_weight_grams_cluster'))
+{
+	/**
+	 * Вес единицы (граммы) по первой позиции кластера каталога.
+	 */
+	function mf_ep_product_weight_grams_cluster(int $productId): int
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !class_exists(\CCatalogProduct::class))
+		{
+			return 0;
+		}
+		$ids = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($productId)
+			: [$productId];
+		$ids = array_values(array_filter(
+			$ids,
+			static fn($v) => (int)$v > 0
+		));
+		if ($ids === [])
+		{
+			return 0;
+		}
+		$row = \CCatalogProduct::GetByID((int)$ids[0]);
+
+		return isset($row['WEIGHT']) ? (int)$row['WEIGHT'] : 0;
+	}
+}
+
 if (!function_exists('mf_store_delivery_spb_ui'))
 {
 	/**
 	 * Индикатор «доставка до склада СПб» для строки склада: внешний склад + UF «учитывать вес», иначе по правилам витрины.
+	 * Если задан $productId: на внешнем складе при весе товара 0 — всегда «не ок» (крестик), независимо от настроек UF склада.
 	 *
 	 * @return array{ok:bool,title:string}
 	 */
-	function mf_store_delivery_spb_ui(int $storeId): array
+	function mf_store_delivery_spb_ui(int $storeId, int $productId = 0): array
 	{
 		$storeId = (int)$storeId;
+		$productId = (int)$productId;
 		$titleOk = 'Доставка до склада СПб включена';
 		$titleBad = 'Доставка до склада СПб не включена';
+		$titleNoWeight = 'Вес товара не задан (0 г) — доставка до СПб с внешнего склада недоступна';
 		if ($storeId <= 0)
 		{
 			return ['ok' => true, 'title' => $titleOk];
 		}
 
 		$external = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId);
+		if ($external && $productId > 0)
+		{
+			$w = function_exists('mf_ep_product_weight_grams_cluster')
+				? mf_ep_product_weight_grams_cluster($productId)
+				: 0;
+			if ($w <= 0)
+			{
+				return ['ok' => false, 'title' => $titleNoWeight];
+			}
+		}
+
 		if (!$external)
 		{
 			return ['ok' => true, 'title' => $titleOk];
@@ -1210,10 +1253,11 @@ if (!function_exists('mf_store_delivery_spb_icon_html'))
 {
 	/**
 	 * Колонка «Доставка»: зелёная галочка или красный крестик в кружке + title для подсказки.
+	 * $productId: для внешнего склада и веса 0 — крестик (см. mf_store_delivery_spb_ui).
 	 */
-	function mf_store_delivery_spb_icon_html(int $storeId): string
+	function mf_store_delivery_spb_icon_html(int $storeId, int $productId = 0): string
 	{
-		$ui = mf_store_delivery_spb_ui($storeId);
+		$ui = mf_store_delivery_spb_ui($storeId, $productId);
 		$ok = !empty($ui['ok']);
 		$title = (string)($ui['title'] ?? '');
 		$mod = $ok ? 'ok' : 'bad';
@@ -1299,6 +1343,141 @@ if (!function_exists('mf_ep_zero_product_on_store'))
 		mf_ep_set_raw_price($productId, $priceGroupId, 0.0);
 		mf_ep_sync_catalog_qty_from_stores($productId);
 		mf_ep_recalc_base_one($productId);
+	}
+}
+
+if (!function_exists('mf_ep_clear_external_warehouse'))
+{
+	/**
+	 * Удаляет все остатки (строки b_catalog_store_product) по складу, обнуляет/удаляет закупочные цены
+	 * в типе цены, сопоставленном со складом (mf_supplier_store_to_price_group), и пересчитывает BASE по затронутым товарам.
+	 * Только для внешних складов (mf_ep_store_is_external_warehouse).
+	 *
+	 * @return array{ok: bool, error: string, deleted_store_rows: int, products_price_cleared: int, products_recalc: int}
+	 */
+	function mf_ep_clear_external_warehouse(int $storeId): array
+	{
+		$storeId = (int)$storeId;
+		$out = [
+			'ok' => false,
+			'error' => '',
+			'deleted_store_rows' => 0,
+			'products_price_cleared' => 0,
+			'products_recalc' => 0,
+		];
+		if ($storeId <= 0)
+		{
+			$out['error'] = 'Некорректный ID склада.';
+
+			return $out;
+		}
+		if (!function_exists('mf_ep_store_is_external_warehouse') || !mf_ep_store_is_external_warehouse($storeId))
+		{
+			$out['error'] = 'Операция доступна только для внешних складов.';
+
+			return $out;
+		}
+		if (!class_exists(\CCatalogStoreProduct::class))
+		{
+			$out['error'] = 'Модуль catalog недоступен.';
+
+			return $out;
+		}
+
+		$map = function_exists('mf_supplier_store_to_price_group') ? mf_supplier_store_to_price_group() : [];
+		$priceGroupId = (int)($map[$storeId] ?? 0);
+
+		$pidSet = [];
+		if ($priceGroupId > 0 && function_exists('mf_ep_collect_candidates_for_store'))
+		{
+			foreach (mf_ep_collect_candidates_for_store($storeId, $priceGroupId) as $p)
+			{
+				$p = (int)$p;
+				if ($p > 0)
+				{
+					$pidSet[$p] = true;
+				}
+			}
+		}
+		else
+		{
+			$rs0 = \CCatalogStoreProduct::GetList(
+				[],
+				['STORE_ID' => $storeId],
+				false,
+				false,
+				['PRODUCT_ID']
+			);
+			while ($r0 = $rs0->Fetch())
+			{
+				$pp = (int)($r0['PRODUCT_ID'] ?? 0);
+				if ($pp > 0)
+				{
+					$pidSet[$pp] = true;
+				}
+			}
+		}
+
+		$toDelete = [];
+		$rsDel = \CCatalogStoreProduct::GetList(
+			[],
+			['STORE_ID' => $storeId],
+			false,
+			false,
+			['ID']
+		);
+		while ($rd = $rsDel->Fetch())
+		{
+			$idd = (int)($rd['ID'] ?? 0);
+			if ($idd > 0)
+			{
+				$toDelete[] = $idd;
+			}
+		}
+		foreach ($toDelete as $rowId)
+		{
+			if (\CCatalogStoreProduct::Delete($rowId))
+			{
+				$out['deleted_store_rows']++;
+			}
+		}
+
+		$productIds = array_keys($pidSet);
+		sort($productIds, SORT_NUMERIC);
+
+		foreach ($productIds as $productId)
+		{
+			$productId = (int)$productId;
+			if ($productId <= 0)
+			{
+				continue;
+			}
+			if ($priceGroupId > 0)
+			{
+				if (mf_ep_set_raw_price($productId, $priceGroupId, 0.0))
+				{
+					$out['products_price_cleared']++;
+				}
+			}
+			if (function_exists('mf_ep_sync_catalog_qty_from_stores'))
+			{
+				mf_ep_sync_catalog_qty_from_stores($productId);
+			}
+			if (function_exists('mf_ep_recalc_base_one'))
+			{
+				mf_ep_recalc_base_one($productId);
+			}
+			$out['products_recalc']++;
+		}
+
+		if (function_exists('mf_ep_invalidate_catalog_price_group_cache'))
+		{
+			mf_ep_invalidate_catalog_price_group_cache();
+		}
+
+		$out['ok'] = true;
+
+		return $out;
 	}
 }
 

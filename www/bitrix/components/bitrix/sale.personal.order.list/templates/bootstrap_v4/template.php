@@ -579,7 +579,8 @@ else
 											<td class="text-center mf-order-items-table__spb"><?php
 											if ($basketStoreId > 0 && function_exists('mf_store_delivery_spb_icon_html'))
 											{
-												echo mf_store_delivery_spb_icon_html($basketStoreId);
+												$mfBasketProductId = (int)($basketItem['PRODUCT_ID'] ?? 0);
+												echo mf_store_delivery_spb_icon_html($basketStoreId, $mfBasketProductId);
 											}
 											else
 											{

@@ -20,33 +20,28 @@ if (!function_exists('mf_product_search_card_money'))
 
 if (!function_exists('mf_product_search_card_min_price_print'))
 {
-	/** Минимальная цена по складам («От …»), с оптовой скидкой как на детальной. */
+	/** Минимальная цена по складам («От …»), как mf_catalog_listing_display_price (все склады, опт в mf_ep). */
 	function mf_product_search_card_min_price_print(int $productId): string
 	{
 		$productId = (int)$productId;
-		if ($productId <= 0 || !function_exists('mf_min_price_from_available_stores'))
+		if ($productId <= 0 || !function_exists('mf_catalog_listing_display_price'))
 		{
 			return '';
 		}
-		[$minP] = mf_min_price_from_available_stores($productId);
+		$minP = mf_catalog_listing_display_price($productId);
 		if ($minP === null || (float)$minP <= 0)
 		{
 			return '';
 		}
-		$minP = (float)$minP;
-		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
-		{
-			$minP = round($minP * 0.9, 2);
-		}
 
-		return number_format($minP, 2, '.', ' ') . ' ₽';
+		return number_format((float)$minP, 2, '.', ' ') . ' ₽';
 	}
 }
 
 if (!function_exists('mf_product_search_card_stores'))
 {
 	/**
-	 * @return array<int, array{store_id:int,title:string,delivery_term:string,amount:float,price:?float,price_fmt:string,order_only?:bool}>
+	 * @return array<int, array{store_id:int,title:string,delivery_term:string,amount:float,price:?float,price_fmt:string,order_only?:bool}> order_only: внешний склад и остаток 0
 	 */
 	function mf_product_search_card_stores(int $productId): array
 	{
@@ -120,9 +115,7 @@ if (!function_exists('mf_product_search_card_stores'))
 			}
 		}
 
-		$orderOnly = function_exists('mf_product_single_external_store_only') && mf_product_single_external_store_only($productId);
-
-		$makeRow = static function (int $storeId, float $amt) use ($productId, $orderOnly): array {
+		$makeRow = static function (int $storeId, float $amt) use ($productId): array {
 			$s = function_exists('mf_store_row') ? mf_store_row($storeId) : null;
 			$title = is_array($s) ? trim((string)($s['TITLE'] ?? '')) : '';
 			if ($title === '')
@@ -135,6 +128,9 @@ if (!function_exists('mf_product_search_card_stores'))
 				: (function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null);
 
 			$deliveryTerm = function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : '—';
+			$orderOnly = function_exists('mf_ep_store_is_external_warehouse')
+				&& mf_ep_store_is_external_warehouse($storeId)
+				&& $amt <= 1e-9;
 
 			return [
 				'store_id' => $storeId,
@@ -166,15 +162,20 @@ if (!function_exists('mf_product_search_card_stores'))
 			}
 		}
 
-		if (empty($out) && $orderOnly && count($byStore) === 1)
+		if (empty($out) && count($byStore) === 1)
 		{
 			$onlySid = 0;
-			foreach ($byStore as $sid => $_amt)
+			$onlyAmt = 0.0;
+			foreach ($byStore as $sid => $a)
 			{
 				$onlySid = (int)$sid;
+				$onlyAmt = (float)$a;
 				break;
 			}
-			if ($onlySid > 0)
+			if ($onlySid > 0
+				&& function_exists('mf_ep_store_is_external_warehouse')
+				&& mf_ep_store_is_external_warehouse($onlySid)
+				&& $onlyAmt <= 1e-9)
 			{
 				$out[] = $makeRow($onlySid, 0.0);
 			}
@@ -373,7 +374,7 @@ if (!function_exists('mf_product_search_card_render'))
 									<td class="mf-search-stock-table__spb text-center"><?php
 										$mfSpbSid = (int)($s['store_id'] ?? 0);
 										if ($mfSpbSid > 0 && function_exists('mf_store_delivery_spb_icon_html')) {
-											echo mf_store_delivery_spb_icon_html($mfSpbSid);
+											echo mf_store_delivery_spb_icon_html($mfSpbSid, $id);
 										} else {
 											echo '—';
 										}

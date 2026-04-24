@@ -194,7 +194,7 @@ $APPLICATION->IncludeComponent(
     false
 );
 
-// Replace the component price with storefront display price (same as listings: in-stock min, else min by mapped stores).
+// Replace the component price with storefront display price (min across all mapped stores, same as listings).
 if ($elementId > 0 && function_exists('mf_catalog_listing_display_price'))
 {
 	$minP = mf_catalog_listing_display_price($elementId);
@@ -278,10 +278,6 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 			}
 		}
 	}
-
-	$mfSingleExternal = ($elementId > 0
-		&& function_exists('mf_product_single_external_store_only')
-		&& mf_product_single_external_store_only($elementId));
 
 	if (!empty($storeAmounts))
 	{
@@ -386,7 +382,7 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 								<?php
 								if (function_exists('mf_store_delivery_spb_icon_html'))
 								{
-									echo mf_store_delivery_spb_icon_html((int)$sid);
+									echo mf_store_delivery_spb_icon_html((int)$sid, (int)$elementId);
 								}
 								else
 								{
@@ -408,7 +404,8 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 								$mfIsInternalSku = ($mfCodeRow === 'MOTOR_FORCE_INTERNAL'
 									|| ($mfXmlRow !== '' && mb_strpos($mfXmlRow, 'MOTOR_FORCE_INTERNAL') !== false));
 								$mfPendingTxt = '';
-								if (!$mfSingleExternal && $mfIsInternalSku && $amt <= 1e-9 && function_exists('mf_supplier_orders_pending_arrival_for_product'))
+								$mfIsExtRow = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
+								if ($mfIsInternalSku && $amt <= 1e-9 && function_exists('mf_supplier_orders_pending_arrival_for_product'))
 								{
 									$mfPr = mf_supplier_orders_pending_arrival_for_product($elementId);
 									if (is_array($mfPr) && trim((string)($mfPr['label'] ?? '')) !== '')
@@ -417,7 +414,7 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 									}
 								}
 								?>
-								<?php if ($mfSingleExternal): ?>
+								<?php if ($mfIsExtRow && $amt <= 1e-9): ?>
 									Под заказ
 								<?php elseif ($mfPendingTxt !== ''): ?>
 									<?=htmlspecialcharsbx($mfPendingTxt)?>
@@ -428,7 +425,7 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 							<td class="text-right">
 								<?php
 								$mfRowExternal = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
-								$mfShowCartBtn = $storePrice !== null && ($amt > 0 || $mfSingleExternal || $mfRowExternal);
+								$mfShowCartBtn = $storePrice !== null && ($amt > 0 || $mfRowExternal);
 								?>
 								<?php if ($mfShowCartBtn): ?>
 									<button

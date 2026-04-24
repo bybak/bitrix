@@ -94,7 +94,9 @@ try
 			];
 		}
 
-		$spbTop = function_exists('mf_store_delivery_spb_ui') ? mf_store_delivery_spb_ui($currentStoreId) : ['ok' => true, 'title' => ''];
+		$spbTop = function_exists('mf_store_delivery_spb_ui')
+			? mf_store_delivery_spb_ui($currentStoreId, $productId)
+			: ['ok' => true, 'title' => ''];
 
 		$result[(string)$basketItemId] = [
 			'basket_item_id' => $basketItemId,
