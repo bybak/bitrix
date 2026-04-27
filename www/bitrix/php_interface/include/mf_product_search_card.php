@@ -93,18 +93,19 @@ if (!function_exists('mf_product_search_card_stores'))
 			}
 		}
 
-		// Внешние склады из карты поставщиков — в выдачу, даже без строки b_catalog_store_product и без цены в прайсе
-		// (строка с «Под заказ» + «Запросить цену»). Раньше требовали price>0, из‑за этого склад пропадал.
-		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_store_is_external_warehouse'))
+		// Внешний склад — только если товар к нему «привязан»: уже есть строка остатка (цикл выше)
+		// или есть закупка в типе цены этого склада (импорт прайса поставщика), иначе не подмешиваем все склады подряд.
+		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_store_is_external_warehouse') && function_exists('mf_raw_store_price'))
 		{
 			foreach (array_keys(mf_supplier_store_to_price_group()) as $extSid)
 			{
 				$extSid = (int)$extSid;
-				if ($extSid <= 0 || !mf_ep_store_is_external_warehouse($extSid))
+				if ($extSid <= 0 || !mf_ep_store_is_external_warehouse($extSid) || array_key_exists($extSid, $byStore))
 				{
 					continue;
 				}
-				if (!array_key_exists($extSid, $byStore))
+				$raw = mf_raw_store_price($productId, $extSid);
+				if ($raw !== null && $raw > 0)
 				{
 					$byStore[$extSid] = 0.0;
 				}
