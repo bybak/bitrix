@@ -1396,6 +1396,17 @@ try
 	$headers = fgetcsv($h, 0, ';');
 	if (!$headers) throw new RuntimeException("Пустой CSV");
 	$headers = array_map(static fn($v) => mf_toUtf8($v, $encoding), $headers);
+	// Excel/Notepad «UTF-8 с BOM»: байты EF BB BF попадают в первую ячейку, тогда "Бренд" не матчится с 'бренд'.
+	$headers = array_map(static function ($v) {
+		$v = (string)$v;
+		if (str_starts_with($v, "\xEF\xBB\xBF"))
+		{
+			$v = (string)substr($v, 3);
+		}
+		$v = (string)(preg_replace('/^\x{FEFF}/u', '', $v) ?? '');
+
+		return $v;
+	}, $headers);
 
 	$idxBrand = null;
 	$idxArt = null;
