@@ -93,18 +93,14 @@ if (!function_exists('mf_product_search_card_stores'))
 			}
 		}
 
-		// Внешние склады с ценой по прайсу должны попадать в выдачу, даже без строки остатка / при нуле на складе.
-		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_store_is_external_warehouse') && function_exists('mf_ep_display_price_for_store'))
+		// Внешние склады из карты поставщиков — в выдачу, даже без строки b_catalog_store_product и без цены в прайсе
+		// (строка с «Под заказ» + «Запросить цену»). Раньше требовали price>0, из‑за этого склад пропадал.
+		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_store_is_external_warehouse'))
 		{
 			foreach (array_keys(mf_supplier_store_to_price_group()) as $extSid)
 			{
 				$extSid = (int)$extSid;
 				if ($extSid <= 0 || !mf_ep_store_is_external_warehouse($extSid))
-				{
-					continue;
-				}
-				$p = mf_ep_display_price_for_store($productId, $extSid, 1.0);
-				if ($p === null || $p <= 0)
 				{
 					continue;
 				}
@@ -152,13 +148,10 @@ if (!function_exists('mf_product_search_card_stores'))
 				$out[] = $makeRow($storeId, $amt);
 				continue;
 			}
-			if (function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId) && function_exists('mf_ep_display_price_for_store'))
+			// нулевой остаток: внешний склад — всегда строка (Под заказ / запрос цены), без требования цены в прайсе
+			if (function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId))
 			{
-				$p = mf_ep_display_price_for_store($productId, $storeId, 1.0);
-				if ($p !== null && $p > 0)
-				{
-					$out[] = $makeRow($storeId, 0.0);
-				}
+				$out[] = $makeRow($storeId, 0.0);
 			}
 		}
 
