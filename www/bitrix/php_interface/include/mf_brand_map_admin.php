@@ -42,6 +42,12 @@ require_once $brandDict;
 /** POST value for «Не сопоставлять» — строки с этим брендом пропускаются при импорте остатков и внешних прайсов. */
 const MF_BM_MAP_SKIP = '__MF_SKIP__';
 
+/**
+ * UF_SORT для ручного сопоставления: выше, чем у сидов в mf_brand_dict (обычно 80–200),
+ * чтобы «Ski-Doo → BRP» и т.п. перекрывали встроенный «Ski-Doo → Ski-Doo».
+ */
+const MF_BM_MANUAL_ALIAS_SORT = 400;
+
 Loader::includeModule('iblock');
 Loader::includeModule('catalog');
 Loader::includeModule('highloadblock');
@@ -301,6 +307,93 @@ $find_warehouse = trim((string)($_REQUEST['find_warehouse'] ?? ''));
 // Сколько брендов на «странице» (только в браузере, без повторных запросов к серверу)
 $bmPerPage = 50;
 
+// Ручное сопоставление: любой текст бренда (не обязан быть в mf_stock_import_missing)
+if (
+	($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+	&& (string)($_POST['bm_action'] ?? '') === 'manual_map'
+	&& check_bitrix_sessid()
+)
+{
+	$ma = trim((string)($_POST['manual_alias'] ?? ''));
+	$mt = trim((string)($_POST['manual_target'] ?? ''));
+	if ($ma === '' || $mt === '')
+	{
+		$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Укажи строку бренда (как в файле) и вариант в списке.'];
+	}
+	else
+	{
+		$hlM = mf_brand_hl_ensure(true);
+		if ($mt === MF_BM_MAP_SKIP)
+		{
+			if (function_exists('mf_brand_import_skip_set'))
+			{
+				mf_brand_import_skip_set($ma, true);
+			}
+			$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Для введённого бренда включён пропуск при импорте.'];
+		}
+		else
+		{
+			mf_brand_register_alias($hlM, $mt, $ma, true, MF_BM_MANUAL_ALIAS_SORT);
+			$adminNotice = [
+				'TYPE' => 'OK',
+				'MESSAGE' => 'Сохранено сопоставление: «' . mf_bm_escape($ma) . '» → «' . mf_bm_escape($mt) . '» (приоритет '
+					. (int)MF_BM_MANUAL_ALIAS_SORT . ', перекрывает встроенные алиасы с меньшим сортом).',
+			];
+		}
+	}
+}
+
+// Удаление записи ручного сопоставления (HL mf_brand_alias, UF_SORT >= MF_BM_MANUAL_ALIAS_SORT)
+if (
+	($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+	&& (string)($_POST['bm_action'] ?? '') === 'delete_manual_alias'
+	&& check_bitrix_sessid()
+)
+{
+	$delId = (int)($_POST['delete_id'] ?? 0);
+	if ($delId <= 0)
+	{
+		$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не передан ID записи.'];
+	}
+	else
+	{
+		try
+		{
+			$hlD = mf_brand_hl_ensure(true);
+			$dcD = $hlD['DATA_CLASS'];
+			$rowD = $dcD::getList([
+				'filter' => ['=ID' => $delId],
+				'select' => ['ID', 'UF_SORT'],
+				'limit' => 1,
+			])->fetch();
+			if (!$rowD || (int)($rowD['UF_SORT'] ?? 0) < MF_BM_MANUAL_ALIAS_SORT)
+			{
+				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Запись не найдена или не относится к ручным сопоставлениям.'];
+			}
+			else
+			{
+				$resDel = $dcD::delete($delId);
+				if ($resDel->isSuccess())
+				{
+					if (function_exists('mf_brand_aliases_reset_cache'))
+					{
+						mf_brand_aliases_reset_cache();
+					}
+					$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Ручное сопоставление удалено (ID ' . $delId . ').'];
+				}
+				else
+				{
+					$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не удалось удалить: ' . implode('; ', $resDel->getErrorMessages())];
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Ошибка: ' . $e->getMessage()];
+		}
+	}
+}
+
 // Save mappings
 if (
 	($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
@@ -417,6 +510,33 @@ catch (\Throwable $e)
 
 $catalogBrands = mf_bm_load_catalog_brands($conn, 4);
 
+/** Записи HL, созданные блоком «Ручное сопоставление» (UF_SORT >= MF_BM_MANUAL_ALIAS_SORT). */
+$manualAliasRows = [];
+try
+{
+	$hlList = mf_brand_hl_ensure(false);
+	if ($hlList)
+	{
+		$dcList = $hlList['DATA_CLASS'];
+		$rsList = $dcList::getList([
+			'filter' => [
+				'>=UF_SORT' => MF_BM_MANUAL_ALIAS_SORT,
+				'=UF_ACTIVE' => 1,
+			],
+			'select' => ['ID', 'UF_ALIAS', 'UF_CANONICAL', 'UF_SORT', 'UF_UPDATED_AT'],
+			'order' => ['UF_ALIAS' => 'ASC', 'ID' => 'ASC'],
+		]);
+		while ($mr = $rsList->fetch())
+		{
+			$manualAliasRows[] = $mr;
+		}
+	}
+}
+catch (\Throwable $e)
+{
+	$manualAliasRows = [];
+}
+
 $bmN = count($missing);
 $bmTotalPages = $bmN > 0 ? (int)ceil($bmN / $bmPerPage) : 1;
 $bmClientPage = (int)($_GET['bm_page'] ?? 1);
@@ -442,6 +562,7 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 		Слева бренды из <code>mf_stock_import_missing</code>. Выбери канонический бренд из каталога — сохраним как alias→canonical в HL <code>mf_brand_alias</code>.
 		Вариант «Не сопоставлять» помечает бренд в таблице <code>mf_brand_import_skip</code>: такие строки не обрабатываются при импорте остатков и при загрузке внешних прайсов (остатки и цены по ним не меняются).
 		<br/>Список в селекте: уникальные значения <code>MF_BRAND</code> по активным элементам инфоблока каталога и инфоблока торговых предложений (если есть), плюс каноны из <code>mf_brand_alias</code>. Раньше учитывалась только таблица <code>b_iblock_element_prop_s*</code> для single-свойства — из‑за этого список мог быть пустым или неполным.
+		<br/>Блок <b>ниже</b> нужен, если в файле поставщика встречается бренд, которого <b>нет</b> в списке «ненайденных» (он уже сопоставляется с товарами) — например, завести «Ski-Doo» → «BRP» при существующем в каталоге Ski-Doo. Сохраняется с приоритетом, выше встроенных правил.
 	</div>
 
 	<form method="get" action="<?= mf_bm_escape($APPLICATION->GetCurPage()) ?>">
@@ -456,6 +577,102 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 			<?php endforeach; ?>
 		</select>
 	</form>
+
+	<form method="post" action="<?= mf_bm_escape($APPLICATION->GetCurPageParam('', ['sessid'])) ?>" style="margin:14px 0 18px 0; padding:12px; border:1px solid #d0d4dc; background:#f9fafb; border-radius:2px; max-width: 1160px;">
+		<?= bitrix_sessid_post() ?>
+		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
+		<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+		<input type="hidden" name="bm_action" value="manual_map">
+		<div style="font-weight:600; margin-bottom:8px;">Ручное сопоставление (любой текст бренда)</div>
+		<div style="color:#555; font-size:13px; margin-bottom:10px; line-height:1.4;">
+			Впиши строку <b>как в прайсе/остатках</b> и выбери, к какому бренду из каталога относить при импорте.
+			Это не меняет уже записанные на товарах значения <code>MF_BRAND</code>, только логику поиска/матчинг при загрузке.
+		</div>
+		<div style="display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px;">
+			<div>
+				<label for="id_manual_alias" style="display:block; margin-bottom:4px; color:#333;">Текст бренда (из файла)</label>
+				<input type="text" name="manual_alias" id="id_manual_alias" value="" placeholder="например Ski-Doo" style="min-width:280px; padding:4px 8px;"/>
+			</div>
+			<div>
+				<label for="id_manual_target" style="display:block; margin-bottom:4px; color:#333;">Считать как бренд каталога</label>
+				<select name="manual_target" id="id_manual_target" style="min-width:360px; padding:4px 8px;">
+					<option value="">— выбери —</option>
+					<option value="<?= mf_bm_escape(MF_BM_MAP_SKIP) ?>">— Не сопоставлять (пропуск при импорте) —</option>
+					<?php foreach ($catalogBrands as $bCh): ?>
+						<option value="<?= mf_bm_escape((string)$bCh) ?>"><?= mf_bm_escape((string)$bCh) ?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div>
+				<input type="submit" class="adm-btn-save" name="bm_manual_save" value="Сохранить в словарь"/>
+			</div>
+		</div>
+	</form>
+
+	<div style="margin: 0 0 22px 0; max-width: 1160px;">
+		<div style="font-weight:600; margin-bottom:6px;">Список ручных сопоставлений</div>
+		<div style="color:#555; font-size:13px; margin-bottom:8px; line-height:1.4;">
+			Здесь только записи с приоритетом <b>≥ <?= (int)MF_BM_MANUAL_ALIAS_SORT ?></b> (кнопка «Сохранить в словарь»). Сопоставления из списка ненайденных ниже
+			(сорт 100) сюда не попадают. Полные данные по всем алиасам смотри в Bitrix: <b>Highload-блоки</b> → сущность MfBrandAlias, таблица
+			<code>mf_brand_alias</code>.
+		</div>
+		<?php if (empty($manualAliasRows)): ?>
+			<div style="color:#888;">Пока нет таких записей.</div>
+		<?php else: ?>
+		<table class="adm-list-table" style="width:100%;">
+			<thead>
+			<tr class="adm-list-table-header">
+				<td class="adm-list-table-cell">ID</td>
+				<td class="adm-list-table-cell">Алиас (текст из файла)</td>
+				<td class="adm-list-table-cell">→ канон (каталог)</td>
+				<td class="adm-list-table-cell">Сорт</td>
+				<td class="adm-list-table-cell">Обновлено</td>
+				<td class="adm-list-table-cell"></td>
+			</tr>
+			</thead>
+			<tbody>
+			<?php foreach ($manualAliasRows as $mar): ?>
+				<?php
+				$mid = (int)($mar['ID'] ?? 0);
+				$mAlias = (string)($mar['UF_ALIAS'] ?? '');
+				$mCanon = (string)($mar['UF_CANONICAL'] ?? '');
+				$mSort = (int)($mar['UF_SORT'] ?? 0);
+				$mUpd = $mar['UF_UPDATED_AT'] ?? null;
+				$mUpdStr = '—';
+				if ($mUpd !== null && $mUpd !== '')
+				{
+					if (is_object($mUpd) && method_exists($mUpd, 'format'))
+					{
+						$mUpdStr = (string)$mUpd->format('Y-m-d H:i');
+					}
+					else
+					{
+						$mUpdStr = (string)$mUpd;
+					}
+				}
+				?>
+				<tr class="adm-list-table-row">
+					<td class="adm-list-table-cell"><?= $mid ?></td>
+					<td class="adm-list-table-cell"><b><?= mf_bm_escape($mAlias) ?></b></td>
+					<td class="adm-list-table-cell"><?= mf_bm_escape($mCanon) ?></td>
+					<td class="adm-list-table-cell"><?= (int)$mSort ?></td>
+					<td class="adm-list-table-cell"><?= mf_bm_escape($mUpdStr) ?></td>
+					<td class="adm-list-table-cell" style="white-space:nowrap;">
+						<form method="post" action="<?= mf_bm_escape($APPLICATION->GetCurPageParam('', ['sessid'])) ?>" style="display:inline;margin:0;" onsubmit="return confirm('Удалить сопоставление #<?= (int)$mid ?>?');">
+							<?= bitrix_sessid_post() ?>
+							<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
+							<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+							<input type="hidden" name="bm_action" value="delete_manual_alias">
+							<input type="hidden" name="delete_id" value="<?= (int)$mid ?>">
+							<button type="submit" class="adm-btn" style="font-size:12px;">Удалить</button>
+						</form>
+					</td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php endif; ?>
+	</div>
 
 	<?php
 	$bmShowFrom0 = $bmN > 0 ? (($bmClientPage - 1) * $bmPerPage + 1) : 0;
