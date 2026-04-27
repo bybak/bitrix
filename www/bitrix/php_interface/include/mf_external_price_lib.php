@@ -153,6 +153,200 @@ if (!function_exists('mf_ep_find_product'))
 	}
 }
 
+if (!function_exists('mf_ep_generate_unique_element_code'))
+{
+	/**
+	 * Уникальный CODE элемента каталога (транслит + суффикс при коллизии).
+	 */
+	function mf_ep_generate_unique_element_code(int $iblockId, string $base): string
+	{
+		$base = trim($base);
+		if ($base === '')
+		{
+			$base = 'item';
+		}
+
+		if (class_exists(\CUtil::class))
+		{
+			$code = (string)\CUtil::translit($base, 'ru', [
+				'change_case' => 'L',
+				'replace_space' => '-',
+				'replace_other' => '-',
+				'delete_repeat_replace' => true,
+				'use_google' => false,
+			]);
+		}
+		else
+		{
+			$code = strtolower(preg_replace('~[^a-z0-9]+~i', '-', $base) ?? $base);
+		}
+
+		$code = trim((string)(preg_replace('~[^a-z0-9\-]+~', '', $code) ?? ''), '-');
+		if ($code === '')
+		{
+			$code = 'item';
+		}
+
+		$try = $code;
+		$i = 1;
+		while (true)
+		{
+			$exists = \CIBlockElement::GetList(
+				[],
+				['=IBLOCK_ID' => $iblockId, '=CODE' => $try],
+				false,
+				['nTopCount' => 1],
+				['ID']
+			)->Fetch();
+			if (!$exists)
+			{
+				return $try;
+			}
+			$i++;
+			$try = $code . '-' . $i;
+			if ($i > 50)
+			{
+				return $code . '-' . time();
+			}
+		}
+	}
+}
+
+if (!function_exists('mf_ep_create_product_from_external_price'))
+{
+	/**
+	 * Создаёт карточку товара при отсутствии совпадения в каталоге (импорт внешнего прайса).
+	 *
+	 * @return int|null ID нового элемента или null при ошибке
+	 */
+	function mf_ep_create_product_from_external_price(
+		int $iblockId,
+		string $articleHuman,
+		string $articleNorm,
+		string $brandRaw,
+		string $brandNorm,
+		string $displayName = ''
+	): ?int
+	{
+		if (!class_exists(Loader::class) || !Loader::includeModule('iblock') || !Loader::includeModule('catalog')
+			|| !class_exists(\CIBlockElement::class))
+		{
+			return null;
+		}
+
+		$articleNorm = trim($articleNorm);
+		if ($articleNorm === '')
+		{
+			return null;
+		}
+
+		$brandNorm = trim($brandNorm);
+		if ($brandNorm === '')
+		{
+			$brandNorm = 'UNKNOWNBRAND';
+		}
+
+		$uniqKey = mf_ep_make_uniq_key($articleNorm, $brandNorm);
+
+		$dup = \CIBlockElement::GetList(
+			[],
+			[
+				'IBLOCK_ID' => $iblockId,
+				'=PROPERTY_MF_UNIQ_KEY' => $uniqKey,
+			],
+			false,
+			['nTopCount' => 1],
+			['ID']
+		)->Fetch();
+		if ($dup && (int)$dup['ID'] > 0)
+		{
+			return (int)$dup['ID'];
+		}
+
+		$second = function_exists('mf_ep_find_product') ? mf_ep_find_product($iblockId, $articleNorm, $brandRaw, $brandNorm) : null;
+		if ($second !== null && $second > 0)
+		{
+			return (int)$second;
+		}
+
+		$name = trim($displayName);
+		if ($name === '')
+		{
+			$name = trim($brandRaw . ' ' . $articleHuman);
+		}
+		if ($name === '')
+		{
+			$name = $uniqKey;
+		}
+
+		$codeBase = $articleNorm . '-' . $brandNorm;
+		if (mb_strlen($codeBase) > 96)
+		{
+			$codeBase = mb_substr($codeBase, 0, 96);
+		}
+		$code = mf_ep_generate_unique_element_code($iblockId, $codeBase);
+
+		$el = new \CIBlockElement();
+		$newId = (int)$el->Add(
+			[
+				'IBLOCK_ID' => $iblockId,
+				'NAME' => $name,
+				'CODE' => $code,
+				'XML_ID' => 'mf_ext_price:' . $uniqKey,
+				'ACTIVE' => 'Y',
+				'PROPERTY_VALUES' => [
+					'CML2_ARTICLE' => $articleHuman,
+					'MF_ARTICLE_NORM' => $articleNorm,
+					'MF_BRAND' => $brandRaw,
+					'MF_BRAND_NORM' => $brandNorm,
+					'MF_UNIQ_KEY' => $uniqKey,
+					'MF_IS_REDIRECT' => 'N',
+					'MF_CANONICAL_CODE' => '',
+					'MF_SOURCE_IDS' => 'external_price_import',
+				],
+			],
+			false,
+			false
+		);
+
+		if ($newId <= 0)
+		{
+			return null;
+		}
+
+		\CIBlockElement::SetPropertyValuesEx(
+			$newId,
+			$iblockId,
+			['MF_SHOW_IN_CATALOG' => 'Y']
+		);
+
+		if (class_exists(\CCatalogProduct::class))
+		{
+			\CCatalogProduct::Add([
+				'ID' => $newId,
+				'QUANTITY' => 0,
+				'QUANTITY_TRACE' => 'N',
+				'CAN_BUY_ZERO' => 'Y',
+				'AVAILABLE' => 'N',
+			]);
+		}
+
+		try
+		{
+			if (Loader::includeModule('search'))
+			{
+				\CIBlockElement::UpdateSearch($newId, true);
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		return $newId;
+	}
+}
+
 if (!function_exists('mf_ep_get_or_create_price_group'))
 {
 	function mf_ep_get_or_create_price_group(string $storeXmlId, string $titleFallback, bool $create): int

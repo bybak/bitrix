@@ -316,6 +316,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 
 							$ok = 0;
 							$notFound = 0;
+							$created = 0;
 							$bad = 0;
 							$priceWriteFail = 0;
 							$totalDataRows = 0;
@@ -354,8 +355,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 								$brandRaw = $canon !== '' ? $canon : $manufacturer;
 								$articleNorm = mf_ep_norm_article($article);
 								$brandNorm = mf_ep_norm_brand($brandRaw);
+								$nameFromRow = (isset($hmap['name']) ? trim((string)($cells[$hmap['name']] ?? '')) : '');
 
 								$pid = mf_ep_find_product($iblockId, $articleNorm, $brandRaw, $brandNorm);
+								if ($pid === null || $pid <= 0)
+								{
+									if (function_exists('mf_ep_create_product_from_external_price'))
+									{
+										$newPid = mf_ep_create_product_from_external_price(
+											$iblockId,
+											$article,
+											$articleNorm,
+											$brandRaw,
+											$brandNorm,
+											$nameFromRow
+										);
+										if ($newPid !== null && $newPid > 0)
+										{
+											$pid = (int)$newPid;
+											$created++;
+										}
+									}
+								}
 								if ($pid === null || $pid <= 0)
 								{
 									$notFound++;
@@ -432,6 +453,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 							$stats = [
 								'ok' => $ok,
 								'not_found' => $notFound,
+								'created' => $created,
 								'bad' => $bad,
 								'zeroed' => $zeroed,
 								'price_write_fail' => $priceWriteFail,
@@ -599,6 +621,7 @@ $wfWeightInputsDisabled = !$wfUseChecked;
 if ($stats)
 {
 	$msg = 'Обработано строк (найден товар): ' . (int)$stats['ok']
+		. '; создано новых товаров: ' . (int)($stats['created'] ?? 0)
 		. '; не найдено в каталоге: ' . (int)$stats['not_found']
 		. '; пропуск/битые строки: ' . (int)$stats['bad']
 		. '; обнулено (не в файле): ' . (int)$stats['zeroed']
@@ -613,7 +636,7 @@ if ($stats)
 }
 ?>
 
-	<p>Формат CSV: колонки <strong>Производитель</strong>, <strong>Артикул</strong>, <strong>Наименование</strong> (опционально), <strong>Цена</strong>. Разделитель — точка с запятой.</p>
+	<p>Формат CSV: колонки <strong>Производитель</strong>, <strong>Артикул</strong>, <strong>Наименование</strong> (опционально), <strong>Цена</strong>. Разделитель — точка с запятой. Если товара с такой парой (артикул + бренд) ещё нет в каталоге, он <strong>создаётся</strong> автоматически; наименование берётся из колонки «Наименование» или, если она пуста, из «Производитель» и «Артикул».</p>
 	<p class="adm-info-message" style="max-width:900px">В списке складов — только те, у которых в карточке склада включено поле <strong>«Внешний склад»</strong> (пользовательское поле). Остальные склады отметьте в <em>Магазин → Склады</em> и снова откройте эту страницу.</p>
 	<?php
 	if (empty($stores))
