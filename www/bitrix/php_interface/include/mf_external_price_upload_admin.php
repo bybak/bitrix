@@ -50,6 +50,68 @@ if (is_file($brandDict))
 
 Loader::includeModule('iblock');
 Loader::includeModule('catalog');
+Loader::includeModule('currency');
+
+/**
+ * Валюты из модуля Bitrix «Валюты» (CCurrency) для селекта импорта.
+ *
+ * @return list<array{code:string,title:string}>
+ */
+function mf_epu_get_currency_select_options(): array
+{
+	static $cached = null;
+	if ($cached !== null)
+	{
+		return $cached;
+	}
+	$fallback = [
+		['code' => 'RUB', 'title' => 'Российский рубль (RUB)'],
+		['code' => 'USD', 'title' => 'Доллар США (USD)'],
+		['code' => 'EUR', 'title' => 'Евро (EUR)'],
+	];
+	if (!class_exists(\CCurrency::class))
+	{
+		$cached = $fallback;
+		return $cached;
+	}
+	$langId = defined('LANGUAGE_ID') && (string)LANGUAGE_ID !== '' ? (string)LANGUAGE_ID : 'ru';
+	$out = [];
+	$rs = \CCurrency::GetList('sort', 'asc');
+	while ($row = $rs->Fetch())
+	{
+		$code = mb_strtoupper(trim((string)($row['CURRENCY'] ?? '')));
+		if ($code === '')
+		{
+			continue;
+		}
+		$title = $code;
+		if (class_exists(\CCurrencyLang::class))
+		{
+			$lr = \CCurrencyLang::GetByID($code, $langId);
+			if (is_array($lr) && trim((string)($lr['FULL_NAME'] ?? '')) !== '')
+			{
+				$title = trim((string)$lr['FULL_NAME']) . ' (' . $code . ')';
+			}
+		}
+		$out[] = ['code' => $code, 'title' => $title];
+	}
+	$cached = $out !== [] ? $out : $fallback;
+	return $cached;
+}
+
+function mf_epu_normalize_import_currency(string $posted, array $allowedCodes): string
+{
+	$c = mb_strtoupper(trim($posted));
+	if ($allowedCodes === [])
+	{
+		return 'RUB';
+	}
+	if ($c !== '' && in_array($c, $allowedCodes, true))
+	{
+		return $c;
+	}
+	return $allowedCodes[0];
+}
 
 // Сразу отдать JSON поллинга, не вызывая mf_ep_ensure_store_weight_ufs и т.д. (иначе запрос подвисает).
 if ((string)($_GET['mf_ep_job_poll'] ?? '') === '1')
@@ -324,6 +386,9 @@ if (isset($_GET['import_job']))
 	}
 }
 
+$mfEpCurrencyOptions = mf_epu_get_currency_select_options();
+$mfEpCurrencyCodes = array_column($mfEpCurrencyOptions, 'code');
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_do'] ?? '') === 'Y')
 {
 	if (!check_bitrix_sessid())
@@ -368,9 +433,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		{
 			$error = 'Ошибка загрузки файла (код ' . (int)($_FILES['price_file']['error'] ?? 0) . ').';
 		}
-		elseif ($currency !== 'RUB' && $currency !== 'USD' && $currency !== 'EUR')
+		elseif (!in_array($currency, $mfEpCurrencyCodes, true))
 		{
-			$error = 'Недопустимая валюта.';
+			$error = 'Недопустимая валюта (нет в модуле «Валюты» Bitrix).';
 		}
 		else
 		{
@@ -540,11 +605,12 @@ $wfRepost = ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_extern
 $formStoreId = $wfRepost ? (int)($_POST['store_id'] ?? 0) : 0;
 $wfUseChecked = $wfRepost && (string)($_POST['weight_use'] ?? '') === 'Y';
 $wfRubKgStr = $wfRepost ? (string)($_POST['weight_rub_kg'] ?? '0') : '0';
-$wfCurrency = $wfRepost ? mb_strtoupper(trim((string)($_POST['currency'] ?? 'RUB'))) : 'RUB';
-if ($wfCurrency !== 'RUB' && $wfCurrency !== 'USD' && $wfCurrency !== 'EUR')
-{
-	$wfCurrency = 'RUB';
-}
+$wfCurrency = $wfRepost
+	? mf_epu_normalize_import_currency((string)($_POST['currency'] ?? ''), $mfEpCurrencyCodes)
+	: mf_epu_normalize_import_currency(
+		in_array('RUB', $mfEpCurrencyCodes, true) ? 'RUB' : '',
+		$mfEpCurrencyCodes
+	);
 $wfWeightInputsDisabled = !$wfUseChecked;
 
 $mfEpShowJobPanel = false;
@@ -696,7 +762,7 @@ if ($stats)
 		]);
 	}
 	?>
-	<p><strong>Валюта прайса (USD/EUR/RUB):</strong> в тип цены склада записываются <strong>исходная сумма и валюта</strong> из файла; в рубли для заказа цена переводится по <strong>текущему</strong> курсу (модуль «Валюты» Bitrix, при необходимости — ЦБ для USD/EUR, см. <code>mf_cbr_rates_*</code> и опцию <code>mf_external_price_no_cbr</code>).</p>
+	<p><strong>Валюта прайса:</strong> список совпадает с валютами в <strong>Настройки → Валюты</strong>. В тип цены склада записываются <strong>исходная сумма и валюта</strong> из файла; в рубли для заказа цена переводится по <strong>текущему</strong> курсу из модуля «Валюты» (для USD/EUR при отсутствии курса — опционально ЦБ, см. <code>mf_cbr_rates_*</code> и <code>mf_external_price_no_cbr</code>).</p>
 
 	<?php
 	$mfEpSampleHref = '/bitrix/admin/mf_external_price_upload_sample.csv';
@@ -748,9 +814,17 @@ BRP;420256455;OIL FILTER;11,04</pre>
 			<td>Валюта цен в файле</td>
 			<td>
 				<select name="currency">
-					<option value="RUB"<?= $wfCurrency === 'RUB' ? ' selected' : '' ?>>Рубли (RUB)</option>
-					<option value="USD"<?= $wfCurrency === 'USD' ? ' selected' : '' ?>>Доллары (USD), курс ЦБ</option>
-					<option value="EUR"<?= $wfCurrency === 'EUR' ? ' selected' : '' ?>>Евро (EUR), курс ЦБ</option>
+					<?php foreach ($mfEpCurrencyOptions as $mfEpCurOpt): ?>
+						<?php
+						$cCode = (string)($mfEpCurOpt['code'] ?? '');
+						if ($cCode === '')
+						{
+							continue;
+						}
+						$cSel = ($wfCurrency === $cCode) ? ' selected' : '';
+						?>
+						<option value="<?= mf_epu_escape($cCode) ?>"<?= $cSel ?>><?= mf_epu_escape((string)($mfEpCurOpt['title'] ?? $cCode)) ?></option>
+					<?php endforeach; ?>
 				</select>
 			</td>
 		</tr>
