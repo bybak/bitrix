@@ -1839,3 +1839,350 @@ if (!function_exists('mf_external_price_import_log_insert'))
 		}
 	}
 }
+
+// --- Фоновые задания импорта внешнего прайса (админка) -------------------------
+
+if (!function_exists('mf_external_price_import_job_conn'))
+{
+	function mf_external_price_import_job_conn(): ?\Bitrix\Main\DB\Connection
+	{
+		return mf_external_price_import_log_conn();
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_ensure_table'))
+{
+	function mf_external_price_import_job_ensure_table(): bool
+	{
+		$conn = mf_external_price_import_job_conn();
+		if (!$conn)
+		{
+			return false;
+		}
+
+		$driver = method_exists($conn, 'getType') ? (string)$conn->getType() : '';
+		if ($driver !== '' && stripos($driver, 'mysql') === false)
+		{
+			return false;
+		}
+
+		$sql = "CREATE TABLE IF NOT EXISTS mf_external_price_import_job (
+			ID BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			UF_TOKEN CHAR(32) NOT NULL,
+			UF_USER_ID INT UNSIGNED NOT NULL,
+			UF_STATUS VARCHAR(16) NOT NULL DEFAULT 'pending',
+			UF_FILE_PATH VARCHAR(1024) NOT NULL,
+			UF_ORIG_NAME VARCHAR(512) NULL,
+			UF_FILE_SIZE BIGINT NULL,
+			UF_STORE_ID INT NOT NULL,
+			UF_CURRENCY CHAR(3) NULL,
+			UF_ZERO_MISSING CHAR(1) NULL,
+			UF_WEIGHT_USE CHAR(1) NULL,
+			UF_WEIGHT_RUB_KG DOUBLE NULL,
+			UF_ROWS_TOTAL INT UNSIGNED NULL,
+			UF_ROWS_DONE INT UNSIGNED NULL,
+			UF_ERROR_TEXT TEXT NULL,
+			UF_RESULT_JSON MEDIUMTEXT NULL,
+			UF_STARTED_AT DATETIME NULL,
+			UF_FINISHED_AT DATETIME NULL,
+			PRIMARY KEY (ID),
+			KEY IX_MFEPIJ_STATUS (UF_STATUS),
+			KEY IX_MFEPIJ_USER (UF_USER_ID),
+			KEY IX_MFEPIJ_TOKEN (UF_TOKEN)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+		try
+		{
+			$conn->queryExecute($sql);
+
+			return true;
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_insert'))
+{
+	/**
+	 * @param array<string, mixed> $row
+	 */
+	function mf_external_price_import_job_insert(array $row): int
+	{
+		if (!mf_external_price_import_job_ensure_table())
+		{
+			return 0;
+		}
+
+		$conn = mf_external_price_import_job_conn();
+		if (!$conn)
+		{
+			return 0;
+		}
+
+		$cols = [];
+		$vals = [];
+		foreach ($row as $k => $v)
+		{
+			$k = trim((string)$k);
+			if ($k === '')
+			{
+				continue;
+			}
+			$cols[] = '`' . str_replace('`', '', $k) . '`';
+			if ($v === null)
+			{
+				$vals[] = 'NULL';
+			}
+			elseif (is_int($v) || is_float($v))
+			{
+				$vals[] = is_finite((float)$v) ? (string)$v : 'NULL';
+			}
+			else
+			{
+				$vals[] = mf_external_price_import_log_quote($conn, $v);
+			}
+		}
+		if (empty($cols))
+		{
+			return 0;
+		}
+
+		try
+		{
+			$conn->queryExecute(
+				'INSERT INTO mf_external_price_import_job (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $vals) . ')'
+			);
+			$r = $conn->query('SELECT LAST_INSERT_ID() AS ID')->fetch();
+
+			return (int)($r['ID'] ?? 0);
+		}
+		catch (\Throwable $e)
+		{
+			return 0;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_get'))
+{
+	function mf_external_price_import_job_get(int $id): ?array
+	{
+		if ($id <= 0 || !mf_external_price_import_job_ensure_table())
+		{
+			return null;
+		}
+
+		$conn = mf_external_price_import_job_conn();
+		if (!$conn)
+		{
+			return null;
+		}
+
+		try
+		{
+			$r = $conn->query('SELECT * FROM mf_external_price_import_job WHERE ID=' . $id . ' LIMIT 1')->fetch();
+			if (!is_array($r))
+			{
+				return null;
+			}
+			$norm = [];
+			foreach ($r as $k => $v)
+			{
+				$norm[is_string($k) ? strtoupper($k) : $k] = $v;
+			}
+
+			return $norm;
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_update'))
+{
+	/**
+	 * @param array<string, mixed> $fields
+	 */
+	function mf_external_price_import_job_update(int $id, array $fields): bool
+	{
+		$id = (int)$id;
+		if ($id <= 0 || empty($fields))
+		{
+			return false;
+		}
+
+		$conn = mf_external_price_import_job_conn();
+		if (!$conn)
+		{
+			return false;
+		}
+
+		$sets = [];
+		foreach ($fields as $k => $v)
+		{
+			$k = trim((string)$k);
+			if ($k === '')
+			{
+				continue;
+			}
+			$k = str_replace('`', '', $k);
+			if ($v === null)
+			{
+				$sets[] = '`' . $k . '`=NULL';
+			}
+			elseif (is_int($v) || is_float($v))
+			{
+				$sets[] = '`' . $k . '`=' . (is_finite((float)$v) ? (string)$v : 'NULL');
+			}
+			else
+			{
+				$sets[] = '`' . $k . '`=' . mf_external_price_import_log_quote($conn, $v);
+			}
+		}
+		if (empty($sets))
+		{
+			return false;
+		}
+
+		try
+		{
+			$conn->queryExecute('UPDATE mf_external_price_import_job SET ' . implode(', ', $sets) . ' WHERE ID=' . $id);
+
+			return true;
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_release_flock'))
+{
+	/**
+	 * Снять файловую блокировку воркера (после импорта или ошибки).
+	 */
+	function mf_external_price_import_job_release_flock(): void
+	{
+		if (empty($GLOBALS['mf_external_price_import_job_lock_fp']) || !is_resource($GLOBALS['mf_external_price_import_job_lock_fp']))
+		{
+			return;
+		}
+		$fp = $GLOBALS['mf_external_price_import_job_lock_fp'];
+		@flock($fp, LOCK_UN);
+		@fclose($fp);
+		unset($GLOBALS['mf_external_price_import_job_lock_fp']);
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_try_mark_running'))
+{
+	/**
+	 * Атомарно: pending → running. Файловый flock + MySQL, без надежды на getAffectedRowsCount.
+	 */
+	function mf_external_price_import_job_try_mark_running(int $id): bool
+	{
+		$id = (int)$id;
+		if ($id <= 0)
+		{
+			return false;
+		}
+
+		$lockPath = @sys_get_temp_dir() . '/mfextprice_job_' . $id . '.lock';
+		$fp = @fopen($lockPath, 'c+');
+		if ($fp === false)
+		{
+			return mf_external_price_import_job_try_mark_running_db($id);
+		}
+		if (!flock($fp, LOCK_EX | LOCK_NB))
+		{
+			@fclose($fp);
+
+			return false;
+		}
+
+		$row0 = mf_external_price_import_job_get($id);
+		if (
+			!$row0
+			|| mb_strtolower(trim((string)($row0['UF_STATUS'] ?? ''))) !== 'pending'
+		)
+		{
+			flock($fp, LOCK_UN);
+			fclose($fp);
+
+			return false;
+		}
+
+		$conn = mf_external_price_import_job_conn();
+		if (!$conn)
+		{
+			flock($fp, LOCK_UN);
+			fclose($fp);
+
+			return false;
+		}
+
+		try
+		{
+			$conn->queryExecute(
+				"UPDATE mf_external_price_import_job SET UF_STATUS='running', UF_STARTED_AT=NOW() WHERE ID=" . $id . " AND UF_STATUS='pending'"
+			);
+		}
+		catch (\Throwable $e)
+		{
+			flock($fp, LOCK_UN);
+			fclose($fp);
+
+			return false;
+		}
+
+		$row1 = mf_external_price_import_job_get($id);
+		if (
+			!$row1
+			|| mb_strtolower(trim((string)($row1['UF_STATUS'] ?? ''))) !== 'running'
+		)
+		{
+			flock($fp, LOCK_UN);
+			fclose($fp);
+
+			return false;
+		}
+
+		$GLOBALS['mf_external_price_import_job_lock_fp'] = $fp;
+
+		return true;
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_try_mark_running_db'))
+{
+	/**
+	 * Резерв, если нет /tmp — только UPDATE + проверка строки.
+	 */
+	function mf_external_price_import_job_try_mark_running_db(int $id): bool
+	{
+		$conn = mf_external_price_import_job_conn();
+		if (!$conn)
+		{
+			return false;
+		}
+		try
+		{
+			$conn->queryExecute(
+				"UPDATE mf_external_price_import_job SET UF_STATUS='running', UF_STARTED_AT=NOW() WHERE ID=" . (int)$id . " AND UF_STATUS='pending'"
+			);
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+		$row = mf_external_price_import_job_get($id);
+
+		return is_array($row) && mb_strtolower(trim((string)($row['UF_STATUS'] ?? ''))) === 'running';
+	}
+}
