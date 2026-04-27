@@ -439,6 +439,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 							elseif (!@move_uploaded_file($upTmp, $absJobPath))
 							{
 								$error = 'Не удалось сохранить CSV на сервере.';
+								if (is_dir($absJobDir) && !is_writable($absJobDir))
+								{
+									$error .= ' Каталог upload/mf_ext_price/jobs/ существует, но недоступен для записи от имени PHP (проверьте владельца и chmod, обычно пользователь пула php-fpm).';
+								}
 							}
 							else
 							{
@@ -666,6 +670,7 @@ if ($stats)
 	$msg = 'Обработано строк (найден товар): ' . (int)$stats['ok']
 		. '; создано новых товаров: ' . (int)($stats['created'] ?? 0)
 		. '; не найдено в каталоге: ' . (int)$stats['not_found']
+		. '; пропущено (бренд «не сопоставлять»): ' . (int)($stats['brand_skipped'] ?? 0)
 		. '; пропуск/битые строки: ' . (int)$stats['bad']
 		. '; обнулено (не в файле): ' . (int)$stats['zeroed']
 		. '; не записана цена (ошибка API Bitrix / кэш типа цены): ' . (int)($stats['price_write_fail'] ?? 0)

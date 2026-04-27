@@ -338,6 +338,43 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_missing_stock_items');
 }
 
+// Admin menu: "Магазин" -> "Сопоставление брендов" (mf_brand_map.php → HL mf_brand_alias)
+if (!function_exists('mf_admin_menu_brand_map'))
+{
+	function mf_admin_menu_brand_map(array &$aGlobalMenu, array &$aModuleMenu): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+
+		$url = 'mf_brand_map.php?lang=ru';
+		$parentMenu =
+			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
+				(isset($aGlobalMenu['global_menu_sale']) ? 'global_menu_sale' : 'global_menu_content'));
+
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_stock_import',
+			'sort' => 2049,
+			'text' => 'Сопоставление брендов (импорт складов)',
+			'title' => 'Алиасы брендов из ненайденных → канон в каталоге (HL mf_brand_alias)',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_brand_map',
+			'url' => $url,
+			'more_url' => [
+				'mf_brand_map.php',
+			],
+		];
+	}
+}
+
+if (class_exists(\Bitrix\Main\EventManager::class))
+{
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_brand_map');
+}
+
 // Admin menu: "Магазин" -> "Логи импорта остатков" (table mf_supplier_stock_run_log)
 if (!function_exists('mf_admin_menu_stock_import_logs'))
 {

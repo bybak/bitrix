@@ -64,6 +64,11 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		}
 
 		mf_epu_bootstrap_long_import();
+		$brandDictPath = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/mf_brand_dict.php';
+		if (is_file($brandDictPath))
+		{
+			require_once $brandDictPath;
+		}
 		$text = mf_epu_read_file_utf8($absCsvPath);
 		$lines = preg_split('~\R~u', $text) ?: [];
 		if (count($lines) < 2)
@@ -103,6 +108,7 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		$created = 0;
 		$bad = 0;
 		$priceWriteFail = 0;
+		$brandSkipped = 0;
 		$totalDataRows = 0;
 		$matchedIds = [];
 		$examplesNotFound = [];
@@ -138,6 +144,12 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			if ($manufacturer === '' || $article === '')
 			{
 				$bad++;
+				continue;
+			}
+
+			if (function_exists('mf_brand_import_is_skipped') && mf_brand_import_is_skipped($manufacturer))
+			{
+				$brandSkipped++;
 				continue;
 			}
 
@@ -263,6 +275,7 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			'not_found' => $notFound,
 			'created' => $created,
 			'bad' => $bad,
+			'brand_skipped' => $brandSkipped,
 			'zeroed' => $zeroed,
 			'price_write_fail' => $priceWriteFail,
 			'store' => (string)($st['TITLE'] ?? ''),

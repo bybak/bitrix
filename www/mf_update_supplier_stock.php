@@ -1431,6 +1431,7 @@ try
 	$total = 0;
 	$updated = 0;
 	$notFound = 0;
+	$brandSkipped = 0;
 	$errors = 0;
 	$zeroedMissing = 0;
 	$seenProducts = [];
@@ -1444,12 +1445,17 @@ try
 	$lastProgressAt = microtime(true);
 	$loopStartTs = microtime(true);
 
-	// Prepare optional brand dictionary once (do NOT require inside the loop).
+	// Brand dictionary (optional) + глобальный пропуск брендов (mf_brand_import_skip, без флага --brand-dict).
 	$brandDictReady = false;
-	if ($useBrandDict && is_file(__DIR__ . '/mf_brand_dict.php'))
+	$brandSkipReady = false;
+	if (is_file(__DIR__ . '/mf_brand_dict.php'))
 	{
 		require_once __DIR__ . '/mf_brand_dict.php';
-		$brandDictReady = function_exists('mf_brand_find');
+		$brandSkipReady = function_exists('mf_brand_import_is_skipped');
+		if ($useBrandDict)
+		{
+			$brandDictReady = function_exists('mf_brand_find');
+		}
 	}
 
 	$missingBuf = [];
@@ -1472,6 +1478,11 @@ try
 
 		$articleNorm = normalizeArticle($artRaw);
 		if ($articleNorm === '') continue;
+		if ($brandSkipReady && $brandRaw !== '' && mf_brand_import_is_skipped($brandRaw))
+		{
+			$brandSkipped++;
+			continue;
+		}
 		if ($useBrandDict && $brandDictReady && $brandRaw !== '')
 		{
 			$canon = (string)mf_brand_find($brandRaw, true);
@@ -1610,7 +1621,7 @@ try
 		if (($total % $progressEvery) === 0 || ($now - $lastProgressAt) >= 0.5)
 		{
 			$pct = 0.0;
-			$extra = "rows=$total updated=$updated notFound=$notFound errors=$errors";
+			$extra = "rows=$total updated=$updated notFound=$notFound brandSkip=$brandSkipped errors=$errors";
 			if ($fileSize > 0)
 			{
 				$pos = (int)ftell($h);
@@ -1770,7 +1781,7 @@ try
 		}
 	}
 
-	out("DONE total=$total updated=$updated notFound=$notFound zeroedMissing=$zeroedMissing errors=$errors");
+	out("DONE total=$total updated=$updated notFound=$notFound brandSkipped=$brandSkipped zeroedMissing=$zeroedMissing errors=$errors");
 
 	// finalize run log
 	if ($runLogEnabled && $runLogId > 0)

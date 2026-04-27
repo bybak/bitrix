@@ -204,9 +204,14 @@ function mf_brand_aliases_reset_cache(): void
 
 function mf_brand_register_alias(array $hl, string $canonical, string $alias, bool $active = true, int $sort = 0): void
 {
+	$alias = trim($alias);
+	if ($alias !== '' && function_exists('mf_brand_import_skip_set'))
+	{
+		mf_brand_import_skip_set($alias, false);
+	}
+
 	$dataClass = $hl['DATA_CLASS'];
 	$canonical = trim($canonical);
-	$alias = trim($alias);
 	if ($canonical === '' || $alias === '') return;
 
 	$canonNorm = mf_brand_norm($canonical);
@@ -239,5 +244,138 @@ function mf_brand_register_alias(array $hl, string $canonical, string $alias, bo
 
 	// Drop in-memory cache so next lookup sees the new alias.
 	mf_brand_aliases_reset_cache();
+}
+
+if (!function_exists('mf_brand_import_skip_ensure_table'))
+{
+	function mf_brand_import_skip_ensure_table(): bool
+	{
+		if (!class_exists(\Bitrix\Main\Application::class))
+		{
+			return false;
+		}
+		try
+		{
+			$conn = \Bitrix\Main\Application::getConnection();
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+		$driver = method_exists($conn, 'getType') ? (string)$conn->getType() : '';
+		if ($driver !== '' && stripos($driver, 'mysql') === false)
+		{
+			return false;
+		}
+		$sql = "CREATE TABLE IF NOT EXISTS mf_brand_import_skip (
+			ID INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			UF_ALIAS_NORM VARCHAR(128) NOT NULL,
+			UF_ALIAS_RAW VARCHAR(512) NULL,
+			UF_ACTIVE CHAR(1) NOT NULL DEFAULT 'Y',
+			UF_UPDATED_AT DATETIME NULL,
+			PRIMARY KEY (ID),
+			UNIQUE KEY IX_MF_BIS_NORM (UF_ALIAS_NORM)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+		try
+		{
+			$conn->queryExecute($sql);
+			return true;
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_brand_import_is_skipped'))
+{
+	function mf_brand_import_is_skipped(string $rawFromFile): bool
+	{
+		$rawFromFile = trim($rawFromFile);
+		if ($rawFromFile === '')
+		{
+			return false;
+		}
+		if (!function_exists('mf_brand_norm'))
+		{
+			return false;
+		}
+		$n = mf_brand_norm($rawFromFile);
+		if ($n === '' || !mf_brand_import_skip_ensure_table())
+		{
+			return false;
+		}
+		try
+		{
+			$conn = \Bitrix\Main\Application::getConnection();
+			$h = $conn->getSqlHelper();
+			$r = $conn->query(
+				"SELECT ID FROM mf_brand_import_skip WHERE UF_ACTIVE='Y' AND UF_ALIAS_NORM='"
+					. $h->forSql($n) . "' LIMIT 1"
+			)->fetch();
+			return (bool)$r;
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_brand_import_skip_set'))
+{
+	function mf_brand_import_skip_set(string $rawBrand, bool $skip): void
+	{
+		$rawBrand = trim($rawBrand);
+		if ($rawBrand === '' || !function_exists('mf_brand_norm'))
+		{
+			return;
+		}
+		$n = mf_brand_norm($rawBrand);
+		if ($n === '' || !mf_brand_import_skip_ensure_table())
+		{
+			return;
+		}
+		try
+		{
+			$conn = \Bitrix\Main\Application::getConnection();
+			$h = $conn->getSqlHelper();
+			$now = date('Y-m-d H:i:s');
+			if (!$skip)
+			{
+				$conn->queryExecute("DELETE FROM mf_brand_import_skip WHERE UF_ALIAS_NORM='" . $h->forSql($n) . "'");
+				return;
+			}
+			$r = $conn->query(
+				"SELECT ID FROM mf_brand_import_skip WHERE UF_ALIAS_NORM='" . $h->forSql($n) . "' LIMIT 1"
+			)->fetch();
+			if ($r)
+			{
+				$conn->queryExecute(
+					"UPDATE mf_brand_import_skip SET UF_ACTIVE='Y', UF_ALIAS_RAW='"
+						. $h->forSql($rawBrand) . "', UF_UPDATED_AT='"
+						. $h->forSql($now) . "' WHERE ID=" . (int)$r['ID']
+				);
+			}
+			else
+			{
+				$conn->queryExecute(
+					"INSERT INTO mf_brand_import_skip (UF_ALIAS_NORM, UF_ALIAS_RAW, UF_ACTIVE, UF_UPDATED_AT) VALUES ('"
+						. $h->forSql($n) . "', '" . $h->forSql($rawBrand) . "', 'Y', '" . $h->forSql($now) . "')"
+				);
+			}
+			$exists = $conn->query("SHOW TABLES LIKE 'mf_brand_alias'")->fetch();
+			if ($exists)
+			{
+				$conn->queryExecute("DELETE FROM mf_brand_alias WHERE UF_ALIAS_NORM='" . $h->forSql($n) . "'");
+			}
+			mf_brand_aliases_reset_cache();
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+	}
 }
 
