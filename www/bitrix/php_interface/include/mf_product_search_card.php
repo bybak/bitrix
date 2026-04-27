@@ -382,8 +382,14 @@ if (!function_exists('mf_product_search_card_render'))
 									<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
 									<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
 									<td class="mf-ta-r">
+										<?php
+										$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
+										$mfRequestPrice = $mfOrdOnly || $mfNoPrice;
+										?>
 										<?php if ($mfOrdOnly): ?>
 											<span class="mf-search-stock__order-only">Под заказ</span>
+										<?php elseif ($mfNoPrice): ?>
+											<span class="mf-search-stock__order-only">—</span>
 										<?php else: ?>
 											<div class="mf-search-stock__actions">
 												<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
@@ -403,17 +409,17 @@ if (!function_exists('mf_product_search_card_render'))
 										<?php endif; ?>
 									</td>
 									<td class="mf-ta-r">
-										<?php
-										$mfCartSid = (int)($s['store_id'] ?? 0);
-										$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
-										$mfHideCartBtn = $mfOrdOnly && $mfNoPrice;
-										if ($mfHideCartBtn && $mfCartSid > 0 && function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($mfCartSid))
-										{
-											$mfHideCartBtn = false;
-										}
-										?>
-										<?php if ($mfHideCartBtn): ?>
-											—
+										<?php if ($mfRequestPrice): ?>
+											<button
+												type="button"
+												class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price-global"
+												data-product-id="<?=$id?>"
+												data-product-name="<?=htmlspecialcharsbx($productNamePlain)?>"
+												data-product-url="<?=htmlspecialcharsbx($url)?>"
+												data-user-name="<?=htmlspecialcharsbx($reqName)?>"
+												data-user-email="<?=htmlspecialcharsbx($reqEmail)?>"
+												data-user-locked="<?=$reqLocked ? '1' : '0'?>"
+											>Запросить цену</button>
 										<?php else: ?>
 											<button
 												type="button"

@@ -16,6 +16,7 @@ $IBLOCK_ID = 4; // Каталог запчастей Motor Force
 // Получаем код товара из URL
 $elementCode = $_REQUEST["ELEMENT_CODE"];
 $elementId = 0;
+$mfElementName = '';
 $mfBrand = '';
 $mfArticle = '';
 $mfPreviewText = '';
@@ -50,6 +51,7 @@ if ($elementCode)
 	if ($e && isset($e['ID']))
 	{
 		$elementId = (int)$e['ID'];
+		$mfElementName = trim((string)($e['NAME'] ?? ''));
 		$mfBrand = trim((string)($e['PROPERTY_MF_BRAND_VALUE'] ?? ''));
 		$mfArticle = trim((string)($e['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
 		$mfPreviewText = (string)($e['PREVIEW_TEXT'] ?? '');
@@ -345,6 +347,22 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 		});
 
 		ob_start();
+		global $USER;
+		$mfDetReqN = '';
+		$mfDetReqE = '';
+		$mfDetReqLocked = false;
+		if (is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized())
+		{
+			$mfDetReqLocked = true;
+			$mfDetReqN = trim((string)$USER->GetFirstName() . ' ' . (string)$USER->GetLastName());
+			if ($mfDetReqN === '')
+			{
+				$mfDetReqN = trim((string)$USER->GetLogin());
+			}
+			$mfDetReqE = trim((string)$USER->GetEmail());
+		}
+		$mfDetProductUrl = ($elementCode !== '' ? '/products/' . rawurlencode($elementCode) . '/' : '/');
+		$mfDetNameForReq = $mfElementName !== '' ? $mfElementName : ('Товар #' . (int)$elementId);
 		?>
 		<div class="mf-detail-stock-wrap">
 			<div class="table-responsive">
@@ -425,9 +443,26 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 							<td class="text-right">
 								<?php
 								$mfRowExternal = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
-								$mfShowCartBtn = $storePrice !== null && ($amt > 0 || $mfRowExternal);
+								$mfNoPriceRow = ($storePrice === null || (float)$storePrice <= 0);
+								$mfPodZakazRow = $mfRowExternal && $amt <= 1e-9;
+								$mfRequestPriceRow = $mfPodZakazRow || $mfNoPriceRow;
+								$mfShowCartBtn = !$mfRequestPriceRow
+									&& $storePrice !== null
+									&& (float)$storePrice > 0
+									&& ($amt > 0 || $mfRowExternal);
 								?>
-								<?php if ($mfShowCartBtn): ?>
+								<?php if ($mfRequestPriceRow): ?>
+									<button
+										type="button"
+										class="btn btn-sm btn-warning js-mf-request-price-global"
+										data-product-id="<?= (int)$elementId ?>"
+										data-product-name="<?=htmlspecialcharsbx($mfDetNameForReq)?>"
+										data-product-url="<?=htmlspecialcharsbx($mfDetProductUrl)?>"
+										data-user-name="<?=htmlspecialcharsbx($mfDetReqN)?>"
+										data-user-email="<?=htmlspecialcharsbx($mfDetReqE)?>"
+										data-user-locked="<?=$mfDetReqLocked ? '1' : '0'?>"
+									>Запросить цену</button>
+								<?php elseif ($mfShowCartBtn): ?>
 									<button
 										type="button"
 										class="btn btn-sm btn-warning js-mf-add-store"

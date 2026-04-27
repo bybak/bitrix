@@ -336,19 +336,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 								$manufacturer = trim((string)($cells[$hmap['manufacturer']] ?? ''));
 								$article = trim((string)($cells[$hmap['article']] ?? ''));
 								$priceStr = trim((string)($cells[$hmap['price']] ?? ''));
-								$priceStr = str_replace([' ', ','], ['', '.'], $priceStr);
+								$priceStr = str_replace(["\xC2\xA0", ' ', ','], ['', '', '.'], $priceStr);
 
-								if ($manufacturer === '' || $article === '' || $priceStr === '')
+								if ($manufacturer === '' || $article === '')
 								{
 									$bad++;
 									continue;
 								}
 
-								$priceVal = (float)$priceStr;
-								if ($priceVal < 0 || !is_finite($priceVal))
+								// Пустая цена допустима: снимаем RAW по типу цены склада (mf_ep_set_raw_price при <=0 удаляет запись)
+								if ($priceStr === '')
 								{
-									$bad++;
-									continue;
+									$priceVal = 0.0;
+								}
+								else
+								{
+									if (!is_numeric($priceStr))
+									{
+										$bad++;
+										continue;
+									}
+									$priceVal = (float)$priceStr;
+									if ($priceVal < 0 || !is_finite($priceVal))
+									{
+										$bad++;
+										continue;
+									}
 								}
 
 								$canon = function_exists('mf_brand_find') ? mf_brand_find($manufacturer, false) : '';
@@ -636,7 +649,7 @@ if ($stats)
 }
 ?>
 
-	<p>Формат CSV: колонки <strong>Производитель</strong>, <strong>Артикул</strong>, <strong>Наименование</strong> (опционально), <strong>Цена</strong>. Разделитель — точка с запятой. Если товара с такой парой (артикул + бренд) ещё нет в каталоге, он <strong>создаётся</strong> автоматически; наименование берётся из колонки «Наименование» или, если она пуста, из «Производитель» и «Артикул».</p>
+	<p>Формат CSV: колонки <strong>Производитель</strong>, <strong>Артикул</strong>, <strong>Наименование</strong> (опционально), <strong>Цена</strong>. Разделитель — точка с запятой. Ячейка <strong>Цена</strong> может быть пустой — тогда для позиции снимается закуп по этому складу (тип цены внешнего прайса). Если товара с такой парой (артикул + бренд) ещё нет в каталоге, он <strong>создаётся</strong> автоматически; наименование берётся из колонки «Наименование» или, если она пуста, из «Производитель» и «Артикул».</p>
 	<p class="adm-info-message" style="max-width:900px">В списке складов — только те, у которых в карточке склада включено поле <strong>«Внешний склад»</strong> (пользовательское поле). Остальные склады отметьте в <em>Магазин → Склады</em> и снова откройте эту страницу.</p>
 	<?php
 	if (empty($stores))
