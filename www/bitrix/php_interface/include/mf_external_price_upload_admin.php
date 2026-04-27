@@ -51,6 +51,76 @@ if (is_file($brandDict))
 Loader::includeModule('iblock');
 Loader::includeModule('catalog');
 
+// Сразу отдать JSON поллинга, не вызывая mf_ep_ensure_store_weight_ufs и т.д. (иначе запрос подвисает).
+if ((string)($_GET['mf_ep_job_poll'] ?? '') === '1')
+{
+	$jobPollId = (int)($_GET['job'] ?? 0);
+	$tokenPoll = preg_replace('~[^a-f0-9]~', '', (string)($_GET['token'] ?? ''));
+	header('Content-Type: application/json; charset=utf-8');
+	if (!is_object($USER) || !$USER->IsAdmin() || $jobPollId <= 0 || strlen($tokenPoll) !== 32)
+	{
+		echo json_encode(['ok' => false, 'error' => 'Доступ запрещён.'], JSON_UNESCAPED_UNICODE);
+		die;
+	}
+	$rowP = function_exists('mf_external_price_import_job_get') ? mf_external_price_import_job_get($jobPollId) : null;
+	if (
+		!$rowP
+		|| (int)($rowP['UF_USER_ID'] ?? 0) !== (int)$USER->GetID()
+		|| (string)($rowP['UF_TOKEN'] ?? '') !== $tokenPoll
+	)
+	{
+		echo json_encode(['ok' => false, 'error' => 'Задание не найдено.'], JSON_UNESCAPED_UNICODE);
+		die;
+	}
+	$stP = (string)($rowP['UF_STATUS'] ?? '');
+	$outP = [
+		'ok' => true,
+		'status' => $stP,
+		'rows_done' => (int)($rowP['UF_ROWS_DONE'] ?? 0),
+		'rows_total' => (int)($rowP['UF_ROWS_TOTAL'] ?? 0),
+	];
+	if ($stP === 'done' && !empty($rowP['UF_RESULT_JSON']))
+	{
+		$decoded = json_decode((string)$rowP['UF_RESULT_JSON'], true);
+		$outP['stats'] = is_array($decoded) ? $decoded : null;
+	}
+	if ($stP === 'failed' && !empty($rowP['UF_ERROR_TEXT']))
+	{
+		$outP['error'] = (string)$rowP['UF_ERROR_TEXT'];
+	}
+	echo json_encode($outP, JSON_UNESCAPED_UNICODE);
+	die;
+}
+
+$mfEpJobRunner = __DIR__ . '/mf_external_price_import_runner.php';
+if (is_file($mfEpJobRunner))
+{
+	require_once $mfEpJobRunner;
+}
+$mfEpJobWorkerInc = __DIR__ . '/mf_external_price_job_worker_inc.php';
+if (is_file($mfEpJobWorkerInc))
+{
+	require_once $mfEpJobWorkerInc;
+}
+
+// Резервный запуск воркера (GET) — сразу после поллинга, без mf_ep_ensure_store_weight_ufs (иначе iframe «висит»).
+if ((string)($_GET['mf_ep_job_nudge'] ?? '') === '1')
+{
+	$nudgeId = (int)($_GET['job'] ?? 0);
+	$nudgeTok = preg_replace('~[^a-f0-9]~', '', (string)($_GET['token'] ?? ''));
+	if (!is_object($USER) || !$USER->IsAdmin() || $nudgeId <= 0 || strlen($nudgeTok) !== 32)
+	{
+		header('Content-Type: text/plain; charset=utf-8');
+		echo '0';
+		die;
+	}
+	if (function_exists('mf_epu_external_price_job_run_or_die'))
+	{
+		mf_epu_external_price_job_run_or_die($nudgeId, false);
+	}
+	die;
+}
+
 if (function_exists('mf_ep_ensure_store_weight_ufs'))
 {
 	mf_ep_ensure_store_weight_ufs();
@@ -151,6 +221,35 @@ function mf_epu_read_file_utf8(string $path): string
 	return $raw;
 }
 
+/**
+ * Долгий импорт CSV: снимает лимит времени PHP (без этого бывает 504 при быстром ответе nginx).
+ * Таймауты прокси до PHP (fastcgi_read_timeout, proxy_read_timeout) на сервере всё равно нужно поднять для очень больших файлов.
+ */
+function mf_epu_bootstrap_long_import(): void
+{
+	if (function_exists('set_time_limit'))
+	{
+		@set_time_limit(0);
+	}
+	@ini_set('max_execution_time', '0');
+	if (function_exists('ignore_user_abort'))
+	{
+		@ignore_user_abort(true);
+	}
+}
+
+if (
+	$_SERVER['REQUEST_METHOD'] === 'POST'
+	&& (string)($_POST['mf_ep_job_run'] ?? '') === 'Y'
+	&& is_object($USER)
+	&& $USER->IsAdmin()
+	&& function_exists('mf_epu_external_price_job_run_or_die')
+)
+{
+	mf_epu_external_price_job_run_or_die((int)($_POST['job'] ?? 0), true);
+	die;
+}
+
 $stores = [];
 $rs = \CCatalogStore::GetList(['TITLE' => 'ASC'], [], false, false, ['ID', 'TITLE', 'XML_ID', 'CODE']);
 while ($s = $rs->Fetch())
@@ -200,6 +299,30 @@ foreach ($stores as $s)
 
 $stats = null;
 $error = null;
+$mfEpViewJob = null;
+if (isset($_GET['import_job']))
+{
+	$vji = (int)($_GET['import_job'] ?? 0);
+	$vjt = preg_replace('~[^a-f0-9]~', '', (string)($_GET['token'] ?? ''));
+	if (
+		$vji > 0
+		&& strlen($vjt) === 32
+		&& is_object($USER)
+		&& (int)$USER->GetID() > 0
+		&& function_exists('mf_external_price_import_job_get')
+	)
+	{
+		$vjr = mf_external_price_import_job_get($vji);
+		if (
+			$vjr
+			&& (int)($vjr['UF_USER_ID'] ?? 0) === (int)$USER->GetID()
+			&& (string)($vjr['UF_TOKEN'] ?? '') === $vjt
+		)
+		{
+			$mfEpViewJob = $vjr;
+		}
+	}
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_do'] ?? '') === 'Y')
 {
@@ -292,266 +415,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 							mf_ep_invalidate_catalog_price_group_cache();
 						}
 
-						try
+						// Фоновая обработка: файл на диск, задание в БД, редирект на страницу с прогрессом (без 504).
+						if (!function_exists('mf_external_price_import_job_ensure_table') || !mf_external_price_import_job_ensure_table())
 						{
-							$tmp = (string)($_FILES['price_file']['tmp_name'] ?? '');
-							$text = mf_epu_read_file_utf8($tmp);
-							$lines = preg_split('~\R~u', $text) ?: [];
-							if (count($lines) < 2)
-							{
-								throw new RuntimeException('В файле нет данных (нужна строка заголовка и хотя бы одна строка).');
-							}
-
-							$delim = mf_epu_detect_delimiter((string)($lines[0] ?? ''));
-							$header = mf_epu_parse_csv_line((string)($lines[0] ?? ''), $delim);
-							$hmap = mf_epu_map_headers($header);
-
-							if (!isset($hmap['manufacturer'], $hmap['article'], $hmap['price']))
-							{
-								throw new RuntimeException(
-									'Не найдены колонки Производитель / Артикул / Цена в первой строке. Обнаружено: '
-									. implode($delim, $header)
-								);
-							}
-
-							$ok = 0;
-							$notFound = 0;
-							$created = 0;
-							$bad = 0;
-							$priceWriteFail = 0;
-							$totalDataRows = 0;
-							$matchedIds = [];
-							$examplesNotFound = [];
-
-							for ($li = 1, $n = count($lines); $li < $n; $li++)
-							{
-								$line = trim((string)($lines[$li] ?? ''));
-								if ($line === '')
-								{
-									continue;
-								}
-								$totalDataRows++;
-
-								$cells = mf_epu_parse_csv_line($line, $delim);
-								$manufacturer = trim((string)($cells[$hmap['manufacturer']] ?? ''));
-								$article = trim((string)($cells[$hmap['article']] ?? ''));
-								$priceStr = trim((string)($cells[$hmap['price']] ?? ''));
-								$priceStr = str_replace(["\xC2\xA0", ' ', ','], ['', '', '.'], $priceStr);
-
-								if ($manufacturer === '' || $article === '')
-								{
-									$bad++;
-									continue;
-								}
-
-								// Пустая цена допустима: снимаем RAW по типу цены склада (mf_ep_set_raw_price при <=0 удаляет запись)
-								if ($priceStr === '')
-								{
-									$priceVal = 0.0;
-								}
-								else
-								{
-									if (!is_numeric($priceStr))
-									{
-										$bad++;
-										continue;
-									}
-									$priceVal = (float)$priceStr;
-									if ($priceVal < 0 || !is_finite($priceVal))
-									{
-										$bad++;
-										continue;
-									}
-								}
-
-								$canon = function_exists('mf_brand_find') ? mf_brand_find($manufacturer, false) : '';
-								$brandRaw = $canon !== '' ? $canon : $manufacturer;
-								$articleNorm = mf_ep_norm_article($article);
-								$brandNorm = mf_ep_norm_brand($brandRaw);
-								$nameFromRow = (isset($hmap['name']) ? trim((string)($cells[$hmap['name']] ?? '')) : '');
-
-								$pid = mf_ep_find_product($iblockId, $articleNorm, $brandRaw, $brandNorm);
-								if ($pid === null || $pid <= 0)
-								{
-									if (function_exists('mf_ep_create_product_from_external_price'))
-									{
-										$newPid = mf_ep_create_product_from_external_price(
-											$iblockId,
-											$article,
-											$articleNorm,
-											$brandRaw,
-											$brandNorm,
-											$nameFromRow
-										);
-										if ($newPid !== null && $newPid > 0)
-										{
-											$pid = (int)$newPid;
-											$created++;
-										}
-									}
-								}
-								if ($pid === null || $pid <= 0)
-								{
-									$notFound++;
-									if (count($examplesNotFound) < 15)
-									{
-										$examplesNotFound[] = $manufacturer . ' / ' . $article;
-									}
-									continue;
-								}
-
-								$catalogPid = function_exists('mf_ep_resolve_catalog_trade_product_id')
-									? mf_ep_resolve_catalog_trade_product_id((int)$pid)
-									: (int)$pid;
-								if ($catalogPid <= 0)
-								{
-									$catalogPid = (int)$pid;
-								}
-
-								// b_catalog_price: сумма и валюта как в файле; в ₽ — при расчёте mf_raw_store_price.
-								if (function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
-								{
-									$priceWriteFail += mf_ep_set_raw_price_for_catalog_cluster((int)$pid, $priceGroupId, $priceVal, $currency);
-								}
-								else
-								{
-									if (!mf_ep_set_raw_price($catalogPid, $priceGroupId, $priceVal, $currency))
-									{
-										$priceWriteFail++;
-									}
-								}
-								if ($priceVal > 0 && function_exists('mf_ep_ensure_unit_if_zero_stock'))
-								{
-									mf_ep_ensure_unit_if_zero_stock($catalogPid, $storeId);
-								}
-								// И родитель, и SKU (если разошлись) — чтобы «обнулить отсутствующие» не трогало дубликат по другому PRODUCT_ID.
-								$matchedIds[(int)$pid] = true;
-								$matchedIds[$catalogPid] = true;
-								$ok++;
-							}
-
-							$zeroed = 0;
-							if ($zeroMissing)
-							{
-								$candidates = mf_ep_collect_candidates_for_store($storeId, $priceGroupId);
-								foreach ($candidates as $cpid)
-								{
-									if (isset($matchedIds[$cpid]))
-									{
-										continue;
-									}
-									mf_ep_zero_product_on_store((int)$cpid, $storeId, $priceGroupId);
-									$zeroed++;
-								}
-							}
-
-							foreach (array_keys($matchedIds) as $cpid)
-							{
-								mf_ep_sync_catalog_qty_from_stores((int)$cpid);
-								mf_ep_recalc_base_one((int)$cpid);
-							}
-
-							global $USER_FIELD_MANAGER;
-							if (is_object($USER_FIELD_MANAGER) && class_exists(StoreTable::class))
-							{
-								$uf = [
-									'UF_MF_EXT_WEIGHT_USE' => $weightUse ? 1 : 0,
-									'UF_MF_EXT_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0,
-									'UF_MF_EXT_WEIGHT_TARIFF_CCY' => ($weightUse && $weightTariffInput > 0) ? $currency : '',
-									'UF_MF_EXT_WEIGHT_MIN_RUB' => 0,
-								];
-								$USER_FIELD_MANAGER->Update(StoreTable::getUfId(), $storeId, $uf);
-							}
-
-							$stats = [
-								'ok' => $ok,
-								'not_found' => $notFound,
-								'created' => $created,
-								'bad' => $bad,
-								'zeroed' => $zeroed,
-								'price_write_fail' => $priceWriteFail,
-								'store' => (string)($st['TITLE'] ?? ''),
-								'xml' => $xmlId,
-								'currency' => $currency,
-								'examples_nf' => $examplesNotFound,
-							];
-
-							$importFinishedAt = date('Y-m-d H:i:s');
-							$importDurMs = (int)round((microtime(true) - $importLogT0) * 1000.0);
-							$headerLineStr = mb_substr(implode($delim, $header), 0, 1000);
-							$exNfStr = implode("\n", $examplesNotFound);
-							if (function_exists('mf_external_price_import_log_insert'))
-							{
-								mf_external_price_import_log_insert([
-									'UF_STARTED_AT' => $importStartedAt,
-									'UF_FINISHED_AT' => $importFinishedAt,
-									'UF_DURATION_MS' => $importDurMs,
-									'UF_STATUS' => 'ok',
-									'UF_USER_ID' => $importUserId > 0 ? $importUserId : null,
-									'UF_USER_LOGIN' => $importUserLogin !== '' ? $importUserLogin : null,
-									'UF_STORE_ID' => $storeId,
-									'UF_STORE_XML_ID' => (string)($st['XML_ID'] ?? ''),
-									'UF_STORE_TITLE' => (string)($st['TITLE'] ?? ''),
-									'UF_PRICE_GROUP_ID' => $priceGroupId,
-									'UF_INPUT_FILENAME' => $importFileName,
-									'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
-									'UF_CURRENCY' => $currency,
-									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
-									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-									'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
-									'UF_WEIGHT_MIN_RUB' => 0.0,
-									'UF_TOTAL_DATA_ROWS' => $totalDataRows,
-									'UF_MATCHED' => $ok,
-									'UF_NOT_FOUND' => $notFound,
-									'UF_BAD_ROWS' => $bad,
-									'UF_ZEROED' => $zeroed,
-									'UF_HEADER_LINE' => $headerLineStr,
-									'UF_EXAMPLES_NOT_FOUND' => $exNfStr !== '' ? $exNfStr : null,
-									'UF_ERROR_MESSAGE' => null,
-								]);
-								$importLogWritten = true;
-							}
+							$error = 'Не удалось создать таблицу фоновых заданий (MySQL). Проверьте права к БД.';
 						}
-						catch (Throwable $e)
+						else
 						{
-							$error = $e->getMessage();
-							if (!$importLogWritten && function_exists('mf_external_price_import_log_insert'))
+							$upTmp = (string)($_FILES['price_file']['tmp_name'] ?? '');
+							$jobToken = bin2hex(random_bytes(16));
+							$relJobPath = 'upload/mf_ext_price/jobs/' . $jobToken . '.csv';
+							$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT']), '/\\');
+							$absJobDir = $docRoot . '/upload/mf_ext_price/jobs';
+							$absJobPath = $docRoot . '/' . $relJobPath;
+							if (!is_dir($absJobDir) && !@mkdir($absJobDir, 0755, true) && !is_dir($absJobDir))
 							{
-								$importFinishedAt = date('Y-m-d H:i:s');
-								$importDurMs = (int)round((microtime(true) - $importLogT0) * 1000.0);
-								$headerLineStr = null;
-								if (isset($header) && is_array($header) && isset($delim))
-								{
-									$headerLineStr = mb_substr(implode($delim, $header), 0, 1000);
-								}
-								mf_external_price_import_log_insert([
-									'UF_STARTED_AT' => $importStartedAt,
-									'UF_FINISHED_AT' => $importFinishedAt,
-									'UF_DURATION_MS' => $importDurMs,
-									'UF_STATUS' => 'failed',
-									'UF_USER_ID' => $importUserId > 0 ? $importUserId : null,
-									'UF_USER_LOGIN' => $importUserLogin !== '' ? $importUserLogin : null,
-									'UF_STORE_ID' => isset($storeId) ? $storeId : null,
-									'UF_STORE_XML_ID' => isset($st['XML_ID']) ? (string)$st['XML_ID'] : null,
-									'UF_STORE_TITLE' => isset($st['TITLE']) ? (string)$st['TITLE'] : null,
-									'UF_PRICE_GROUP_ID' => isset($priceGroupId) ? $priceGroupId : null,
-									'UF_INPUT_FILENAME' => $importFileName !== '' ? $importFileName : null,
-									'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
+								$error = 'Не удалось создать каталог upload/mf_ext_price/jobs/.';
+							}
+							elseif ($upTmp === '' || !is_uploaded_file($upTmp))
+							{
+								$error = 'Временный файл загрузки недоступен. Повторите отправку формы.';
+							}
+							elseif (!@move_uploaded_file($upTmp, $absJobPath))
+							{
+								$error = 'Не удалось сохранить CSV на сервере.';
+							}
+							else
+							{
+								$newJobId = mf_external_price_import_job_insert([
+									'UF_TOKEN' => $jobToken,
+									'UF_USER_ID' => $importUserId,
+									'UF_STATUS' => 'pending',
+									'UF_FILE_PATH' => $relJobPath,
+									'UF_ORIG_NAME' => $importFileName,
+									'UF_FILE_SIZE' => $importFileSize,
+									'UF_STORE_ID' => $storeId,
 									'UF_CURRENCY' => $currency,
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-									'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
-									'UF_WEIGHT_MIN_RUB' => 0.0,
-									'UF_TOTAL_DATA_ROWS' => isset($totalDataRows) ? $totalDataRows : null,
-									'UF_MATCHED' => isset($ok) ? $ok : null,
-									'UF_NOT_FOUND' => isset($notFound) ? $notFound : null,
-									'UF_BAD_ROWS' => isset($bad) ? $bad : null,
-									'UF_ZEROED' => isset($zeroed) ? $zeroed : null,
-									'UF_HEADER_LINE' => $headerLineStr,
-									'UF_EXAMPLES_NOT_FOUND' => null,
-									'UF_ERROR_MESSAGE' => mb_substr($error, 0, 1000),
+									'UF_WEIGHT_RUB_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
+									'UF_ROWS_TOTAL' => 0,
+									'UF_ROWS_DONE' => 0,
 								]);
-								$importLogWritten = true;
+								if ($newJobId <= 0)
+								{
+									@unlink($absJobPath);
+									$error = 'Не удалось создать задание импорта.';
+								}
+								else
+								{
+									$q = [
+										'import_job' => $newJobId,
+										'token' => $jobToken,
+									];
+									if (defined('LANGUAGE_ID') && (string)LANGUAGE_ID !== '')
+									{
+										$q['lang'] = (string)LANGUAGE_ID;
+									}
+									$importLogWritten = true;
+									LocalRedirect($APPLICATION->GetCurPage() . '?' . http_build_query($q));
+								}
 							}
 						}
 					}
@@ -620,8 +543,115 @@ if ($wfCurrency !== 'RUB' && $wfCurrency !== 'USD' && $wfCurrency !== 'EUR')
 }
 $wfWeightInputsDisabled = !$wfUseChecked;
 
+$mfEpShowJobPanel = false;
+$mfEpJobIdForJs = 0;
+$mfEpJobTokenForJs = '';
+if (is_array($mfEpViewJob) && (int)($mfEpViewJob['ID'] ?? 0) > 0 && function_exists('mf_external_price_import_job_get'))
+{
+	$mfEpViewJob = mf_external_price_import_job_get((int)$mfEpViewJob['ID']) ?? $mfEpViewJob;
+	$jst0 = (string)($mfEpViewJob['UF_STATUS'] ?? '');
+	if ($jst0 === 'done' && !empty($mfEpViewJob['UF_RESULT_JSON']))
+	{
+		$decSt = json_decode((string)$mfEpViewJob['UF_RESULT_JSON'], true);
+		if (is_array($decSt))
+		{
+			$stats = $decSt;
+		}
+	}
+	elseif ($jst0 === 'failed' && $error === null && !empty($mfEpViewJob['UF_ERROR_TEXT']))
+	{
+		$error = (string)$mfEpViewJob['UF_ERROR_TEXT'];
+	}
+	$mfEpShowJobPanel = in_array($jst0, ['pending', 'running'], true);
+	$mfEpJobIdForJs = (int)$mfEpViewJob['ID'];
+	$mfEpJobTokenForJs = (string)($mfEpViewJob['UF_TOKEN'] ?? '');
+}
+
+$mfEpPageClean = (string)($APPLICATION->GetCurPage() ?? '');
+$mfEpQClean = [
+	'lang' => (defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru'),
+];
+$mfEpNewUploadUrl = $mfEpPageClean . (strpos($mfEpPageClean, '?') !== false ? '&' : '?') . http_build_query($mfEpQClean);
+
 ?>
 <p style="margin:0 0 12px 0"><a href="mf_external_price_history.php?lang=<?= mf_epu_escape($langUi) ?>">История импортов внешних прайсов</a></p>
+<?php
+if ($mfEpShowJobPanel && $mfEpJobIdForJs > 0 && $mfEpJobTokenForJs !== '')
+{
+	$sessEp = (string)bitrix_sessid();
+	$langQ = (defined('LANGUAGE_ID') && (string)LANGUAGE_ID !== '') ? '&lang=' . rawurlencode((string)LANGUAGE_ID) : '';
+	$pollUrl0 = $mfEpPageClean . (strpos($mfEpPageClean, '?') !== false ? '&' : '?') . 'mf_ep_job_poll=1&job=' . $mfEpJobIdForJs . '&token=' . rawurlencode($mfEpJobTokenForJs) . $langQ;
+	$nudgeUrl0 = $mfEpPageClean . (strpos($mfEpPageClean, '?') !== false ? '&' : '?') . 'mf_ep_job_nudge=1&job=' . $mfEpJobIdForJs . '&token=' . rawurlencode($mfEpJobTokenForJs) . $langQ;
+	?>
+	<div class="adm-info-message" id="mf_ep_job_panel" style="max-width:900px;margin-bottom:16px">
+		<iframe src="<?= mf_epu_escape($nudgeUrl0) ?>" style="width:0;height:0;border:0;position:absolute;left:-9999px" tabindex="-1" title=""></iframe>
+		<div id="mf_ep_job_text">Подготовка…</div>
+		<div style="height:10px;background:#e8e8e8;border-radius:4px;margin:10px 0;overflow:hidden">
+			<div id="mf_ep_job_bar" style="height:100%;width:0;background:#1d54a8;transition:width .2s"></div>
+		</div>
+		<p style="margin:0 0 8px 0;font-size:12px;color:#666">Страница опрашивает сервер примерно раз в <strong>1,2&nbsp;с</strong>; числа в БД обновляются примерно на <strong>1-й</strong> строке и далее каждые <strong>10</strong> строк (пока идёт чтение большого файла счётчики могут не меняться).</p>
+		<a href="<?= mf_epu_escape($mfEpNewUploadUrl) ?>">Новая загрузка (без ожидания)</a>
+	</div>
+	<script>
+	(function () {
+		var jobId = <?= (int)$mfEpJobIdForJs ?>;
+		var token = <?= json_encode($mfEpJobTokenForJs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var sess = <?= json_encode($sessEp, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var pollUrl = <?= json_encode($pollUrl0, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var runUrl = <?= json_encode($mfEpPageClean, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var started = false;
+		function setBar(pct) {
+			var b = document.getElementById('mf_ep_job_bar');
+			if (b) b.style.width = Math.max(0, Math.min(100, pct)) + '%';
+		}
+		function setText(t) { var x = document.getElementById('mf_ep_job_text'); if (x) x.textContent = t; }
+		function startRun() {
+			if (started) return;
+			started = true;
+			var fd = new FormData();
+			fd.append('mf_ep_job_run', 'Y');
+			fd.append('job', String(jobId));
+			fd.append('token', token);
+			fd.append('sessid', sess);
+			fetch(runUrl, { method: 'POST', body: fd, credentials: 'same-origin' }).catch(function () {});
+		}
+		function poll() {
+			fetch(pollUrl, { credentials: 'same-origin' })
+				.then(function (r) { return r.json(); })
+				.then(function (d) {
+					if (!d || d.ok === false) {
+						setText('Не удалось получить статус. Обновите страницу.');
+						return;
+					}
+					var st = d.status || '';
+					var done = parseInt(d.rows_done, 10) || 0;
+					var tot = parseInt(d.rows_total, 10) || 0;
+					if (tot > 0) setBar(100 * done / tot);
+					if (st === 'pending' || st === 'running') {
+						setText('Идёт обработка прайса' + (tot ? (' — ' + done + ' / ' + tot + ' строк') : '…'));
+						if (st === 'pending') startRun();
+						setTimeout(poll, 1200);
+						return;
+					}
+					if (st === 'done') {
+						setBar(100);
+						setText('Готово. Идёт обновление страницы…');
+						location.reload();
+						return;
+					}
+					if (st === 'failed') {
+						setBar(0);
+						setText('Ошибка: ' + (d.error || 'неизвестно'));
+					}
+				})
+				.catch(function () { setTimeout(poll, 2000); });
+		}
+		poll();
+	})();
+	</script>
+	<?php
+}
+?>
 <form method="post" enctype="multipart/form-data" action="<?= mf_epu_escape($APPLICATION->GetCurPage()) ?>?lang=<?= mf_epu_escape(LANGUAGE_ID) ?>">
 	<?= bitrix_sessid_post() ?>
 	<input type="hidden" name="mf_external_price_do" value="Y" />
@@ -650,6 +680,7 @@ if ($stats)
 ?>
 
 	<p>Формат CSV: колонки <strong>Производитель</strong>, <strong>Артикул</strong>, <strong>Наименование</strong> (опционально), <strong>Цена</strong>. Разделитель — точка с запятой. Ячейка <strong>Цена</strong> может быть пустой — тогда для позиции снимается закуп по этому складу (тип цены внешнего прайса). Если товара с такой парой (артикул + бренд) ещё нет в каталоге, он <strong>создаётся</strong> автоматически; наименование берётся из колонки «Наименование» или, если она пуста, из «Производитель» и «Артикул».</p>
+	<p class="adm-info-message" style="max-width:900px">Импорт выполняется <strong>в фоне</strong> после загрузки файла: открывается страница с прогрессом, ответ nginx приходит сразу (обычно без 504). Если прогресс «завис», проверьте таймаут PHP-FPM <code>request_terminate_timeout</code> — фоновый процесс всё равно ограничен им.</p>
 	<p class="adm-info-message" style="max-width:900px">В списке складов — только те, у которых в карточке склада включено поле <strong>«Внешний склад»</strong> (пользовательское поле). Остальные склады отметьте в <em>Магазин → Склады</em> и снова откройте эту страницу.</p>
 	<?php
 	if (empty($stores))

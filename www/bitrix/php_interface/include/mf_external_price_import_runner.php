@@ -133,19 +133,32 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			$manufacturer = trim((string)($cells[$hmap['manufacturer']] ?? ''));
 			$article = trim((string)($cells[$hmap['article']] ?? ''));
 			$priceStr = trim((string)($cells[$hmap['price']] ?? ''));
-			$priceStr = str_replace([' ', ','], ['', '.'], $priceStr);
+			$priceStr = str_replace(["\xC2\xA0", ' ', ','], ['', '', '.'], $priceStr);
 
-			if ($manufacturer === '' || $article === '' || $priceStr === '')
+			if ($manufacturer === '' || $article === '')
 			{
 				$bad++;
 				continue;
 			}
 
-			$priceVal = (float)$priceStr;
-			if ($priceVal < 0 || !is_finite($priceVal))
+			// Пустая цена: снять закуп (mf_ep_set_raw_price* при нуле/отсутствии — удаляет запись внешнего RAW).
+			if ($priceStr === '')
 			{
-				$bad++;
-				continue;
+				$priceVal = 0.0;
+			}
+			else
+			{
+				if (!is_numeric($priceStr))
+				{
+					$bad++;
+					continue;
+				}
+				$priceVal = (float)$priceStr;
+				if ($priceVal < 0 || !is_finite($priceVal))
+				{
+					$bad++;
+					continue;
+				}
 			}
 
 			$canon = function_exists('mf_brand_find') ? mf_brand_find($manufacturer, false) : '';
