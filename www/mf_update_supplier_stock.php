@@ -34,6 +34,7 @@
  *   --brand-dict=Y|N   (по умолчанию N) — каноникализация бренда через mf_brand_dict.php (ускоряет матчинг/уменьшает notFound)
  *   --ensure-indexes=Y|N (по умолчанию N) — попытаться создать полезные индексы (выполнять один раз, может блокировать таблицы)
  *   --fast-product-update=Y|N (по умолчанию Y) — откладывать обновление QUANTITY/AVAILABLE и записывать пачкой в конце
+ *   --match-log=Y|N (по умолчанию N) — для каждой строки CSV выводить пошаговый лог сопоставления с товаром (много текста на больших файлах)
  */
 
 $_SERVER["DOCUMENT_ROOT"] = __DIR__;
@@ -655,8 +656,16 @@ function getSupplierStoreToPriceGroupMap(bool $create): array
 	return $map;
 }
 
-function findCanonicalProductIdByNorm(int $iblockId, string $norm): ?int
+function findCanonicalProductIdByNorm(int $iblockId, string $norm, &$traceOut = null): ?int
 {
+	$log = static function (string $s) use (&$traceOut): void {
+		if (is_array($traceOut))
+		{
+			$traceOut[] = $s;
+		}
+	};
+	$log('fallback: только артикул (бренд в строке пуст / колонка бренда не определена)');
+	$log('fallback: фильтр = MF_ARTICLE_NORM=' . $norm . ' + не редирект; сортировки нет — берётся «первый» ID из выборки');
 	$r = CIBlockElement::GetList(
 		[],
 		[
@@ -668,15 +677,38 @@ function findCanonicalProductIdByNorm(int $iblockId, string $norm): ?int
 		false,
 		['ID']
 	)->Fetch();
-	return $r ? (int)$r['ID'] : null;
+	if ($r)
+	{
+		$log('fallback: найден ELEMENT_ID=' . (int)$r['ID']);
+
+		return (int)$r['ID'];
+	}
+	$log('fallback: ничего не найдено');
+
+	return null;
 }
 
-function findCanonicalProductIdByArticleBrand(int $iblockId, string $articleNorm, string $brandRaw, string $brandNorm): ?int
+/**
+ * @param array<int, string>|null $traceOut если передан массив (по ссылке), в него дописываются строки лога
+ */
+function findCanonicalProductIdByArticleBrand(int $iblockId, string $articleNorm, string $brandRaw, string $brandNorm, &$traceOut = null): ?int
 {
+	$log = static function (string $s) use (&$traceOut): void {
+		if (is_array($traceOut))
+		{
+			$traceOut[] = $s;
+		}
+	};
+
 	$articleNorm = trim($articleNorm);
 	$brandRaw = trim($brandRaw);
 	$brandNorm = trim($brandNorm);
-	if ($articleNorm === '') return null;
+	if ($articleNorm === '')
+	{
+		$log('отмена: пустой articleNorm');
+
+		return null;
+	}
 
 	$filter = [
 		'IBLOCK_ID' => $iblockId,
@@ -684,38 +716,79 @@ function findCanonicalProductIdByArticleBrand(int $iblockId, string $articleNorm
 		'!PROPERTY_MF_IS_REDIRECT' => 'Y',
 	];
 
-	// If brand is provided in CSV, do NOT fallback to article-only.
 	$brandProvided = ($brandNorm !== '' || $brandRaw !== '');
+
+	$log('вход: articleNorm=' . $articleNorm . ' | brandRaw=' . ($brandRaw !== '' ? $brandRaw : '∅') . ' | brandNorm=' . ($brandNorm !== '' ? $brandNorm : '∅'));
+	$log('логика: brandProvided=' . ($brandProvided ? 'да (бренд в строке или после словаря)' : 'нет') . ' — при «нет» возможен fallback только по артикулу');
 
 	// Fast path: exact match by MF_UNIQ_KEY (indexable) instead of LIKE searches.
 	if ($brandProvided && $brandNorm !== '')
 	{
 		$uniqKey = makeUniqKey($articleNorm, $brandNorm);
+		$log('шаг1_fast: ожидаемый MF_UNIQ_KEY = ' . $uniqKey . ' (SQL: точное сравнение VALUE в b_iblock_element_property)');
 		$fast = findCanonicalProductIdByUniqKey($iblockId, $uniqKey);
-		if ($fast && $fast > 0) return $fast;
+		if ($fast && $fast > 0)
+		{
+			$log('шаг1_fast: OK → ELEMENT_ID=' . $fast);
+
+			return $fast;
+		}
+		$log('шаг1_fast: не найден (нет строки с таким MF_UNIQ_KEY или свойство не заполнено у карточки)');
+	}
+	elseif ($brandProvided && $brandNorm === '')
+	{
+		$log('шаг1_fast: пропущен (brandNorm пуст — ключ арт_бренд нельзя собрать; словарь мог обнулить бренд)');
+	}
+	else
+	{
+		$log('шаг1_fast: пропущен (в CSV нет бренда для строки / колонка бренда не сопоставлена)');
 	}
 
 	// 1) Try brand_norm contains brandNorm (handles existing "грязные" brand_norm that still include YAMAHA...)
 	if ($brandNorm !== '')
 	{
+		$log('шаг2: частичное совпадение MF_BRAND_NORM (содержит) по подстроке brandNorm=' . $brandNorm . '; ORDER BY в GetList не задан');
 		$r = CIBlockElement::GetList([], $filter + ['%PROPERTY_MF_BRAND_NORM' => $brandNorm], false, false, ['ID'])->Fetch();
-		if ($r) return (int)$r['ID'];
+		if ($r)
+		{
+			$log('шаг2: OK → ELEMENT_ID=' . (int)$r['ID'] . ' (первый из выборки)');
+
+			return (int)$r['ID'];
+		}
+		$log('шаг2: никого');
+	}
+	else
+	{
+		$log('шаг2: пропущен (brandNorm пуст)');
 	}
 
 	// 2) Try brand text contains raw brand (handles MF_BRAND like "Yamaha ...")
 	if ($brandRaw !== '')
 	{
+		$log('шаг3: частичное совпадение MF_BRAND (содержит) по подстроке brandRaw=' . $brandRaw);
 		$r = CIBlockElement::GetList([], $filter + ['%PROPERTY_MF_BRAND' => $brandRaw], false, false, ['ID'])->Fetch();
-		if ($r) return (int)$r['ID'];
+		if ($r)
+		{
+			$log('шаг3: OK → ELEMENT_ID=' . (int)$r['ID'] . ' (первый из выборки)');
+
+			return (int)$r['ID'];
+		}
+		$log('шаг3: никого');
+	}
+	else
+	{
+		$log('шаг3: пропущен (brandRaw пуст)');
 	}
 
 	if ($brandProvided)
 	{
+		$log('итог: товар не сопоставлен (бренд был указан, до fallback по одному артикулу не доходим)');
+
 		return null;
 	}
 
 	// No brand column → legacy behavior: by article only
-	return findCanonicalProductIdByNorm($iblockId, $articleNorm);
+	return findCanonicalProductIdByNorm($iblockId, $articleNorm, $traceOut);
 }
 
 function upsertPrice(int $productId, int $priceGroupId, float $price): void
@@ -1203,6 +1276,7 @@ try
 	$useBrandDict = mf_bool((string)(arg('--brand-dict') ?: ''), 'N');
 	$ensureIndexes = mf_bool((string)(arg('--ensure-indexes') ?: ''), 'N');
 	$fastProductUpdate = mf_bool((string)(arg('--fast-product-update') ?: ''), 'Y');
+	$matchLog = mf_bool((string)(arg('--match-log') ?: ''), 'N');
 
 	// --- Run log (best-effort; script must work even if DB log fails) ---
 	$runLogId = 0;
@@ -1265,6 +1339,7 @@ try
 	out("BRAND_DICT: " . ($useBrandDict ? 'Y' : 'N'));
 	out("ENSURE_INDEXES: " . ($ensureIndexes ? 'Y' : 'N'));
 	out("FAST_PRODUCT_UPDATE: " . ($fastProductUpdate ? 'Y' : 'N'));
+	out("MATCH_LOG: " . ($matchLog ? 'Y' : 'N'));
 
 	if ($ensureIndexes)
 	{
@@ -1405,7 +1480,14 @@ try
 		// IMPORTANT: store price group keeps RAW import price (no markup here).
 		$price = ($priceRaw !== null) ? (float)$priceRaw : null;
 
-		$productId = findCanonicalProductIdByArticleBrand($iblockId, $articleNorm, $brandRaw, $brandNorm);
+		$rowTrace = null;
+		if ($matchLog)
+		{
+			$rowTrace = [];
+			$rowTrace[] = 'подготовка: pred uniqKey = ' . $uniqKey . ' (должен совпасть с MF_UNIQ_KEY при fast-пути); --brand-dict = ' . ($useBrandDict ? 'Y' : 'N');
+		}
+		$productId = findCanonicalProductIdByArticleBrand($iblockId, $articleNorm, $brandRaw, $brandNorm, $rowTrace);
+		$productIdBeforeCluster = (int)($productId ?? 0);
 		if ($productId && function_exists('mf_ep_resolve_catalog_trade_product_id'))
 		{
 			$resolved = mf_ep_resolve_catalog_trade_product_id((int)$productId);
@@ -1413,6 +1495,32 @@ try
 			{
 				$productId = $resolved;
 			}
+		}
+		if ($matchLog && is_array($rowTrace))
+		{
+			$idxInfo = ($idxBrand === null ? 'колонка бренда не распознана по заголовку' : 'колонка бренда индекс ' . (int)$idxBrand);
+			$keyHdr = "артикул=\"{$artRaw}\" бренд_файл=\"" . ($brandRaw !== '' ? $brandRaw : '∅') . "\" (строка {$total} CSV, {$idxInfo})";
+			out("=== MATCH " . $keyHdr . " ===");
+			foreach ($rowTrace as $line)
+			{
+				out('  ' . $line);
+			}
+			if ($productIdBeforeCluster > 0)
+			{
+				if ((int)$productId !== $productIdBeforeCluster)
+				{
+					out('  cluster: карточка ' . $productIdBeforeCluster . ' → каталог/торговый PRODUCT_ID ' . (int)$productId . ' (mf_ep_resolve_catalog_trade_product_id)');
+				}
+				else
+				{
+					out('  cluster: PRODUCT_ID без смены: ' . (int)$productId);
+				}
+			}
+			else
+			{
+				out('  итог: товар не найден — остаток не пишем');
+			}
+			out('=== END MATCH ===');
 		}
 		if (!$productId)
 		{
