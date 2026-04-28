@@ -32,6 +32,7 @@
  *   --recalc-base=Y|N  (по умолчанию Y, если --price=Y)
  *   --save-missing=Y|N (по умолчанию Y) — писать ли "ненайденные" в HL mf_stock_import_missing
  *   --brand-dict=Y|N   (по умолчанию N) — каноникализация бренда через mf_brand_dict.php (ускоряет матчинг/уменьшает notFound)
+ *   --sync-brand-dict=Y|N (по умолчанию N) — только с --brand-dict=Y: после успешного матча записать на карточку MF_BRAND/MF_BRAND_NORM/MF_UNIQ_KEY по канону из словаря (например Ski-Doo → BRP)
  *   --ensure-indexes=Y|N (по умолчанию N) — попытаться создать полезные индексы (выполнять один раз, может блокировать таблицы)
  *   --fast-product-update=Y|N (по умолчанию Y) — откладывать обновление QUANTITY/AVAILABLE и записывать пачкой в конце
  *   --match-log=Y|N (по умолчанию N) — для каждой строки CSV выводить пошаговый лог сопоставления с товаром (много текста на больших файлах)
@@ -391,6 +392,61 @@ function makeUniqKey(string $articleNorm, string $brandNorm): string
 	$brandNorm = trim($brandNorm);
 	if ($brandNorm === '') $brandNorm = 'UNKNOWNBRAND';
 	return $articleNorm . '_' . $brandNorm;
+}
+
+/**
+ * Выставить на элементе канон бренда из словаря (и ключ арт_бренд), если отличается от текущих свойств.
+ *
+ * @return bool true если было реальное обновление свойств
+ */
+function mf_supplier_stock_sync_element_brand_canonical(int $iblockId, int $elementId, string $brandDisplay, string $articleNorm): bool
+{
+	$iblockId = (int)$iblockId;
+	$elementId = (int)$elementId;
+	$brandDisplay = trim($brandDisplay);
+	$articleNorm = trim((string)$articleNorm);
+	if ($iblockId <= 0 || $elementId <= 0 || $brandDisplay === '' || $articleNorm === '')
+	{
+		return false;
+	}
+
+	$brandNorm = normalizeBrand($brandDisplay);
+	if ($brandNorm === '')
+	{
+		return false;
+	}
+	$uniqKey = makeUniqKey($articleNorm, $brandNorm);
+
+	$rs = CIBlockElement::GetList(
+		[],
+		['IBLOCK_ID' => $iblockId, 'ID' => $elementId],
+		false,
+		false,
+		['ID', 'PROPERTY_MF_BRAND', 'PROPERTY_MF_BRAND_NORM', 'PROPERTY_MF_UNIQ_KEY']
+	);
+	$row = $rs->Fetch();
+	if (!$row || (int)($row['ID'] ?? 0) !== $elementId)
+	{
+		return false;
+	}
+
+	$curBrand = trim((string)($row['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+	$curNorm = trim((string)($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
+	$curUniq = trim((string)($row['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
+
+	if ($curBrand === $brandDisplay && $curNorm === $brandNorm && $curUniq === $uniqKey)
+	{
+		return false;
+	}
+
+	$el = new CIBlockElement();
+	$ok = $el->SetPropertyValuesEx($elementId, $iblockId, [
+		'MF_BRAND' => $brandDisplay,
+		'MF_BRAND_NORM' => $brandNorm,
+		'MF_UNIQ_KEY' => $uniqKey,
+	]);
+
+	return $ok !== false;
 }
 
 function mf_iblock4_property_id(string $code): int
@@ -1274,6 +1330,11 @@ try
 	$syncMissing = mf_bool((string)(arg('--sync-missing') ?: ''), 'Y');
 	$saveMissing = mf_bool((string)(arg('--save-missing') ?: ''), 'Y');
 	$useBrandDict = mf_bool((string)(arg('--brand-dict') ?: ''), 'N');
+	$syncBrandFromDict = mf_bool((string)(arg('--sync-brand-dict') ?: ''), 'N');
+	if ($syncBrandFromDict && !$useBrandDict)
+	{
+		throw new RuntimeException('Укажи одновременно --brand-dict=Y и --sync-brand-dict=Y (обновление MF_BRAND на карточке после каноникализации).');
+	}
 	$ensureIndexes = mf_bool((string)(arg('--ensure-indexes') ?: ''), 'N');
 	$fastProductUpdate = mf_bool((string)(arg('--fast-product-update') ?: ''), 'Y');
 	$matchLog = mf_bool((string)(arg('--match-log') ?: ''), 'N');
@@ -1337,6 +1398,7 @@ try
 	out("SYNC_MISSING: " . ($syncMissing ? 'Y' : 'N'));
 	out("SAVE_MISSING: " . ($saveMissing ? 'Y' : 'N'));
 	out("BRAND_DICT: " . ($useBrandDict ? 'Y' : 'N'));
+	out("SYNC_BRAND_DICT: " . ($syncBrandFromDict ? 'Y' : 'N'));
 	out("ENSURE_INDEXES: " . ($ensureIndexes ? 'Y' : 'N'));
 	out("FAST_PRODUCT_UPDATE: " . ($fastProductUpdate ? 'Y' : 'N'));
 	out("MATCH_LOG: " . ($matchLog ? 'Y' : 'N'));
@@ -1356,6 +1418,7 @@ try
 		out("STORE_ID: $storeId");
 		out("STORE_XML_ID: $storeXmlId");
 	}
+
 	if ($runLogEnabled && $runLogId > 0)
 	{
 		mf_supplier_stock_log_update($runLogId, [
@@ -1432,6 +1495,7 @@ try
 	$updated = 0;
 	$notFound = 0;
 	$brandSkipped = 0;
+	$brandCanonicalSynced = 0;
 	$errors = 0;
 	$zeroedMissing = 0;
 	$seenProducts = [];
@@ -1586,6 +1650,13 @@ try
 		{
 			upsertStoreAmount($productId, $storeId, $qty);
 			$touchedProducts[$productId] = true;
+			if ($syncBrandFromDict && $brandDictReady && $brandRaw !== '' && $idxBrand !== null)
+			{
+				if (mf_supplier_stock_sync_element_brand_canonical($iblockId, (int)$productId, $brandRaw, $articleNorm))
+				{
+					$brandCanonicalSynced++;
+				}
+			}
 			if ($saveMissing && $storeXmlId !== '' && $conn)
 			{
 				$missingDeleteBuf[] = $uniqKey;
@@ -1663,37 +1734,37 @@ try
 
 	// If a product is missing in the supplier file, treat it as out of stock on this warehouse.
 	// This prevents stale quantities from keeping items "in stock".
-	if ($apply && !$dry && $syncMissing && $storeId > 0)
-	{
-		$rsStale = CCatalogStoreProduct::GetList(
-			[],
-			['STORE_ID' => $storeId, '>AMOUNT' => 0],
-			false,
-			false,
-			['ID', 'PRODUCT_ID', 'AMOUNT']
-		);
-		while ($sp = $rsStale->Fetch())
+		if ($apply && !$dry && $syncMissing && $storeId > 0)
 		{
-			$pid = (int)$sp['PRODUCT_ID'];
-			if ($pid <= 0) continue;
-			if (isset($seenProducts[$pid])) continue;
+			$rsStale = CCatalogStoreProduct::GetList(
+				[],
+				['STORE_ID' => $storeId, '>AMOUNT' => 0],
+				false,
+				false,
+				['ID', 'PRODUCT_ID', 'AMOUNT']
+			);
+			while ($sp = $rsStale->Fetch())
+			{
+				$pid = (int)$sp['PRODUCT_ID'];
+				if ($pid <= 0) continue;
+				if (isset($seenProducts[$pid])) continue;
 
-			try
-			{
-				CCatalogStoreProduct::Update((int)$sp['ID'], ['AMOUNT' => 0]);
-				$touchedProducts[$pid] = true;
-				if ($usePrice && $recalcBase)
+				try
 				{
-					$recalcBaseProducts[$pid] = true;
+					CCatalogStoreProduct::Update((int)$sp['ID'], ['AMOUNT' => 0]);
+					$touchedProducts[$pid] = true;
+					if ($usePrice && $recalcBase)
+					{
+						$recalcBaseProducts[$pid] = true;
+					}
+					$zeroedMissing++;
 				}
-				$zeroedMissing++;
-			}
-			catch (Throwable $e)
-			{
-				$errors++;
+				catch (Throwable $e)
+				{
+					$errors++;
+				}
 			}
 		}
-	}
 
 	// Batch update QUANTITY/AVAILABLE after all store updates.
 	if ($apply && !$dry && $fastProductUpdate && !empty($touchedProducts))
@@ -1781,7 +1852,7 @@ try
 		}
 	}
 
-	out("DONE total=$total updated=$updated notFound=$notFound brandSkipped=$brandSkipped zeroedMissing=$zeroedMissing errors=$errors");
+	out("DONE total=$total updated=$updated notFound=$notFound brandSkipped=$brandSkipped brandCanonSynced=$brandCanonicalSynced zeroedMissing=$zeroedMissing errors=$errors");
 
 	// finalize run log
 	if ($runLogEnabled && $runLogId > 0)
