@@ -269,7 +269,7 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 					</span>
 				<?php endif; ?>
 				<span class="mf-pcard__chip <?=$canBuy ? 'mf-pcard__chip--ok' : ($mfChipOrderOnly ? 'mf-pcard__chip--order' : (!empty($mfChipSupplierPending) ? 'mf-pcard__chip--order' : 'mf-pcard__chip--no'))?>">
-					<?php if ($canBuy): ?>В наличии<?php elseif ($mfChipOrderOnly): ?>Под заказ<?php elseif (!empty($mfChipSupplierPending)): ?>Ожидается<?php else: ?>Нет в наличии<?php endif; ?>
+					<?php if ($canBuy): ?>В наличии<?php elseif ($mfChipOrderOnly): ?>Под заказ<?php elseif (!empty($mfChipSupplierPending)): ?>Ожидается<?php else: ?>Под заказ<?php endif; ?>
 				</span>
 			</span>
 	<?php if ($itemHasDetailUrl): ?>

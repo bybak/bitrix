@@ -175,6 +175,7 @@ $arParams = [
     // Title is already shown by site template (<h1> via ShowTitle()).
     // Disable component's internal H1 to avoid duplicate titles.
     "DISPLAY_NAME" => "N",
+	"MESS_NOT_AVAILABLE" => "Под заказ",
     
     // Картинки
     "DETAIL_PICTURE_MODE" => array("POPUP"),
@@ -208,8 +209,8 @@ if ($elementId > 0 && function_exists('mf_catalog_listing_display_price'))
 	{
 		$minP = (float)$minP;
 		$mfMinPriceValue = $minP;
-		$mfMinPriceText = number_format($minP, 2, '.', ' ') . ' &#8381;';
-		$minPPrint = number_format($minP, 2, '.', ' ') . ' &#8381;';
+		$mfMinPriceText = number_format($minP, 1, '.', ' ') . ' &#8381;';
+		$minPPrint = number_format($minP, 1, '.', ' ') . ' &#8381;';
 		?>
 		<script>
 		(function(){
@@ -377,7 +378,7 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 						<th>Срок доставки</th>
 						<th class="text-center mf-detail-stock-table__spb-col">Доставка</th>
 						<th class="text-right">Цена</th>
-						<th class="text-right">Остаток</th>
+						<th class="text-right">Наличие</th>
 						<th class="text-right"></th>
 					</tr>
 					</thead>
@@ -414,7 +415,7 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 							</td>
 							<td class="text-right">
 								<?php if ($storePrice !== null): ?>
-									<?=htmlspecialcharsbx(number_format((float)$storePrice, 2, '.', ' '))?> &#8381;
+									<?=htmlspecialcharsbx(number_format((float)$storePrice, 1, '.', ' '))?> &#8381;
 								<?php else: ?>
 									—
 								<?php endif; ?>

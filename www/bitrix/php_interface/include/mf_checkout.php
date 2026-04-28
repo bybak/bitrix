@@ -1433,6 +1433,37 @@ if (!function_exists('mf_catalog_element_code_for_basket_row'))
 if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 {
 	/**
+	 * Достаём выбранный MF_STORE_ID из PROPS строки корзины sale.order.ajax.
+	 */
+	function mf_sale_order_ajax_row_store_id(array $rowData): int
+	{
+		$props = $rowData['PROPS'] ?? null;
+		if (!is_array($props))
+		{
+			return 0;
+		}
+		foreach ($props as $p)
+		{
+			if (!is_array($p))
+			{
+				continue;
+			}
+			$code = trim((string)($p['CODE'] ?? ''));
+			if ($code !== 'MF_STORE_ID')
+			{
+				continue;
+			}
+			$val = (int)($p['VALUE'] ?? 0);
+			if ($val > 0)
+			{
+				return $val;
+			}
+		}
+
+		return 0;
+	}
+
+	/**
 	 * Строки корзины в sale.order.ajax: восстанавливаем пустое NAME из каталога и SRC превью,
 	 * если файл есть, а масштабирование по какой-то причине не выполнилось.
 	 */
@@ -1506,6 +1537,16 @@ if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 						$d['PREVIEW_PICTURE_SRC_2X'] = $mfSrc;
 						$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $mfSrc;
 					}
+				}
+			}
+			// Срок доставки в checkout, как в корзине: по выбранному складу (MF_STORE_ID).
+			$storeId = mf_sale_order_ajax_row_store_id($d);
+			if ($storeId > 0 && function_exists('mf_store_delivery_term'))
+			{
+				$deliveryTerm = trim((string)mf_store_delivery_term($storeId));
+				if ($deliveryTerm !== '')
+				{
+					$d['MF_DELIVERY_TERM'] = $deliveryTerm;
 				}
 			}
 			unset($d);

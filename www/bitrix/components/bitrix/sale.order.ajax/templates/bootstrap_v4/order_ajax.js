@@ -4408,7 +4408,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			var itemName = data.NAME || '',
 				titleHtml = this.htmlspecialcharsEx(itemName),
 				props = data.PROPS || [],
-				propsNodes = [];
+				propsNodes = [],
+				deliveryTerm = (data.MF_DELIVERY_TERM || '');
 
 			if (this.params.HIDE_DETAIL_PAGE_URL !== 'Y' && data.DETAIL_PAGE_URL && data.DETAIL_PAGE_URL.length)
 			{
@@ -4452,6 +4453,24 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 						);
 					}
 				}
+			}
+
+			if (deliveryTerm && String(deliveryTerm).length)
+			{
+				propsNodes.push(
+					BX.create('DIV', {
+						props: {className: 'bx-soa-item-td-title'},
+						style: {textAlign: 'left'},
+						text: 'Срок доставки'
+					})
+				);
+				propsNodes.push(
+					BX.create('DIV', {
+						props: {className: 'bx-soa-item-td-text'},
+						style: {textAlign: 'left'},
+						text: String(deliveryTerm)
+					})
+				);
 			}
 
 			return BX.create('DIV', {

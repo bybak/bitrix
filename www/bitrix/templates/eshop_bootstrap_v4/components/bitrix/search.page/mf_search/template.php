@@ -59,7 +59,7 @@ $mfMoney = static function (?float $price): string {
 	$p = (float)($price ?? 0);
 	if ($p <= 0) return '';
 	// IMPORTANT: return plain text, no HTML entities (so it can be safely escaped).
-	return number_format($p, 0, '.', ' ') . ' ₽';
+	return number_format($p, 1, '.', ' ') . ' ₽';
 };
 
 $mfSearchMinPricePrint = static function (int $productId): string {
@@ -73,7 +73,7 @@ $mfSearchMinPricePrint = static function (int $productId): string {
 		return '';
 	}
 
-	return number_format((float)$minP, 2, '.', ' ') . ' ₽';
+	return number_format((float)$minP, 1, '.', ' ') . ' ₽';
 };
 
 $mfStoresForProduct = static function (int $productId): array {
@@ -87,7 +87,6 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 	$code = trim((string)($data['code'] ?? ''));
 	$brand = trim((string)($data['brand'] ?? ''));
 	$article = trim((string)($data['article'] ?? ''));
-	$oem = trim((string)($data['oem'] ?? ''));
 	$isAnalog = !empty($data['is_analog']);
 	$analogs = (is_array($data['analogs'] ?? null) ? (array)$data['analogs'] : []);
 
@@ -114,7 +113,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 			</a>
 			<div class="mf-search-card__main">
 				<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
-				<div class="mf-product-meta" aria-label="Цена, бренд, артикул и OEM">
+				<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">От</span>
 						<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : '—' ?></span>
@@ -126,10 +125,6 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Артикул</span>
 						<span class="mf-product-meta__value"><?= $article !== '' ? htmlspecialcharsbx($article) : '—' ?></span>
-					</div>
-					<div class="mf-product-meta__item">
-						<span class="mf-product-meta__label">OEM</span>
-						<span class="mf-product-meta__value"><?= $oem !== '' ? htmlspecialcharsbx($oem) : '—' ?></span>
 					</div>
 				</div>
 			</div>
@@ -143,7 +138,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							<th>Склад</th>
 							<th>Срок доставки</th>
 							<th class="mf-search-stock-table__spb text-center">Доставка</th>
-							<th class="mf-ta-r">Остаток</th>
+							<th class="mf-ta-r">Наличие</th>
 							<th class="mf-ta-r">Цена</th>
 							<th class="mf-ta-r">Кол-во</th>
 							<th class="mf-ta-r"></th>
@@ -237,7 +232,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 				</table>
 			<?php else: ?>
 				<div class="mf-search-card__no-stock-row">
-					<div class="mf-search-card__no-stock">Отсутствует на складах</div>
+					<div class="mf-search-card__no-stock">Под заказ</div>
 					<button
 						type="button"
 						class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"

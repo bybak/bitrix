@@ -14,7 +14,7 @@ if (!function_exists('mf_product_search_card_money'))
 			return '';
 		}
 
-		return number_format($p, 0, '.', ' ') . ' ₽';
+		return number_format($p, 1, '.', ' ') . ' ₽';
 	}
 }
 
@@ -34,7 +34,7 @@ if (!function_exists('mf_product_search_card_min_price_print'))
 			return '';
 		}
 
-		return number_format((float)$minP, 2, '.', ' ') . ' ₽';
+		return number_format((float)$minP, 1, '.', ' ') . ' ₽';
 	}
 }
 
@@ -339,7 +339,7 @@ if (!function_exists('mf_product_search_card_render'))
 								<th>Склад</th>
 								<th>Срок доставки</th>
 								<th class="mf-search-stock-table__spb text-center">Доставка</th>
-								<th class="mf-ta-r">Остаток</th>
+								<th class="mf-ta-r">Наличие</th>
 								<th class="mf-ta-r">Цена</th>
 								<th class="mf-ta-r">Кол-во</th>
 								<th class="mf-ta-r"></th>
@@ -436,7 +436,7 @@ if (!function_exists('mf_product_search_card_render'))
 					</table>
 				<?php else: ?>
 					<div class="mf-search-card__no-stock-row">
-						<div class="mf-search-card__no-stock">Отсутствует на складах</div>
+						<div class="mf-search-card__no-stock">Под заказ</div>
 						<button
 							type="button"
 							class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price-global"
