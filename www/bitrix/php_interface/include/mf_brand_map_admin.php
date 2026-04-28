@@ -72,164 +72,31 @@ function mf_bm_table_exists(\Bitrix\Main\DB\Connection $conn, string $table): bo
 	}
 }
 
-function mf_bm_get_prop_id(int $iblockId, string $code): int
-{
-	if (!class_exists(\CIBlockProperty::class)) return 0;
-	$r = \CIBlockProperty::GetList(['ID' => 'ASC'], ['IBLOCK_ID' => $iblockId, 'CODE' => $code])->Fetch();
-	return (int)($r['ID'] ?? 0);
-}
-
 /**
- * Все варианты бренда для селекта: товары (инфоблок) + ТП, HL mf_brand_alias.
- * Раньше опирались только на b_iblock_element_prop_s* для single — там часто пусто или ID списка вместо текста.
+ * Варианты для селекта «Считать как бренд каталога» / «Сопоставить с брендом каталога»:
+ * те же правила, что список брендов в выгрузке каталога (mf_ce_load_brand_choices — только выгружаемые активные товары
+ * инфоблока, MF_BRAND + MF_BRAND_NORM), плюс каноны из HL mf_brand_alias (чтобы цель сопоставления не пропадала из списка).
+ *
+ * @return list<string>
  */
-function mf_bm_load_catalog_brands(\Bitrix\Main\DB\Connection $conn, int $iblockId = 4): array
+function mf_bm_select_brand_choices(\Bitrix\Main\DB\Connection $conn, int $iblockId = 4): array
 {
+	$iblockId = (int)$iblockId;
+	if (!function_exists('mf_ce_load_brand_choices'))
+	{
+		require_once __DIR__ . '/mf_ce_brand_choices_inc.php';
+	}
+
 	$out = [];
-	$add = static function (string $b) use (&$out): void {
-		$b = trim($b);
+	foreach (mf_ce_load_brand_choices($iblockId, true) as $b)
+	{
+		$b = trim((string)$b);
 		if ($b !== '')
 		{
 			$out[$b] = true;
 		}
-	};
-
-	$loadForIblock = static function (int $ibId) use ($conn, $add): void {
-		$ibId = (int)$ibId;
-		if ($ibId <= 0)
-		{
-			return;
-		}
-		$propId = mf_bm_get_prop_id($ibId, 'MF_BRAND');
-		if ($propId <= 0)
-		{
-			return;
-		}
-		$p = \CIBlockProperty::GetByID($propId, $ibId)->Fetch();
-		if (!is_array($p))
-		{
-			return;
-		}
-		$multiple = (string)($p['MULTIPLE'] ?? 'N') === 'Y';
-		$propType = (string)($p['PROPERTY_TYPE'] ?? 'S');
-		$h = $conn->getSqlHelper();
-		$propId = (int)$propId;
-
-		// Список (L): в VALUE — ID варианта; подписи — в b_iblock_property_enum.
-		if ($propType === 'L')
-		{
-			try
-			{
-				$rs = $conn->query("
-					SELECT DISTINCT TRIM(en.VALUE) AS BRAND
-					FROM b_iblock_element_property ep
-					INNER JOIN b_iblock_element e ON e.ID = ep.IBLOCK_ELEMENT_ID
-					INNER JOIN b_iblock_property_enum en
-						ON en.PROPERTY_ID = {$propId} AND en.ID = ep.VALUE
-					WHERE e.IBLOCK_ID = {$ibId}
-					  AND e.ACTIVE = 'Y'
-					  AND ep.IBLOCK_PROPERTY_ID = {$propId}
-					LIMIT 8000
-				");
-				while ($r = $rs->fetch())
-				{
-					$add((string)($r['BRAND'] ?? ''));
-				}
-			}
-			catch (\Throwable $e)
-			{
-				// ignore
-			}
-
-			return;
-		}
-
-		// Строка и прочие: b_iblock_element_property (и для single тоже — в новых схемах так часто).
-		try
-		{
-			$rs = $conn->query("
-				SELECT DISTINCT TRIM(ep.VALUE) AS BRAND
-				FROM b_iblock_element_property ep
-				INNER JOIN b_iblock_element e ON e.ID = ep.IBLOCK_ELEMENT_ID
-				WHERE e.IBLOCK_ID = {$ibId}
-				  AND e.ACTIVE = 'Y'
-				  AND ep.IBLOCK_PROPERTY_ID = {$propId}
-				  AND ep.VALUE IS NOT NULL AND TRIM(ep.VALUE) <> ''
-				LIMIT 8000
-			");
-			while ($r = $rs->fetch())
-			{
-				$add((string)($r['BRAND'] ?? ''));
-			}
-		}
-		catch (\Throwable $e)
-		{
-			// ignore
-		}
-
-		// Старое хранение single-строки в prop_s* (доп. источник).
-		if (!$multiple && $propType === 'S')
-		{
-			$col = 'PROPERTY_' . $propId;
-			$tbl = 'b_iblock_element_prop_s' . $ibId;
-			try
-			{
-				$r0 = $conn->query("SHOW TABLES LIKE '" . $h->forSql($tbl) . "'")->fetch();
-				if ($r0)
-				{
-					$rs = $conn->query("
-						SELECT DISTINCT p.`{$col}` AS BRAND
-						FROM `{$tbl}` p
-						INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID
-						WHERE e.IBLOCK_ID = {$ibId}
-						  AND e.ACTIVE = 'Y'
-						  AND p.`{$col}` IS NOT NULL AND p.`{$col}` <> ''
-						LIMIT 8000
-					");
-					while ($r = $rs->fetch())
-					{
-						$add((string)($r['BRAND'] ?? ''));
-					}
-				}
-			}
-			catch (\Throwable $e)
-			{
-				// ignore
-			}
-		}
-	};
-
-	try
-	{
-		$loadForIblock($iblockId);
-	}
-	catch (\Throwable $e)
-	{
-		// ignore
 	}
 
-	// Бренд может быть только на карточках ТП, а не на родителе.
-	if (class_exists(\CCatalogSKU::class) && Loader::includeModule('catalog'))
-	{
-		$sku = \CCatalogSKU::GetInfoByProductIBlock($iblockId);
-		if (is_array($sku) && !empty($sku['IBLOCK_ID']))
-		{
-			$off = (int)$sku['IBLOCK_ID'];
-			if ($off > 0 && $off !== (int)$iblockId)
-			{
-				try
-				{
-					$loadForIblock($off);
-				}
-				catch (\Throwable $e)
-				{
-					// ignore
-				}
-			}
-		}
-	}
-
-	// Уже введённые канонические бренды в справочнике алиасов — тоже в список, чтобы не терять значения.
 	try
 	{
 		if (mf_bm_table_exists($conn, 'mf_brand_alias'))
@@ -243,7 +110,11 @@ function mf_bm_load_catalog_brands(\Bitrix\Main\DB\Connection $conn, int $iblock
 			");
 			while ($r = $rs->fetch())
 			{
-				$add((string)($r['BRAND'] ?? ''));
+				$b = trim((string)($r['BRAND'] ?? ''));
+				if ($b !== '')
+				{
+					$out[$b] = true;
+				}
 			}
 		}
 	}
@@ -257,9 +128,9 @@ function mf_bm_load_catalog_brands(\Bitrix\Main\DB\Connection $conn, int $iblock
 	{
 		return [];
 	}
-	sort($keys, SORT_NATURAL | SORT_FLAG_CASE);
+	natcasesort($keys);
 
-	return $keys;
+	return array_values($keys);
 }
 
 function mf_bm_get_alias_exact(string $alias): string
@@ -303,6 +174,13 @@ $adminNotice = null;
 
 // Filters: warehouse
 $find_warehouse = trim((string)($_REQUEST['find_warehouse'] ?? ''));
+
+/** Сортировка таблицы ненайденных по колонке «Сейчас сопоставлен»: asc | desc | '' (как в SQL: по имени бренда). */
+$bm_sort_canon = trim((string)($_REQUEST['bm_sort_canon'] ?? ''));
+if (!in_array($bm_sort_canon, ['asc', 'desc'], true))
+{
+	$bm_sort_canon = '';
+}
 
 // Сколько брендов на «странице» (только в браузере, без повторных запросов к серверу)
 $bmPerPage = 50;
@@ -508,7 +386,39 @@ catch (\Throwable $e)
 	$missing = [];
 }
 
-$catalogBrands = mf_bm_load_catalog_brands($conn, 4);
+/**
+ * Текст колонки «Сейчас сопоставлен» для сортировки (как видит пользователь, без HTML).
+ */
+$mf_bm_canon_col_sort_val = static function (array $m): string {
+	if (!empty($m['IS_SKIP']))
+	{
+		return '— не импортировать —';
+	}
+	$c = trim((string)($m['CANON'] ?? ''));
+
+	return $c !== '' ? $c : '—';
+};
+
+if ($bm_sort_canon !== '' && $missing !== [])
+{
+	$dir = $bm_sort_canon === 'desc' ? -1 : 1;
+	usort(
+		$missing,
+		static function (array $a, array $b) use ($dir, $mf_bm_canon_col_sort_val): int {
+			$va = mb_strtolower($mf_bm_canon_col_sort_val($a));
+			$vb = mb_strtolower($mf_bm_canon_col_sort_val($b));
+			$c = strnatcasecmp($va, $vb);
+			if ($c !== 0)
+			{
+				return $c * $dir;
+			}
+
+			return strnatcasecmp((string)$a['BRAND'], (string)$b['BRAND']);
+		}
+	);
+}
+
+$catalogBrands = mf_bm_select_brand_choices($conn, 4);
 
 /** Записи HL, созданные блоком «Ручное сопоставление» (UF_SORT >= MF_BM_MANUAL_ALIAS_SORT). */
 $manualAliasRows = [];
@@ -552,6 +462,11 @@ if ($bmClientPage > $bmTotalPages)
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 $APPLICATION->SetTitle('Сопоставление брендов (импорт складов)');
 
+$bmSortNavRemove = ['sessid', 'bm_page', 'bm_sort_canon'];
+$bmUrlSortAsc = htmlspecialcharsbx($APPLICATION->GetCurPageParam('bm_sort_canon=asc', $bmSortNavRemove));
+$bmUrlSortDesc = htmlspecialcharsbx($APPLICATION->GetCurPageParam('bm_sort_canon=desc', $bmSortNavRemove));
+$bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNavRemove));
+
 ?>
 <div style="max-width: 1200px;">
 	<?php if (is_array($adminNotice)): ?>
@@ -561,12 +476,15 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 	<div style="margin: 8px 0 12px 0; color:#666;">
 		Слева бренды из <code>mf_stock_import_missing</code>. Выбери канонический бренд из каталога — сохраним как alias→canonical в HL <code>mf_brand_alias</code>.
 		Вариант «Не сопоставлять» помечает бренд в таблице <code>mf_brand_import_skip</code>: такие строки не обрабатываются при импорте остатков и при загрузке внешних прайсов (остатки и цены по ним не меняются).
-		<br/>Список в селекте: уникальные значения <code>MF_BRAND</code> по активным элементам инфоблока каталога и инфоблока торговых предложений (если есть), плюс каноны из <code>mf_brand_alias</code>. Раньше учитывалась только таблица <code>b_iblock_element_prop_s*</code> для single-свойства — из‑за этого список мог быть пустым или неполным.
+		<br/>Список в селекте совпадает с выгрузкой каталога: значения <code>MF_BRAND</code> и <code>MF_BRAND_NORM</code> только у <b>выгружаемых</b> активных <b>товаров</b> (инфоблок каталога, без торговых предложений). Дополнительно подмешиваются каноны из <code>mf_brand_alias</code>, чтобы выбранная цель сопоставления не пропадала из списка.
 		<br/>Блок <b>ниже</b> нужен, если в файле поставщика встречается бренд, которого <b>нет</b> в списке «ненайденных» (он уже сопоставляется с товарами) — например, завести «Ski-Doo» → «BRP» при существующем в каталоге Ski-Doo. Сохраняется с приоритетом, выше встроенных правил.
 	</div>
 
 	<form method="get" action="<?= mf_bm_escape($APPLICATION->GetCurPage()) ?>">
 		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
+		<?php if ($bm_sort_canon !== ''): ?>
+			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
+		<?php endif; ?>
 		<label style="display:inline-block;min-width:160px;">Склад:</label>
 		<select name="find_warehouse" style="min-width:420px;" onchange="this.form.submit();">
 			<option value="" <?= ($find_warehouse === '' ? 'selected' : '') ?>>— все —</option>
@@ -582,6 +500,9 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 		<?= bitrix_sessid_post() ?>
 		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
 		<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+		<?php if ($bm_sort_canon !== ''): ?>
+			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
+		<?php endif; ?>
 		<input type="hidden" name="bm_action" value="manual_map">
 		<div style="font-weight:600; margin-bottom:8px;">Ручное сопоставление (любой текст бренда)</div>
 		<div style="color:#555; font-size:13px; margin-bottom:10px; line-height:1.4;">
@@ -662,6 +583,9 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 							<?= bitrix_sessid_post() ?>
 							<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
 							<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+							<?php if ($bm_sort_canon !== ''): ?>
+								<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
+							<?php endif; ?>
 							<input type="hidden" name="bm_action" value="delete_manual_alias">
 							<input type="hidden" name="delete_id" value="<?= (int)$mid ?>">
 							<button type="submit" class="adm-btn" style="font-size:12px;">Удалить</button>
@@ -684,12 +608,14 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 		data-bm-cur-url="<?= mf_bm_escape((string)$APPLICATION->GetCurPage()) ?>"
 		data-bm-lang="<?= mf_bm_escape((string)LANGUAGE_ID) ?>"
 		data-bm-warehouse="<?= mf_bm_escape($find_warehouse) ?>"
+		data-bm-sort-canon="<?= mf_bm_escape($bm_sort_canon) ?>"
 		data-bm-n="<?= (int)$bmN ?>">
 		<?php if ($bmN > 0): ?>
 			<div class="js-bm-range" style="margin:10px 0 6px 0; color:#555;">
 				Показаны бренды <b class="js-bm-from"><?= (int)$bmShowFrom0 ?></b>–<b class="js-bm-to"><?= (int)$bmShowTo0 ?></b> из <b class="js-bm-total"><?= (int)$bmN ?></b>
 				(по <?= (int)$bmPerPage ?> на странице<span class="js-bm-pagenum-wrap"<?= $bmTotalPages < 2 ? ' style="display:none;"' : '' ?>>, стр. <span class="js-bm-curpage"><?= (int)$bmClientPage ?></span> из <span class="js-bm-ntp"><?= (int)$bmTotalPages ?></span></span>).
 				Перелистывание без запроса к серверу.
+				Сортировка по колонке «Сейчас сопоставлен» — ссылки <b>↑</b> <b>↓</b> в заголовке таблицы (по тексту как на экране; «сброс» — снова порядок по имени бренда из базы).
 			</div>
 			<div class="js-bm-nav bm-pager-ui" style="margin:0 0 12px 0;contain:layout;isolation:isolate;transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden;user-select:none;touch-action:manipulation;"></div>
 		<?php endif; ?>
@@ -698,6 +624,9 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 		<?= bitrix_sessid_post() ?>
 		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
 		<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+		<?php if ($bm_sort_canon !== ''): ?>
+			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
+		<?php endif; ?>
 
 		<table class="adm-list-table" style="width:100%;margin-top:10px;">
 			<thead>
@@ -705,7 +634,26 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 				<td class="adm-list-table-cell">Бренд (в ненайденных)</td>
 				<td class="adm-list-table-cell">Кол-во</td>
 				<td class="adm-list-table-cell">Последнее</td>
-				<td class="adm-list-table-cell">Сейчас сопоставлен</td>
+				<td class="adm-list-table-cell">
+					<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;">
+						<span>Сейчас сопоставлен</span>
+						<span style="font-weight:normal;white-space:nowrap;color:#555;">
+							<?php if ($bm_sort_canon === 'asc'): ?>
+								<strong title="По возрастанию">↑</strong>
+							<?php else: ?>
+								<a href="<?= $bmUrlSortAsc ?>" title="По возрастанию значения в колонке">↑</a>
+							<?php endif; ?>
+							<?php if ($bm_sort_canon === 'desc'): ?>
+								<strong title="По убыванию">↓</strong>
+							<?php else: ?>
+								<a href="<?= $bmUrlSortDesc ?>" title="По убыванию значения в колонке">↓</a>
+							<?php endif; ?>
+							<?php if ($bm_sort_canon !== ''): ?>
+								<a href="<?= $bmUrlSortReset ?>" title="Сортировка как в базе (по имени бренда)" style="font-size:11px;margin-left:2px;">сброс</a>
+							<?php endif; ?>
+						</span>
+					</span>
+				</td>
 				<td class="adm-list-table-cell">Сопоставить с брендом каталога</td>
 			</tr>
 			</thead>
@@ -773,6 +721,7 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 	var baseUrl = root.getAttribute("data-bm-cur-url") || window.location.pathname;
 	var lang = root.getAttribute("data-bm-lang") || "";
 	var wh = root.getAttribute("data-bm-warehouse") || "";
+	var sortCanon = root.getAttribute("data-bm-sort-canon") || "";
 
 	var rows = Array.prototype.slice.call(root.querySelectorAll("tr.js-bm-row"));
 	if (rows.length !== n) { return; }
@@ -782,6 +731,7 @@ $APPLICATION->SetTitle('Сопоставление брендов (импорт 
 	function setUrlPage(p) {
 		var q = { lang: lang, find_warehouse: wh };
 		if (p > 1) { q.bm_page = p; }
+		if (sortCanon === "asc" || sortCanon === "desc") { q.bm_sort_canon = sortCanon; }
 		var qs = Object.keys(q).map(function (k) {
 			return encodeURIComponent(k) + "=" + encodeURIComponent(q[k] != null ? String(q[k]) : "");
 		}).join("&");
