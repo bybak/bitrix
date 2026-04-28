@@ -7,8 +7,11 @@
  * Обрабатываются только канонические элементы (PROPERTY_MF_IS_REDIRECT ≠ Y),
  * у которых по тому же MF_UNIQ_KEY существует хотя бы один редирект-дубль.
  *
- * По умолчанию: обнулить MORE_PHOTO; опционально оставить первые N снимков галереи;
- * опционально выровнять DETAIL_PICTURE по PREVIEW_PICTURE (одна главная пара).
+ * На карточке товара (catalog.element bootstrap_v4) галерея берётся из свойства MF_EXT_IMAGES (URL, multiple),
+ * иначе из MORE_PHOTO / схемы img. Очищаем оба: MORE_PHOTO (файлы) и MF_EXT_IMAGES (строки-URL) — по одному лимиту --keep-more.
+ *
+ * По умолчанию: обнулить галерею (0); опционально оставить первые N строк/файлов;
+ * опционально выровнять DETAIL_PICTURE по PREVIEW_PICTURE.
  *
  * Запуск (DOCUMENT_ROOT — каталог www):
  *   php tools/mf_catalog_strip_merged_duplicate_images.php --dry-run
@@ -73,12 +76,12 @@ if (arg_flag($argv, '--help') || arg_flag($argv, '-h'))
 {
 	$exe = basename($argv[0] ?? 'mf_catalog_strip_merged_duplicate_images.php');
 	fwrite(STDOUT, <<<TXT
-MF: убрать подмешанную галерею MORE_PHOTO у канонических SKU с редирект-дублями.
+MF: обрезать подмешанные галереи у канонических SKU с редирект-дублями.
 
   --iblock-id=4           инфоблок каталога
   --dry-run               только отчёт (по умолчанию если нет --apply)
   --apply                 записать изменения
-  --keep-more=N           оставить первые N фото MORE_PHOTO по сортировке (0 — удалить всю галерею)
+  --keep-more=N           для MORE_PHOTO (файлы) и MF_EXT_IMAGES (URL на деталке): оставить первые N (0 — снять всё)
   --sync-detail-to-preview после правок выставить DETAIL_PICTURE = копия PREVIEW_PICTURE
   --quiet
 
@@ -248,6 +251,63 @@ function mf_strip_more_photo_keep(string $propCode, int $elId, int $iblockId, in
 	return ['removed' => count($removed), 'kept' => $keepFirst, 'prop_exists' => true];
 }
 
+/**
+ * Строковое множественное свойство (URL), как MF_EXT_IMAGES — оставить первые $keepFirst значений.
+ *
+ * @return array{removed:int,kept:int,prop_exists:bool}
+ */
+function mf_strip_string_mult_urls_keep(string $propCode, int $elId, int $iblockId, int $keepFirst, bool $apply): array
+{
+	$prop = CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => $propCode])->Fetch();
+	if (!$prop)
+	{
+		return ['removed' => 0, 'kept' => 0, 'prop_exists' => false];
+	}
+	if (($prop['PROPERTY_TYPE'] ?? '') !== 'S' || ($prop['MULTIPLE'] ?? '') !== 'Y')
+	{
+		return ['removed' => 0, 'kept' => 0, 'prop_exists' => false];
+	}
+
+	$res = CIBlockElement::GetProperty(
+		$iblockId,
+		$elId,
+		['sort' => 'asc'],
+		['CODE' => $propCode]
+	);
+	$urls = [];
+	while ($row = $res->Fetch())
+	{
+		$u = trim((string)($row['VALUE'] ?? ''));
+		if ($u !== '')
+		{
+			$urls[] = $u;
+		}
+	}
+	$cnt = count($urls);
+	if ($cnt <= $keepFirst)
+	{
+		return ['removed' => 0, 'kept' => $cnt, 'prop_exists' => true];
+	}
+
+	$newUrls = $keepFirst > 0 ? array_slice($urls, 0, $keepFirst) : [];
+
+	if (!$apply)
+	{
+		return ['removed' => $cnt - $keepFirst, 'kept' => $keepFirst, 'prop_exists' => true];
+	}
+
+	if ($newUrls === [])
+	{
+		CIBlockElement::SetPropertyValuesEx($elId, $iblockId, [$propCode => false]);
+	}
+	else
+	{
+		CIBlockElement::SetPropertyValuesEx($elId, $iblockId, [$propCode => $newUrls]);
+	}
+
+	return ['removed' => $cnt - $keepFirst, 'kept' => count($newUrls), 'prop_exists' => true];
+}
+
 /** Деталь = копия превью (новый файл в b_file). */
 function mf_sync_detail_to_preview_bitrix(int $elId, int $previewFileId): bool
 {
@@ -280,26 +340,28 @@ function mf_sync_detail_to_preview_bitrix(int $elId, int $previewFileId): bool
 // --- Run -----------------------------------------------------------------
 
 $removedMoreSlots = 0;
+$removedExtUrls = 0;
 $syncedDetail = 0;
-$skippedProp = 0;
+$skippedNoGalleryProps = 0;
 
 foreach ($canonicalIds as $meta)
 {
 	$elId = $meta['id'];
-	$r = mf_strip_more_photo_keep('MORE_PHOTO', $elId, $iblockId, $keepMore, !$dryRun);
-	if (!$r['prop_exists'])
+	$rPhoto = mf_strip_more_photo_keep('MORE_PHOTO', $elId, $iblockId, $keepMore, !$dryRun);
+	$rExt = mf_strip_string_mult_urls_keep('MF_EXT_IMAGES', $elId, $iblockId, $keepMore, !$dryRun);
+
+	if (!$rPhoto['prop_exists'] && !$rExt['prop_exists'])
 	{
-		$skippedProp++;
+		$skippedNoGalleryProps++;
 		if (!$quiet)
 		{
-			fwrite(STDERR, "[skip] ELEMENT {$elId} ({$meta['code']}): свойство MORE_PHOTO не найдено в инфоблоке.\n");
+			fwrite(STDERR, "[skip] ELEMENT {$elId} ({$meta['code']}): нет свойств MORE_PHOTO и MF_EXT_IMAGES в инфоблоке.\n");
 		}
-
-		continue;
 	}
-	if ($r['removed'] > 0)
+
+	if ($rPhoto['prop_exists'] && $rPhoto['removed'] > 0)
 	{
-		$removedMoreSlots += $r['removed'];
+		$removedMoreSlots += $rPhoto['removed'];
 		if (!$quiet)
 		{
 			fwrite(STDOUT, sprintf(
@@ -308,8 +370,25 @@ foreach ($canonicalIds as $meta)
 				$elId,
 				$meta['code'],
 				$meta['uniq_key'],
-				$r['removed'],
-				$r['kept']
+				$rPhoto['removed'],
+				$rPhoto['kept']
+			));
+		}
+	}
+
+	if ($rExt['prop_exists'] && $rExt['removed'] > 0)
+	{
+		$removedExtUrls += $rExt['removed'];
+		if (!$quiet)
+		{
+			fwrite(STDOUT, sprintf(
+				"[%s] element=%d code=%s uniq=%s MF_EXT_IMAGES: removed=%d kept=%d\n",
+				$dryRun ? 'dry-run' : 'apply',
+				$elId,
+				$meta['code'],
+				$meta['uniq_key'],
+				$rExt['removed'],
+				$rExt['kept']
 			));
 		}
 	}
@@ -352,8 +431,9 @@ $summary = [
 	'uniq_keys_with_redirects' => count($uniqWithDup),
 	'canonical_candidates' => $totalCanon,
 	'removed_more_photo_values' => $removedMoreSlots,
+	'removed_mf_ext_images_values' => $removedExtUrls,
 	'keep_more' => $keepMore,
-	'no_more_photo_property_skipped_elements' => $skippedProp,
+	'gallery_props_both_missing_elements' => $skippedNoGalleryProps,
 	'sync_detail_to_preview_updates' => $syncedDetail,
 ];
 
