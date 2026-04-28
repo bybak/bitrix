@@ -87,6 +87,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 	$code = trim((string)($data['code'] ?? ''));
 	$brand = trim((string)($data['brand'] ?? ''));
 	$article = trim((string)($data['article'] ?? ''));
+	$oem = trim((string)($data['oem'] ?? ''));
 	$isAnalog = !empty($data['is_analog']);
 	$analogs = (is_array($data['analogs'] ?? null) ? (array)$data['analogs'] : []);
 
@@ -113,7 +114,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 			</a>
 			<div class="mf-search-card__main">
 				<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
-				<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
+				<div class="mf-product-meta" aria-label="Цена, бренд, артикул и OEM">
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">От</span>
 						<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : '—' ?></span>
@@ -125,6 +126,10 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Артикул</span>
 						<span class="mf-product-meta__value"><?= $article !== '' ? htmlspecialcharsbx($article) : '—' ?></span>
+					</div>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">OEM</span>
+						<span class="mf-product-meta__value"><?= $oem !== '' ? htmlspecialcharsbx($oem) : '—' ?></span>
 					</div>
 				</div>
 			</div>
@@ -358,6 +363,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								'PROPERTY_CML2_ARTICLE',
 								'PROPERTY_MF_BRAND',
 								'PROPERTY_MF_BRAND_NORM',
+								'PROPERTY_OEM',
 							]
 						);
 						while ($r = $rsP->Fetch())
@@ -411,6 +417,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 									'PROPERTY_CML2_ARTICLE',
 									'PROPERTY_MF_BRAND',
 									'PROPERTY_MF_BRAND_NORM',
+									'PROPERTY_OEM',
 								]
 							);
 							while ($r = $rsA->Fetch())
@@ -488,10 +495,12 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						$mfCode = is_array($mfRow) ? trim((string)($mfRow['CODE'] ?? '')) : '';
 						$mfBrand = '';
 						$mfArticle = '';
+						$mfOem = '';
 						if (is_array($mfRow))
 						{
 							$mfBrand = trim((string)($mfRow['PROPERTY_MF_BRAND_VALUE'] ?? ($mfRow['PROPERTY_MF_BRAND_NORM_VALUE'] ?? '')));
 							$mfArticle = trim((string)($mfRow['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+							$mfOem = trim((string)($mfRow['PROPERTY_OEM_VALUE'] ?? ''));
 						}
 
 						// Prepare analog cards to render inside the main card.
@@ -516,6 +525,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 									'title_html' => htmlspecialcharsbx($nameA),
 									'brand' => trim((string)($rA['PROPERTY_MF_BRAND_VALUE'] ?? ($rA['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
 									'article' => trim((string)($rA['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
+									'oem' => trim((string)($rA['PROPERTY_OEM_VALUE'] ?? '')),
 									'is_analog' => true,
 								];
 							}
@@ -528,6 +538,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							'title_html' => (string)($arItem['TITLE_FORMATED'] ?? htmlspecialcharsbx((string)($arItem['TITLE'] ?? ''))),
 							'brand' => $mfBrand,
 							'article' => $mfArticle,
+							'oem' => $mfOem,
 							'is_analog' => false,
 							'analogs' => $analogsData,
 						]);

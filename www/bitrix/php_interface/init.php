@@ -2649,6 +2649,10 @@ if (is_file($mfCatalogVisibilityInclude))
 	{
 		mf_ensure_iblock4_ext_images_property();
 	}
+	if (function_exists('mf_ensure_iblock4_oem_property'))
+	{
+		mf_ensure_iblock4_oem_property();
+	}
 }
 
 // --- External price CSV (admin + weight surcharge helpers) -----------------

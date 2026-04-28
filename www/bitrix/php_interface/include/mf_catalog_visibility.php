@@ -169,3 +169,56 @@ if (!function_exists('mf_ensure_iblock4_ext_images_property'))
 	}
 }
 
+if (!function_exists('mf_ensure_iblock4_oem_property'))
+{
+	/**
+	 * OEM / заводской номер (строка). Плитка на витрине рядом с брендом и артикулом.
+	 */
+	function mf_ensure_iblock4_oem_property(): void
+	{
+		if (!class_exists(Loader::class) || !Loader::includeModule('iblock'))
+		{
+			return;
+		}
+
+		$iblockId = 4;
+		$code = 'OEM';
+
+		$existing = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => $code])->Fetch();
+		$propId = (int)($existing['ID'] ?? 0);
+		if ($propId > 0)
+		{
+			return;
+		}
+
+		$optKey = 'mf_iblock4_oem_property_installed';
+		$bp = new \CIBlockProperty();
+		$propId = (int)$bp->Add([
+			'IBLOCK_ID' => $iblockId,
+			'NAME' => 'OEM',
+			'ACTIVE' => 'Y',
+			'SORT' => 5020,
+			'CODE' => $code,
+			'PROPERTY_TYPE' => 'S',
+			'MULTIPLE' => 'N',
+			'IS_REQUIRED' => 'N',
+			'FILTRABLE' => 'N',
+		]);
+		if ($propId <= 0)
+		{
+			return;
+		}
+
+		if (class_exists(Option::class))
+		{
+			try
+			{
+				Option::set('main', $optKey, 'Y');
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+	}
+}

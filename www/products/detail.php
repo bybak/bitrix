@@ -19,6 +19,7 @@ $elementId = 0;
 $mfElementName = '';
 $mfBrand = '';
 $mfArticle = '';
+$mfOem = '';
 $mfPreviewText = '';
 $mfPreviewTextType = 'text';
 $mfDetailText = '';
@@ -45,6 +46,7 @@ if ($elementCode)
 			'PROPERTY_MF_CANONICAL_CODE',
 			'PROPERTY_MF_BRAND',
 			'PROPERTY_CML2_ARTICLE',
+			'PROPERTY_OEM',
 		]
 	)->Fetch();
 
@@ -54,6 +56,7 @@ if ($elementCode)
 		$mfElementName = trim((string)($e['NAME'] ?? ''));
 		$mfBrand = trim((string)($e['PROPERTY_MF_BRAND_VALUE'] ?? ''));
 		$mfArticle = trim((string)($e['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+		$mfOem = trim((string)($e['PROPERTY_OEM_VALUE'] ?? ''));
 		$mfPreviewText = (string)($e['PREVIEW_TEXT'] ?? '');
 		$mfPreviewTextType = (string)($e['PREVIEW_TEXT_TYPE'] ?? 'text');
 		$mfDetailText = (string)($e['DETAIL_TEXT'] ?? '');
@@ -147,6 +150,7 @@ $arParams = [
 		"MF_ARTICLE_NORM",
 		"MF_BRAND_NORM",
 		"MF_EXT_IMAGES",
+		"OEM",
     ),
     
     // Корзина
@@ -518,6 +522,7 @@ if ($elementId > 0)
 					'PROPERTY_CML2_ARTICLE',
 					'PROPERTY_MF_BRAND',
 					'PROPERTY_MF_BRAND_NORM',
+					'PROPERTY_OEM',
 				]
 			);
 			while ($r = $rs->Fetch())
@@ -564,6 +569,7 @@ if ($elementId > 0)
 						$titleHtml = htmlspecialcharsbx($name);
 						$anBrand = trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ($r['PROPERTY_MF_BRAND_NORM_VALUE'] ?? '')));
 						$anArticle = trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+						$anOem = trim((string)($r['PROPERTY_OEM_VALUE'] ?? ''));
 						$plainName = trim(html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 						if ($plainName === '')
 						{
@@ -576,6 +582,7 @@ if ($elementId > 0)
 							'title_html' => $titleHtml,
 							'brand' => $anBrand,
 							'article' => $anArticle,
+							'oem' => $anOem,
 							'product_name_plain' => $plainName,
 							'req_user_name' => $mfAnalogReqName,
 							'req_user_email' => $mfAnalogReqEmail,
@@ -597,8 +604,8 @@ if ($elementId > 0)
 			<div class="mf-detail-shell__min-price">От <span><?=$mfMinPriceText?></span></div>
 		<?php endif; ?>
 
-		<?php if ($mfBrand !== '' || $mfArticle !== ''): ?>
-			<div class="mf-product-meta mf-product-meta--detail" aria-label="Бренд и артикул">
+		<?php if ($mfBrand !== '' || $mfArticle !== '' || $mfOem !== ''): ?>
+			<div class="mf-product-meta mf-product-meta--detail" aria-label="Бренд, артикул и OEM">
 				<?php if ($mfBrand !== ''): ?>
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Бренд:</span>
@@ -609,6 +616,12 @@ if ($elementId > 0)
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Артикул:</span>
 						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfArticle)?></span>
+					</div>
+				<?php endif; ?>
+				<?php if ($mfOem !== ''): ?>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">OEM:</span>
+						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfOem)?></span>
 					</div>
 				<?php endif; ?>
 			</div>

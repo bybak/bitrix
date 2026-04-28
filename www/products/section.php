@@ -211,6 +211,7 @@ $arParams = array(
 		"MF_BRAND",
 		"MF_ARTICLE_NORM",
 		"MF_BRAND_NORM",
+		"OEM",
 		"CML2_MANUFACTURER",
 		"BRAND",
 		"MANUFACTURER",

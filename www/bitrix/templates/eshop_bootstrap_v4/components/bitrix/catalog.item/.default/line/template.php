@@ -162,9 +162,14 @@ foreach (['CML2_ARTICLE', 'MF_ARTICLE_NORM', 'ARTNUMBER', 'ARTICLE'] as $c)
 	if ($article === '' && is_array($actualItem)) $article = $mfGetProp($actualItem, $c);
 	if ($article !== '') break;
 }
+$oem = $mfGetProp($item, 'OEM');
+if ($oem === '' && is_array($actualItem))
+{
+	$oem = $mfGetProp($actualItem, 'OEM');
+}
 
 // Fallback: if properties weren't selected in catalog.section result, fetch by ID.
-if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('iblock'))
+if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::includeModule('iblock'))
 {
 	static $mfPropsById = [];
 	$pid = (int)($item['ID'] ?? 0);
@@ -188,17 +193,20 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 				'PROPERTY_CML2_ARTICLE',
 				'PROPERTY_MF_ARTICLE_NORM',
 				'PROPERTY_MF_BRAND_NORM',
+				'PROPERTY_OEM',
 			]
 		)->Fetch();
 		$mfPropsById[$pid] = [
 			'brand' => trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ($r['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
 			'article' => trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ($r['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''))),
+			'oem' => trim((string)($r['PROPERTY_OEM_VALUE'] ?? '')),
 		];
 	}
 	if ($pid > 0 && isset($mfPropsById[$pid]))
 	{
 		if ($brand === '') $brand = $mfPropsById[$pid]['brand'];
 		if ($article === '') $article = $mfPropsById[$pid]['article'];
+		if ($oem === '') $oem = $mfPropsById[$pid]['oem'];
 	}
 }
 ?>
@@ -233,16 +241,25 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 				<?=$productTitle?>
 			<? if ($itemHasDetailUrl): ?></a><? endif; ?>
 		</h3>
-		<?php if ($brand !== '' || $article !== ''): ?>
-			<div class="mf-pline__sub" title="<?=htmlspecialcharsbx(trim($brand . ' ' . $article))?>">
+		<?php if ($brand !== '' || $article !== '' || $oem !== ''): ?>
+			<div class="mf-product-meta" aria-label="Бренд, артикул и OEM">
 				<?php if ($brand !== ''): ?>
-					<span class="mf-pline__sub-brand"><?=htmlspecialcharsbx($brand)?></span>
-				<?php endif; ?>
-				<?php if ($brand !== '' && $article !== ''): ?>
-					<span class="mf-pline__sub-sep" aria-hidden="true">•</span>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">Бренд:</span>
+						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($brand)?></span>
+					</div>
 				<?php endif; ?>
 				<?php if ($article !== ''): ?>
-					<span class="mf-pline__sub-article">арт. <?=htmlspecialcharsbx($article)?></span>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">Артикул:</span>
+						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($article)?></span>
+					</div>
+				<?php endif; ?>
+				<?php if ($oem !== ''): ?>
+					<div class="mf-product-meta__item">
+						<span class="mf-product-meta__label">OEM:</span>
+						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($oem)?></span>
+					</div>
 				<?php endif; ?>
 			</div>
 		<?php endif; ?>

@@ -256,6 +256,7 @@ if (!function_exists('mf_product_search_card_render'))
 	 *   title_html:string,
 	 *   brand?:string,
 	 *   article?:string,
+	 *   oem?:string,
 	 *   product_name_plain:string,
 	 *   req_user_name?:string,
 	 *   req_user_email?:string,
@@ -270,6 +271,7 @@ if (!function_exists('mf_product_search_card_render'))
 		$titleHtml = (string)($p['title_html'] ?? '');
 		$brand = trim((string)($p['brand'] ?? ''));
 		$article = trim((string)($p['article'] ?? ''));
+		$oem = trim((string)($p['oem'] ?? ''));
 		$productNamePlain = trim((string)($p['product_name_plain'] ?? ''));
 		$reqName = trim((string)($p['req_user_name'] ?? ''));
 		$reqEmail = trim((string)($p['req_user_email'] ?? ''));
@@ -308,7 +310,7 @@ if (!function_exists('mf_product_search_card_render'))
 				</a>
 				<div class="mf-search-card__main">
 					<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
-					<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
+					<div class="mf-product-meta" aria-label="Цена, бренд, артикул и OEM">
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">От</span>
 							<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : '—' ?></span>
@@ -320,6 +322,10 @@ if (!function_exists('mf_product_search_card_render'))
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">Артикул</span>
 							<span class="mf-product-meta__value"><?= $article !== '' ? htmlspecialcharsbx($article) : '—' ?></span>
+						</div>
+						<div class="mf-product-meta__item">
+							<span class="mf-product-meta__label">OEM</span>
+							<span class="mf-product-meta__value"><?= $oem !== '' ? htmlspecialcharsbx($oem) : '—' ?></span>
 						</div>
 					</div>
 				</div>
