@@ -4344,9 +4344,37 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			logoNode = BX.create('DIV', {props: {className: 'bx-soa-item-imgcontainer'}});
 
 			if (data.PREVIEW_PICTURE_SRC && data.PREVIEW_PICTURE_SRC.length)
+			{
 				logotype = this.getImageSources(data, 'PREVIEW_PICTURE');
+				if (!logotype || !logotype.src_1x)
+				{
+					logotype = {
+						src_1x: data.PREVIEW_PICTURE_SRC,
+						src_2x: (data.PREVIEW_PICTURE_SRC_2X && data.PREVIEW_PICTURE_SRC_2X.length)
+							? data.PREVIEW_PICTURE_SRC_2X
+							: data.PREVIEW_PICTURE_SRC,
+						src_orig: (data.PREVIEW_PICTURE_SRC_ORIGINAL && data.PREVIEW_PICTURE_SRC_ORIGINAL.length)
+							? data.PREVIEW_PICTURE_SRC_ORIGINAL
+							: data.PREVIEW_PICTURE_SRC
+					};
+				}
+			}
 			else if (data.DETAIL_PICTURE_SRC && data.DETAIL_PICTURE_SRC.length)
+			{
 				logotype = this.getImageSources(data, 'DETAIL_PICTURE');
+				if (!logotype || !logotype.src_1x)
+				{
+					logotype = {
+						src_1x: data.DETAIL_PICTURE_SRC,
+						src_2x: (data.DETAIL_PICTURE_SRC_2X && data.DETAIL_PICTURE_SRC_2X.length)
+							? data.DETAIL_PICTURE_SRC_2X
+							: data.DETAIL_PICTURE_SRC,
+						src_orig: (data.DETAIL_PICTURE_SRC_ORIGINAL && data.DETAIL_PICTURE_SRC_ORIGINAL.length)
+							? data.DETAIL_PICTURE_SRC_ORIGINAL
+							: data.DETAIL_PICTURE_SRC
+					};
+				}
+			}
 
 			if (logotype && logotype.src_2x)
 			{

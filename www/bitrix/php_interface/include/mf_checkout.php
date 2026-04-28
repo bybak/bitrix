@@ -1397,6 +1397,123 @@ if (!function_exists('mf_checkout_resolve_fallback_location_code'))
 	}
 }
 
+if (!function_exists('mf_catalog_element_code_for_basket_row'))
+{
+	/**
+	 * Символьный код товара для mf_mf_product_img_url (как на витрине / в patchBasketImages в mf-cart.js).
+	 */
+	function mf_catalog_element_code_for_basket_row(int $productId, array $d): string
+	{
+		$detailUrl = (string)($d['DETAIL_PAGE_URL'] ?? '');
+		if ($detailUrl !== '' && preg_match('#/products/([^/]+)/?#', $detailUrl, $m))
+		{
+			return (string)$m[1];
+		}
+		if ($productId <= 0)
+		{
+			return '';
+		}
+		static $cache = [];
+		if (array_key_exists($productId, $cache))
+		{
+			return $cache[$productId];
+		}
+		$code = '';
+		$rs = \CIBlockElement::GetList([], ['ID' => $productId], false, false, ['ID', 'CODE']);
+		if ($row = $rs->GetNext())
+		{
+			$code = trim((string)($row['CODE'] ?? ''));
+		}
+		$cache[$productId] = $code;
+
+		return $code;
+	}
+}
+
+if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
+{
+	/**
+	 * Строки корзины в sale.order.ajax: восстанавливаем пустое NAME из каталога и SRC превью,
+	 * если файл есть, а масштабирование по какой-то причине не выполнилось.
+	 */
+	function mf_sale_order_ajax_enrich_grid_rows(array &$rows, string $basketImagesScaling): void
+	{
+		if ($rows === [] || !class_exists('SaleOrderAjax'))
+		{
+			return;
+		}
+		if (!\Bitrix\Main\Loader::includeModule('iblock'))
+		{
+			return;
+		}
+		$basketImagesScaling = $basketImagesScaling !== '' ? $basketImagesScaling : 'adaptive';
+		foreach ($rows as &$row)
+		{
+			if (!isset($row['data']) || !is_array($row['data']))
+			{
+				continue;
+			}
+			$d = &$row['data'];
+			$productId = (int)($d['PRODUCT_ID'] ?? 0);
+			if ($productId <= 0)
+			{
+				continue;
+			}
+			if (trim((string)($d['NAME'] ?? '')) === '')
+			{
+				$rsEl = \CIBlockElement::GetByID($productId);
+				if ($el = $rsEl->GetNext(false, false))
+				{
+					$rawName = (string)($el['NAME'] ?? '');
+					if ($rawName !== '')
+					{
+						$d['NAME'] = htmlspecialcharsEx($rawName);
+						$d['~NAME'] = $rawName;
+					}
+				}
+			}
+			foreach (['PREVIEW_PICTURE' => 'PREVIEW_PICTURE_SRC', 'DETAIL_PICTURE' => 'DETAIL_PICTURE_SRC'] as $picKey => $srcKey)
+			{
+				$fid = (int)($d[$picKey] ?? 0);
+				if ($fid <= 0 || trim((string)($d[$srcKey] ?? '')) !== '')
+				{
+					continue;
+				}
+				$arImage = \CFile::GetFileArray($fid);
+				if (empty($arImage))
+				{
+					continue;
+				}
+				\SaleOrderAjax::resizeImage(
+					$d,
+					$picKey,
+					$arImage,
+					['width' => 320, 'height' => 320],
+					['width' => 110, 'height' => 110],
+					$basketImagesScaling
+				);
+			}
+			// Как в корзине (mf-cart.js): канонические картинки с внешнего хоста /mf-img, а не только /upload/resize
+			if (function_exists('mf_mf_product_img_url'))
+			{
+				$catalogCode = mf_catalog_element_code_for_basket_row($productId, $d);
+				if ($catalogCode !== '')
+				{
+					$mfSrc = (string)mf_mf_product_img_url($catalogCode, 1);
+					if ($mfSrc !== '')
+					{
+						$d['PREVIEW_PICTURE_SRC'] = $mfSrc;
+						$d['PREVIEW_PICTURE_SRC_2X'] = $mfSrc;
+						$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $mfSrc;
+					}
+				}
+			}
+			unset($d);
+		}
+		unset($row);
+	}
+}
+
 if (!function_exists('mf_checkout_on_order_js_data'))
 {
 	function mf_checkout_on_order_js_data(array &$arResult, array &$arParams): void
@@ -1406,6 +1523,16 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 			if (empty($arResult['JS_DATA']) || !is_array($arResult['JS_DATA']))
 			{
 				return;
+			}
+
+			$basketImgScale = (string)($arParams['BASKET_IMAGES_SCALING'] ?? 'adaptive');
+			if (!empty($arResult['JS_DATA']['GRID']['ROWS']) && is_array($arResult['JS_DATA']['GRID']['ROWS']))
+			{
+				mf_sale_order_ajax_enrich_grid_rows($arResult['JS_DATA']['GRID']['ROWS'], $basketImgScale);
+			}
+			if (!empty($arResult['GRID']['ROWS']) && is_array($arResult['GRID']['ROWS']))
+			{
+				mf_sale_order_ajax_enrich_grid_rows($arResult['GRID']['ROWS'], $basketImgScale);
 			}
 
 			$fallbackLoc = mf_checkout_resolve_fallback_location_code();

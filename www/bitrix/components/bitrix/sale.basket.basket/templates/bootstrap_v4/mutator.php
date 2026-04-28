@@ -91,6 +91,19 @@ foreach ($this->basketItems as $row)
 
 	$rowData['SHOW_PRICE_FOR'] = (float)$rowData['QUANTITY'] !== (float)$rowData['MEASURE_RATIO'];
 
+	if (trim((string)$rowData['NAME']) === '' && (int)$rowData['PRODUCT_ID'] > 0 && \Bitrix\Main\Loader::includeModule('iblock'))
+	{
+		$rsEl = \CIBlockElement::GetByID((int)$rowData['PRODUCT_ID']);
+		if ($el = $rsEl->GetNext(false, false))
+		{
+			$fn = (string)($el['NAME'] ?? '');
+			if ($fn !== '')
+			{
+				$rowData['NAME'] = $fn;
+			}
+		}
+	}
+
 	$hideDetailPicture = false;
 
 	if (!empty($row['PREVIEW_PICTURE_SRC']))
@@ -101,6 +114,23 @@ foreach ($this->basketItems as $row)
 	{
 		$hideDetailPicture = true;
 		$rowData['IMAGE_URL'] = $row['DETAIL_PICTURE_SRC'];
+	}
+
+	if (empty($rowData['IMAGE_URL']))
+	{
+		$picId = (int)($row['PREVIEW_PICTURE'] ?? 0);
+		if ($picId <= 0)
+		{
+			$picId = (int)($row['DETAIL_PICTURE'] ?? 0);
+		}
+		if ($picId > 0)
+		{
+			$rImg = \CFile::ResizeImageGet($picId, ['width' => 110, 'height' => 110], BX_RESIZE_IMAGE_PROPORTIONAL, true);
+			if (!empty($rImg['src']))
+			{
+				$rowData['IMAGE_URL'] = $rImg['src'];
+			}
+		}
 	}
 
 	if (!empty($row['SKU_DATA']))
