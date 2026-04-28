@@ -268,24 +268,6 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 		}
 	}
 
-	// Таб «Склад» на detail.php не использует mf_product_search_card_stores — дублируем логику ожидания из заказов поставщику.
-	// Если по motor_force_internal нет строки в b_catalog_store_product, но в mf_supplier_order_line есть matched — добавляем склад с нулём.
-	if ($elementId > 0
-		&& function_exists('mf_supplier_orders_internal_store_id')
-		&& function_exists('mf_supplier_orders_cluster_amount_on_store')
-		&& function_exists('mf_supplier_orders_pending_arrival_for_product'))
-	{
-		$mfIntSidRow = mf_supplier_orders_internal_store_id();
-		if ($mfIntSidRow > 0 && mf_supplier_orders_cluster_amount_on_store($elementId, $mfIntSidRow) <= 1e-9)
-		{
-			$mfPenRow = mf_supplier_orders_pending_arrival_for_product($elementId);
-			if (is_array($mfPenRow) && (float)($mfPenRow['qty'] ?? 0) > 1e-9 && !isset($storeAmounts[$mfIntSidRow]))
-			{
-				$storeAmounts[$mfIntSidRow] = 0.0;
-			}
-		}
-	}
-
 	if (!empty($storeAmounts))
 	{
 		$storeIds = array_keys($storeAmounts);
@@ -351,6 +333,20 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 			return $a <=> $b;
 		});
 
+		// Как в поиске: при нуле в таблицу попадают только внешние склады (остаток «Под заказ»).
+		$mfOrderedStoreIds = array_values(array_filter($mfOrderedStoreIds, static function ($sid) use ($storeAmounts) {
+			$sid = (int)$sid;
+			$amt = (float)($storeAmounts[$sid] ?? 0);
+			if ($amt > 1e-9)
+			{
+				return true;
+			}
+
+			return function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($sid);
+		}));
+
+		if (!empty($mfOrderedStoreIds))
+		{
 		ob_start();
 		global $USER;
 		$mfDetReqN = '';
@@ -484,6 +480,7 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 		</div>
 		<?php
 		$mfStockTabHtml = trim((string)ob_get_clean());
+		}
 	}
 }
 
