@@ -183,6 +183,7 @@ function mf_ce_export_headers(): array
 		'id',
 		'Бренд',
 		'Артикул',
+		'OEM',
 		'Наименование',
 		'Раздел товара',
 		'Краткий текст',
@@ -212,6 +213,7 @@ function mf_ce_build_row(int $iblockId, array $el): array
 	{
 		$article = trim((string)($el['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''));
 	}
+	$oem = trim((string)($el['PROPERTY_OEM_VALUE'] ?? ''));
 	$name = trim((string)($el['NAME'] ?? ''));
 	$sectionId = (int)($el['IBLOCK_SECTION_ID'] ?? 0);
 	$sectionName = mf_ce_section_name($iblockId, $sectionId);
@@ -243,6 +245,7 @@ function mf_ce_build_row(int $iblockId, array $el): array
 		(string)$id,
 		$brand,
 		$article,
+		$oem,
 		$name,
 		$sectionName,
 		$preview,
@@ -524,6 +527,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 		'PROPERTY_MF_BRAND_NORM',
 		'PROPERTY_CML2_ARTICLE',
 		'PROPERTY_MF_ARTICLE_NORM',
+		'PROPERTY_OEM',
 		'PROPERTY_MF_EXT_IMAGES',
 	];
 
@@ -604,7 +608,7 @@ $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 
 	<p class="adm-info-message" style="max-width:720px">
 		Каталог: инфоблок ID <strong><?= (int)$iblockId ?></strong>.
-		В файл всегда входят колонки: id, бренд, артикул, наименование, <strong>основной раздел</strong>, краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>URL первого фото как на сайте</strong>
+		В файл всегда входят колонки: id, бренд, артикул, OEM, наименование, <strong>основной раздел</strong>, краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>URL первого фото как на сайте</strong>
 		(MF_EXT_IMAGES при наличии, иначе метаданные аналогов, иначе схема <code>mf_mf_product_img_url</code> — без файлов в <code>/upload/</code>).
 		Редиректы (MF_IS_REDIRECT) не выгружаются.
 		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
