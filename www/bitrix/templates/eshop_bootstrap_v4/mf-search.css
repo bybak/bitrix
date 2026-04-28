@@ -143,21 +143,27 @@
   background: rgba(235,189,47,.95);
 }
 .mf-search-card__title{
-  display: inline-block;
+  display: block;
   font-weight: 900;
   font-size: 16px;
   line-height: 1.25;
   color: #000;
   text-decoration: none;
   margin: 0 0 8px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .mf-search-card__title:hover{ text-decoration: underline; }
 
 .mf-search-card__top{
   display: grid;
-  grid-template-columns: 76px 1fr;
+  grid-template-columns: 76px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+}
+.mf-search-card__main{
+  min-width: 0;
 }
 .mf-search-card__img{
   display: block;
@@ -177,6 +183,7 @@
 }
 .mf-search-card__main .mf-search-card__title{
   margin: 0 0 6px;
+  hyphens: auto;
 }
 
 /* Как на карточке товара (mf-shop.css): бренд/артикул + строка «От …» */
@@ -215,6 +222,9 @@
 }
 .mf-search-card__avail{
   margin-top: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .mf-search-card__avail-title{
   font-weight: 900;
@@ -585,10 +595,14 @@
   margin-top: 10px;
   display: grid;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
 }
 .mf-search-card--analog{
   border-style: dashed;
   background: rgba(0,0,0,.01);
+  min-width: 0;
+  max-width: 100%;
 }
 .mf-search-card__analogs{
   margin-top: 12px;

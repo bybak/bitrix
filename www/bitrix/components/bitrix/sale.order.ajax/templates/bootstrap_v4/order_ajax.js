@@ -4442,7 +4442,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!column || !allData)
 				return;
 
-			var data = allData.columns[column.id] ? allData.columns : allData.data,
+			/* Пустой [] из columns — truthy в JS; тогда подставлялся весь columns без PRICE/SUM и ячейки были пустыми */
+			var colCell = allData.columns && allData.columns[column.id],
+				useColumnsMap = !!colCell && !(BX.type.isArray(colCell) && colCell.length === 0),
+				data = useColumnsMap ? allData.columns : allData.data,
 				toRight = BX.util.in_array(column.id, ["QUANTITY", "PRICE_FORMATED", "DISCOUNT_PRICE_PERCENT_FORMATED", "SUM"]),
 				textNode = BX.create('DIV', {props: {className: 'bx-soa-item-td-text'}}),
 				logotype, img;
@@ -4565,7 +4568,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!column || !allData)
 				return;
 
-			var data = allData.columns[column.id] ? allData.columns : allData.data,
+			var colCellH = allData.columns && allData.columns[column.id],
+				useColumnsMapH = !!colCellH && !(BX.type.isArray(colCellH) && colCellH.length === 0),
+				data = useColumnsMapH ? allData.columns : allData.data,
 				textNode = BX.create('TD', {props: {className: 'bx-soa-info-text'}}),
 				logotype, img, i;
 

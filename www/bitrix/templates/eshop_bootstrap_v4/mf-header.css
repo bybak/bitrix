@@ -596,7 +596,7 @@ html.mf-menu-open .bx-aside-nav {
   margin-top: 1.25rem;
   margin-bottom: 1.25rem;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Prevent bootstrap .row negative margins from overflowing container */
@@ -614,36 +614,37 @@ html.mf-menu-open .bx-aside-nav {
 .mf-breadcrumbs #navigation {
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Bitrix breadcrumbs markup (.bx-breadcrumb) */
 .mf-breadcrumbs .bx-breadcrumb {
   box-sizing: border-box;
   display: flex;
-  flex-wrap: nowrap !important;
-  align-items: center;
-  gap: .5rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  row-gap: 0.35rem;
   margin: 0;
-  padding: .75rem 0;
+  padding: 0.75rem 0;
   max-width: 100% !important;
   width: 100% !important;
   min-width: 0;
-  white-space: nowrap !important;
-  overflow: hidden !important;
+  white-space: normal;
+  overflow: visible;
 }
 
 .mf-breadcrumbs .bx-breadcrumb-item {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   min-width: 0;
   max-width: 100%;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   height: auto !important;
 }
 
 .mf-breadcrumbs .bx-breadcrumb-item:last-of-type {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -651,21 +652,24 @@ html.mf-menu-open .bx-aside-nav {
   color: #000;
   text-decoration: none;
   display: inline-flex;
-  align-items: center;
-  line-height: 1.2 !important;
+  align-items: baseline;
+  line-height: 1.35 !important;
   height: auto;
+  max-width: 100%;
 }
 
 .mf-breadcrumbs .bx-breadcrumb-item-text {
   color: #000;
-  font-size: .875rem;
-  line-height: 1.2 !important;
+  font-size: 0.875rem;
+  line-height: 1.35 !important;
   font-weight: 600;
   display: block;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap !important;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .mf-breadcrumbs a.bx-breadcrumb-item-link:hover .bx-breadcrumb-item-text {
@@ -676,10 +680,11 @@ html.mf-menu-open .bx-aside-nav {
   color: #647886;
   font-size: 1rem;
   line-height: 1;
-  margin: 0 .25rem;
+  margin: 0 0.15rem;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  align-self: center;
 }
 
 /* Current page crumb */

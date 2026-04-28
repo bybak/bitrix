@@ -1090,11 +1090,17 @@
 .mf-product-meta--detail{
   margin: 0 0 14px;
 }
+/* Обёртка аналогов на детальной: не раздувает вкладку за пределы колонки */
+.mf-product-analogs{
+  min-width: 0;
+  max-width: 100%;
+}
 .mf-detail-tabs{
   border: 1px solid rgba(0,0,0,.08);
   border-radius: 16px;
   background: #fff;
   overflow: hidden;
+  max-width: 100%;
 }
 .mf-detail-tabs__nav{
   display: flex;
@@ -1122,6 +1128,9 @@
 }
 .mf-detail-tabs__content{
   padding: 16px;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .mf-detail-tabs__pane{
   display: block;

@@ -99,6 +99,33 @@
 }
 
 /* Basket items inside order */
+/* Блок «Товары»: не режем строки корзины (float + overflow:hidden в bootstrap_v4/style.css и overflow на карточке) */
+.mf-order #bx-soa-basket.bx-soa-section{
+  overflow: visible;
+}
+.mf-order #bx-soa-basket .bx-soa-section-content{
+  overflow: visible;
+  min-width: 0;
+}
+@media (max-width: 991px){
+  .mf-order .bx-soa-item-tr,
+  .mf-order .bx-soa-item-block{
+    overflow: visible;
+  }
+  /* На планшетах Bitrix оставляет фикс. высоту только до 580px — иначе раскрытые свойства строки обрезаются */
+  .mf-order .bx-soa-item-info-container{
+    height: auto !important;
+    min-height: 0;
+  }
+  .mf-order .bx-soa-item-info-container .bx-soa-item-info-block.bx-active{
+    overflow: visible;
+  }
+}
+.mf-order #bx-soa-basket .bx-soa-section-title-container{
+  flex-wrap: wrap;
+  row-gap: 8px;
+  column-gap: 12px;
+}
 .mf-order .bx-soa-item-imgcontainer{
   border-radius: 12px;
   background-color: #fff;
@@ -110,6 +137,8 @@
 .mf-order .bx-soa-item-title{
   font-weight: 900;
   line-height: 1.25;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .mf-order .bx-soa-coupon{
   margin-top: 14px;

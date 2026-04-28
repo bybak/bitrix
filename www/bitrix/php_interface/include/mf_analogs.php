@@ -463,6 +463,93 @@ if (!function_exists('mf_analogs_merge_for_product'))
 	}
 }
 
+if (!function_exists('mf_analogs_has_positive_catalog_stock'))
+{
+	/**
+	 * Есть ли физический остаток > 0 хотя бы на одном складе (сумма по кластеру карточек).
+	 */
+	function mf_analogs_has_positive_catalog_stock(int $productId): bool
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return false;
+		}
+		if (!class_exists(\CCatalogStoreProduct::class))
+		{
+			return false;
+		}
+		try
+		{
+			Loader::includeModule('catalog');
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+
+		$clusterIds = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($productId)
+			: [$productId];
+		$sum = 0.0;
+		foreach ($clusterIds as $cid)
+		{
+			$cid = (int)$cid;
+			if ($cid <= 0)
+			{
+				continue;
+			}
+			$rs = \CCatalogStoreProduct::GetList(
+				[],
+				['PRODUCT_ID' => $cid],
+				false,
+				false,
+				['AMOUNT']
+			);
+			while ($r = $rs->Fetch())
+			{
+				$sum += (float)($r['AMOUNT'] ?? 0);
+			}
+		}
+
+		return $sum > 1e-9;
+	}
+}
+
+if (!function_exists('mf_analogs_sort_ids_stock_priority'))
+{
+	/**
+	 * Сначала ID с остатком на складах, затем без остатка. Порядок внутри групп = как в $ids.
+	 *
+	 * @param int[] $ids
+	 * @return int[]
+	 */
+	function mf_analogs_sort_ids_stock_priority(array $ids): array
+	{
+		$ids = array_values(array_unique(array_map('intval', $ids)));
+		$ids = array_values(array_filter($ids, static fn($x) => $x > 0));
+		if ($ids === [])
+		{
+			return [];
+		}
+		$in = [];
+		$out = [];
+		foreach ($ids as $id)
+		{
+			if (mf_analogs_has_positive_catalog_stock($id))
+			{
+				$in[] = $id;
+			}
+			else
+			{
+				$out[] = $id;
+			}
+		}
+
+		return array_merge($in, $out);
+	}
+}
+
 if (!function_exists('mf_analogs_ids_for_product'))
 {
 	/**
@@ -505,7 +592,13 @@ if (!function_exists('mf_analogs_ids_for_product'))
 				$out[$other] = true;
 			}
 		}
-		return array_map('intval', array_keys($out));
+		$ids = array_map('intval', array_keys($out));
+		if (function_exists('mf_analogs_sort_ids_stock_priority'))
+		{
+			$ids = mf_analogs_sort_ids_stock_priority($ids);
+		}
+
+		return $ids;
 	}
 }
 
@@ -787,12 +880,15 @@ if (!function_exists('mf_analogs_related_ids_for_product'))
 		}
 
 		$ids = array_map('intval', array_keys($out));
-		// Keep deterministic order.
-		sort($ids);
+		if (function_exists('mf_analogs_sort_ids_stock_priority'))
+		{
+			$ids = mf_analogs_sort_ids_stock_priority($ids);
+		}
 		if (count($ids) > $limit)
 		{
 			$ids = array_slice($ids, 0, $limit);
 		}
+
 		return $ids;
 	}
 }
