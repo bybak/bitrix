@@ -133,14 +133,17 @@ function mf_ce_brand_property_ids(int $iblockId): array
 }
 
 /**
- * Ограничения на b_iblock_element как у CIBlockElement::GetList без SHOW_HISTORY:
- * актуальная версия документа (workflow) и не редирект (MF_IS_REDIRECT ≠ Y).
+ * Условие «элемент выгружаемый» (как в выгрузке): workflow + не редирект.
+ * Возвращает выражение для SQL (без ведущего AND), в скобках.
  */
-function mf_ce_sql_and_exportable_element(string $eAlias, int $iblockId): string
+function mf_ce_sql_bool_exportable_element(string $eAlias, int $iblockId): string
 {
 	$iblockId = (int)$iblockId;
 	$eAlias = preg_replace('~[^A-Za-z0-9_]+~', '', $eAlias) ?: 'e';
-	$and = " AND ({$eAlias}.WF_STATUS_ID = 1) AND ({$eAlias}.WF_PARENT_ELEMENT_ID IS NULL)";
+	$parts = [
+		"({$eAlias}.WF_STATUS_ID = 1)",
+		"({$eAlias}.WF_PARENT_ELEMENT_ID IS NULL)",
+	];
 
 	$rs = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => 'MF_IS_REDIRECT']);
 	if ($p = $rs->Fetch())
@@ -148,8 +151,7 @@ function mf_ce_sql_and_exportable_element(string $eAlias, int $iblockId): string
 		$redirectPid = (int)($p['ID'] ?? 0);
 		if ($redirectPid > 0)
 		{
-			$and .= "
-			AND NOT EXISTS (
+			$parts[] = "NOT EXISTS (
 				SELECT 1 FROM b_iblock_element_property prd
 				WHERE prd.IBLOCK_ELEMENT_ID = {$eAlias}.ID
 				AND prd.IBLOCK_PROPERTY_ID = {$redirectPid}
@@ -158,15 +160,101 @@ function mf_ce_sql_and_exportable_element(string $eAlias, int $iblockId): string
 		}
 	}
 
-	return $and;
+	return '(' . implode(' AND ', $parts) . ')';
+}
+
+/**
+ * Фрагмент AND … для JOIN к `b_iblock_element` с алиасом $eAlias.
+ */
+function mf_ce_sql_and_exportable_element(string $eAlias, int $iblockId): string
+{
+	return ' AND ' . mf_ce_sql_bool_exportable_element($eAlias, $iblockId);
+}
+
+/**
+ * Учёт галочки «только активные»: должно совпадать с фильтром GetList при выгрузке.
+ */
+function mf_ce_sql_and_active_if(bool $onlyActive, string $eAlias = 'e'): string
+{
+	if (!$onlyActive)
+	{
+		return '';
+	}
+	$eAlias = preg_replace('~[^A-Za-z0-9_]+~', '', $eAlias) ?: 'e';
+
+	return " AND ({$eAlias}.ACTIVE = 'Y')";
+}
+
+/**
+ * Значения MF_BRAND/MF_BRAND_NORM, у которых ни у одного выгружаемого элемента нет строки с этим значением,
+ * но у других (редирект, копии workflow и т.д.) — есть. Для поиска «мусорных» хвостов в свойствах.
+ *
+ * @return list<array{brand: string, cnt_any: int}>
+ */
+function mf_ce_brands_only_on_non_exportable_elements(int $iblockId, int $limit = 500): array
+{
+	global $DB;
+
+	$iblockId = (int)$iblockId;
+	$limit = max(1, min(5000, $limit));
+	if ($iblockId <= 0)
+	{
+		return [];
+	}
+
+	$propIds = mf_ce_brand_property_ids($iblockId);
+	if ($propIds === [])
+	{
+		return [];
+	}
+
+	$in = implode(',', $propIds);
+	$expBool = mf_ce_sql_bool_exportable_element('e', $iblockId);
+	$sql = "
+		SELECT TRIM(p.VALUE) AS V,
+			COUNT(DISTINCT p.IBLOCK_ELEMENT_ID) AS CNT_ANY,
+			COUNT(DISTINCT CASE WHEN {$expBool} THEN p.IBLOCK_ELEMENT_ID END) AS CNT_EXPORTABLE
+		FROM b_iblock_element_property p
+		INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID AND e.IBLOCK_ID = {$iblockId}
+		WHERE p.IBLOCK_PROPERTY_ID IN ({$in})
+			AND p.VALUE IS NOT NULL
+			AND TRIM(p.VALUE) <> ''
+		GROUP BY TRIM(p.VALUE)
+		HAVING CNT_EXPORTABLE = 0
+		ORDER BY CNT_ANY DESC, V
+		LIMIT {$limit}
+	";
+
+	$q = $DB->Query($sql);
+	if (!$q)
+	{
+		return [];
+	}
+
+	$out = [];
+	while ($r = $q->Fetch())
+	{
+		$v = trim((string)($r['V'] ?? ''));
+		if ($v === '')
+		{
+			continue;
+		}
+		$out[] = [
+			'brand' => $v,
+			'cnt_any' => (int)($r['CNT_ANY'] ?? 0),
+		];
+	}
+
+	return $out;
 }
 
 /**
  * Список непустых значений MF_BRAND / MF_BRAND_NORM для выпадающего списка фильтра.
+ * По умолчанию только у активных элементов — как у формы с включённой галочкой «только активные».
  *
  * @return list<string>
  */
-function mf_ce_load_brand_choices(int $iblockId): array
+function mf_ce_load_brand_choices(int $iblockId, bool $onlyActiveBrands = true): array
 {
 	global $DB;
 
@@ -184,6 +272,7 @@ function mf_ce_load_brand_choices(int $iblockId): array
 
 	$in = implode(',', $propIds);
 	$exEl = mf_ce_sql_and_exportable_element('e', $iblockId);
+	$act = mf_ce_sql_and_active_if($onlyActiveBrands, 'e');
 	$sql = "
 		SELECT DISTINCT TRIM(p.VALUE) AS V
 		FROM b_iblock_element_property p
@@ -191,7 +280,7 @@ function mf_ce_load_brand_choices(int $iblockId): array
 		WHERE p.IBLOCK_PROPERTY_ID IN ({$in})
 			AND p.VALUE IS NOT NULL
 			AND TRIM(p.VALUE) <> ''
-			{$exEl}
+			{$exEl}{$act}
 	";
 
 	$q = $DB->Query($sql);
@@ -223,7 +312,7 @@ function mf_ce_load_brand_choices(int $iblockId): array
  *
  * @return list<int>
  */
-function mf_ce_element_ids_for_brand_value(int $iblockId, string $brand): array
+function mf_ce_element_ids_for_brand_value(int $iblockId, string $brand, bool $onlyActiveBrands = true): array
 {
 	global $DB;
 
@@ -243,13 +332,14 @@ function mf_ce_element_ids_for_brand_value(int $iblockId, string $brand): array
 	$in = implode(',', $propIds);
 	$b = $DB->ForSql($brand);
 	$exEl = mf_ce_sql_and_exportable_element('e', $iblockId);
+	$act = mf_ce_sql_and_active_if($onlyActiveBrands, 'e');
 	$sql = "
 		SELECT DISTINCT p.IBLOCK_ELEMENT_ID AS ID
 		FROM b_iblock_element_property p
 		INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID AND e.IBLOCK_ID = {$iblockId}
 		WHERE p.IBLOCK_PROPERTY_ID IN ({$in})
 			AND TRIM(p.VALUE) = TRIM('{$b}')
-			{$exEl}
+			{$exEl}{$act}
 	";
 
 	$q = $DB->Query($sql);
@@ -696,7 +786,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 
 	if ($brandFilter !== '')
 	{
-		$brandIds = mf_ce_element_ids_for_brand_value($iblockId, $brandFilter);
+		$brandIds = mf_ce_element_ids_for_brand_value($iblockId, $brandFilter, $onlyActive);
 		// Несовпадение по TRIM между списком и GetList больше не возможно; при пустом списке id — пустая выгрузка.
 		$filter['ID'] = $brandIds === [] ? -1 : $brandIds;
 	}
@@ -796,6 +886,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 
 $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 $mfCeBrandChoices = mf_ce_load_brand_choices($iblockId);
+$mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400);
 
 ?>
 <form method="post" action="<?= mf_ce_esc((string)$APPLICATION->GetCurPage()) ?>?lang=<?= mf_ce_esc($langUi) ?>">
@@ -837,7 +928,7 @@ $mfCeBrandChoices = mf_ce_load_brand_choices($iblockId);
 						<option value="<?= mf_ce_esc($b) ?>"><?= mf_ce_esc($b) ?></option>
 					<?php endforeach; ?>
 				</select>
-				<div style="margin-top:6px;color:#666;font-size:12px;">Только значения у элементов, которые реально попадают в выгрузку: не редирект (MF_IS_REDIRECT), актуальная запись без родителя в workflow (как у GetList). «Лишние» длинные строки из дублей/черновиков в списке не показываются.</div>
+				<div style="margin-top:6px;color:#666;font-size:12px;">Список строится по тем же правилам, что и выгрузка с галочкой «только активные»: только <strong>активные</strong> выгружаемые элементы. Снимите галочку — в файл попадут и неактивные; тогда отбор ID по бренду тоже включает неактивные (в селекте по-прежнему только активные бренды — для редкого случая выгрузите без фильтра бренда).</div>
 			</td>
 		</tr>
 	</table>
@@ -845,6 +936,33 @@ $mfCeBrandChoices = mf_ce_load_brand_choices($iblockId);
 	<br />
 	<input type="submit" class="adm-btn-save" value="Скачать выгрузку" />
 </form>
+
+<details class="adm-detail-content-table" style="max-width:920px;margin-top:24px">
+	<summary style="cursor:pointer;font-weight:600">Бренды только у невыгружаемых элементов (редирект, копии workflow…)</summary>
+	<p class="adm-info-message" style="margin-top:10px">
+		Ниже — значения из MF_BRAND / MF_BRAND_NORM, которые <strong>ни разу не встречаются у выгружаемого товара</strong> (как в списке брендов выше),
+		но есть у других строк каталога (обычно редиректы). Это и есть «мусорные хвосты» для выгрузи/витрины. Реальные бренды с нулём товаров здесь не попадут — у них просто не будет строки в свойствах.
+	</p>
+	<?php if ($mfCeOrphanBrands === []): ?>
+		<p style="color:#060">Таких значений не найдено (или инфоблок без MF_BRAND / MF_BRAND_NORM).</p>
+	<?php else: ?>
+		<p style="color:#666;font-size:12px">Показано до 400 строк, сортировка: сколько всего элементов с этим текстом в свойстве (редиректы и пр.) — по убыванию.</p>
+		<div style="max-height:320px;overflow:auto;border:1px solid #e0e0e0">
+		<table class="adm-list-table" style="width:100%;font-size:12px">
+			<thead><tr class="heading"><td>Значение в свойстве</td><td style="width:120px">Всего элементов*</td></tr></thead>
+			<tbody>
+			<?php foreach ($mfCeOrphanBrands as $row): ?>
+				<tr>
+					<td style="word-break:break-word"><?= mf_ce_esc($row['brand']) ?></td>
+					<td style="text-align:center"><?= (int)$row['cnt_any'] ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+		</div>
+		<p style="color:#666;font-size:11px">* Сколько разных элементов инфоблока имеют это значение в MF_BRAND или MF_BRAND_NORM (все типы строк, без фильтра «выгружаемый»).</p>
+	<?php endif; ?>
+</details>
 
 <?php
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
