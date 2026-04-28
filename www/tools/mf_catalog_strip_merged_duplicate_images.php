@@ -4,8 +4,9 @@
  * скрипт sync_motor_force_images_to_bitrix_from_csv.py может агрегировать галерею с нескольких страниц,
  * когда в каталоге были дубли (одинаковый MF_UNIQ_KEY, отдельные элементы-редиректы).
  *
- * Обрабатываются только канонические элементы (PROPERTY_MF_IS_REDIRECT ≠ Y),
+ * По умолчанию обрабатываются только канонические элементы (PROPERTY_MF_IS_REDIRECT ≠ Y),
  * у которых по тому же MF_UNIQ_KEY существует хотя бы один редирект-дубль.
+ * Режим --all-products обрабатывает все элементы инфоблока.
  *
  * На карточке товара (catalog.element bootstrap_v4) галерея берётся из свойства MF_EXT_IMAGES (URL, multiple),
  * иначе из MORE_PHOTO / схемы img. Очищаем оба: MORE_PHOTO (файлы) и MF_EXT_IMAGES (строки-URL) — по одному лимиту --keep-more.
@@ -69,6 +70,7 @@ $iblockId = (int)(arg_value($argv, '--iblock-id=', '4'));
 $dryRun = arg_flag($argv, '--dry-run') || !arg_flag($argv, '--apply');
 $quiet = arg_flag($argv, '--quiet');
 $syncDetailPreview = arg_flag($argv, '--sync-detail-to-preview');
+$allProducts = arg_flag($argv, '--all-products');
 
 $keepMore = (int)(arg_value($argv, '--keep-more=', '0'));
 
@@ -83,6 +85,7 @@ MF: обрезать подмешанные галереи у каноничес
   --apply                 записать изменения
   --keep-more=N           для MORE_PHOTO (файлы) и MF_EXT_IMAGES (URL на деталке): оставить первые N (0 — снять всё)
   --sync-detail-to-preview после правок выставить DETAIL_PICTURE = копия PREVIEW_PICTURE
+  --all-products          обработать весь инфоблок (все элементы), без фильтра по дублям
   --quiet
 
 Пример:
@@ -104,76 +107,21 @@ if ($keepMore < 0)
 	exit(2);
 }
 
-// --- Data: uniq_key => redirect_count >= 1 --------------------------------
-
-$uniqWithDup = [];
-$rDir = CIBlockElement::GetList(
-	['ID' => 'ASC'],
-	[
-		'IBLOCK_ID' => $iblockId,
-		'=PROPERTY_MF_IS_REDIRECT' => 'Y',
-	],
-	false,
-	false,
-	['PROPERTY_MF_UNIQ_KEY']
-);
-while ($r = $rDir->Fetch())
-{
-	$key = trim((string)($r['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
-	if ($key === '')
-	{
-		continue;
-	}
-	if (!isset($uniqWithDup[$key]))
-	{
-		$uniqWithDup[$key] = 0;
-	}
-	$uniqWithDup[$key]++;
-}
-
-if (!$uniqWithDup)
-{
-	fwrite(STDOUT, "Нет элементов PROPERTY_MF_IS_REDIRECT=Y или пустые MF_UNIQ_KEY. Выход.\n");
-	exit(0);
-}
-
 $canonicalIds = [];
+$uniqWithDup = [];
 
-$uniqKeys = array_keys($uniqWithDup);
-
-$fetchCanonicalBatch = static function (int $iblockId, array $keysChunk) {
-	return CIBlockElement::GetList(
+if ($allProducts)
+{
+	$rsAll = CIBlockElement::GetList(
 		['ID' => 'ASC'],
-		[
-			'IBLOCK_ID' => $iblockId,
-			'!=PROPERTY_MF_IS_REDIRECT' => 'Y',
-			'=PROPERTY_MF_UNIQ_KEY' => $keysChunk,
-		],
+		['IBLOCK_ID' => $iblockId],
 		false,
 		false,
 		['ID', 'NAME', 'CODE', 'PROPERTY_MF_UNIQ_KEY', 'PREVIEW_PICTURE', 'DETAIL_PICTURE']
 	);
-};
-
-foreach (array_chunk($uniqKeys, 400) as $chunk)
-{
-	$rs = $fetchCanonicalBatch($iblockId, $chunk);
-	if (!$rs)
-	{
-		continue;
-	}
-
-	while ($e = $rs->Fetch())
+	while ($e = $rsAll->Fetch())
 	{
 		$uniq = trim((string)($e['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
-		if ($uniq === '')
-		{
-			continue;
-		}
-		if (!isset($uniqWithDup[$uniq]) || $uniqWithDup[$uniq] < 1)
-		{
-			continue;
-		}
 		$canonicalIds[(int)$e['ID']] = [
 			'id' => (int)$e['ID'],
 			'name' => (string)$e['NAME'],
@@ -182,6 +130,84 @@ foreach (array_chunk($uniqKeys, 400) as $chunk)
 			'preview_id' => (int)($e['PREVIEW_PICTURE'] ?? 0),
 			'detail_id' => (int)($e['DETAIL_PICTURE'] ?? 0),
 		];
+	}
+}
+else
+{
+	// --- Data: uniq_key => redirect_count >= 1 --------------------------------
+	$rDir = CIBlockElement::GetList(
+		['ID' => 'ASC'],
+		[
+			'IBLOCK_ID' => $iblockId,
+			'=PROPERTY_MF_IS_REDIRECT' => 'Y',
+		],
+		false,
+		false,
+		['PROPERTY_MF_UNIQ_KEY']
+	);
+	while ($r = $rDir->Fetch())
+	{
+		$key = trim((string)($r['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
+		if ($key === '')
+		{
+			continue;
+		}
+		if (!isset($uniqWithDup[$key]))
+		{
+			$uniqWithDup[$key] = 0;
+		}
+		$uniqWithDup[$key]++;
+	}
+
+	if (!$uniqWithDup)
+	{
+		fwrite(STDOUT, "Нет элементов PROPERTY_MF_IS_REDIRECT=Y или пустые MF_UNIQ_KEY. Выход.\n");
+		exit(0);
+	}
+
+	$uniqKeys = array_keys($uniqWithDup);
+	$fetchCanonicalBatch = static function (int $iblockId, array $keysChunk) {
+		return CIBlockElement::GetList(
+			['ID' => 'ASC'],
+			[
+				'IBLOCK_ID' => $iblockId,
+				'!=PROPERTY_MF_IS_REDIRECT' => 'Y',
+				'=PROPERTY_MF_UNIQ_KEY' => $keysChunk,
+			],
+			false,
+			false,
+			['ID', 'NAME', 'CODE', 'PROPERTY_MF_UNIQ_KEY', 'PREVIEW_PICTURE', 'DETAIL_PICTURE']
+		);
+	};
+
+	foreach (array_chunk($uniqKeys, 400) as $chunk)
+	{
+		$rs = $fetchCanonicalBatch($iblockId, $chunk);
+		if (!$rs)
+		{
+			continue;
+		}
+
+		while ($e = $rs->Fetch())
+		{
+			$uniq = trim((string)($e['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
+			if ($uniq === '')
+			{
+				continue;
+			}
+			if (!isset($uniqWithDup[$uniq]) || $uniqWithDup[$uniq] < 1)
+			{
+				continue;
+			}
+			$canonicalIds[(int)$e['ID']] = [
+				'id' => (int)$e['ID'],
+				'name' => (string)$e['NAME'],
+				'code' => (string)$e['CODE'],
+				'uniq_key' => $uniq,
+				'preview_id' => (int)($e['PREVIEW_PICTURE'] ?? 0),
+				'detail_id' => (int)($e['DETAIL_PICTURE'] ?? 0),
+			];
+		}
 	}
 }
 
@@ -428,6 +454,7 @@ foreach ($canonicalIds as $meta)
 $summary = [
 	'dry_run' => $dryRun,
 	'iblock_id' => $iblockId,
+	'all_products' => $allProducts,
 	'uniq_keys_with_redirects' => count($uniqWithDup),
 	'canonical_candidates' => $totalCanon,
 	'removed_more_photo_values' => $removedMoreSlots,
