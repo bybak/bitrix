@@ -143,6 +143,7 @@ if ($isView && mf_eh_table_exists())
 	$kv('Склад XML_ID', $row['UF_STORE_XML_ID'] ?? '');
 	$kv('Склад название', $row['UF_STORE_TITLE'] ?? '');
 	$kv('Тип цены (ID)', $row['UF_PRICE_GROUP_ID'] ?? '');
+	$kv('Код прайса', $row['UF_FEED_CODE'] ?? '');
 	$kv('Файл', $row['UF_INPUT_FILENAME'] ?? '');
 	$kv('Размер файла, байт', $row['UF_FILE_SIZE'] ?? '');
 	$kv('Валюта прайса', $row['UF_CURRENCY'] ?? '');
@@ -233,7 +234,7 @@ if (!in_array($order, ['ASC', 'DESC'], true))
 
 $limit = 500;
 $sql = "SELECT ID, UF_STARTED_AT, UF_FINISHED_AT, UF_DURATION_MS, UF_STATUS, UF_USER_LOGIN,
-	UF_STORE_ID, UF_STORE_XML_ID, UF_INPUT_FILENAME, UF_CURRENCY, UF_ZERO_MISSING, UF_WEIGHT_USE,
+	UF_STORE_ID, UF_STORE_XML_ID, UF_FEED_CODE, UF_INPUT_FILENAME, UF_CURRENCY, UF_ZERO_MISSING, UF_WEIGHT_USE,
 	UF_MATCHED, UF_NOT_FOUND, UF_BAD_ROWS, UF_ZEROED
 FROM mf_external_price_import_log
 $whereSql
@@ -265,6 +266,7 @@ $lAdmin->AddHeaders([
 	['id' => 'UF_USER_LOGIN', 'content' => 'Кто', 'default' => true],
 	['id' => 'UF_STORE_ID', 'content' => 'Склад', 'default' => true, 'sort' => 'UF_STORE_ID'],
 	['id' => 'UF_STORE_XML_ID', 'content' => 'XML_ID', 'default' => false],
+	['id' => 'UF_FEED_CODE', 'content' => 'Прайс', 'default' => true],
 	['id' => 'UF_INPUT_FILENAME', 'content' => 'Файл', 'default' => true],
 	['id' => 'UF_CURRENCY', 'content' => 'Валюта', 'default' => true],
 	['id' => 'UF_ZERO_MISSING', 'content' => 'Обнул.', 'default' => false],
@@ -294,6 +296,7 @@ foreach ($rows as $r)
 
 	$row->AddViewField('ID', '<a href="' . mf_eh_escape($viewUrl) . '">' . $id . '</a>');
 	$row->AddViewField('UF_INPUT_FILENAME', mf_eh_escape($fnShort));
+	$row->AddViewField('UF_FEED_CODE', mf_eh_escape((string)($r['UF_FEED_CODE'] ?? '')));
 	$row->AddViewField('UF_DURATION_MS', mf_eh_escape($dur));
 	$row->AddActions([
 		[

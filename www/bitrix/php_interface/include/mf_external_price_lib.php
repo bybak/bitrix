@@ -1543,13 +1543,21 @@ if (!function_exists('mf_ep_zero_product_on_store'))
 if (!function_exists('mf_ep_clear_external_warehouse'))
 {
 	/**
-	 * Удаляет все остатки (строки b_catalog_store_product) по складу, обнуляет/удаляет закупочные цены
-	 * в типе цены, сопоставленном со складом (mf_supplier_store_to_price_group), и пересчитывает BASE по затронутым товарам.
-	 * Только для внешних складов (mf_ep_store_is_external_warehouse).
+	 * Удаляет остатки по внешнему складу целиком либо только данные одного прайса (FEED_CODE) по списку товаров из загрузки внешних цен.
+	 * Остатки в каталоге — в b_catalog_store_product; отдельная таблица слоёв остатков по прайсу не используется.
 	 *
-	 * @return array{ok: bool, error: string, deleted_store_rows: int, products_price_cleared: int, products_recalc: int}
+	 * @return array{
+	 *   ok: bool,
+	 *   error: string,
+	 *   deleted_store_rows: int,
+	 *   products_price_cleared: int,
+	 *   products_recalc: int,
+	 *   mode?: string,
+	 *   feed_code?: string,
+	 *   affected_products?: int
+	 * }
 	 */
-	function mf_ep_clear_external_warehouse(int $storeId): array
+	function mf_ep_clear_external_warehouse(int $storeId, ?string $feedCode = null): array
 	{
 		$storeId = (int)$storeId;
 		$out = [
@@ -1580,6 +1588,104 @@ if (!function_exists('mf_ep_clear_external_warehouse'))
 
 		$map = function_exists('mf_supplier_store_to_price_group') ? mf_supplier_store_to_price_group() : [];
 		$priceGroupId = (int)($map[$storeId] ?? 0);
+
+		$feedOnly = '';
+		if ($feedCode !== null && $feedCode !== '')
+		{
+			$feedOnly = function_exists('mf_esf_normalize_feed_code') ? mf_esf_normalize_feed_code($feedCode) : '';
+		}
+
+		if ($feedOnly !== '')
+		{
+			if (!function_exists('mf_esf_delete_feed_price_products_collect') || !function_exists('mf_esf_ensure_price_product_table'))
+			{
+				$out['error'] = 'Не подключён mf_external_store_feed_stock (привязка прайсов к товарам).';
+
+				return $out;
+			}
+			mf_esf_ensure_price_product_table();
+			$out['mode'] = 'feed';
+			$out['feed_code'] = $feedOnly;
+			$touch = mf_esf_delete_feed_price_products_collect($storeId, $feedOnly);
+			$out['affected_products'] = count($touch);
+			sort($touch, SORT_NUMERIC);
+			if ($touch === [])
+			{
+				$out['hint'] = 'Нет товаров, привязанных к этому прайсу: загрузите внешний CSV с этим кодом прайса или выполните полную очистку склада.';
+			}
+
+			foreach ($touch as $productId)
+			{
+				$productId = (int)$productId;
+				if ($productId <= 0)
+				{
+					continue;
+				}
+				if (function_exists('mf_esf_price_touch_other_feed_exists') && mf_esf_price_touch_other_feed_exists($storeId, $productId))
+				{
+					if (function_exists('mf_ep_sync_catalog_qty_from_stores'))
+					{
+						mf_ep_sync_catalog_qty_from_stores($productId);
+					}
+					if (function_exists('mf_ep_recalc_base_one'))
+					{
+						mf_ep_recalc_base_one($productId);
+					}
+					$out['products_recalc']++;
+					continue;
+				}
+				if ($priceGroupId > 0)
+				{
+					mf_ep_zero_product_on_store($productId, $storeId, $priceGroupId);
+					$out['products_price_cleared']++;
+				}
+				else
+				{
+					$rsZ = \CCatalogStoreProduct::GetList(
+						[],
+						['PRODUCT_ID' => $productId, 'STORE_ID' => $storeId],
+						false,
+						false,
+						['ID']
+					);
+					if ($rowZ = $rsZ->Fetch())
+					{
+						\CCatalogStoreProduct::Update((int)$rowZ['ID'], ['AMOUNT' => 0]);
+					}
+					if (function_exists('mf_ep_sync_catalog_qty_from_stores'))
+					{
+						mf_ep_sync_catalog_qty_from_stores($productId);
+					}
+					if (function_exists('mf_ep_recalc_base_one'))
+					{
+						mf_ep_recalc_base_one($productId);
+					}
+				}
+				$out['products_recalc']++;
+			}
+
+			if (function_exists('mf_ep_invalidate_catalog_price_group_cache'))
+			{
+				mf_ep_invalidate_catalog_price_group_cache();
+			}
+			if ($out['affected_products'] > 0 && function_exists('mf_esf_registry_remove_feed'))
+			{
+				mf_esf_registry_remove_feed($storeId, $feedOnly);
+			}
+			$out['ok'] = true;
+
+			return $out;
+		}
+
+		if (function_exists('mf_esf_registry_delete_all_for_store'))
+		{
+			mf_esf_registry_delete_all_for_store($storeId);
+		}
+		if (function_exists('mf_esf_delete_all_price_product_for_store'))
+		{
+			mf_esf_delete_all_price_product_for_store($storeId);
+		}
+		$out['mode'] = 'all';
 
 		$pidSet = [];
 		if ($priceGroupId > 0 && function_exists('mf_ep_collect_candidates_for_store'))
@@ -1755,12 +1861,35 @@ if (!function_exists('mf_external_price_import_log_ensure_table'))
 		try
 		{
 			$conn->queryExecute($sql);
+			mf_external_price_import_log_migrate_schema($conn);
 
 			return true;
 		}
 		catch (\Throwable $e)
 		{
 			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_log_migrate_schema'))
+{
+	function mf_external_price_import_log_migrate_schema(\Bitrix\Main\DB\Connection $conn): void
+	{
+		try
+		{
+			$r = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_log LIKE 'UF_FEED_CODE'"
+			)->fetch();
+			if (!$r)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_log ADD COLUMN UF_FEED_CODE VARCHAR(64) NULL AFTER UF_PRICE_GROUP_ID'
+				);
+			}
+		}
+		catch (\Throwable $e)
+		{
 		}
 	}
 }
@@ -1894,12 +2023,35 @@ if (!function_exists('mf_external_price_import_job_ensure_table'))
 		try
 		{
 			$conn->queryExecute($sql);
+			mf_external_price_import_job_migrate_schema($conn);
 
 			return true;
 		}
 		catch (\Throwable $e)
 		{
 			return false;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_migrate_schema'))
+{
+	function mf_external_price_import_job_migrate_schema(\Bitrix\Main\DB\Connection $conn): void
+	{
+		try
+		{
+			$r = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_job LIKE 'UF_FEED_CODE'"
+			)->fetch();
+			if (!$r)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_FEED_CODE VARCHAR(64) NULL AFTER UF_STORE_ID'
+				);
+			}
+		}
+		catch (\Throwable $e)
+		{
 		}
 	}
 }
@@ -2186,3 +2338,5 @@ if (!function_exists('mf_external_price_import_job_try_mark_running_db'))
 		return is_array($row) && mb_strtolower(trim((string)($row['UF_STATUS'] ?? ''))) === 'running';
 	}
 }
+
+require_once __DIR__ . '/mf_external_store_feed_stock.php';

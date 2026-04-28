@@ -20,7 +20,8 @@ use Bitrix\Catalog\StoreTable;
  *   importUserId: int,
  *   importUserLogin: string,
  *   importStartedAt: string,
- *   importT0: float
+ *   importT0: float,
+ *   feedCode: string
  * } $ctx
  * @param callable|null $onProgress function(int $rowsDone, int $rowsTotal): void
  * @return array{ok: bool, stats?: array, error?: string}
@@ -46,6 +47,14 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 	$importStartedAt = (string)($ctx['importStartedAt'] ?? '');
 	$importLogT0 = (float)($ctx['importT0'] ?? microtime(true));
 	$storeId = (int)($st['ID'] ?? 0);
+	$feedCodeNorm = function_exists('mf_esf_normalize_feed_code')
+		? mf_esf_normalize_feed_code((string)($ctx['feedCode'] ?? ''))
+		: '';
+
+	if ($feedCodeNorm === '')
+	{
+		return ['ok' => false, 'error' => 'В задании не указан код прайса (перезагрузите файл с заполненным полем «Код прайса»).'];
+	}
 
 	$importLogWritten = false;
 	$header = null;
@@ -217,16 +226,23 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				$catalogPid = (int)$pid;
 			}
 
+			$clusterWriteFail = 0;
 			if (function_exists('mf_ep_set_raw_price_for_catalog_cluster'))
 			{
-				$priceWriteFail += mf_ep_set_raw_price_for_catalog_cluster((int)$pid, $priceGroupId, $priceVal, $currency);
+				$clusterWriteFail = mf_ep_set_raw_price_for_catalog_cluster((int)$pid, $priceGroupId, $priceVal, $currency);
+				$priceWriteFail += $clusterWriteFail;
 			}
 			else
 			{
 				if (!mf_ep_set_raw_price($catalogPid, $priceGroupId, $priceVal, $currency))
 				{
 					$priceWriteFail++;
+					$clusterWriteFail = 1;
 				}
+			}
+			if ($clusterWriteFail === 0 && function_exists('mf_esf_touch_price_product'))
+			{
+				mf_esf_touch_price_product($storeId, $feedCodeNorm, $catalogPid);
 			}
 			if ($priceVal > 0 && function_exists('mf_ep_ensure_unit_if_zero_stock'))
 			{
@@ -248,6 +264,10 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 					continue;
 				}
 				mf_ep_zero_product_on_store((int)$cpid, $storeId, $priceGroupId);
+				if (function_exists('mf_esf_untouch_price_product'))
+				{
+					mf_esf_untouch_price_product($storeId, $feedCodeNorm, (int)$cpid);
+				}
 				$zeroed++;
 			}
 		}
@@ -256,6 +276,11 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		{
 			mf_ep_sync_catalog_qty_from_stores((int)$cpid);
 			mf_ep_recalc_base_one((int)$cpid);
+		}
+
+		if (function_exists('mf_esf_register_store_feed'))
+		{
+			mf_esf_register_store_feed($storeId, $feedCodeNorm);
 		}
 
 		global $USER_FIELD_MANAGER;
@@ -281,6 +306,7 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			'store' => (string)($st['TITLE'] ?? ''),
 			'xml' => $xmlId,
 			'currency' => $currency,
+			'feed_code' => $feedCodeNorm,
 			'examples_nf' => $examplesNotFound,
 		];
 
@@ -301,6 +327,7 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				'UF_STORE_XML_ID' => (string)($st['XML_ID'] ?? ''),
 				'UF_STORE_TITLE' => (string)($st['TITLE'] ?? ''),
 				'UF_PRICE_GROUP_ID' => $priceGroupId,
+				'UF_FEED_CODE' => $feedCodeNorm,
 				'UF_INPUT_FILENAME' => $importFileName,
 				'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
 				'UF_CURRENCY' => $currency,
@@ -350,6 +377,7 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				'UF_STORE_XML_ID' => isset($st['XML_ID']) ? (string)$st['XML_ID'] : null,
 				'UF_STORE_TITLE' => isset($st['TITLE']) ? (string)$st['TITLE'] : null,
 				'UF_PRICE_GROUP_ID' => $priceGroupId > 0 ? $priceGroupId : null,
+				'UF_FEED_CODE' => $feedCodeNorm !== '' ? $feedCodeNorm : null,
 				'UF_INPUT_FILENAME' => $importFileName !== '' ? $importFileName : null,
 				'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
 				'UF_CURRENCY' => $currency,

@@ -398,6 +398,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 	else
 	{
 		$storeId = (int)($_POST['store_id'] ?? 0);
+		$feedPosted = trim((string)($_POST['feed_code'] ?? ''));
+		$feedNorm = function_exists('mf_esf_normalize_feed_code') ? mf_esf_normalize_feed_code($feedPosted) : '';
 		$currency = mb_strtoupper(trim((string)($_POST['currency'] ?? 'RUB')));
 		$zeroMissing = isset($_POST['zero_missing']) && $_POST['zero_missing'] === 'Y';
 		$weightUse = isset($_POST['weight_use']) && $_POST['weight_use'] === 'Y';
@@ -420,6 +422,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		if ($storeId <= 0)
 		{
 			$error = 'Выберите склад.';
+		}
+		elseif ($feedNorm === '')
+		{
+			$error = 'Укажите код прайса (латиница, цифры, символы _ и -) — он фиксирует привязку файла к складу и попадает в реестр прайсов.';
 		}
 		elseif (function_exists('mf_ep_store_is_external_warehouse') && !mf_ep_store_is_external_warehouse($storeId))
 		{
@@ -519,6 +525,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_ORIG_NAME' => $importFileName,
 									'UF_FILE_SIZE' => $importFileSize,
 									'UF_STORE_ID' => $storeId,
+									'UF_FEED_CODE' => $feedNorm,
 									'UF_CURRENCY' => $currency,
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
@@ -574,6 +581,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 					'UF_STORE_XML_ID' => ($stVal && !empty($stVal['XML_ID'])) ? (string)$stVal['XML_ID'] : null,
 					'UF_STORE_TITLE' => ($stVal && !empty($stVal['TITLE'])) ? (string)$stVal['TITLE'] : null,
 					'UF_PRICE_GROUP_ID' => null,
+					'UF_FEED_CODE' => $feedNorm !== '' ? $feedNorm : null,
 					'UF_INPUT_FILENAME' => $importFileName !== '' ? $importFileName : null,
 					'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
 					'UF_CURRENCY' => $currency,
@@ -603,6 +611,7 @@ $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 
 $wfRepost = ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_do'] ?? '') === 'Y');
 $formStoreId = $wfRepost ? (int)($_POST['store_id'] ?? 0) : 0;
+$wfFeedCodeRepost = $wfRepost ? trim((string)($_POST['feed_code'] ?? '')) : '';
 $wfUseChecked = $wfRepost && (string)($_POST['weight_use'] ?? '') === 'Y';
 $wfRubKgStr = $wfRepost ? (string)($_POST['weight_rub_kg'] ?? '0') : '0';
 $wfCurrency = $wfRepost
@@ -740,7 +749,7 @@ if ($stats)
 		. '; пропуск/битые строки: ' . (int)$stats['bad']
 		. '; обнулено (не в файле): ' . (int)$stats['zeroed']
 		. '; не записана цена (ошибка API Bitrix / кэш типа цены): ' . (int)($stats['price_write_fail'] ?? 0)
-		. '. Склад: ' . mf_epu_escape((string)$stats['store']) . ' (' . mf_epu_escape((string)$stats['xml']) . '), валюта прайса: ' . mf_epu_escape((string)$stats['currency']) . '.';
+		. '. Склад: ' . mf_epu_escape((string)$stats['store']) . ' (' . mf_epu_escape((string)$stats['xml']) . '), код прайса: ' . mf_epu_escape((string)($stats['feed_code'] ?? '')) . ', валюта прайса: ' . mf_epu_escape((string)$stats['currency']) . '.';
 	CAdminMessage::ShowMessage(['TYPE' => 'OK', 'MESSAGE' => $msg]);
 	if (!empty($stats['examples_nf']))
 	{
@@ -800,6 +809,18 @@ BRP;420256455;OIL FILTER;11,04</pre>
 						<option value="<?= $sid ?>"<?= $sel ?>><?= mf_epu_escape($lab) ?></option>
 					<?php } ?>
 				</select>
+			</td>
+		</tr>
+		<tr>
+			<td style="vertical-align:top">Код прайса</td>
+			<td>
+				<input type="text" name="feed_code" value="<?= mf_epu_escape($wfFeedCodeRepost) ?>" required
+					maxlength="64" autocomplete="off" style="max-width:280px;font-family:monospace"
+					placeholder="например SUPPLIER_A"
+					<?= empty($stores) ? ' disabled' : '' ?> />
+				<div style="margin-top:6px;max-width:560px;color:#555;font-size:12px;line-height:1.45;">
+					Один и тот же код используйте для всех загрузок этого прайса на выбранный склад и при частичной очистке склада по прайсу в админке. Допустимы латинские буквы, цифры, <code>_</code> и <code>-</code>.
+				</div>
 			</td>
 		</tr>
 		<tr>
