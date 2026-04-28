@@ -36,6 +36,12 @@ if (!Loader::includeModule('iblock'))
 	return;
 }
 
+$mfBrandDict = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/mf_brand_dict.php';
+if (is_file($mfBrandDict))
+{
+	require_once $mfBrandDict;
+}
+
 $iblockId = 4;
 
 require_once __DIR__ . '/mf_catalog_export_xlsx_cell.php';
@@ -94,6 +100,175 @@ function mf_ce_collect_ext_image_urls(array $el): array
 	$s = trim((string)$v);
 
 	return $s !== '' ? [$s] : [];
+}
+
+/**
+ * ID свойств MF_BRAND / MF_BRAND_NORM в инфоблоке.
+ *
+ * @return list<int>
+ */
+function mf_ce_brand_property_ids(int $iblockId): array
+{
+	$iblockId = (int)$iblockId;
+	if ($iblockId <= 0)
+	{
+		return [];
+	}
+
+	$propIds = [];
+	foreach (['MF_BRAND', 'MF_BRAND_NORM'] as $propCode)
+	{
+		$rs = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => $propCode]);
+		if ($p = $rs->Fetch())
+		{
+			$id = (int)($p['ID'] ?? 0);
+			if ($id > 0)
+			{
+				$propIds[$id] = true;
+			}
+		}
+	}
+
+	return array_keys($propIds);
+}
+
+/**
+ * Ограничения на b_iblock_element как у CIBlockElement::GetList без SHOW_HISTORY:
+ * актуальная версия документа (workflow) и не редирект (MF_IS_REDIRECT ≠ Y).
+ */
+function mf_ce_sql_and_exportable_element(string $eAlias, int $iblockId): string
+{
+	$iblockId = (int)$iblockId;
+	$eAlias = preg_replace('~[^A-Za-z0-9_]+~', '', $eAlias) ?: 'e';
+	$and = " AND ({$eAlias}.WF_STATUS_ID = 1) AND ({$eAlias}.WF_PARENT_ELEMENT_ID IS NULL)";
+
+	$rs = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => 'MF_IS_REDIRECT']);
+	if ($p = $rs->Fetch())
+	{
+		$redirectPid = (int)($p['ID'] ?? 0);
+		if ($redirectPid > 0)
+		{
+			$and .= "
+			AND NOT EXISTS (
+				SELECT 1 FROM b_iblock_element_property prd
+				WHERE prd.IBLOCK_ELEMENT_ID = {$eAlias}.ID
+				AND prd.IBLOCK_PROPERTY_ID = {$redirectPid}
+				AND prd.VALUE = 'Y'
+			)";
+		}
+	}
+
+	return $and;
+}
+
+/**
+ * Список непустых значений MF_BRAND / MF_BRAND_NORM для выпадающего списка фильтра.
+ *
+ * @return list<string>
+ */
+function mf_ce_load_brand_choices(int $iblockId): array
+{
+	global $DB;
+
+	$iblockId = (int)$iblockId;
+	if ($iblockId <= 0)
+	{
+		return [];
+	}
+
+	$propIds = mf_ce_brand_property_ids($iblockId);
+	if ($propIds === [])
+	{
+		return [];
+	}
+
+	$in = implode(',', $propIds);
+	$exEl = mf_ce_sql_and_exportable_element('e', $iblockId);
+	$sql = "
+		SELECT DISTINCT TRIM(p.VALUE) AS V
+		FROM b_iblock_element_property p
+		INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID AND e.IBLOCK_ID = {$iblockId}
+		WHERE p.IBLOCK_PROPERTY_ID IN ({$in})
+			AND p.VALUE IS NOT NULL
+			AND TRIM(p.VALUE) <> ''
+			{$exEl}
+	";
+
+	$q = $DB->Query($sql);
+	if (!$q)
+	{
+		return [];
+	}
+
+	$seen = [];
+	while ($r = $q->Fetch())
+	{
+		$v = trim((string)($r['V'] ?? ''));
+		if ($v === '')
+		{
+			continue;
+		}
+		$seen[$v] = true;
+	}
+
+	$out = array_keys($seen);
+	natcasesort($out);
+
+	return array_values($out);
+}
+
+/**
+ * Элементы, у которых в MF_BRAND или MF_BRAND_NORM после TRIM совпадает значение с выбранным в списке.
+ * Так же, как DISTINCT в mf_ce_load_brand_choices — без расхождений из-за пробелов в БД и без OR-фильтра GetList.
+ *
+ * @return list<int>
+ */
+function mf_ce_element_ids_for_brand_value(int $iblockId, string $brand): array
+{
+	global $DB;
+
+	$iblockId = (int)$iblockId;
+	$brand = trim($brand);
+	if ($iblockId <= 0 || $brand === '')
+	{
+		return [];
+	}
+
+	$propIds = mf_ce_brand_property_ids($iblockId);
+	if ($propIds === [])
+	{
+		return [];
+	}
+
+	$in = implode(',', $propIds);
+	$b = $DB->ForSql($brand);
+	$exEl = mf_ce_sql_and_exportable_element('e', $iblockId);
+	$sql = "
+		SELECT DISTINCT p.IBLOCK_ELEMENT_ID AS ID
+		FROM b_iblock_element_property p
+		INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID AND e.IBLOCK_ID = {$iblockId}
+		WHERE p.IBLOCK_PROPERTY_ID IN ({$in})
+			AND TRIM(p.VALUE) = TRIM('{$b}')
+			{$exEl}
+	";
+
+	$q = $DB->Query($sql);
+	if (!$q)
+	{
+		return [];
+	}
+
+	$out = [];
+	while ($r = $q->Fetch())
+	{
+		$id = (int)($r['ID'] ?? 0);
+		if ($id > 0)
+		{
+			$out[$id] = true;
+		}
+	}
+
+	return array_keys($out);
 }
 
 function mf_ce_section_name(int $iblockId, int $sectionId): string
@@ -507,13 +682,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 
 	$onlyActive = isset($_POST['only_active']) && $_POST['only_active'] === 'Y';
 
+	$brandFilter = trim((string)($_POST['brand'] ?? ''));
+
 	$filter = [
 		'IBLOCK_ID' => $iblockId,
 		'!=PROPERTY_MF_IS_REDIRECT' => 'Y',
+		'CHECK_PERMISSIONS' => 'N',
 	];
 	if ($onlyActive)
 	{
 		$filter['ACTIVE'] = 'Y';
+	}
+
+	if ($brandFilter !== '')
+	{
+		$brandIds = mf_ce_element_ids_for_brand_value($iblockId, $brandFilter);
+		// Несовпадение по TRIM между списком и GetList больше не возможно; при пустом списке id — пустая выгрузка.
+		$filter['ID'] = $brandIds === [] ? -1 : $brandIds;
 	}
 
 	$select = [
@@ -547,6 +732,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 	};
 
 	$fname = 'catalog_' . date('Y-m-d');
+	if ($brandFilter !== '')
+	{
+		$slug = preg_replace('~[^a-zA-Z0-9_.-]+~', '_', $brandFilter) ?? '';
+		$slug = trim((string)$slug, '_.');
+		if ($slug === '')
+		{
+			$slug = 'brand_' . substr(md5($brandFilter), 0, 10);
+		}
+		$fname .= '_' . $slug;
+	}
 	try
 	{
 		// Админский prolog держит свой output buffer: без сброса CSV/XLSX часто не попадают в ответ или приходят «пустыми».
@@ -600,6 +795,7 @@ $APPLICATION->SetTitle('Выгрузка товаров');
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 
 $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+$mfCeBrandChoices = mf_ce_load_brand_choices($iblockId);
 
 ?>
 <form method="post" action="<?= mf_ce_esc((string)$APPLICATION->GetCurPage()) ?>?lang=<?= mf_ce_esc($langUi) ?>">
@@ -613,6 +809,7 @@ $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 		Редиректы (MF_IS_REDIRECT) не выгружаются.
 		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
 		XLSX — ZIP со сжатием, при тех же данных файл обычно меньше CSV; на очень больших каталогах надёжнее CSV (быстрее, меньше таймаутов).
+		По желанию ограничьте выгрузку <strong>брендом</strong> (список строится по заполненным MF_BRAND / MF_BRAND_NORM в каталоге).
 	</p>
 
 	<table class="adm-detail-content-table edit-table" style="max-width:920px">
@@ -629,6 +826,18 @@ $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 			<td>
 				<label><input type="checkbox" name="only_active" value="Y" checked /> только активные элементы</label>
 				<div style="margin-top:6px;color:#666;font-size:12px;">Элементы-редиректы (MF_IS_REDIRECT) в выгрузку не попадают.</div>
+			</td>
+		</tr>
+		<tr>
+			<td>Бренд</td>
+			<td>
+				<select name="brand" style="max-width:420px">
+					<option value="">— весь каталог —</option>
+					<?php foreach ($mfCeBrandChoices as $b): ?>
+						<option value="<?= mf_ce_esc($b) ?>"><?= mf_ce_esc($b) ?></option>
+					<?php endforeach; ?>
+				</select>
+				<div style="margin-top:6px;color:#666;font-size:12px;">Только значения у элементов, которые реально попадают в выгрузку: не редирект (MF_IS_REDIRECT), актуальная запись без родителя в workflow (как у GetList). «Лишние» длинные строки из дублей/черновиков в списке не показываются.</div>
 			</td>
 		</tr>
 	</table>
