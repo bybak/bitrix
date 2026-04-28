@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 /**
- * Админка: выгрузка каталога в CSV / XLSX с выбором полей.
- * Обязательные колонки: бренд, артикул, наименование.
+ * Админка: выгрузка каталога в CSV / XLSX.
+ * Колонки фиксированные; фото — как на витрине (MF_EXT_IMAGES → meta → mf_mf_product_img_url).
  */
 
 use Bitrix\Main\Loader;
+use Bitrix\Iblock\InheritedProperty\ElementValues;
+use Bitrix\Iblock\InheritedProperty\ValuesQueue;
 
 if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
 {
@@ -65,60 +67,141 @@ function mf_ce_col_letter(int $n): string
 }
 
 /**
- * Дополнительные колонки (кроме бренд / артикул / наименование).
- *
- * @return array<string, array{label: string, group: string}>
+ * @param array<string, mixed> $el fetch из CIBlockElement::GetList(GetNext)
+ * @return list<string> непустые URL из свойства MF_EXT_IMAGES
  */
-function mf_ce_optional_field_map(): array
+function mf_ce_collect_ext_image_urls(array $el): array
 {
-	return [
-		'elem_ID' => ['label' => 'ID элемента', 'group' => 'Дополнительно'],
-		'elem_DATE_CREATE' => ['label' => 'Дата создания', 'group' => 'Дополнительно'],
-		'elem_TIMESTAMP_X' => ['label' => 'Дата изменения', 'group' => 'Дополнительно'],
-		'elem_XML_ID' => ['label' => 'Внешний код (XML_ID)', 'group' => 'Дополнительно'],
-		'elem_DETAIL_TEXT' => ['label' => 'Детальное описание', 'group' => 'Дополнительно'],
-	];
+	$v = $el['PROPERTY_MF_EXT_IMAGES_VALUE'] ?? null;
+	if ($v === null || $v === '')
+	{
+		return [];
+	}
+	if (is_array($v))
+	{
+		$out = [];
+		foreach ($v as $one)
+		{
+			$s = trim((string)$one);
+			if ($s !== '')
+			{
+				$out[] = $s;
+			}
+		}
+
+		return array_values($out);
+	}
+	$s = trim((string)$v);
+
+	return $s !== '' ? [$s] : [];
+}
+
+function mf_ce_section_name(int $iblockId, int $sectionId): string
+{
+	static $cache = [];
+	if ($sectionId <= 0)
+	{
+		return '';
+	}
+	$key = $iblockId . ':' . $sectionId;
+	if (array_key_exists($key, $cache))
+	{
+		return $cache[$key];
+	}
+	$cache[$key] = '';
+	$rs = \CIBlockSection::GetList(
+		[],
+		['IBLOCK_ID' => $iblockId, 'ID' => $sectionId],
+		false,
+		['nTopCount' => 1],
+		['ID', 'NAME']
+	);
+	if ($r = $rs->Fetch())
+	{
+		$cache[$key] = trim((string)($r['NAME'] ?? ''));
+	}
+
+	return $cache[$key];
 }
 
 /**
- * @param array<string, true> $optKeys
- * @return list<string>
+ * Первое фото как на детальной (bootstrap_v4): EXT → meta аналогов → mf_mf_product_img_url(CODE,1).
  */
-function mf_ce_build_select(array $optKeys): array
+function mf_ce_primary_photo_url(array $el, int $elementId): string
 {
-	$sel = [
-		'NAME',
-		'PROPERTY_MF_BRAND',
-		'PROPERTY_MF_BRAND_NORM',
-		'PROPERTY_CML2_ARTICLE',
-		'PROPERTY_MF_ARTICLE_NORM',
-	];
-
-	$elemToField = [
-		'elem_ID' => 'ID',
-		'elem_DATE_CREATE' => 'DATE_CREATE',
-		'elem_TIMESTAMP_X' => 'TIMESTAMP_X',
-		'elem_XML_ID' => 'XML_ID',
-		'elem_DETAIL_TEXT' => 'DETAIL_TEXT',
-	];
-
-	foreach ($elemToField as $key => $field)
+	$ext = mf_ce_collect_ext_image_urls($el);
+	if ($ext !== [])
 	{
-		if (isset($optKeys[$key]))
+		return $ext[0];
+	}
+	if ($elementId > 0)
+	{
+		$analogsPath = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/bitrix/php_interface/include/mf_analogs.php';
+		if (is_file($analogsPath))
 		{
-			$sel[] = $field;
+			require_once $analogsPath;
+		}
+		if (function_exists('mf_analogs_meta_images_for_product'))
+		{
+			$meta = mf_analogs_meta_images_for_product($elementId);
+			if (is_array($meta))
+			{
+				foreach ($meta as $u)
+				{
+					$s = trim((string)$u);
+					if ($s !== '')
+					{
+						return $s;
+					}
+				}
+			}
 		}
 	}
+	$code = trim((string)($el['CODE'] ?? ''));
+	if ($code !== '' && function_exists('mf_mf_product_img_url'))
+	{
+		return (string)mf_mf_product_img_url($code, 1);
+	}
 
-	return array_values(array_unique($sel));
+	return '';
+}
+
+function mf_ce_decode_iprop(?string $s): string
+{
+	if ($s === null || $s === '')
+	{
+		return '';
+	}
+
+	return html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+}
+
+/** @return list<string> */
+function mf_ce_export_headers(): array
+{
+	return [
+		'id',
+		'Бренд',
+		'Артикул',
+		'Наименование',
+		'Раздел товара',
+		'Краткий текст',
+		'Описание',
+		'Заголовок страницы (title)',
+		'Описание страницы (description)',
+		'Ключевые слова страницы (keywords)',
+		'ЧПУ страницы (slug)',
+		'Фото',
+	];
 }
 
 /**
  * @param array<string, mixed> $el
- * @param array<string, true> $optKeys
+ * @return list<string>
  */
-function mf_ce_row_values(array $el, array $optKeys): array
+function mf_ce_build_row(int $iblockId, array $el): array
 {
+	$id = (int)($el['ID'] ?? 0);
 	$brand = trim((string)($el['PROPERTY_MF_BRAND_VALUE'] ?? ''));
 	if ($brand === '')
 	{
@@ -130,21 +213,46 @@ function mf_ce_row_values(array $el, array $optKeys): array
 		$article = trim((string)($el['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''));
 	}
 	$name = trim((string)($el['NAME'] ?? ''));
+	$sectionId = (int)($el['IBLOCK_SECTION_ID'] ?? 0);
+	$sectionName = mf_ce_section_name($iblockId, $sectionId);
+	$preview = (string)($el['PREVIEW_TEXT'] ?? '');
+	$detail = (string)($el['DETAIL_TEXT'] ?? '');
+	$slug = trim((string)($el['CODE'] ?? ''));
 
-	$row = [$brand, $article, $name];
-
-	$order = ['elem_ID', 'elem_DATE_CREATE', 'elem_TIMESTAMP_X', 'elem_XML_ID', 'elem_DETAIL_TEXT'];
-	foreach ($order as $k)
+	$seoTitle = '';
+	$seoDesc = '';
+	$seoKw = '';
+	if ($id > 0)
 	{
-		if (!isset($optKeys[$k]))
-		{
-			continue;
-		}
-		$f = str_replace('elem_', '', $k);
-		$row[] = isset($el[$f]) ? (string)$el[$f] : '';
+		$ip = new ElementValues($iblockId, $id);
+		$iprops = $ip->getValues();
+		$seoTitle = mf_ce_decode_iprop((string)($iprops['ELEMENT_META_TITLE'] ?? ''));
+		$seoDesc = mf_ce_decode_iprop((string)($iprops['ELEMENT_META_DESCRIPTION'] ?? ''));
+		$seoKw = mf_ce_decode_iprop((string)($iprops['ELEMENT_META_KEYWORDS'] ?? ''));
 	}
 
-	return $row;
+	$photo = mf_ce_primary_photo_url($el, $id);
+
+	// ElementValues копит все element_id в статической очереди — без сброса на большом каталоге съедает сотни MB RAM.
+	if (class_exists(ValuesQueue::class))
+	{
+		ValuesQueue::deleteAll();
+	}
+
+	return [
+		(string)$id,
+		$brand,
+		$article,
+		$name,
+		$sectionName,
+		$preview,
+		$detail,
+		$seoTitle,
+		$seoDesc,
+		$seoKw,
+		$slug,
+		$photo,
+	];
 }
 
 /**
@@ -381,26 +489,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 		return;
 	}
 
+	// Пока скрипт держит сессию открытой, PHP блокирует её файл: другие вкладки с тем же пользователем
+	// (витрина, корзина) ждут на session_start() и «висят». Sessid уже проверен — можно отпустить блокировку.
+	if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE)
+	{
+		session_write_close();
+	}
+
 	$format = mb_strtolower(trim((string)($_POST['format'] ?? 'csv')));
 	if ($format !== 'csv' && $format !== 'xlsx')
 	{
 		$format = 'csv';
-	}
-
-	$map = mf_ce_optional_field_map();
-	$optPosted = $_POST['opt'] ?? [];
-	if (!is_array($optPosted))
-	{
-		$optPosted = [];
-	}
-	$optKeys = [];
-	foreach ($optPosted as $k)
-	{
-		$k = (string)$k;
-		if (isset($map[$k]))
-		{
-			$optKeys[$k] = true;
-		}
 	}
 
 	$onlyActive = isset($_POST['only_active']) && $_POST['only_active'] === 'Y';
@@ -414,32 +513,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 		$filter['ACTIVE'] = 'Y';
 	}
 
-	$select = mf_ce_build_select($optKeys);
+	$select = [
+		'ID',
+		'NAME',
+		'CODE',
+		'IBLOCK_SECTION_ID',
+		'PREVIEW_TEXT',
+		'DETAIL_TEXT',
+		'PROPERTY_MF_BRAND',
+		'PROPERTY_MF_BRAND_NORM',
+		'PROPERTY_CML2_ARTICLE',
+		'PROPERTY_MF_ARTICLE_NORM',
+		'PROPERTY_MF_EXT_IMAGES',
+	];
 
-	$headers = ['Бренд', 'Артикул', 'Наименование'];
-	$order = ['elem_ID', 'elem_DATE_CREATE', 'elem_TIMESTAMP_X', 'elem_XML_ID', 'elem_DETAIL_TEXT'];
-	foreach ($order as $k)
-	{
-		if (isset($optKeys[$k]))
-		{
-			$headers[] = $map[$k]['label'] ?? $k;
-		}
-	}
+	$headers = mf_ce_export_headers();
 
 	@set_time_limit(0);
-	@ini_set('memory_limit', '512M');
+	@ini_set('memory_limit', '1024M');
 
-	$gen = static function () use ($filter, $select, $optKeys): \Generator {
+	$gen = static function () use ($filter, $select, $iblockId): \Generator {
 		$res = \CIBlockElement::GetList(['ID' => 'ASC'], $filter, false, false, $select);
 		while ($el = $res->GetNext(false, false))
 		{
-			yield mf_ce_row_values($el, $optKeys);
+			$row = mf_ce_build_row($iblockId, $el);
+			unset($el);
+			yield $row;
 		}
 	};
 
 	$fname = 'catalog_' . date('Y-m-d');
 	try
 	{
+		// Админский prolog держит свой output buffer: без сброса CSV/XLSX часто не попадают в ответ или приходят «пустыми».
+		while (ob_get_level() > 0)
+		{
+			ob_end_clean();
+		}
+
 		if ($format === 'csv')
 		{
 			header('Content-Type: text/csv; charset=utf-8');
@@ -458,9 +569,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 		{
 			mf_ce_output_xlsx($fname . '.xlsx', $headers, $gen());
 		}
-		require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
 
-		exit;
+		if (class_exists(\Bitrix\Main\Application::class))
+		{
+			\Bitrix\Main\Application::getInstance()->terminate();
+		}
+		exit(0);
 	}
 	catch (Throwable $e)
 	{
@@ -481,8 +595,6 @@ $APPLICATION->SetTitle('Выгрузка товаров');
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 
-$optMap = mf_ce_optional_field_map();
-
 $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 
 ?>
@@ -492,9 +604,11 @@ $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 
 	<p class="adm-info-message" style="max-width:720px">
 		Каталог: инфоблок ID <strong><?= (int)$iblockId ?></strong>.
-		Колонки <strong>Бренд</strong> (MF_BRAND / MF_BRAND_NORM), <strong>Артикул</strong> (CML2_ARTICLE / MF_ARTICLE_NORM) и <strong>Наименование</strong> (NAME) всегда присутствуют в файле.
-		Редиректы-дубли (MF_IS_REDIRECT) не выгружаются.
-		Файл <strong>XLSX</strong> — это ZIP со сжатием: при тех же данных он обычно заметно меньше, чем CSV, это нормально.
+		В файл всегда входят колонки: id, бренд, артикул, наименование, <strong>основной раздел</strong>, краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>URL первого фото как на сайте</strong>
+		(MF_EXT_IMAGES при наличии, иначе метаданные аналогов, иначе схема <code>mf_mf_product_img_url</code> — без файлов в <code>/upload/</code>).
+		Редиректы (MF_IS_REDIRECT) не выгружаются.
+		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
+		XLSX — ZIP со сжатием, при тех же данных файл обычно меньше CSV; на очень больших каталогах надёжнее CSV (быстрее, меньше таймаутов).
 	</p>
 
 	<table class="adm-detail-content-table edit-table" style="max-width:920px">
@@ -511,22 +625,6 @@ $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 			<td>
 				<label><input type="checkbox" name="only_active" value="Y" checked /> только активные элементы</label>
 				<div style="margin-top:6px;color:#666;font-size:12px;">Элементы-редиректы (MF_IS_REDIRECT) в выгрузку не попадают.</div>
-			</td>
-		</tr>
-		<tr>
-			<td style="vertical-align:top">Дополнительные колонки</td>
-			<td>
-				<?php
-				foreach ($optMap as $key => $meta)
-				{
-					$label = $meta['label'];
-					$id = 'mf_ce_' . preg_replace('~[^a-z0-9_]+~i', '_', $key);
-					echo '<label style="display:block;margin:6px 0">';
-					echo '<input type="checkbox" name="opt[]" value="' . mf_ce_esc($key) . '" id="' . mf_ce_esc($id) . '" /> ';
-					echo mf_ce_esc($label);
-					echo '</label>';
-				}
-				?>
 			</td>
 		</tr>
 	</table>
