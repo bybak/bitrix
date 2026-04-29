@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Админка: выгрузка каталога в CSV / XLSX.
+ * Админка: выгрузка каталога в CSV / XLSX и загрузка CSV того же формата (обновление по id).
  * Колонки фиксированные; фото — как на витрине (MF_EXT_IMAGES → meta → mf_mf_product_img_url).
  */
 
@@ -133,6 +133,39 @@ function mf_ce_section_name(int $iblockId, int $sectionId): string
 }
 
 /**
+ * Цепочка названий разделов от корня до $sectionId (как в навигации), через « / ».
+ */
+function mf_ce_section_chain_path(int $iblockId, int $sectionId): string
+{
+	if ($sectionId <= 0 || $iblockId <= 0)
+	{
+		return '';
+	}
+	static $cache = [];
+	$key = $iblockId . ':' . $sectionId;
+	if (array_key_exists($key, $cache))
+	{
+		return $cache[$key];
+	}
+	$names = [];
+	$nav = \CIBlockSection::GetNavChain($iblockId, $sectionId, ['ID', 'NAME']);
+	if ($nav)
+	{
+		while ($p = $nav->Fetch())
+		{
+			$n = trim((string)($p['NAME'] ?? ''));
+			if ($n !== '')
+			{
+				$names[] = $n;
+			}
+		}
+	}
+	$cache[$key] = $names === [] ? '' : implode(' / ', $names);
+
+	return $cache[$key];
+}
+
+/**
  * Первое фото как на детальной (bootstrap_v4): EXT → meta аналогов → mf_mf_product_img_url(CODE,1).
  */
 function mf_ce_primary_photo_url(array $el, int $elementId): string
@@ -184,6 +217,12 @@ function mf_ce_decode_iprop(?string $s): string
 	return html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 }
 
+/** Текст для ячеек выгрузки: сущности вида &lt;…&gt; → реальные «&lt;» в значении (теги и символы, не entity-код). */
+function mf_ce_export_plain(?string $s): string
+{
+	return mf_ce_decode_iprop($s);
+}
+
 /** @return list<string> */
 function mf_ce_export_headers(): array
 {
@@ -204,6 +243,298 @@ function mf_ce_export_headers(): array
 	];
 }
 
+/** @param resource $fp */
+function mf_ce_fgetcsv_row($fp): array|false|null
+{
+	if (!\is_resource($fp))
+	{
+		return null;
+	}
+
+	return PHP_VERSION_ID >= 70400
+		? fgetcsv($fp, 0, ';', '"', '\\')
+		: fgetcsv($fp, 0, ';', '"');
+}
+
+function mf_ce_strip_utf8_bom(string $s): string
+{
+	if ($s !== '' && strncmp($s, "\xEF\xBB\xBF", 3) === 0)
+	{
+		return substr($s, 3);
+	}
+
+	return $s;
+}
+
+/**
+ * Первый раздел инфоблока с точным именем (активный цепочкой).
+ */
+function mf_ce_section_id_by_name(int $iblockId, string $name): ?int
+{
+	$name = trim($name);
+	if ($name === '' || $iblockId <= 0)
+	{
+		return null;
+	}
+
+	$rs = \CIBlockSection::GetList(
+		['ID' => 'ASC'],
+		['IBLOCK_ID' => $iblockId, 'NAME' => $name, 'GLOBAL_ACTIVE' => 'Y'],
+		false,
+		['nTopCount' => 1],
+		['ID']
+	);
+	$r = $rs->Fetch();
+
+	return $r ? (int)($r['ID'] ?? 0) : null;
+}
+
+/**
+ * ID конечного раздела по цепочке «Родитель / Дочерний / …» (как в выгрузке).
+ * Одно имя без «/» — как раньше: первый подходящий активный раздел с таким NAME.
+ */
+function mf_ce_section_id_by_chain_path(int $iblockId, string $path): ?int
+{
+	$path = trim($path);
+	if ($path === '' || $iblockId <= 0)
+	{
+		return null;
+	}
+	$parts = preg_split('#\s*/\s*#u', $path, -1, PREG_SPLIT_NO_EMPTY);
+	if ($parts === false)
+	{
+		return null;
+	}
+	$parts = array_values(array_filter(array_map('trim', $parts), static fn($s) => $s !== ''));
+	if ($parts === [])
+	{
+		return null;
+	}
+	if (count($parts) === 1)
+	{
+		return mf_ce_section_id_by_name($iblockId, $parts[0]);
+	}
+	$parentId = 0;
+	foreach ($parts as $segment)
+	{
+		$filter = [
+			'IBLOCK_ID' => $iblockId,
+			'GLOBAL_ACTIVE' => 'Y',
+			'NAME' => $segment,
+			'SECTION_ID' => $parentId,
+		];
+		$rs = \CIBlockSection::GetList(['ID' => 'ASC'], $filter, false, ['nTopCount' => 1], ['ID']);
+		$r = $rs->Fetch();
+		if (!is_array($r))
+		{
+			return null;
+		}
+		$parentId = (int)($r['ID'] ?? 0);
+		if ($parentId <= 0)
+		{
+			return null;
+		}
+	}
+
+	return $parentId;
+}
+
+/**
+ * @param array<string, string> $row колонки по заголовкам выгрузки
+ * @param array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, errors:list<string>} $stats
+ */
+function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &$stats): void
+{
+	$id = (int)trim((string)($row['id'] ?? ''));
+	if ($id <= 0)
+	{
+		$stats['skipped_no_id']++;
+
+		return;
+	}
+
+	$rsEl = \CIBlockElement::GetList(
+		[],
+		['IBLOCK_ID' => $iblockId, 'ID' => $id, 'CHECK_PERMISSIONS' => 'N'],
+		false,
+		false,
+		['ID', 'IBLOCK_ID']
+	);
+	$arEl = $rsEl->Fetch();
+	if (!is_array($arEl) || (int)($arEl['IBLOCK_ID'] ?? 0) !== $iblockId)
+	{
+		$stats['errors'][] = 'Строка ' . $lineNum . ': элемент #' . $id . ' не найден в инфоблоке ' . $iblockId;
+
+		return;
+	}
+
+	$rsRed = \CIBlockElement::GetProperty($iblockId, $id, 'sort', 'asc', ['CODE' => 'MF_IS_REDIRECT']);
+	$red = $rsRed ? $rsRed->Fetch() : null;
+	if (is_array($red) && (string)($red['VALUE'] ?? '') === 'Y')
+	{
+		$stats['skipped_redirect']++;
+
+		return;
+	}
+
+	global $USER;
+	$uid = (is_object($USER) && method_exists($USER, 'GetID')) ? (int)$USER->GetID() : 1;
+
+	$fields = [
+		'MODIFIED_BY' => $uid,
+		'PREVIEW_TEXT' => (string)($row['Краткий текст'] ?? ''),
+		'PREVIEW_TEXT_TYPE' => 'html',
+		'DETAIL_TEXT' => (string)($row['Описание'] ?? ''),
+		'DETAIL_TEXT_TYPE' => 'html',
+		'IPROPERTY_TEMPLATES' => [
+			'ELEMENT_META_TITLE' => trim((string)($row['Заголовок страницы (title)'] ?? '')),
+			'ELEMENT_META_DESCRIPTION' => trim((string)($row['Описание страницы (description)'] ?? '')),
+			'ELEMENT_META_KEYWORDS' => trim((string)($row['Ключевые слова страницы (keywords)'] ?? '')),
+		],
+	];
+
+	$name = trim((string)($row['Наименование'] ?? ''));
+	if ($name !== '')
+	{
+		$fields['NAME'] = $name;
+	}
+
+	$slug = trim((string)($row['ЧПУ страницы (slug)'] ?? ''));
+	if ($slug !== '')
+	{
+		$fields['CODE'] = $slug;
+	}
+
+	$sectionName = trim((string)($row['Раздел товара'] ?? ''));
+	if ($sectionName !== '')
+	{
+		$sid = mf_ce_section_id_by_chain_path($iblockId, $sectionName);
+		if ($sid !== null)
+		{
+			$fields['IBLOCK_SECTION_ID'] = $sid;
+		}
+		else
+		{
+			$stats['errors'][] = 'Строка ' . $lineNum . ' (id ' . $id . '): раздел «' . $sectionName . '» не найден — раздел не изменён';
+		}
+	}
+
+	$props = [
+		'MF_BRAND' => trim((string)($row['Бренд'] ?? '')),
+		'MF_BRAND_NORM' => trim((string)($row['Бренд'] ?? '')),
+		'CML2_ARTICLE' => trim((string)($row['Артикул'] ?? '')),
+		'MF_ARTICLE_NORM' => trim((string)($row['Артикул'] ?? '')),
+		'OEM' => trim((string)($row['OEM'] ?? '')),
+	];
+	$photo = trim((string)($row['Фото'] ?? ''));
+	if ($photo !== '')
+	{
+		$props['MF_EXT_IMAGES'] = $photo;
+	}
+	$fields['PROPERTY_VALUES'] = $props;
+
+	$ibEl = new \CIBlockElement();
+	if (!$ibEl->Update($id, $fields, false, false))
+	{
+		$stats['errors'][] = 'Строка ' . $lineNum . ' (id ' . $id . '): ошибка обновления: ' . (string)$ibEl->LAST_ERROR;
+
+		return;
+	}
+
+	$stats['updated']++;
+}
+
+/**
+ * @return array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, errors:list<string>}
+ */
+function mf_ce_run_csv_import(int $iblockId, string $absolutePath): array
+{
+	$stats = [
+		'updated' => 0,
+		'skipped' => 0,
+		'skipped_redirect' => 0,
+		'skipped_no_id' => 0,
+		'errors' => [],
+	];
+
+	$expected = mf_ce_export_headers();
+	$fp = fopen($absolutePath, 'rb');
+	if ($fp === false)
+	{
+		$stats['errors'][] = 'Не удалось открыть файл.';
+
+		return $stats;
+	}
+
+	$headerRow = mf_ce_fgetcsv_row($fp);
+	if ($headerRow === null || $headerRow === false)
+	{
+		fclose($fp);
+		$stats['errors'][] = 'Пустой файл или нет строки заголовка.';
+
+		return $stats;
+	}
+
+	$headerRow[0] = isset($headerRow[0]) ? mf_ce_strip_utf8_bom((string)$headerRow[0]) : '';
+	$headers = array_map(static fn($c) => trim((string)$c), $headerRow);
+	$idx = [];
+	foreach ($headers as $i => $label)
+	{
+		if ($label !== '' && !isset($idx[$label]))
+		{
+			$idx[$label] = $i;
+		}
+	}
+
+	foreach ($expected as $col)
+	{
+		if (!isset($idx[$col]))
+		{
+			fclose($fp);
+			$stats['errors'][] = 'В заголовке CSV нет колонки «' . $col . '». Используйте файл выгрузки без изменения заголовков.';
+
+			return $stats;
+		}
+	}
+
+	$lineNum = 1;
+	while (($cells = mf_ce_fgetcsv_row($fp)) !== false)
+	{
+		$lineNum++;
+		if (!is_array($cells))
+		{
+			continue;
+		}
+		$nonEmpty = false;
+		foreach ($cells as $c)
+		{
+			if (trim((string)$c) !== '')
+			{
+				$nonEmpty = true;
+				break;
+			}
+		}
+		if (!$nonEmpty)
+		{
+			$stats['skipped']++;
+
+			continue;
+		}
+
+		$row = [];
+		foreach ($expected as $col)
+		{
+			$row[$col] = (string)($cells[$idx[$col]] ?? '');
+		}
+
+		mf_ce_import_apply_row($iblockId, $row, $lineNum, $stats);
+	}
+
+	fclose($fp);
+
+	return $stats;
+}
+
 /**
  * @param array<string, mixed> $el
  * @return list<string>
@@ -211,23 +542,23 @@ function mf_ce_export_headers(): array
 function mf_ce_build_row(int $iblockId, array $el): array
 {
 	$id = (int)($el['ID'] ?? 0);
-	$brand = trim((string)($el['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+	$brand = mf_ce_export_plain(trim((string)($el['PROPERTY_MF_BRAND_VALUE'] ?? '')));
 	if ($brand === '')
 	{
-		$brand = trim((string)($el['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
+		$brand = mf_ce_export_plain(trim((string)($el['PROPERTY_MF_BRAND_NORM_VALUE'] ?? '')));
 	}
-	$article = trim((string)($el['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
+	$article = mf_ce_export_plain(trim((string)($el['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')));
 	if ($article === '')
 	{
-		$article = trim((string)($el['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''));
+		$article = mf_ce_export_plain(trim((string)($el['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? '')));
 	}
-	$oem = trim((string)($el['PROPERTY_OEM_VALUE'] ?? ''));
-	$name = trim((string)($el['NAME'] ?? ''));
+	$oem = mf_ce_export_plain(trim((string)($el['PROPERTY_OEM_VALUE'] ?? '')));
+	$name = mf_ce_export_plain(trim((string)($el['NAME'] ?? '')));
 	$sectionId = (int)($el['IBLOCK_SECTION_ID'] ?? 0);
-	$sectionName = mf_ce_section_name($iblockId, $sectionId);
-	$preview = (string)($el['PREVIEW_TEXT'] ?? '');
-	$detail = (string)($el['DETAIL_TEXT'] ?? '');
-	$slug = trim((string)($el['CODE'] ?? ''));
+	$sectionName = mf_ce_export_plain(mf_ce_section_chain_path($iblockId, $sectionId));
+	$preview = mf_ce_export_plain((string)($el['PREVIEW_TEXT'] ?? ''));
+	$detail = mf_ce_export_plain((string)($el['DETAIL_TEXT'] ?? ''));
+	$slug = mf_ce_export_plain(trim((string)($el['CODE'] ?? '')));
 
 	$seoTitle = '';
 	$seoDesc = '';
@@ -241,7 +572,7 @@ function mf_ce_build_row(int $iblockId, array $el): array
 		$seoKw = mf_ce_decode_iprop((string)($iprops['ELEMENT_META_KEYWORDS'] ?? ''));
 	}
 
-	$photo = mf_ce_primary_photo_url($el, $id);
+	$photo = mf_ce_export_plain(mf_ce_primary_photo_url($el, $id));
 
 	// ElementValues копит все element_id в статической очереди — без сброса на большом каталоге съедает сотни MB RAM.
 	if (class_exists(ValuesQueue::class))
@@ -487,6 +818,64 @@ function mf_ce_output_xlsx(string $filename, array $headers, iterable $rows): vo
 	@unlink($zipPath);
 }
 
+$mfCeImportReport = null;
+
+// ——— Import CSV (тот же формат, что выгрузка) ———
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_import_do'] ?? '') === 'Y')
+{
+	if (!check_bitrix_sessid())
+	{
+		require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
+		\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Неверная сессия (sessid).']);
+		require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
+
+		return;
+	}
+
+	if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE)
+	{
+		session_write_close();
+	}
+
+	$file = $_FILES['mf_catalog_csv'] ?? null;
+	if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK)
+	{
+		$err = is_array($file) ? (int)($file['error'] ?? 0) : UPLOAD_ERR_NO_FILE;
+		$mfCeImportReport = [
+			'ok' => false,
+			'message' => $err === UPLOAD_ERR_NO_FILE
+				? 'Выберите CSV-файл.'
+				: ('Ошибка загрузки файла (код ' . $err . ').'),
+		];
+	}
+	else
+	{
+		$tmp = (string)($file['tmp_name'] ?? '');
+		$origName = (string)($file['name'] ?? '');
+		$ext = mb_strtolower((string)pathinfo($origName, PATHINFO_EXTENSION));
+		if ($ext !== 'csv')
+		{
+			$mfCeImportReport = ['ok' => false, 'message' => 'Допустим только формат .csv (как при выгрузке).'];
+		}
+		elseif ($tmp === '' || !is_uploaded_file($tmp))
+		{
+			$mfCeImportReport = ['ok' => false, 'message' => 'Некорректный временный файл загрузки.'];
+		}
+		else
+		{
+			try
+			{
+				$mfCeImportReport = ['ok' => true, 'stats' => mf_ce_run_csv_import($iblockId, $tmp)];
+			}
+			catch (Throwable $e)
+			{
+				$mfCeImportReport = ['ok' => false, 'message' => $e->getMessage()];
+			}
+		}
+	}
+}
+
 // ——— Export ———
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_do'] ?? '') === 'Y')
@@ -623,9 +1012,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 
 // ——— Form ———
 
-$APPLICATION->SetTitle('Выгрузка товаров');
+$APPLICATION->SetTitle('Выгрузка и загрузка каталога (CSV)');
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
+
+if (is_array($mfCeImportReport))
+{
+	if (empty($mfCeImportReport['ok']))
+	{
+		\CAdminMessage::ShowMessage([
+			'TYPE' => 'ERROR',
+			'MESSAGE' => mf_ce_esc((string)($mfCeImportReport['message'] ?? 'Ошибка импорта')),
+		]);
+	}
+	else
+	{
+		$st = $mfCeImportReport['stats'] ?? [];
+		$tUp = (int)($st['updated'] ?? 0);
+		$tNoId = (int)($st['skipped_no_id'] ?? 0);
+		$tRed = (int)($st['skipped_redirect'] ?? 0);
+		$tEmpty = (int)($st['skipped'] ?? 0);
+		$errs = $st['errors'] ?? [];
+		$msg = 'Импорт завершён. Обновлено элементов: ' . $tUp
+			. '; пропущено строк без id: ' . $tNoId
+			. '; пропущено редиректов: ' . $tRed
+			. '; пустых строк: ' . $tEmpty . '.';
+		\CAdminMessage::ShowMessage(['TYPE' => 'OK', 'MESSAGE' => $msg]);
+		if ($errs !== [])
+		{
+			$slice = array_slice($errs, 0, 12);
+			\CAdminMessage::ShowMessage([
+				'TYPE' => 'ERROR',
+				'MESSAGE' => mf_ce_esc('Предупреждения и ошибки (до 12): ' . implode(' | ', $slice)),
+			]);
+		}
+	}
+}
 
 $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 $mfCeBrandChoices = mf_ce_load_brand_choices($iblockId);
@@ -638,7 +1060,7 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 
 	<p class="adm-info-message" style="max-width:720px">
 		Каталог: инфоблок ID <strong><?= (int)$iblockId ?></strong>.
-		В файл всегда входят колонки: id, бренд, артикул, OEM, наименование, <strong>основной раздел</strong>, краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>URL первого фото как на сайте</strong>
+		В файл всегда входят колонки: id, бренд, артикул, OEM, наименование, <strong>цепочка разделов</strong> (от корня через « / », как в навигации каталога), краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>URL первого фото как на сайте</strong>
 		(MF_EXT_IMAGES при наличии, иначе метаданные аналогов, иначе схема <code>mf_mf_product_img_url</code> — без файлов в <code>/upload/</code>).
 		Редиректы (MF_IS_REDIRECT) не выгружаются.
 		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
@@ -678,6 +1100,32 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 
 	<br />
 	<input type="submit" class="adm-btn-save" value="Скачать выгрузку" />
+</form>
+
+<hr style="margin:28px 0;border:none;border-top:1px solid #e0e0e0" />
+
+<h2 class="adm-detail-title">Загрузка CSV (обновление по id)</h2>
+<form method="post" enctype="multipart/form-data" action="<?= mf_ce_esc((string)$APPLICATION->GetCurPage()) ?>?lang=<?= mf_ce_esc($langUi) ?>">
+	<?= bitrix_sessid_post() ?>
+	<input type="hidden" name="mf_catalog_import_do" value="Y" />
+
+	<p class="adm-info-message" style="max-width:720px">
+		Файл должен быть в <strong>том же формате</strong>, что и выгрузка CSV: первая строка — заголовки, разделитель полей «<strong>;</strong>», кодировка UTF-8 (с BOM или без).
+		Строки с <strong>id</strong>, существующим в инфоблоке <?= (int)$iblockId ?> и не являющимся редиректом (MF_IS_REDIRECT), будут обновлены.
+		Новые товары этим способом <strong>не создаются</strong>. Колонка «Фото»: непустое значение задаёт свойство MF_EXT_IMAGES (один URL); пустая — картинка из файла не меняется.
+		«Раздел товара»: цепочка <strong>Родитель / Дочерний / …</strong> (как в выгрузке) или одно имя раздела — подбирается активный раздел; если цепочка не найдена, остальные поля строки всё равно сохраняются, привязку к разделу не меняем.
+	</p>
+
+	<table class="adm-detail-content-table edit-table" style="max-width:920px">
+		<tr>
+			<td class="adm-detail-content-cell-l" width="35%">CSV-файл</td>
+			<td>
+				<input type="file" name="mf_catalog_csv" accept=".csv,text/csv" required />
+			</td>
+		</tr>
+	</table>
+	<br />
+	<input type="submit" class="adm-btn-save" value="Загрузить и обновить товары" />
 </form>
 
 <details class="adm-detail-content-table" style="max-width:920px;margin-top:24px">
