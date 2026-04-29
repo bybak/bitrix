@@ -11,7 +11,7 @@ if (is_file($__mfCvRm))
 }
 unset($__mfCvRm);
 
-if (empty($arResult['ITEMS']) || !function_exists('mf_catalog_listing_display_price'))
+if (empty($arResult['ITEMS']) || !function_exists('mf_catalog_storefront_price_when_in_stock'))
 {
 	return;
 }
@@ -26,17 +26,25 @@ foreach ($arResult['ITEMS'] as &$arItem)
 	{
 		continue;
 	}
-	$dp = mf_catalog_listing_display_price($pid);
+	$dp = mf_catalog_storefront_price_when_in_stock($pid);
 	if ($dp !== null && $dp > 0 && !empty($arItem['MIN_PRICE']) && is_array($arItem['MIN_PRICE']) && function_exists('mf_catalog_patch_bitrix_min_price_display'))
 	{
 		mf_catalog_patch_bitrix_min_price_display($arItem['MIN_PRICE'], (float)$dp);
+		foreach (['PRINT_VALUE', 'PRINT_DISCOUNT_VALUE'] as $k)
+		{
+			if (!empty($arItem['MIN_PRICE'][$k]) && is_string($arItem['MIN_PRICE'][$k])
+				&& strncmp($arItem['MIN_PRICE'][$k], 'От ', strlen('От ')) !== 0)
+			{
+				$arItem['MIN_PRICE'][$k] = 'От ' . $arItem['MIN_PRICE'][$k];
+			}
+		}
 	}
 	elseif ($hasMap && !empty($arItem['MIN_PRICE']) && is_array($arItem['MIN_PRICE']))
 	{
-		$arItem['MIN_PRICE']['PRINT_DISCOUNT_VALUE'] = 'Цена по запросу';
+		$arItem['MIN_PRICE']['PRINT_DISCOUNT_VALUE'] = 'Запросить цену';
 		$arItem['MIN_PRICE']['DISCOUNT_VALUE'] = 0;
 		$arItem['MIN_PRICE']['VALUE'] = 0;
-		$arItem['MIN_PRICE']['PRINT_VALUE'] = 'Цена по запросу';
+		$arItem['MIN_PRICE']['PRINT_VALUE'] = 'Запросить цену';
 	}
 }
 unset($arItem);
