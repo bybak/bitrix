@@ -13,28 +13,43 @@ if (!function_exists('mf_product_search_card_money'))
 		{
 			return '';
 		}
+		if (function_exists('mf_format_display_price_rub'))
+		{
+			return mf_format_display_price_rub($p);
+		}
 
-		return number_format($p, 1, '.', ' ') . ' ₽';
+		$r = round($p, 1);
+		$d = ((int)round(abs($r) * 10) % 10 === 0) ? 0 : 1;
+
+		return number_format($r, $d, '.', ' ') . ' ₽';
 	}
 }
 
 if (!function_exists('mf_product_search_card_min_price_print'))
 {
-	/** Минимальная цена по складам («От …»), как mf_catalog_listing_display_price (все склады, опт в mf_ep). */
+	/** Минимальная цена по складам с остатком (для подписи «От …»). */
 	function mf_product_search_card_min_price_print(int $productId): string
 	{
 		$productId = (int)$productId;
-		if ($productId <= 0 || !function_exists('mf_catalog_listing_display_price'))
+		if ($productId <= 0 || !function_exists('mf_catalog_storefront_price_when_in_stock'))
 		{
 			return '';
 		}
-		$minP = mf_catalog_listing_display_price($productId);
+		$minP = mf_catalog_storefront_price_when_in_stock($productId);
 		if ($minP === null || (float)$minP <= 0)
 		{
 			return '';
 		}
 
-		return number_format((float)$minP, 1, '.', ' ') . ' ₽';
+		$mp = (float)$minP;
+		if (function_exists('mf_format_display_price_rub'))
+		{
+			return mf_format_display_price_rub($mp);
+		}
+		$r = round($mp, 1);
+		$d = ((int)round(abs($r) * 10) % 10 === 0) ? 0 : 1;
+
+		return number_format($r, $d, '.', ' ') . ' ₽';
 	}
 }
 
@@ -256,7 +271,6 @@ if (!function_exists('mf_product_search_card_render'))
 	 *   title_html:string,
 	 *   brand?:string,
 	 *   article?:string,
-	 *   oem?:string,
 	 *   product_name_plain:string,
 	 *   req_user_name?:string,
 	 *   req_user_email?:string,
@@ -271,7 +285,6 @@ if (!function_exists('mf_product_search_card_render'))
 		$titleHtml = (string)($p['title_html'] ?? '');
 		$brand = trim((string)($p['brand'] ?? ''));
 		$article = trim((string)($p['article'] ?? ''));
-		$oem = trim((string)($p['oem'] ?? ''));
 		$productNamePlain = trim((string)($p['product_name_plain'] ?? ''));
 		$reqName = trim((string)($p['req_user_name'] ?? ''));
 		$reqEmail = trim((string)($p['req_user_email'] ?? ''));
@@ -310,10 +323,10 @@ if (!function_exists('mf_product_search_card_render'))
 				</a>
 				<div class="mf-search-card__main">
 					<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
-					<div class="mf-product-meta" aria-label="Цена, бренд, артикул и OEM">
+					<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">От</span>
-							<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : '—' ?></span>
+							<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : 'Запросить цену' ?></span>
 						</div>
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">Бренд</span>
@@ -322,10 +335,6 @@ if (!function_exists('mf_product_search_card_render'))
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">Артикул</span>
 							<span class="mf-product-meta__value"><?= $article !== '' ? htmlspecialcharsbx($article) : '—' ?></span>
-						</div>
-						<div class="mf-product-meta__item">
-							<span class="mf-product-meta__label">OEM</span>
-							<span class="mf-product-meta__value"><?= $oem !== '' ? htmlspecialcharsbx($oem) : '—' ?></span>
 						</div>
 					</div>
 				</div>
@@ -436,7 +445,7 @@ if (!function_exists('mf_product_search_card_render'))
 					</table>
 				<?php else: ?>
 					<div class="mf-search-card__no-stock-row">
-						<div class="mf-search-card__no-stock">Под заказ</div>
+						<div class="mf-search-card__no-stock">Нет данных по складам</div>
 						<button
 							type="button"
 							class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price-global"

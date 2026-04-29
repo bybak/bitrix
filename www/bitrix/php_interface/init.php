@@ -1815,6 +1815,68 @@ if (!function_exists('mf_min_price_from_available_stores'))
 	}
 }
 
+if (!function_exists('mf_catalog_product_has_positive_stock'))
+{
+	/**
+	 * Есть ли положительный остаток хотя бы на одном складе (по кластеру каталожных PRODUCT_ID).
+	 */
+	function mf_catalog_product_has_positive_stock(int $productId): bool
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !class_exists(\CCatalogStoreProduct::class))
+		{
+			return false;
+		}
+		if (!function_exists('mf_catalog_product_cluster_ids'))
+		{
+			return false;
+		}
+		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
+		{
+			$cid = (int)$cid;
+			if ($cid <= 0)
+			{
+				continue;
+			}
+			$rs = \CCatalogStoreProduct::GetList(
+				[],
+				['PRODUCT_ID' => $cid, '>AMOUNT' => 0],
+				false,
+				['nTopCount' => 1],
+				['ID']
+			);
+			if ($rs->Fetch())
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_catalog_storefront_price_when_in_stock'))
+{
+	/**
+	 * Минимальная витринная цена по складам с остатком (как mf_min_price_from_available_stores).
+	 * Если нигде нет остатка — null (не показываем «От …»; в списке — «Запросить цену»).
+	 */
+	function mf_catalog_storefront_price_when_in_stock(int $productId): ?float
+	{
+		if (!function_exists('mf_min_price_from_available_stores'))
+		{
+			return null;
+		}
+		[$min,] = mf_min_price_from_available_stores($productId);
+		if ($min === null || (float)$min <= 0)
+		{
+			return null;
+		}
+
+		return (float)$min;
+	}
+}
+
 if (!function_exists('mf_catalog_listing_display_price'))
 {
 	/**
@@ -1889,6 +1951,20 @@ if (!function_exists('mf_catalog_use_bitrix_base_price_fallback'))
 	}
 }
 
+if (!function_exists('mf_format_display_price_rub'))
+{
+	/**
+	 * Витринное отображение цены в RUB: округление до десятых; целые суммы без «.0».
+	 */
+	function mf_format_display_price_rub(float $amount): string
+	{
+		$rounded = round($amount, 1);
+		$decimals = ((int)round(abs($rounded) * 10) % 10 === 0) ? 0 : 1;
+
+		return number_format($rounded, $decimals, '.', ' ') . ' ₽';
+	}
+}
+
 if (!function_exists('mf_catalog_patch_bitrix_min_price_display'))
 {
 	/**
@@ -1911,13 +1987,18 @@ if (!function_exists('mf_catalog_patch_bitrix_min_price_display'))
 		}
 		$minPrice['VALUE'] = $displayValue;
 		$minPrice['DISCOUNT_VALUE'] = $displayValue;
-		if (class_exists('\CCurrencyLang'))
+		$rnd = round($displayValue, 1);
+		if ($cur === 'RUB')
 		{
-			$fmt = \CCurrencyLang::FormatCurrency($displayValue, $cur);
+			$fmt = mf_format_display_price_rub($rnd);
+		}
+		elseif (class_exists('\CCurrencyLang'))
+		{
+			$fmt = \CCurrencyLang::FormatCurrency($rnd, $cur);
 		}
 		else
 		{
-			$fmt = number_format($displayValue, 2, '.', ' ') . ' ₽';
+			$fmt = mf_format_display_price_rub($rnd);
 		}
 		$minPrice['PRINT_VALUE'] = $fmt;
 		$minPrice['PRINT_DISCOUNT_VALUE'] = $fmt;
@@ -2077,7 +2158,7 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 				'xml_id' => (string)($s['XML_ID'] ?? ''),
 				'amount' => $amount,
 				'price' => (float)$price,
-				'price_fmt' => number_format((float)$price, 2, '.', ' ') . ' ₽',
+				'price_fmt' => mf_format_display_price_rub((float)$price),
 				'delivery_term' => function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : 'Срок уточнит менеджер',
 				'delivery_spb_ok' => !empty($spb['ok']),
 				'delivery_spb_title' => (string)($spb['title'] ?? ''),

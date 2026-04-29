@@ -58,11 +58,11 @@ if ($mfReqIsAuthorized)
 $mfReqProductName = trim(html_entity_decode(strip_tags((string)($item['NAME'] ?? $productTitle ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 $mfReqProductUrl = (string)($item['DETAIL_PAGE_URL'] ?? '');
 
-// Витринная цена: склады с остатком, иначе минимум по привязанным складам (не каталожный BASE).
+// Витринная цена: только склады с остатком (без «От», если нет в наличии).
 $mfDynPrice = null;
-if (function_exists('mf_catalog_listing_display_price'))
+if (function_exists('mf_catalog_storefront_price_when_in_stock'))
 {
-	$p = mf_catalog_listing_display_price((int)($actualItem['ID'] ?? 0));
+	$p = mf_catalog_storefront_price_when_in_stock((int)($actualItem['ID'] ?? 0));
 	if ($p !== null && (float)$p > 0)
 	{
 		$mfDynPrice = (float)$p;
@@ -73,15 +73,26 @@ if (function_exists('mf_catalog_listing_display_price'))
 if (\CModule::IncludeModule('catalog'))
 {
 	$pid = (int)($actualItem['ID'] ?? 0);
-	if ($pid > 0)
-	{
-		$sum = 0.0;
-		$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $pid], false, false, ['AMOUNT']);
-		while ($r = $rs->Fetch())
+		if ($pid > 0)
 		{
-			$sum += (float)($r['AMOUNT'] ?? 0);
-		}
-		$canBuy = ($sum > 0);
+			$sum = 0.0;
+			$clusterIds = function_exists('mf_catalog_product_cluster_ids')
+				? mf_catalog_product_cluster_ids($pid)
+				: [$pid];
+			foreach ($clusterIds as $cid)
+			{
+				$cid = (int)$cid;
+				if ($cid <= 0)
+				{
+					continue;
+				}
+				$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => $cid], false, false, ['AMOUNT']);
+				while ($r = $rs->Fetch())
+				{
+					$sum += (float)($r['AMOUNT'] ?? 0);
+				}
+			}
+			$canBuy = ($sum > 0);
 		$actualItem['CAN_BUY'] = $canBuy;
 		$item['CAN_BUY'] = $canBuy;
 	}
@@ -270,22 +281,30 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 			<?php if ($arParams['SHOW_OLD_PRICE'] === 'Y' && !empty($price)): ?>
 				<span class="mf-pline__old product-item-price-old" id="<?=$itemIds['PRICE_OLD']?>"
 					<?=($price['RATIO_PRICE'] >= $price['RATIO_BASE_PRICE'] ? 'style="display: none;"' : '')?>>
-					<?=$price['PRINT_RATIO_BASE_PRICE']?>
+					<?= (function_exists('mf_format_display_price_rub') && isset($price['RATIO_BASE_PRICE']))
+						? htmlspecialcharsbx(mf_format_display_price_rub((float)$price['RATIO_BASE_PRICE']))
+						: (string)$price['PRINT_RATIO_BASE_PRICE'] ?>
 				</span>
 			<?php endif; ?>
 			<span class="mf-pline__cur product-item-price-current" id="<?=$itemIds['PRICE']?>">
 				<?php
-				if ($mfDynPrice !== null)
+				if ($canBuy && $mfDynPrice !== null)
 				{
-					echo htmlspecialcharsbx(number_format((float)$mfDynPrice, 2, '.', ' ')) . ' &#8381;';
+					$mfDp = round((float)$mfDynPrice, 1);
+					$mfDd = ((int)round(abs($mfDp) * 10) % 10 === 0) ? 0 : 1;
+					echo function_exists('mf_format_display_price_rub')
+						? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub((float)$mfDynPrice)))
+						: ('От ' . htmlspecialcharsbx(number_format($mfDp, $mfDd, '.', ' ')) . ' &#8381;');
 				}
-				elseif (function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price))
+				elseif ($canBuy && function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price))
 				{
-					echo $price['PRINT_RATIO_PRICE'];
+					echo function_exists('mf_format_display_price_rub') && isset($price['RATIO_PRICE'])
+						? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub((float)$price['RATIO_PRICE'])))
+						: ('От ' . $price['PRINT_RATIO_PRICE']);
 				}
 				else
 				{
-					echo 'Цена по запросу';
+					echo 'Запросить цену';
 				}
 				?>
 			</span>

@@ -159,7 +159,7 @@ $arParams = [
     "ADD_TO_BASKET_ACTION" => array("ADD"),
     "ADD_TO_BASKET_ACTION_PRIMARY" => array("ADD"),
     "ADD_SECTIONS_CHAIN" => "Y",
-    "ADD_ELEMENT_CHAIN" => "Y",
+    "ADD_ELEMENT_CHAIN" => "N",
     
     // Цены
     "PRICE_CODE" => array("BASE"),
@@ -201,16 +201,21 @@ $APPLICATION->IncludeComponent(
     false
 );
 
-// Replace the component price with storefront display price (min across all mapped stores, same as listings).
-if ($elementId > 0 && function_exists('mf_catalog_listing_display_price'))
+// Replace the component price with storefront price: only among warehouses with stock (no «От» if nowhere in stock).
+if ($elementId > 0 && function_exists('mf_catalog_storefront_price_when_in_stock'))
 {
-	$minP = mf_catalog_listing_display_price($elementId);
+	$minP = mf_catalog_storefront_price_when_in_stock($elementId);
 	if ($minP !== null && (float)$minP > 0)
 	{
-		$minP = (float)$minP;
+		$minP = round((float)$minP, 1);
 		$mfMinPriceValue = $minP;
-		$mfMinPriceText = number_format($minP, 1, '.', ' ') . ' &#8381;';
-		$minPPrint = number_format($minP, 1, '.', ' ') . ' &#8381;';
+		$mfMinDec = ((int)round(abs($minP) * 10) % 10 === 0) ? 0 : 1;
+		$mfMinPriceText = function_exists('mf_format_display_price_rub')
+			? htmlspecialcharsbx(mf_format_display_price_rub($minP))
+			: (htmlspecialcharsbx(number_format($minP, $mfMinDec, '.', ' ')) . ' &#8381;');
+		$minPPrint = function_exists('mf_format_display_price_rub')
+			? mf_format_display_price_rub($minP)
+			: (number_format($minP, $mfMinDec, '.', ' ') . ' &#8381;');
 		?>
 		<script>
 		(function(){
@@ -223,21 +228,23 @@ if ($elementId > 0 && function_exists('mf_catalog_listing_display_price'))
 		</script>
 		<?php
 	}
-	elseif (
-		function_exists('mf_catalog_use_bitrix_base_price_fallback')
-		&& !mf_catalog_use_bitrix_base_price_fallback()
-	)
+	else
 	{
-		?>
-		<script>
-		(function(){
-			var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
-			if (el) el.innerHTML = "Цена по запросу";
-			var meta = document.querySelector("meta[itemprop='price']");
-			if (meta) meta.setAttribute("content", "");
-		})();
-		</script>
-		<?php
+		$hasStock = function_exists('mf_catalog_product_has_positive_stock') && mf_catalog_product_has_positive_stock($elementId);
+		$onSupplierMap = function_exists('mf_catalog_use_bitrix_base_price_fallback') && !mf_catalog_use_bitrix_base_price_fallback();
+		if (!$hasStock || $onSupplierMap)
+		{
+			?>
+			<script>
+			(function(){
+				var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
+				if (el) el.innerHTML = "Запросить цену";
+				var meta = document.querySelector("meta[itemprop='price']");
+				if (meta) meta.setAttribute("content", "");
+			})();
+			</script>
+			<?php
+		}
 	}
 }
 
@@ -245,125 +252,130 @@ $mfStockTabHtml = '';
 $mfAnalogsTabHtml = '';
 
 // Show store availability block (our supplier stock updates write per-store amounts).
-if ($elementId > 0 && CModule::IncludeModule("catalog"))
+if ($elementId > 0)
 {
-	$storeAmounts = [];
-	$clusterIds = function_exists('mf_catalog_product_cluster_ids')
-		? mf_catalog_product_cluster_ids($elementId)
-		: [$elementId];
-	foreach ($clusterIds as $cid)
+	global $USER;
+	$mfDetReqN = '';
+	$mfDetReqE = '';
+	$mfDetReqLocked = false;
+	if (is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized())
 	{
-		$rsAmt = CCatalogStoreProduct::GetList(
-			[],
-			['PRODUCT_ID' => (int)$cid],
-			false,
-			false,
-			['STORE_ID', 'AMOUNT']
-		);
-		while ($r = $rsAmt->Fetch())
+		$mfDetReqLocked = true;
+		$mfDetReqN = trim((string)$USER->GetFirstName() . ' ' . (string)$USER->GetLastName());
+		if ($mfDetReqN === '')
 		{
-			$sid = (int)$r['STORE_ID'];
-			if ($sid <= 0) continue;
-			$storeAmounts[$sid] = ($storeAmounts[$sid] ?? 0.0) + (float)$r['AMOUNT'];
+			$mfDetReqN = trim((string)$USER->GetLogin());
+		}
+		$mfDetReqE = trim((string)$USER->GetEmail());
+	}
+	$mfDetProductUrl = ($elementCode !== '' ? '/products/' . rawurlencode($elementCode) . '/' : '/');
+	$mfDetNameForReq = $mfElementName !== '' ? $mfElementName : ('Товар #' . (int)$elementId);
+
+	$storeAmounts = [];
+	$stores = [];
+	$mfOrderedStoreIds = [];
+
+	if (CModule::IncludeModule('catalog'))
+	{
+		$clusterIds = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($elementId)
+			: [$elementId];
+		foreach ($clusterIds as $cid)
+		{
+			$rsAmt = CCatalogStoreProduct::GetList(
+				[],
+				['PRODUCT_ID' => (int)$cid],
+				false,
+				false,
+				['STORE_ID', 'AMOUNT']
+			);
+			while ($r = $rsAmt->Fetch())
+			{
+				$sid = (int)$r['STORE_ID'];
+				if ($sid <= 0) continue;
+				$storeAmounts[$sid] = ($storeAmounts[$sid] ?? 0.0) + (float)$r['AMOUNT'];
+			}
+		}
+
+		if (!empty($storeAmounts))
+		{
+			$storeIds = array_keys($storeAmounts);
+			$rsStore = CCatalogStore::GetList(
+				['SORT' => 'ASC', 'ID' => 'ASC'],
+				['ID' => $storeIds, 'ACTIVE' => 'Y'],
+				false,
+				false,
+				['ID', 'TITLE', 'ADDRESS', 'XML_ID', 'CODE']
+			);
+			while ($s = $rsStore->Fetch())
+			{
+				$id = (int)$s['ID'];
+				if ($id <= 0) continue;
+				$stores[$id] = $s;
+			}
+
+			foreach ($storeIds as $sid)
+			{
+				if (!isset($stores[$sid]))
+				{
+					$stores[$sid] = ['ID' => $sid, 'TITLE' => 'Склад #' . $sid, 'ADDRESS' => '', 'XML_ID' => '', 'CODE' => ''];
+				}
+			}
+
+			$mfOrderedStoreIds = array_keys($storeAmounts);
+			usort($mfOrderedStoreIds, static function ($a, $b) use ($elementId, $storeAmounts, $stores) {
+				$a = (int)$a;
+				$b = (int)$b;
+				$sa = $stores[$a] ?? null;
+				$sb = $stores[$b] ?? null;
+				$codeA = is_array($sa) ? mb_strtoupper(trim((string)($sa['CODE'] ?? ''))) : '';
+				$codeB = is_array($sb) ? mb_strtoupper(trim((string)($sb['CODE'] ?? ''))) : '';
+				$xmlA = is_array($sa) ? mb_strtoupper(trim((string)($sa['XML_ID'] ?? ''))) : '';
+				$xmlB = is_array($sb) ? mb_strtoupper(trim((string)($sb['XML_ID'] ?? ''))) : '';
+				$aInt = $codeA === 'MOTOR_FORCE_INTERNAL' || ($xmlA !== '' && mb_strpos($xmlA, 'MOTOR_FORCE_INTERNAL') !== false);
+				$bInt = $codeB === 'MOTOR_FORCE_INTERNAL' || ($xmlB !== '' && mb_strpos($xmlB, 'MOTOR_FORCE_INTERNAL') !== false);
+				if ($aInt !== $bInt)
+				{
+					return $bInt <=> $aInt;
+				}
+				$amtA = (float)($storeAmounts[$a] ?? 0);
+				$amtB = (float)($storeAmounts[$b] ?? 0);
+				$pa = null;
+				$pb = null;
+				if ($amtA > 0 && function_exists('mf_ep_display_price_for_store'))
+				{
+					$pa = mf_ep_display_price_for_store($elementId, $a, 1.0);
+				}
+				if ($amtB > 0 && function_exists('mf_ep_display_price_for_store'))
+				{
+					$pb = mf_ep_display_price_for_store($elementId, $b, 1.0);
+				}
+				$fpa = (float)($pa ?? 0);
+				$fpb = (float)($pb ?? 0);
+				if ($fpa > 0 && $fpb > 0 && abs($fpa - $fpb) > 1e-9)
+				{
+					return $fpa <=> $fpb;
+				}
+
+				return $a <=> $b;
+			});
+
+			$mfOrderedStoreIds = array_values(array_filter($mfOrderedStoreIds, static function ($sid) use ($storeAmounts) {
+				$sid = (int)$sid;
+				$amt = (float)($storeAmounts[$sid] ?? 0);
+				if ($amt > 1e-9)
+				{
+					return true;
+				}
+
+				return function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($sid);
+			}));
 		}
 	}
 
-	if (!empty($storeAmounts))
+	if (!empty($mfOrderedStoreIds))
 	{
-		$storeIds = array_keys($storeAmounts);
-		$stores = [];
-		$rsStore = CCatalogStore::GetList(
-			['SORT' => 'ASC', 'ID' => 'ASC'],
-			['ID' => $storeIds, 'ACTIVE' => 'Y'],
-			false,
-			false,
-			['ID', 'TITLE', 'ADDRESS', 'XML_ID', 'CODE']
-		);
-		while ($s = $rsStore->Fetch())
-		{
-			$id = (int)$s['ID'];
-			if ($id <= 0) continue;
-			$stores[$id] = $s;
-		}
-
-		// If some stores are inactive/missing, still show them by ID.
-		foreach ($storeIds as $sid)
-		{
-			if (!isset($stores[$sid]))
-			{
-				$stores[$sid] = ['ID' => $sid, 'TITLE' => 'Склад #' . $sid, 'ADDRESS' => '', 'XML_ID' => '', 'CODE' => ''];
-			}
-		}
-
-		$mfOrderedStoreIds = array_keys($storeAmounts);
-		usort($mfOrderedStoreIds, static function ($a, $b) use ($elementId, $storeAmounts, $stores) {
-			$a = (int)$a;
-			$b = (int)$b;
-			$sa = $stores[$a] ?? null;
-			$sb = $stores[$b] ?? null;
-			$codeA = is_array($sa) ? mb_strtoupper(trim((string)($sa['CODE'] ?? ''))) : '';
-			$codeB = is_array($sb) ? mb_strtoupper(trim((string)($sb['CODE'] ?? ''))) : '';
-			$xmlA = is_array($sa) ? mb_strtoupper(trim((string)($sa['XML_ID'] ?? ''))) : '';
-			$xmlB = is_array($sb) ? mb_strtoupper(trim((string)($sb['XML_ID'] ?? ''))) : '';
-			$aInt = $codeA === 'MOTOR_FORCE_INTERNAL' || ($xmlA !== '' && mb_strpos($xmlA, 'MOTOR_FORCE_INTERNAL') !== false);
-			$bInt = $codeB === 'MOTOR_FORCE_INTERNAL' || ($xmlB !== '' && mb_strpos($xmlB, 'MOTOR_FORCE_INTERNAL') !== false);
-			if ($aInt !== $bInt)
-			{
-				return $bInt <=> $aInt;
-			}
-			$amtA = (float)($storeAmounts[$a] ?? 0);
-			$amtB = (float)($storeAmounts[$b] ?? 0);
-			$pa = null;
-			$pb = null;
-			if ($amtA > 0 && function_exists('mf_ep_display_price_for_store'))
-			{
-				$pa = mf_ep_display_price_for_store($elementId, $a, 1.0);
-			}
-			if ($amtB > 0 && function_exists('mf_ep_display_price_for_store'))
-			{
-				$pb = mf_ep_display_price_for_store($elementId, $b, 1.0);
-			}
-			$fpa = (float)($pa ?? 0);
-			$fpb = (float)($pb ?? 0);
-			if ($fpa > 0 && $fpb > 0 && abs($fpa - $fpb) > 1e-9)
-			{
-				return $fpa <=> $fpb;
-			}
-
-			return $a <=> $b;
-		});
-
-		// Как в поиске: при нуле в таблицу попадают только внешние склады (остаток «Под заказ»).
-		$mfOrderedStoreIds = array_values(array_filter($mfOrderedStoreIds, static function ($sid) use ($storeAmounts) {
-			$sid = (int)$sid;
-			$amt = (float)($storeAmounts[$sid] ?? 0);
-			if ($amt > 1e-9)
-			{
-				return true;
-			}
-
-			return function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($sid);
-		}));
-
-		if (!empty($mfOrderedStoreIds))
-		{
 		ob_start();
-		global $USER;
-		$mfDetReqN = '';
-		$mfDetReqE = '';
-		$mfDetReqLocked = false;
-		if (is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized())
-		{
-			$mfDetReqLocked = true;
-			$mfDetReqN = trim((string)$USER->GetFirstName() . ' ' . (string)$USER->GetLastName());
-			if ($mfDetReqN === '')
-			{
-				$mfDetReqN = trim((string)$USER->GetLogin());
-			}
-			$mfDetReqE = trim((string)$USER->GetEmail());
-		}
-		$mfDetProductUrl = ($elementCode !== '' ? '/products/' . rawurlencode($elementCode) . '/' : '/');
-		$mfDetNameForReq = $mfElementName !== '' ? $mfElementName : ('Товар #' . (int)$elementId);
 		?>
 		<div class="mf-detail-stock-wrap">
 			<div class="table-responsive">
@@ -383,7 +395,6 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 						<?php $s = $stores[$sid] ?? []; ?>
 						<?php $amt = (float)($storeAmounts[$sid] ?? 0); ?>
 						<?php
-						// Цена по складу из RAW+наценка — показываем и при нулевом остатке (внешний прайс мог обновить только цену).
 						$storePrice = null;
 						if (function_exists('mf_ep_display_price_for_store'))
 						{
@@ -411,7 +422,13 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 							</td>
 							<td class="text-right">
 								<?php if ($storePrice !== null): ?>
-									<?=htmlspecialcharsbx(number_format((float)$storePrice, 1, '.', ' '))?> &#8381;
+									<?php
+									$mfSp = round((float)$storePrice, 1);
+									$mfSd = ((int)round(abs($mfSp) * 10) % 10 === 0) ? 0 : 1;
+									echo function_exists('mf_format_display_price_rub')
+										? htmlspecialcharsbx(mf_format_display_price_rub((float)$storePrice))
+										: (htmlspecialcharsbx(number_format($mfSp, $mfSd, '.', ' ')) . ' &#8381;');
+									?>
 								<?php else: ?>
 									—
 								<?php endif; ?>
@@ -480,7 +497,26 @@ if ($elementId > 0 && CModule::IncludeModule("catalog"))
 		</div>
 		<?php
 		$mfStockTabHtml = trim((string)ob_get_clean());
-		}
+	}
+	else
+	{
+		ob_start();
+		?>
+		<div class="mf-detail-stock-wrap mf-detail-stock-wrap--empty">
+			<p class="mb-3 text-muted">Нет данных по складам для этого товара.</p>
+			<button
+				type="button"
+				class="btn btn-warning js-mf-request-price-global"
+				data-product-id="<?= (int)$elementId ?>"
+				data-product-name="<?=htmlspecialcharsbx($mfDetNameForReq)?>"
+				data-product-url="<?=htmlspecialcharsbx($mfDetProductUrl)?>"
+				data-user-name="<?=htmlspecialcharsbx($mfDetReqN)?>"
+				data-user-email="<?=htmlspecialcharsbx($mfDetReqE)?>"
+				data-user-locked="<?=$mfDetReqLocked ? '1' : '0'?>"
+			>Запросить цену</button>
+		</div>
+		<?php
+		$mfStockTabHtml = trim((string)ob_get_clean());
 	}
 }
 
@@ -520,7 +556,6 @@ if ($elementId > 0)
 					'PROPERTY_CML2_ARTICLE',
 					'PROPERTY_MF_BRAND',
 					'PROPERTY_MF_BRAND_NORM',
-					'PROPERTY_OEM',
 				]
 			);
 			while ($r = $rs->Fetch())
@@ -567,7 +602,6 @@ if ($elementId > 0)
 						$titleHtml = htmlspecialcharsbx($name);
 						$anBrand = trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ($r['PROPERTY_MF_BRAND_NORM_VALUE'] ?? '')));
 						$anArticle = trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
-						$anOem = trim((string)($r['PROPERTY_OEM_VALUE'] ?? ''));
 						$plainName = trim(html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 						if ($plainName === '')
 						{
@@ -580,7 +614,6 @@ if ($elementId > 0)
 							'title_html' => $titleHtml,
 							'brand' => $anBrand,
 							'article' => $anArticle,
-							'oem' => $anOem,
 							'product_name_plain' => $plainName,
 							'req_user_name' => $mfAnalogReqName,
 							'req_user_email' => $mfAnalogReqEmail,
@@ -630,6 +663,7 @@ if ($elementId > 0)
 				<button type="button" class="mf-detail-tabs__btn is-active" data-tab-target="stock" role="tab" aria-selected="true">Склад</button>
 				<button type="button" class="mf-detail-tabs__btn" data-tab-target="analogs" role="tab" aria-selected="false">Аналоги</button>
 				<button type="button" class="mf-detail-tabs__btn" data-tab-target="description" role="tab" aria-selected="false">Описание</button>
+				<button type="button" class="mf-detail-tabs__btn" data-tab-target="oem" role="tab" aria-selected="false">OEM</button>
 			</div>
 			<div class="mf-detail-tabs__content">
 				<div class="mf-detail-tabs__pane is-active" data-tab-pane="stock">
@@ -646,12 +680,21 @@ if ($elementId > 0)
 						<div class="mf-detail-tabs__empty">Аналоги не найдены.</div>
 					<?php endif; ?>
 				</div>
-				<div class="mf-detail-tabs__pane mf-detail-tabs__pane--description" data-tab-pane="description" hidden>
-					<?php if ($mfFullDescriptionHtml !== ''): ?>
-						<?=$mfFullDescriptionHtml?>
+				<div class="mf-detail-tabs__pane" data-tab-pane="oem" hidden>
+					<?php if ($mfOem !== ''): ?>
+						<div class="mf-detail-tabs__oem-value"><?=htmlspecialcharsbx($mfOem)?></div>
 					<?php else: ?>
-						<div class="mf-detail-tabs__empty">Описание отсутствует.</div>
+						<div class="mf-detail-tabs__empty">Значение OEM не заполнено.</div>
 					<?php endif; ?>
+				</div>
+				<div class="mf-detail-tabs__pane mf-detail-tabs__pane--description" data-tab-pane="description" hidden>
+					<div class="mf-detail-tabs__description-inner">
+						<?php if ($mfFullDescriptionHtml !== ''): ?>
+							<?=$mfFullDescriptionHtml?>
+						<?php else: ?>
+							<div class="mf-detail-tabs__empty">Описание отсутствует.</div>
+						<?php endif; ?>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -700,13 +743,21 @@ if ($elementId > 0)
 		function initDetailTabs(scope){
 			if (!scope || scope.__mfTabsInited) return;
 			scope.__mfTabsInited = true;
+			var nav = scope.querySelector('.mf-detail-tabs__nav');
+			var content = scope.querySelector('.mf-detail-tabs__content');
 			scope.addEventListener('click', function(e){
 				var btn = e.target && e.target.closest ? e.target.closest('[data-tab-target]') : null;
-				if (!btn) return;
+				if (!btn || !nav || !nav.contains(btn)) return;
 				var target = btn.getAttribute('data-tab-target') || '';
 				if (!target) return;
-				var buttons = scope.querySelectorAll('[data-tab-target]');
-				var panes = scope.querySelectorAll('[data-tab-pane]');
+				var buttons = nav.querySelectorAll('[data-tab-target]');
+				var panes = [];
+				if (content){
+					var kids = content.children;
+					for (var k = 0; k < kids.length; k++){
+						if (kids[k].getAttribute && kids[k].getAttribute('data-tab-pane')) panes.push(kids[k]);
+					}
+				}
 				for (var i = 0; i < buttons.length; i++){
 					var isActiveBtn = buttons[i] === btn;
 					buttons[i].classList.toggle('is-active', isActiveBtn);

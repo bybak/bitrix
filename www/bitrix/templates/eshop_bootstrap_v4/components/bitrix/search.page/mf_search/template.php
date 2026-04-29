@@ -56,24 +56,11 @@ if (is_file($mfProductSearchCardLib))
 }
 
 $mfMoney = static function (?float $price): string {
-	$p = (float)($price ?? 0);
-	if ($p <= 0) return '';
-	// IMPORTANT: return plain text, no HTML entities (so it can be safely escaped).
-	return number_format($p, 1, '.', ' ') . ' ₽';
+	return function_exists('mf_product_search_card_money') ? mf_product_search_card_money($price) : '';
 };
 
 $mfSearchMinPricePrint = static function (int $productId): string {
-	if ($productId <= 0 || !function_exists('mf_catalog_listing_display_price'))
-	{
-		return '';
-	}
-	$minP = mf_catalog_listing_display_price($productId);
-	if ($minP === null || (float)$minP <= 0)
-	{
-		return '';
-	}
-
-	return number_format((float)$minP, 1, '.', ' ') . ' ₽';
+	return function_exists('mf_product_search_card_min_price_print') ? mf_product_search_card_min_price_print($productId) : '';
 };
 
 $mfStoresForProduct = static function (int $productId): array {
@@ -116,7 +103,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 				<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">От</span>
-						<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : '—' ?></span>
+						<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : 'Запросить цену' ?></span>
 					</div>
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Бренд</span>
@@ -230,18 +217,18 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						<?php endforeach; ?>
 					</tbody>
 				</table>
-			<?php else: ?>
-				<div class="mf-search-card__no-stock-row">
-					<div class="mf-search-card__no-stock">Под заказ</div>
-					<button
-						type="button"
-						class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
-						data-product-id="<?=$id?>"
-						data-product-name="<?=htmlspecialcharsbx($titlePlain)?>"
-						data-product-url="<?=htmlspecialcharsbx($url)?>"
-					>Запросить цену</button>
-				</div>
-			<?php endif; ?>
+				<?php else: ?>
+					<div class="mf-search-card__no-stock-row">
+						<div class="mf-search-card__no-stock">Нет данных по складам</div>
+						<button
+							type="button"
+							class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
+							data-product-id="<?=$id?>"
+							data-product-name="<?=htmlspecialcharsbx($titlePlain)?>"
+							data-product-url="<?=htmlspecialcharsbx($url)?>"
+						>Запросить цену</button>
+					</div>
+				<?php endif; ?>
 		</div>
 
 		<?php if (!$isAnalog && !empty($analogs)): ?>
