@@ -276,6 +276,30 @@
     });
   }
 
+  function neutralizeBasketSticky(root) {
+    if (!root) return;
+    var wrap = root.querySelector('#basket-items-list-wrapper');
+    if (wrap) {
+      wrap.style.paddingTop = '';
+      var hdr = root.querySelector('.basket-items-list-header');
+      if (hdr) {
+        hdr.classList.remove('basket-items-list-header-fixed');
+        hdr.style.width = '';
+        hdr.style.top = '';
+      }
+    }
+    var totalBlock = root.querySelector('[data-entity="basket-total-block"]');
+    if (totalBlock) {
+      totalBlock.style.height = '';
+      var aligner = totalBlock.querySelector('[data-entity="basket-checkout-aligner"]');
+      if (aligner) {
+        aligner.classList.remove('basket-checkout-container-fixed');
+        aligner.classList.remove('basket-checkout-container-fixed-hide');
+        aligner.style.width = '';
+      }
+    }
+  }
+
   function layoutCart(root) {
     root = root || document;
     var basketRoot = root.querySelector('#basket-root');
@@ -308,9 +332,20 @@
     if (!cartRoot) return;
 
     layoutCart(cartRoot);
+    neutralizeBasketSticky(cartRoot);
     patchBasketImages(cartRoot);
     hideBasketInternalProps(cartRoot);
     fetchStoreMeta(cartRoot);
+
+    var stickyNeutralizeRaf = 0;
+    function scheduleNeutralizeSticky() {
+      if (stickyNeutralizeRaf) return;
+      stickyNeutralizeRaf = window.requestAnimationFrame(function () {
+        stickyNeutralizeRaf = 0;
+        neutralizeBasketSticky(cartRoot);
+      });
+    }
+    window.addEventListener('scroll', scheduleNeutralizeSticky, { passive: true });
 
     cartRoot.addEventListener('click', function (e) {
       var storeBtn = e && e.target && e.target.closest ? e.target.closest('[data-entity="mf-cart-store-apply"]') : null;
@@ -380,6 +415,7 @@
       raf = window.requestAnimationFrame(function () {
         raf = 0;
         layoutCart(cartRoot);
+        neutralizeBasketSticky(cartRoot);
         patchBasketImages(cartRoot);
         hideBasketInternalProps(cartRoot);
         fetchStoreMeta(cartRoot);
@@ -398,6 +434,7 @@
     var iv = window.setInterval(function () {
       tries++;
       layoutCart(cartRoot);
+      neutralizeBasketSticky(cartRoot);
       patchBasketImages(cartRoot);
       hideBasketInternalProps(cartRoot);
       fetchStoreMeta(cartRoot);

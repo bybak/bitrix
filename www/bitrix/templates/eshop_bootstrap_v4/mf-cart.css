@@ -399,3 +399,27 @@
   align-items: center;
 }
 
+/* Bitrix sale.basket.basket: checkStickyHeaders() вешает position:fixed на фильтр и блок итого.
+   Вместе с display:contents у .mf-cart #basket-root > .row сетка ломается — блоки «уезжают» при скролле. */
+.mf-cart .basket-items-list-header.basket-items-list-header-fixed{
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  z-index: auto !important;
+  margin-left: 0 !important;
+  border-bottom: 1px solid #e2dfdf;
+}
+.mf-cart .basket-checkout-container.basket-checkout-container-fixed{
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  z-index: auto !important;
+}
+.mf-cart .basket-checkout-container.basket-checkout-container-fixed-hide{
+  opacity: 1 !important;
+}
+
