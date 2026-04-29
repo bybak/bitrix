@@ -132,6 +132,10 @@ if (function_exists('mf_seo_apply_for_current_page'))
 	{
 		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-search.css");
 		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
+		$cssShop = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-shop.css");
+		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($cssShop).'" />'."\n";
+		$jsShop = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-shop.js");
+		echo '<script src="'.htmlspecialcharsbx($jsShop).'" defer></script>'."\n";
 	}
 	if ($isCart)
 	{

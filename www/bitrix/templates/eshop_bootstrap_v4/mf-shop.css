@@ -1146,12 +1146,21 @@
 .mf-detail-tabs__pane--description p:last-child{
   margin-bottom: 0;
 }
+.mf-detail-tabs__oem-value{
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(0,0,0,.82);
+  word-break: break-word;
+}
 .mf-detail-tabs__empty{
   padding: 8px 0;
   color: rgba(0,0,0,.58);
 }
 .mf-detail-stock-wrap .table{
   margin-bottom: 0;
+}
+.mf-detail-stock-wrap--empty{
+  padding: 4px 0 8px;
 }
 .mf-detail-stock-table th,
 .mf-detail-stock-table td{
