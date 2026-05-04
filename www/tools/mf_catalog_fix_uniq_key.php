@@ -218,12 +218,45 @@ function mffuk_out(string $s): void
 
 /**
  * @param array<string, list<int>> $duplicateKeys
+ * @param-out string|null $errorOut
  */
-function mffuk_write_collisions_csv(string $path, array $duplicateKeys): bool
+function mffuk_write_collisions_csv(string $path, array $duplicateKeys, ?string &$errorOut = null): bool
 {
-	$fp = fopen($path, 'wb');
+	$errorOut = null;
+	$path = trim($path);
+	if ($path === '')
+	{
+		$errorOut = 'пустой путь';
+
+		return false;
+	}
+	$dir = dirname($path);
+	if ($dir !== '' && $dir !== '.' && !is_dir($dir))
+	{
+		$errorOut = 'каталог не существует: ' . $dir;
+
+		return false;
+	}
+	if (is_dir($path))
+	{
+		$errorOut = 'путь — это каталог, укажите путь к файлу .csv';
+
+		return false;
+	}
+	if ($dir !== '' && $dir !== '.' && !is_writable($dir))
+	{
+		$errorOut = 'нет прав на запись в каталог (chmod/chown или другой путь, напр. /tmp/…): ' . $dir;
+
+		return false;
+	}
+
+	$fp = @fopen($path, 'wb');
 	if ($fp === false)
 	{
+		$last = error_get_last();
+		$msg = is_array($last) ? trim((string)($last['message'] ?? '')) : '';
+		$errorOut = $msg !== '' ? $msg : 'fopen(wb) не удался';
+
 		return false;
 	}
 
@@ -452,7 +485,8 @@ if (!empty($duplicateKeys))
 	{
 		$collPath = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'mf_uniq_key_collisions_iblock' . $iblockId . '_' . date('Ymd_His') . '.csv';
 	}
-	if (mffuk_write_collisions_csv($collPath, $duplicateKeys))
+	$collErr = null;
+	if (mffuk_write_collisions_csv($collPath, $duplicateKeys, $collErr))
 	{
 		$rows = 0;
 		foreach ($duplicateKeys as $ids)
@@ -463,7 +497,7 @@ if (!empty($duplicateKeys))
 	}
 	else
 	{
-		mffuk_out('Не удалось записать CSV коллизий: ' . $collPath);
+		mffuk_out('Не удалось записать CSV коллизий: ' . $collPath . ($collErr !== null && $collErr !== '' ? ' — ' . $collErr : ''));
 	}
 }
 
@@ -510,7 +544,6 @@ mffuk_out('');
 
 $updated = 0;
 $errors = 0;
-$el = new CIBlockElement();
 foreach ($idToNewKey as $id => $newKey)
 {
 	$oldKey = $idToOldKey[$id] ?? '';
@@ -518,10 +551,16 @@ foreach ($idToNewKey as $id => $newKey)
 	{
 		continue;
 	}
-	if (!$el->SetPropertyValuesEx((int)$id, $iblockId, ['MF_UNIQ_KEY' => $newKey]))
+	// В ядре Bitrix SetPropertyValuesEx при успехе не возвращает true (void/null).
+	// Проверка if (!SetPropertyValuesEx(...)) даёт ложные «ошибки» на каждом элементе.
+	try
+	{
+		CIBlockElement::SetPropertyValuesEx((int)$id, $iblockId, ['MF_UNIQ_KEY' => $newKey]);
+	}
+	catch (Throwable $e)
 	{
 		$errors++;
-		mffuk_out('Ошибка SetPropertyValuesEx ID=' . $id . ': ' . $el->LAST_ERROR);
+		mffuk_out('Ошибка SetPropertyValuesEx ID=' . $id . ': ' . $e->getMessage());
 		continue;
 	}
 	$updated++;
