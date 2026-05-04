@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 /**
  * Админка: выгрузка каталога в CSV / XLSX и загрузка CSV того же формата (обновление по id).
- * Колонки фиксированные; фото — как на витрине (MF_EXT_IMAGES → meta → mf_mf_product_img_url).
+ * Колонки фиксированные; колонка «Фото» — все URL как на карточке catalog.element / bootstrap_v4 (через « | »):
+ * все MF_EXT_IMAGES → все URL meta аналогов → при MORE_PHOTO все слоты mf_mf_product_img_url(CODE,n) → иначе PREVIEW/DETAIL в /upload/.
  */
 
 use Bitrix\Main\Loader;
@@ -104,6 +105,55 @@ function mf_ce_collect_ext_image_urls(array $el): array
 	return $s !== '' ? [$s] : [];
 }
 
+function mf_ce_iblock_file_web_path(int $fileId): string
+{
+	if ($fileId <= 0 || !class_exists(\CFile::class))
+	{
+		return '';
+	}
+	$p = (string)\CFile::GetPath($fileId);
+	$p = trim($p);
+
+	return $p === '' ? $p : (($p[0] ?? '/') === '/' ? $p : '/' . $p);
+}
+
+/**
+ * Есть ли у элемента слоты файловой галереи MORE_PHOTO (как на деталке до подмены SRC на /mf-img/).
+ */
+function mf_ce_more_photo_has_slots(array $el): bool
+{
+	return mf_ce_more_photo_slot_count($el) > 0;
+}
+
+/** Число файловых слотов MORE_PHOTO (сколько картинок в галерее на деталке до подмены SRC). */
+function mf_ce_more_photo_slot_count(array $el): int
+{
+	$v = $el['PROPERTY_MORE_PHOTO_VALUE'] ?? null;
+	if ($v === null || $v === false || $v === '')
+	{
+		return 0;
+	}
+	if (is_array($v))
+	{
+		$n = 0;
+		foreach ($v as $one)
+		{
+			if ((int)$one > 0)
+			{
+				$n++;
+			}
+			elseif (is_string($one) && trim($one) !== '')
+			{
+				$n++;
+			}
+		}
+
+		return $n;
+	}
+
+	return (int)$v > 0 ? 1 : 0;
+}
+
 function mf_ce_section_name(int $iblockId, int $sectionId): string
 {
 	static $cache = [];
@@ -133,7 +183,7 @@ function mf_ce_section_name(int $iblockId, int $sectionId): string
 }
 
 /**
- * Цепочка названий разделов от корня до $sectionId (как в навигации), через « / ».
+ * Цепочка названий разделов от корня до $sectionId (как в навигации), через « => ».
  */
 function mf_ce_section_chain_path(int $iblockId, int $sectionId): string
 {
@@ -160,21 +210,41 @@ function mf_ce_section_chain_path(int $iblockId, int $sectionId): string
 			}
 		}
 	}
-	$cache[$key] = $names === [] ? '' : implode(' / ', $names);
+	$cache[$key] = $names === [] ? '' : implode(' => ', $names);
 
 	return $cache[$key];
 }
 
 /**
- * Первое фото как на детальной (bootstrap_v4): EXT → meta аналогов → mf_mf_product_img_url(CODE,1).
+ * Все URL картинок как на детальной с шаблоном eshop_bootstrap_v4 → catalog.element / bootstrap_v4.
+ * Порядок: все MF_EXT_IMAGES → все URL meta аналогов → при непустом MORE_PHOTO по слотам
+ * mf_mf_product_img_url(CODE,1..n) → иначе превью и (если отличается) детальная из /upload/.
+ * Без слотов MORE_PHOTO схему /mf-img/ не подставляем.
+ *
+ * @return list<string>
  */
-function mf_ce_primary_photo_url(array $el, int $elementId): string
+function mf_ce_all_photo_urls(array $el, int $elementId): array
 {
+	$push = static function (array &$out, string $url): void {
+		$url = trim($url);
+		if ($url !== '')
+		{
+			$out[] = $url;
+		}
+	};
+	$out = [];
+
 	$ext = mf_ce_collect_ext_image_urls($el);
 	if ($ext !== [])
 	{
-		return $ext[0];
+		foreach ($ext as $u)
+		{
+			$push($out, (string)$u);
+		}
+
+		return $out;
 	}
+
 	if ($elementId > 0)
 	{
 		$analogsPath = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/bitrix/php_interface/include/mf_analogs.php';
@@ -185,26 +255,53 @@ function mf_ce_primary_photo_url(array $el, int $elementId): string
 		if (function_exists('mf_analogs_meta_images_for_product'))
 		{
 			$meta = mf_analogs_meta_images_for_product($elementId);
-			if (is_array($meta))
+			if (is_array($meta) && $meta !== [])
 			{
 				foreach ($meta as $u)
 				{
-					$s = trim((string)$u);
-					if ($s !== '')
-					{
-						return $s;
-					}
+					$push($out, (string)$u);
+				}
+				if ($out !== [])
+				{
+					return $out;
 				}
 			}
 		}
 	}
+
 	$code = trim((string)($el['CODE'] ?? ''));
-	if ($code !== '' && function_exists('mf_mf_product_img_url'))
+	$nSlots = mf_ce_more_photo_slot_count($el);
+	if ($code !== '' && $nSlots > 0 && function_exists('mf_mf_product_img_url'))
 	{
-		return (string)mf_mf_product_img_url($code, 1);
+		for ($i = 1; $i <= $nSlots; $i++)
+		{
+			$s = (string)mf_mf_product_img_url($code, $i);
+			$push($out, $s);
+		}
+
+		return $out;
 	}
 
-	return '';
+	$prevPath = mf_ce_iblock_file_web_path((int)($el['PREVIEW_PICTURE'] ?? 0));
+	if ($prevPath !== '')
+	{
+		$push($out, $prevPath);
+	}
+	$detailPath = mf_ce_iblock_file_web_path((int)($el['DETAIL_PICTURE'] ?? 0));
+	if ($detailPath !== '' && $detailPath !== $prevPath)
+	{
+		$push($out, $detailPath);
+	}
+
+	return $out;
+}
+
+/** Первый URL из mf_ce_all_photo_urls() (обратная совместимость). */
+function mf_ce_primary_photo_url(array $el, int $elementId): string
+{
+	$all = mf_ce_all_photo_urls($el, $elementId);
+
+	return $all[0] ?? '';
 }
 
 function mf_ce_decode_iprop(?string $s): string
@@ -290,8 +387,9 @@ function mf_ce_section_id_by_name(int $iblockId, string $name): ?int
 }
 
 /**
- * ID конечного раздела по цепочке «Родитель / Дочерний / …» (как в выгрузке).
- * Одно имя без «/» — как раньше: первый подходящий активный раздел с таким NAME.
+ * ID конечного раздела по цепочке «Родитель => Дочерний => …» (как в выгрузке).
+ * Файлы со старым разделителем « / » при импорте по-прежнему поддерживаются.
+ * Одно имя без разделителей — первый подходящий активный раздел с таким NAME.
  */
 function mf_ce_section_id_by_chain_path(int $iblockId, string $path): ?int
 {
@@ -300,7 +398,14 @@ function mf_ce_section_id_by_chain_path(int $iblockId, string $path): ?int
 	{
 		return null;
 	}
-	$parts = preg_split('#\s*/\s*#u', $path, -1, PREG_SPLIT_NO_EMPTY);
+	if (strpos($path, '=>') !== false)
+	{
+		$parts = preg_split('#\s*=>\s*#u', $path, -1, PREG_SPLIT_NO_EMPTY);
+	}
+	else
+	{
+		$parts = preg_split('#\s*/\s*#u', $path, -1, PREG_SPLIT_NO_EMPTY);
+	}
 	if ($parts === false)
 	{
 		return null;
@@ -429,7 +534,20 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 	$photo = trim((string)($row['Фото'] ?? ''));
 	if ($photo !== '')
 	{
-		$props['MF_EXT_IMAGES'] = $photo;
+		$photoUrls = [];
+		foreach (preg_split('#\s*\|\s*#u', $photo, -1, PREG_SPLIT_NO_EMPTY) as $chunk)
+		{
+			$one = trim((string)$chunk);
+			if ($one !== '')
+			{
+				$photoUrls[] = $one;
+			}
+		}
+		if ($photoUrls !== [])
+		{
+			// MF_EXT_IMAGES — множественное строковое (URL); как в mf_import_analogs_admin / strip tool.
+			$props['MF_EXT_IMAGES'] = array_values($photoUrls);
+		}
 	}
 	$fields['PROPERTY_VALUES'] = $props;
 
@@ -572,7 +690,8 @@ function mf_ce_build_row(int $iblockId, array $el): array
 		$seoKw = mf_ce_decode_iprop((string)($iprops['ELEMENT_META_KEYWORDS'] ?? ''));
 	}
 
-	$photo = mf_ce_export_plain(mf_ce_primary_photo_url($el, $id));
+	$urls = mf_ce_all_photo_urls($el, $id);
+	$photo = mf_ce_export_plain(implode(' | ', $urls));
 
 	// ElementValues копит все element_id в статической очереди — без сброса на большом каталоге съедает сотни MB RAM.
 	if (class_exists(ValuesQueue::class))
@@ -928,6 +1047,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 		'NAME',
 		'CODE',
 		'IBLOCK_SECTION_ID',
+		'PREVIEW_PICTURE',
+		'DETAIL_PICTURE',
 		'PREVIEW_TEXT',
 		'DETAIL_TEXT',
 		'PROPERTY_MF_BRAND',
@@ -936,6 +1057,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 		'PROPERTY_MF_ARTICLE_NORM',
 		'PROPERTY_OEM',
 		'PROPERTY_MF_EXT_IMAGES',
+		'PROPERTY_MORE_PHOTO',
 	];
 
 	$headers = mf_ce_export_headers();
@@ -1060,8 +1182,8 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 
 	<p class="adm-info-message" style="max-width:720px">
 		Каталог: инфоблок ID <strong><?= (int)$iblockId ?></strong>.
-		В файл всегда входят колонки: id, бренд, артикул, OEM, наименование, <strong>цепочка разделов</strong> (от корня через « / », как в навигации каталога), краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>URL первого фото как на сайте</strong>
-		(MF_EXT_IMAGES при наличии, иначе метаданные аналогов, иначе схема <code>mf_mf_product_img_url</code> — без файлов в <code>/upload/</code>).
+		В файл всегда входят колонки: id, бренд, артикул, OEM, наименование, <strong>цепочка разделов</strong> (от корня через «<strong> =&gt; </strong>», как в навигации каталога), краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>все URL фото как на сайте</strong> в одной ячейке через « | »
+		(все MF_EXT_IMAGES при наличии, иначе все фото из метаданных аналогов, иначе при заполненном MORE_PHOTO — по слотам URL как на деталке через <code>mf_mf_product_img_url</code>, иначе превью и при отличии — деталь в <code>/upload/</code>). Без «фиктивного» <code>/mf-img/.../0001.jpg</code>, если на карточке изображений нет.
 		Редиректы (MF_IS_REDIRECT) не выгружаются.
 		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
 		XLSX — ZIP со сжатием, при тех же данных файл обычно меньше CSV; на очень больших каталогах надёжнее CSV (быстрее, меньше таймаутов).
@@ -1112,8 +1234,8 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 	<p class="adm-info-message" style="max-width:720px">
 		Файл должен быть в <strong>том же формате</strong>, что и выгрузка CSV: первая строка — заголовки, разделитель полей «<strong>;</strong>», кодировка UTF-8 (с BOM или без).
 		Строки с <strong>id</strong>, существующим в инфоблоке <?= (int)$iblockId ?> и не являющимся редиректом (MF_IS_REDIRECT), будут обновлены.
-		Новые товары этим способом <strong>не создаются</strong>. Колонка «Фото»: непустое значение задаёт свойство MF_EXT_IMAGES (один URL); пустая — картинка из файла не меняется.
-		«Раздел товара»: цепочка <strong>Родитель / Дочерний / …</strong> (как в выгрузке) или одно имя раздела — подбирается активный раздел; если цепочка не найдена, остальные поля строки всё равно сохраняются, привязку к разделу не меняем.
+		Новые товары этим способом <strong>не создаются</strong>. Колонка «Фото»: непустое значение задаёт множественное свойство <strong>MF_EXT_IMAGES</strong> — все URL из ячейки, разделённые в выгрузке через « | » (один URL без разделителя тоже сохраняется); пустая ячейка — внешние URL из свойства не меняем.
+		«Раздел товара»: цепочка <strong>Родитель =&gt; Дочерний =&gt; …</strong> (как в выгрузке; для старых CSV допускается « / ») или одно имя раздела — подбирается активный раздел; если цепочка не найдена, остальные поля строки всё равно сохраняются, привязку к разделу не меняем.
 	</p>
 
 	<table class="adm-detail-content-table edit-table" style="max-width:920px">
