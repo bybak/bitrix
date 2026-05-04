@@ -75,8 +75,13 @@ try
 		throw new RuntimeException('Выбранный склад недоступен для этого товара.');
 	}
 
+	$idsCsv = function_exists('mf_basket_merged_store_ids_for_item')
+		? mf_basket_merged_store_ids_for_item($targetItem, $storeId)
+		: (string)$storeId;
+
 	$props = [
 		'MF_STORE_ID' => (string)$storeId,
+		'MF_STORE_IDS' => $idsCsv,
 		'MF_STORE_TITLE' => (string)($selected['title'] ?? ''),
 		'MF_STORE_CODE' => (string)($selected['code'] ?? ''),
 	];

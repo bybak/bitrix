@@ -70,8 +70,13 @@ try
 	if (function_exists('mf_store_row'))
 	{
 		$s = mf_store_row($storeId);
+		$idsCsv = function_exists('mf_basket_merged_store_ids_for_item')
+			? mf_basket_merged_store_ids_for_item($item, $storeId)
+			: (string)$storeId;
+
 		$props = [
 			'MF_STORE_ID' => (string)$storeId,
+			'MF_STORE_IDS' => $idsCsv,
 		];
 		if ($s)
 		{

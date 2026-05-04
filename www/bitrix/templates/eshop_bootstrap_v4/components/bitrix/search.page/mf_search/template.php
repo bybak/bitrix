@@ -708,9 +708,54 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								var b = btns[i];
 								if (!b) continue;
 								var pid = b.getAttribute('data-product-id') || '';
+								var btnStore = b.getAttribute('data-store-id') || '';
+								var raw = productQtyMap[String(pid)];
 								var q = 0;
-								try { q = parseInt(productQtyMap[String(pid)] || 0, 10); } catch (e0) { q = 0; }
+								var basketStore = 0;
+								var basketStoreList = [];
+								if (raw !== undefined && raw !== null)
+								{
+									if (typeof raw === 'number')
+									{
+										try { q = parseInt(raw, 10) || 0; } catch (eN) { q = 0; }
+										basketStore = 0;
+									}
+									else if (typeof raw === 'object')
+									{
+										try { q = parseInt(raw.qty || 0, 10) || 0; } catch (eQ) { q = 0; }
+										try { basketStore = parseInt(raw.store_id || 0, 10) || 0; } catch (eS) { basketStore = 0; }
+										var arr = raw.store_ids;
+										if (arr && arr.length)
+										{
+											for (var ai = 0; ai < arr.length; ai++)
+											{
+												try
+												{
+													var sid = parseInt(arr[ai], 10) || 0;
+													if (sid > 0) basketStoreList.push(String(sid));
+												}
+												catch (eA) {}
+											}
+										}
+									}
+								}
+								if (basketStoreList.length === 0 && basketStore > 0)
+								{
+									basketStoreList.push(String(basketStore));
+								}
+								var inBasketHere = false;
 								if (q > 0)
+								{
+									if (basketStoreList.length > 0)
+									{
+										inBasketHere = (basketStoreList.indexOf(String(btnStore)) >= 0);
+									}
+									else
+									{
+										inBasketHere = true;
+									}
+								}
+								if (inBasketHere)
 								{
 									b.setAttribute('data-in-basket', '1');
 									b.textContent = 'В корзине';

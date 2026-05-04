@@ -63,19 +63,57 @@ try
 		{
 			continue;
 		}
-		if (!isset($products[$pid])) $products[$pid] = 0.0;
-		$products[$pid] += $qty;
+
+		if (!isset($products[$pid]))
+		{
+			$products[$pid] = ['qty' => 0.0, 'store_id' => 0, 'store_map' => []];
+		}
+		$products[$pid]['qty'] += $qty;
+
+		if (function_exists('mf_basket_get_prop'))
+		{
+			$multi = mf_basket_get_prop($bi, 'MF_STORE_IDS');
+			if ($multi !== null && trim((string)$multi) !== '')
+			{
+				foreach (explode(',', (string)$multi) as $p)
+				{
+					$x = (int)trim((string)$p);
+					if ($x > 0)
+					{
+						$products[$pid]['store_map'][$x] = true;
+					}
+				}
+			}
+			$sv = mf_basket_get_prop($bi, 'MF_STORE_ID');
+			if ($sv !== null && trim((string)$sv) !== '')
+			{
+				$x = (int)$sv;
+				if ($x > 0)
+				{
+					$products[$pid]['store_map'][$x] = true;
+					$products[$pid]['store_id'] = $x;
+				}
+			}
+		}
 	}
 
 	$outProducts = [];
-	foreach ($products as $pid => $qty)
+	foreach ($products as $pid => $row)
 	{
-		$outProducts[(string)$pid] = (int)round((float)$qty);
+		$storeMap = $row['store_map'] ?? [];
+		$storeIds = array_keys($storeMap);
+		sort($storeIds, SORT_NUMERIC);
+		$outProducts[(string)$pid] = [
+			'qty' => (int)round((float)($row['qty'] ?? 0)),
+			'store_id' => (int)($row['store_id'] ?? 0),
+			'store_ids' => $storeIds,
+		];
 	}
 
 	echo json_encode([
 		'ok' => true,
 		'basket_count' => (int)round($basketCount),
+		// qty; store_id — последний MF_STORE_ID (оформление); store_ids — все склады, с которых добавляли
 		'products' => $outProducts,
 	], JSON_UNESCAPED_UNICODE);
 }

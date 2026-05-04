@@ -2332,6 +2332,51 @@ if (!function_exists('mf_basket_get_prop'))
 	}
 }
 
+if (!function_exists('mf_basket_merge_store_ids_csv'))
+{
+	function mf_basket_merge_store_ids_csv(?string $existingCsv, int $newStoreId): string
+	{
+		$idsMap = [];
+		foreach (explode(',', (string)$existingCsv) as $p)
+		{
+			$x = (int)trim((string)$p);
+			if ($x > 0)
+			{
+				$idsMap[$x] = true;
+			}
+		}
+		if ($newStoreId > 0)
+		{
+			$idsMap[$newStoreId] = true;
+		}
+		ksort($idsMap, SORT_NUMERIC);
+
+		return implode(',', array_keys($idsMap));
+	}
+}
+
+if (!function_exists('mf_basket_merged_store_ids_for_item'))
+{
+	function mf_basket_merged_store_ids_for_item(\Bitrix\Sale\BasketItemBase $item, int $newStoreId): string
+	{
+		$csv = '';
+		if (function_exists('mf_basket_get_prop'))
+		{
+			$csv = (string)(mf_basket_get_prop($item, 'MF_STORE_IDS') ?? '');
+			if (trim($csv) === '')
+			{
+				$oldMain = mf_basket_get_prop($item, 'MF_STORE_ID');
+				if ($oldMain !== null && trim((string)$oldMain) !== '')
+				{
+					$csv = (string)$oldMain;
+				}
+			}
+		}
+
+		return mf_basket_merge_store_ids_csv($csv, $newStoreId);
+	}
+}
+
 if (!function_exists('mf_basket_set_props'))
 {
 	function mf_basket_set_props(\Bitrix\Sale\BasketItemBase $item, array $props): void
