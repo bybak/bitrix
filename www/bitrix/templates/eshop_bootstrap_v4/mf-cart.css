@@ -61,8 +61,26 @@
   border: var(--mf-border) !important;
   border-radius: var(--mf-radius);
   background: #fff;
-  overflow: hidden;
   box-shadow: none;
+}
+
+/* Реально режет таблицу стандартный .basket-items-list-container { overflow: hidden }, а не обёртка выше. */
+.mf-cart .basket-items-list-container{
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  min-width: 0;
+}
+.mf-cart .basket-items-list{
+  min-width: 0;
+}
+
+/* Стандартный шаблон прячет удаление до :hover; на тач-экранах при ширине ≥768px крестик не появляется. */
+.mf-cart .basket-item-block-actions{
+  opacity: 1 !important;
+}
+.mf-cart .basket-item-actions-remove{
+  z-index: 2;
 }
 .mf-cart .basket-items-list-header{
   padding: 14px;
@@ -92,9 +110,17 @@
 /* Items table spacing (row-cards) */
 .mf-cart .basket-items-list-table{
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border-collapse: separate !important;
   border-spacing: 0 12px;
   padding: 12px;
+}
+.mf-cart .basket-item-block-properties,
+.mf-cart .basket-item-property-value,
+.mf-cart .basket-item-property-custom-value{
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .mf-cart .basket-items-list-item-container > td{
   background: #fff;
@@ -124,6 +150,10 @@
 }
 .mf-cart td.basket-items-list-item-remove{
   border: 0 !important;
+  min-width: 48px;
+  width: 48px;
+  box-sizing: border-box;
+  vertical-align: middle;
 }
 
 /* Product title */
@@ -316,6 +346,11 @@
   width: 18px;
   height: 18px;
   cursor: pointer;
+}
+
+/* У grid/flex-потомков иначе min-content таблицы блокирует сжатие — последние td уезжают за overflow. */
+.mf-cart #basket-root > .row > .col.mf-cart__items{
+  min-width: 0;
 }
 
 /* Two-column layout on desktop */
