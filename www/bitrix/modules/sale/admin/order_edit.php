@@ -379,7 +379,9 @@ $APPLICATION->SetTitle(
 		"NEWO_TITLE_EDIT",
 		array(
 			"#ID#" => $order->getId(),
-			"#NUM#" => $order->getField('ACCOUNT_NUMBER') <> '' ? $order->getField('ACCOUNT_NUMBER') : $order->getId(),
+			"#NUM#" => (function_exists('mf_order_account_number_admin_title')
+				? mf_order_account_number_admin_title((int)$order->getUserId(), (string)$order->getField('ACCOUNT_NUMBER'), (int)$order->getId())
+				: ($order->getField('ACCOUNT_NUMBER') <> '' ? $order->getField('ACCOUNT_NUMBER') : $order->getId())),
 			"#DATE#" => $order->getDateInsert()->toString()
 		)
 	)

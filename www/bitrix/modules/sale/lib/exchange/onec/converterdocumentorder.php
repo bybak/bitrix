@@ -176,7 +176,12 @@ class ConverterDocumentOrder extends Converter
 					break;
 				case 'NUMBER':
 					/** TODO: only EntityType::ORDER */
-					$value = $settings->prefixFor($this->getEntityTypeId()).$traits['ACCOUNT_NUMBER'];
+					$accRaw = isset($traits['ACCOUNT_NUMBER']) ? (string)$traits['ACCOUNT_NUMBER'] : '';
+					$uidRaw = isset($traits['USER_ID']) ? (int)$traits['USER_ID'] : 0;
+					$accForNumber = function_exists('mf_order_account_number_for_display')
+						? mf_order_account_number_for_display($uidRaw, $accRaw)
+						: $accRaw;
+					$value = $settings->prefixFor($this->getEntityTypeId()).$accForNumber;
 					break;
 				case 'ID_1C':
 					$value = ($traits[$k]<>'' ? $traits[$k]:'');

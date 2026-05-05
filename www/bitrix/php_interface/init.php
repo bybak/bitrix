@@ -2296,6 +2296,12 @@ if (is_file($mfCheckoutInclude))
 	}
 }
 
+$mfOrderAccountDisplayInclude = __DIR__ . '/include/mf_order_account_display.php';
+if (is_file($mfOrderAccountDisplayInclude))
+{
+	require_once $mfOrderAccountDisplayInclude;
+}
+
 // Частичное оформление заказа (отложить невыбранные позиции в корзине).
 $mfCartPartialInclude = __DIR__ . '/include/mf_cart_partial.php';
 if (is_file($mfCartPartialInclude))

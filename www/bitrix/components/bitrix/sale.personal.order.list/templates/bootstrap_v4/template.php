@@ -452,7 +452,7 @@ else
 							<div>
 								<div class="mf-order-card-title">
 									<?=Loc::getMessage('SPOL_TPL_ORDER')?>
-									<?=Loc::getMessage('SPOL_TPL_NUMBER_SIGN').htmlspecialcharsbx($order['ORDER']['ACCOUNT_NUMBER'])?>
+									<?=Loc::getMessage('SPOL_TPL_NUMBER_SIGN').htmlspecialcharsbx($order['ORDER']['ACCOUNT_NUMBER_DISPLAY'] ?? $order['ORDER']['ACCOUNT_NUMBER'])?>
 									<span class="mf-order-card-title-sep">|</span>
 									<?=Loc::getMessage('SPOL_TPL_FROM_DATE')?> <?=$order['ORDER']['DATE_INSERT_FORMATED']?>
 								</div>
@@ -478,6 +478,8 @@ else
 											{
 												continue;
 											}
+											$mfPaySystemName = trim((string)($payment['PAY_SYSTEM_NAME'] ?? ''));
+											$mfPayInstructionsInModal = ($mfPaySystemName !== '' && mb_stripos($mfPaySystemName, 'Перевод с карты на карту') !== false);
 											?>
 											<div class="row mb-0 sale-order-list-inner-row mf-order-card-payment-row">
 												<div class="col sale-order-list-inner-row-body">
@@ -488,7 +490,7 @@ else
 															<?php elseif ($payment['NEW_WINDOW'] === 'Y'): ?>
 																<a class="btn btn-primary" target="_blank" href="<?=htmlspecialcharsbx($payment['PSA_ACTION_FILE'])?>"><?=Loc::getMessage('SPOL_TPL_PAY')?></a>
 															<?php else: ?>
-																<a class="btn btn-primary ajax_reload" href="<?=htmlspecialcharsbx($payment['PSA_ACTION_FILE'])?>"><?=Loc::getMessage('SPOL_TPL_PAY')?></a>
+																<a class="btn btn-primary ajax_reload<?= $mfPayInstructionsInModal ? ' mf-order-pay-instructions-modal' : '' ?>" href="<?=htmlspecialcharsbx($payment['PSA_ACTION_FILE'])?>"><?=Loc::getMessage('SPOL_TPL_PAY')?></a>
 															<?php endif; ?>
 														</div>
 													</div>
@@ -634,7 +636,7 @@ else
 				<h3 class="g-font-size-20 mb-1 mt-1 col-sm">
 					<?= Loc::getMessage('SPOL_TPL_ORDER') ?>
 					<?= Loc::getMessage('SPOL_TPL_NUMBER_SIGN') ?>
-					<?= htmlspecialcharsbx($order['ORDER']['ACCOUNT_NUMBER'])?>
+					<?= htmlspecialcharsbx($order['ORDER']['ACCOUNT_NUMBER_DISPLAY'] ?? $order['ORDER']['ACCOUNT_NUMBER'])?>
 					<?= Loc::getMessage('SPOL_TPL_FROM_DATE') ?>
 					<span class="text-nowrap"><?= $order['ORDER']['DATE_INSERT'] ?>,</span>
 					<?= count($order['BASKET_ITEMS']); ?>

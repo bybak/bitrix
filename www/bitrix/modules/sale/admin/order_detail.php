@@ -1461,7 +1461,7 @@ else
 					?>
 					<tr>
 						<td width="40%"><?echo $tabControl->GetCustomLabelHTML()?>:</td>
-						<td width="60%"><?echo $arOrder["ACCOUNT_NUMBER"]?></td>
+						<td width="60%"><?echo function_exists('mf_order_account_number_for_display') ? htmlspecialcharsbx(mf_order_account_number_for_display((int)($arOrder['USER_ID'] ?? 0), (string)($arOrder['ACCOUNT_NUMBER'] ?? ''))) : htmlspecialcharsbx($arOrder['ACCOUNT_NUMBER'])?></td>
 					</tr>
 					<?
 				$tabControl->EndCustomField("ORDER_ACCOUNT_NUMBER", '');

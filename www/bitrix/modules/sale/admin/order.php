@@ -1088,7 +1088,9 @@ if(($arID = $lAdmin->GroupAction()) && $saleModulePermissions >= "P")
 							$shpMsg = Loc::getMessage(
 								'SALE_ORDER_SHIPMENT_N',
 								array(
-									'##ORDER_N##' => $saleOrder->getField('ACCOUNT_NUMBER'),
+									'##ORDER_N##' => (function_exists('mf_order_account_number_for_display')
+										? mf_order_account_number_for_display((int)$saleOrder->getUserId(), (string)$saleOrder->getField('ACCOUNT_NUMBER'))
+										: $saleOrder->getField('ACCOUNT_NUMBER')),
 									'##SHIPMENT_ID##' => $shipment->getId()
 								));
 
@@ -1157,7 +1159,9 @@ if(($arID = $lAdmin->GroupAction()) && $saleModulePermissions >= "P")
 							$shpMsg = Loc::getMessage(
 								'SALE_ORDER_SHIPMENT_N',
 								array(
-									'##ORDER_N##' => $saleOrder->getField('ACCOUNT_NUMBER'),
+									'##ORDER_N##' => (function_exists('mf_order_account_number_for_display')
+										? mf_order_account_number_for_display((int)$saleOrder->getUserId(), (string)$saleOrder->getField('ACCOUNT_NUMBER'))
+										: $saleOrder->getField('ACCOUNT_NUMBER')),
 									'##SHIPMENT_ID##' => $shipment->getId()
 								));
 
@@ -1249,7 +1253,9 @@ if(($arID = $lAdmin->GroupAction()) && $saleModulePermissions >= "P")
 						$payMsg = Loc::getMessage(
 							'SALE_ORDER_PAYMENT_N',
 							array(
-								'##ORDER_N##' => $saleOrder->getField('ACCOUNT_NUMBER'),
+								'##ORDER_N##' => (function_exists('mf_order_account_number_for_display')
+									? mf_order_account_number_for_display((int)$saleOrder->getUserId(), (string)$saleOrder->getField('ACCOUNT_NUMBER'))
+									: $saleOrder->getField('ACCOUNT_NUMBER')),
 								'##PAYMENT_ID##' => $payment->getId()
 							));
 
@@ -1302,7 +1308,9 @@ if(($arID = $lAdmin->GroupAction()) && $saleModulePermissions >= "P")
 						$payMsg = Loc::getMessage(
 							'SALE_ORDER_PAYMENT_N',
 							array(
-								'##ORDER_N##' => $saleOrder->getField('ACCOUNT_NUMBER'),
+								'##ORDER_N##' => (function_exists('mf_order_account_number_for_display')
+									? mf_order_account_number_for_display((int)$saleOrder->getUserId(), (string)$saleOrder->getField('ACCOUNT_NUMBER'))
+									: $saleOrder->getField('ACCOUNT_NUMBER')),
 								'##PAYMENT_ID##' => $payment->getId()
 							));
 
@@ -1582,6 +1590,17 @@ foreach ($arVisibleColumns as $visibleColumn)
 				if(!in_array($arColumn2Field[$visibleColumn][$i], $arSelectFields))
 					$arSelectFields[] = $arColumn2Field[$visibleColumn][$i];
 			}
+		}
+	}
+}
+
+if (function_exists('mf_order_account_number_for_display'))
+{
+	foreach (['ACCOUNT_NUMBER', 'USER_ID'] as $mfOrdExtraField)
+	{
+		if (!in_array($mfOrdExtraField, $arSelectFields, true))
+		{
+			$arSelectFields[] = $mfOrdExtraField;
 		}
 	}
 }
@@ -1943,13 +1962,25 @@ if (!empty($orderList) && is_array($orderList))
 		}
 
 		$idTmp .= "</table>";
-		$row->AddField("ID", str_replace('##ID##', Loc::getMessage("SO_ORDER_ID_PREF").$arOrder["ID"], $idTmp));
+		$mfAdminOrderListIdLabel = (string)$arOrder["ID"];
+		if (function_exists('mf_order_account_number_for_display'))
+		{
+			$accListId = trim((string)($arOrder['ACCOUNT_NUMBER'] ?? ''));
+			if ($accListId !== '')
+			{
+				$mfAdminOrderListIdLabel = mf_order_account_number_for_display((int)($arOrder['USER_ID'] ?? 0), $accListId);
+			}
+		}
+		$row->AddField("ID", str_replace('##ID##', Loc::getMessage("SO_ORDER_ID_PREF").htmlspecialcharsbx($mfAdminOrderListIdLabel), $idTmp));
 
 		//ACCOUNT_NUMBER
 		$fieldValue = "";
 		if(in_array("ACCOUNT_NUMBER", $arVisibleColumns))
 		{
-			$fieldValue = str_replace('##ID##', Loc::getMessage("SO_ORDER_ID_PREF").htmlspecialcharsbx($arOrder["ACCOUNT_NUMBER"]), $idTmp);
+			$mfAccDispList = function_exists('mf_order_account_number_for_display')
+				? mf_order_account_number_for_display((int)($arOrder['USER_ID'] ?? 0), (string)($arOrder['ACCOUNT_NUMBER'] ?? ''))
+				: (string)($arOrder['ACCOUNT_NUMBER'] ?? '');
+			$fieldValue = str_replace('##ID##', Loc::getMessage("SO_ORDER_ID_PREF").htmlspecialcharsbx($mfAccDispList), $idTmp);
 		}
 		$row->AddField("ACCOUNT_NUMBER", $fieldValue);
 

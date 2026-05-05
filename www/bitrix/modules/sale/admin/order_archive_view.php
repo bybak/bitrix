@@ -79,7 +79,9 @@ $APPLICATION->SetTitle(
 		"SALE_OVIEW_TITLE",
 		array(
 			"#ID#" => $saleOrder->getId(),
-			"#NUM#" => $saleOrder->getField('ACCOUNT_NUMBER') <> '' ? $saleOrder->getField('ACCOUNT_NUMBER') : $saleOrder->getId(),
+			"#NUM#" => (function_exists('mf_order_account_number_admin_title')
+				? mf_order_account_number_admin_title((int)$saleOrder->getUserId(), (string)$saleOrder->getField('ACCOUNT_NUMBER'), (int)$saleOrder->getId())
+				: ($saleOrder->getField('ACCOUNT_NUMBER') <> '' ? $saleOrder->getField('ACCOUNT_NUMBER') : $saleOrder->getId())),
 			"#DATE#" => $saleOrder->getDateInsert()->toString()
 		)
 	)

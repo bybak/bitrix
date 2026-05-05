@@ -571,7 +571,10 @@ if (!empty($orderList))
 		$fieldValue = "";
 		if(in_array("ACCOUNT_NUMBER", $arVisibleColumns))
 		{
-			$fieldValue = str_replace('##ID##', Loc::getMessage("SO_ORDER_ID_PREF").htmlspecialcharsbx($arOrder["ACCOUNT_NUMBER"]), $rowTmp);
+			$mfAccArch = function_exists('mf_order_account_number_for_display')
+				? mf_order_account_number_for_display((int)($arOrder['USER_ID'] ?? 0), (string)($arOrder['ACCOUNT_NUMBER'] ?? ''))
+				: (string)($arOrder['ACCOUNT_NUMBER'] ?? '');
+			$fieldValue = str_replace('##ID##', Loc::getMessage("SO_ORDER_ID_PREF").htmlspecialcharsbx($mfAccArch), $rowTmp);
 		}
 		$row->AddField("ACCOUNT_NUMBER", $fieldValue);
 

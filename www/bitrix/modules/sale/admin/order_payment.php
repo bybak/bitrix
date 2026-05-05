@@ -547,7 +547,12 @@ while ($payment = $dbResultList->Fetch())
 
 	$row->AddField("ID", "<a href=\"sale_order_payment_edit.php?order_id=".$payment['ORDER_ID']."&payment_id=".$payment['ID']."&lang=".$lang.GetFilterParams("filter_")."\">".$payment['ID']."</a>");
 	$row->AddField("ORDER_ID", "<a href=\"sale_order_edit.php?ID=".$payment['ORDER_ID']."&lang=".$lang.GetFilterParams("filter_")."\">".$payment['ORDER_ID']."</a>");
-	$row->AddField("ACCOUNT_NUMBER", "<a href=\"sale_order_edit.php?ID=".$payment['ORDER_ID']."&lang=".$lang.GetFilterParams("filter_")."\">".htmlspecialcharsbx($payment['ORDER_ACCOUNT_NUMBER'])."</a>");
+	$mfPayOrderAcc = htmlspecialcharsbx($payment['ORDER_ACCOUNT_NUMBER']);
+	if (function_exists('mf_order_account_number_for_display'))
+	{
+		$mfPayOrderAcc = htmlspecialcharsbx(mf_order_account_number_for_display((int)($payment['ORDER_USER_ID'] ?? 0), (string)($payment['ORDER_ACCOUNT_NUMBER'] ?? '')));
+	}
+	$row->AddField("ACCOUNT_NUMBER", "<a href=\"sale_order_edit.php?ID=".$payment['ORDER_ID']."&lang=".$lang.GetFilterParams("filter_")."\">".$mfPayOrderAcc."</a>");
 	$row->AddField("SUM", \CCurrencyLang::CurrencyFormat($payment['SUM'], $payment['CURRENCY']));
 	$row->AddField("PAID", ($payment['PAID'] == 'Y') ? GetMessage("PAYMENT_ORDER_PAID_YES"): GetMessage("PAYMENT_ORDER_PAID_NO"));
 	$row->AddField("PAY_SYSTEM_NAME", "<a href='sale_pay_system_edit.php?ID=".$payment['PAY_SYSTEM_ID']."&lang=".$lang."'>".htmlspecialcharsbx($payment['PAY_SYSTEM_NAME'])."</a>");

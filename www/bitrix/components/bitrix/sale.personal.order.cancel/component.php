@@ -88,7 +88,12 @@ if (!$order || $order->getField('USER_ID') !== $USER->GetID())
 }
 elseif ($order->isCanceled())
 {
-	$arResult["ERROR_MESSAGE"] = GetMessage("SPOC_ORDER_CANCELED", ['#ACCOUNT_NUMBER#' => htmlspecialcharsbx($id)]);
+	$accCanceled = (string)$order->getField('ACCOUNT_NUMBER');
+	$uidCanceled = (int)$order->getField('USER_ID');
+	$displayCanceled = function_exists('mf_order_account_number_for_display')
+		? mf_order_account_number_for_display($uidCanceled, $accCanceled)
+		: $accCanceled;
+	$arResult["ERROR_MESSAGE"] = GetMessage("SPOC_ORDER_CANCELED", ['#ACCOUNT_NUMBER#' => htmlspecialcharsbx($displayCanceled)]);
 }
 else
 {
@@ -117,6 +122,14 @@ else
 	{
 		$arResult['ID'] = $id;
 		$arResult['ACCOUNT_NUMBER'] = $order->getField('ACCOUNT_NUMBER');
+		$arResult['USER_ID'] = (int)$order->getField('USER_ID');
+		if (function_exists('mf_order_account_number_for_display'))
+		{
+			$arResult['ACCOUNT_NUMBER_DISPLAY'] = mf_order_account_number_for_display(
+				$arResult['USER_ID'],
+				(string)$arResult['ACCOUNT_NUMBER']
+			);
+		}
 		$arResult['URL_TO_DETAIL'] = CComponentEngine::MakePathFromTemplate(
 			$arParams["PATH_TO_DETAIL"],
 			[

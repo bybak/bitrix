@@ -58,13 +58,14 @@ else
 			ShowError($error);
 		}
 	}
+	$mfOrderAccDisplay = htmlspecialcharsbx($arResult['ACCOUNT_NUMBER_DISPLAY'] ?? $arResult['ACCOUNT_NUMBER']);
 	?>
 	<div class="row sale-order-detail">
 		<div class="col">
 
 			<h1 class="mb-3">
 				<?= Loc::getMessage('SPOD_LIST_MY_ORDER', array(
-					'#ACCOUNT_NUMBER#' => htmlspecialcharsbx($arResult["ACCOUNT_NUMBER"]),
+					'#ACCOUNT_NUMBER#' => $mfOrderAccDisplay,
 					'#DATE_ORDER_CREATE#' => $arResult["DATE_INSERT_FORMATED"]
 				)) ?>
 			</h1>
@@ -85,7 +86,7 @@ else
 
 					<h2 class="sale-order-detail-card-title">
 						<?= Loc::getMessage('SPOD_SUB_ORDER_TITLE', array(
-							"#ACCOUNT_NUMBER#"=> htmlspecialcharsbx($arResult["ACCOUNT_NUMBER"]),
+							"#ACCOUNT_NUMBER#"=> $mfOrderAccDisplay,
 							"#DATE_ORDER_CREATE#"=> $arResult["DATE_INSERT_FORMATED"]
 						))?>
 						<?= count($arResult['BASKET']);?>
@@ -302,7 +303,7 @@ else
 								<div class="col">
 									<div class="sale-order-detail-payment-options-info-order-number">
 										<?= Loc::getMessage('SPOD_SUB_ORDER_TITLE', array(
-											"#ACCOUNT_NUMBER#"=> htmlspecialcharsbx($arResult["ACCOUNT_NUMBER"]),
+											"#ACCOUNT_NUMBER#"=> $mfOrderAccDisplay,
 											"#DATE_ORDER_CREATE#"=> $arResult["DATE_INSERT_FORMATED"]
 										))?>
 										<?php

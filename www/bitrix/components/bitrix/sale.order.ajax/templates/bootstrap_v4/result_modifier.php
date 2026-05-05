@@ -27,3 +27,30 @@ if (function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 		mf_sale_order_ajax_enrich_grid_rows($arResult['GRID']['ROWS'], $basketImgScaleRm);
 	}
 }
+
+if (function_exists('mf_order_account_number_for_display'))
+{
+	if (!empty($arResult['ORDER']) && is_array($arResult['ORDER']))
+	{
+		$acc = (string)($arResult['ORDER']['ACCOUNT_NUMBER'] ?? '');
+		if ($acc !== '')
+		{
+			$uid = (int)($arResult['ORDER']['USER_ID'] ?? 0);
+			$arResult['ORDER']['ACCOUNT_NUMBER_DISPLAY'] = mf_order_account_number_for_display($uid, $acc);
+		}
+	}
+	$accTop = (string)($arResult['ACCOUNT_NUMBER'] ?? '');
+	if ($accTop !== '')
+	{
+		$uTop = 0;
+		if (!empty($arResult['ORDER']['USER_ID']))
+		{
+			$uTop = (int)$arResult['ORDER']['USER_ID'];
+		}
+		elseif (isset($GLOBALS['USER']) && is_object($GLOBALS['USER']) && $GLOBALS['USER']->IsAuthorized())
+		{
+			$uTop = (int)$GLOBALS['USER']->GetID();
+		}
+		$arResult['ACCOUNT_NUMBER_DISPLAY'] = mf_order_account_number_for_display($uTop, $accTop);
+	}
+}

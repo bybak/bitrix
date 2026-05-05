@@ -18,9 +18,12 @@ if ($arParams["SET_TITLE"] == "Y")
 
 	<div class="row mb-5">
 		<div class="col">
+			<?php
+			$mfOrderConfirmNum = (string)($arResult['ORDER']['ACCOUNT_NUMBER_DISPLAY'] ?? $arResult['ORDER']['ACCOUNT_NUMBER']);
+			?>
 			<?=Loc::getMessage("SOA_ORDER_SUC", array(
 				"#ORDER_DATE#" => $arResult["ORDER"]["DATE_INSERT"]->toUserTime()->format('d.m.Y H:i'),
-				"#ORDER_ID#" => htmlspecialcharsbx($arResult["ORDER"]["ACCOUNT_NUMBER"])
+				"#ORDER_ID#" => htmlspecialcharsbx($mfOrderConfirmNum)
 			))?>
 			<? if (!empty($arResult['ORDER']["PAYMENT_ID"])): ?>
 				<?=Loc::getMessage("SOA_PAYMENT_SUC", array(
@@ -122,7 +125,7 @@ if ($arParams["SET_TITLE"] == "Y")
 	<div class="row mb-2">
 		<div class="col">
 			<div class="alert alert-danger" role="alert"><strong><?=Loc::getMessage("SOA_ERROR_ORDER")?></strong><br />
-				<?=Loc::getMessage("SOA_ERROR_ORDER_LOST", ["#ORDER_ID#" => htmlspecialcharsbx($arResult["ACCOUNT_NUMBER"])])?><br />
+				<?=Loc::getMessage("SOA_ERROR_ORDER_LOST", ["#ORDER_ID#" => htmlspecialcharsbx((string)($arResult["ACCOUNT_NUMBER_DISPLAY"] ?? $arResult["ACCOUNT_NUMBER"] ?? ''))])?><br />
 				<?=Loc::getMessage("SOA_ERROR_ORDER_LOST1")?></div>
 		</div>
 	</div>

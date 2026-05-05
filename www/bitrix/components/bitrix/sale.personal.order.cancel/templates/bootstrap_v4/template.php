@@ -24,7 +24,7 @@ if (!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)
 					<input type="hidden" name="ID" value="<?=$arResult["ID"]?>">
 					<p class="mb-2">
 						<?=GetMessage("SALE_CANCEL_ORDER1") ?>
-						<a href="<?=$arResult["URL_TO_DETAIL"]?>"><?=GetMessage("SALE_CANCEL_ORDER2")?> #<?=$arResult["ACCOUNT_NUMBER"]?></a>?
+						<a href="<?=$arResult["URL_TO_DETAIL"]?>"><?=GetMessage("SALE_CANCEL_ORDER2")?> #<?=htmlspecialcharsbx($arResult['ACCOUNT_NUMBER_DISPLAY'] ?? $arResult['ACCOUNT_NUMBER'])?></a>?
 					</p>
 					<p class="mb-3">
 						<strong class="text-danger"><?= GetMessage("SALE_CANCEL_ORDER3") ?></strong>

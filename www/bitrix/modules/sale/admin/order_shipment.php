@@ -511,7 +511,12 @@ while ($shipment = $dbResultList->Fetch())
 	$row->AddField("ID", "<a href=\"sale_order_shipment_edit.php?order_id=".$shipment['ORDER_ID']."&shipment_id=".$shipment['ID']."&lang=".$lang.GetFilterParams("filter_")."\">".$shipment['ID']."</a>");
 	$row->AddField("ORDER_ID", "<a href=\"sale_order_edit.php?ID=".$shipment['ORDER_ID']."&lang=".$lang.GetFilterParams("filter_")."\">".$shipment['ORDER_ID']."</a>");
 	$row->AddField("DELIVERY_NAME", "<a href=\"sale_delivery_service_edit.php?ID=".$shipment['DELIVERY_ID']."&lang=".$lang.GetFilterParams("filter_")."\">".htmlspecialcharsbx($shipment['DELIVERY_NAME'])."</a>");
-	$row->AddField("ACCOUNT_NUMBER", htmlspecialcharsbx($shipment['SALE_INTERNALS_SHIPMENT_ORDER_ACCOUNT_NUMBER']));
+	$mfShpOrderAcc = htmlspecialcharsbx($shipment['SALE_INTERNALS_SHIPMENT_ORDER_ACCOUNT_NUMBER']);
+	if (function_exists('mf_order_account_number_for_display'))
+	{
+		$mfShpOrderAcc = htmlspecialcharsbx(mf_order_account_number_for_display((int)($shipment['ORDER_USER_ID'] ?? 0), (string)($shipment['SALE_INTERNALS_SHIPMENT_ORDER_ACCOUNT_NUMBER'] ?? '')));
+	}
+	$row->AddField("ACCOUNT_NUMBER", $mfShpOrderAcc);
 	$row->AddField("COMPANY_BY", "<a href=\"sale_company_edit.php?ID=".$shipment['COMPANY_ID']."&lang=".$lang.GetFilterParams("filter_")."\">".htmlspecialcharsbx($shipment['SALE_INTERNALS_SHIPMENT_COMPANY_BY_NAME'])."</a>");
 	$row->AddField("ORDER_USER_NAME", "<a href='/bitrix/admin/user_edit.php?ID=".$shipment['ORDER_USER_ID']."&lang=".$lang."'>".htmlspecialcharsbx($shipment['ORDER_USER_NAME'])." ".htmlspecialcharsbx($shipment['ORDER_USER_LAST_NAME'])."</a>");
 	$row->AddField("PRICE_DELIVERY", \CCurrencyLang::CurrencyFormat($shipment['PRICE_DELIVERY'], $shipment['SALE_INTERNALS_SHIPMENT_ORDER_CURRENCY']));
