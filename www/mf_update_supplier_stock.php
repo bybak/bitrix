@@ -1504,6 +1504,7 @@ try
 		$total++;
 		$row = array_map(static fn($v) => mf_toUtf8($v, $encoding), $row);
 		$brandRaw = $idxBrand !== null ? trim((string)($row[$idxBrand] ?? '')) : '';
+		$brandFromCsv = $brandRaw;
 		// allow comments in demo CSV
 		if ($brandRaw !== '' && str_starts_with($brandRaw, '#')) continue;
 		$nameRaw = $idxName !== null ? trim((string)($row[$idxName] ?? '')) : '';
@@ -1592,7 +1593,12 @@ try
 		if ($matchLog && is_array($rowTrace))
 		{
 			$idxInfo = ($idxBrand === null ? 'колонка бренда не распознана по заголовку' : 'колонка бренда индекс ' . (int)$idxBrand);
-			$keyHdr = "артикул=\"{$artRaw}\" бренд_файл=\"" . ($brandRaw !== '' ? $brandRaw : '∅') . "\" (строка {$total} CSV, {$idxInfo})";
+			$keyHdr = 'артикул="' . $artRaw . '" бренд_из_CSV="' . ($brandFromCsv !== '' ? $brandFromCsv : '∅') . '"';
+			if ($brandMappedByDict && $brandFromCsv !== $brandRaw)
+			{
+				$keyHdr .= ' после_словаря="' . $brandRaw . '"';
+			}
+			$keyHdr .= " (строка {$total} CSV, {$idxInfo})";
 			out("=== MATCH " . $keyHdr . " ===");
 			foreach ($rowTrace as $line)
 			{

@@ -159,10 +159,16 @@ function mf_brand_aliases_load(bool $createIfMissing = false): array
 	{
 		$aliasNorm = trim((string)($r['UF_ALIAS_NORM'] ?? ''));
 		$canon = trim((string)($r['UF_CANONICAL'] ?? ''));
+		$canonNorm = trim((string)($r['UF_CANONICAL_NORM'] ?? ''));
 		if ($aliasNorm === '' || $canon === '') continue;
+		if ($canonNorm === '')
+		{
+			$canonNorm = mf_brand_norm($canon);
+		}
 		$rows[] = [
 			'ALIAS_NORM' => $aliasNorm,
 			'CANONICAL' => $canon,
+			'CANONICAL_NORM' => $canonNorm,
 			'SORT' => (int)($r['UF_SORT'] ?? 0),
 		];
 	}
@@ -185,15 +191,25 @@ function mf_brand_find(string $text, bool $createIfMissing = false): string
 	$normText = mf_brand_norm($text);
 	if ($normText === '' || empty($dict['ROWS'])) return '';
 
+	// Только полное совпадение нормализованной строки с алиасом или с каноном (без подстроки).
 	foreach ($dict['ROWS'] as $r)
 	{
 		$an = (string)$r['ALIAS_NORM'];
-		if ($an === '') continue;
-		if (strpos($normText, $an) !== false)
+		if ($an !== '' && $normText === $an)
 		{
 			return (string)$r['CANONICAL'];
 		}
 	}
+
+	foreach ($dict['ROWS'] as $r)
+	{
+		$cn = (string)($r['CANONICAL_NORM'] ?? '');
+		if ($cn !== '' && $normText === $cn)
+		{
+			return (string)$r['CANONICAL'];
+		}
+	}
+
 	return '';
 }
 
