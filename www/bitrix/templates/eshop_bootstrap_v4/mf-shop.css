@@ -1177,6 +1177,9 @@
   width: 1%;
   white-space: nowrap;
 }
+.mf-detail-stock-table__qty-stepper .mf-search-qty{
+  margin-left: auto;
+}
 /* Доставка до СПб: индикатор в кружке */
 .mf-store-delivery-spb{
   display: inline-flex;

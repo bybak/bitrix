@@ -297,6 +297,25 @@ if ($elementId > 0)
 			}
 		}
 
+		// Как mf_product_search_card_stores: внешний склад с закупкой в прайсе, но без строки в b_catalog_store_product —
+		// иначе блок «склады» на деталке пустой, хотя цена на сайте с подменой есть.
+		if (function_exists('mf_supplier_store_to_price_group') && function_exists('mf_ep_store_is_external_warehouse') && function_exists('mf_raw_store_price'))
+		{
+			foreach (array_keys(mf_supplier_store_to_price_group()) as $extSid)
+			{
+				$extSid = (int)$extSid;
+				if ($extSid <= 0 || !mf_ep_store_is_external_warehouse($extSid) || array_key_exists($extSid, $storeAmounts))
+				{
+					continue;
+				}
+				$raw = mf_raw_store_price($elementId, $extSid);
+				if ($raw !== null && $raw > 0)
+				{
+					$storeAmounts[$extSid] = 0.0;
+				}
+			}
+		}
+
 		if (!empty($storeAmounts))
 		{
 			$storeIds = array_keys($storeAmounts);
@@ -387,6 +406,7 @@ if ($elementId > 0)
 						<th class="text-center mf-detail-stock-table__spb-col">Доставка</th>
 						<th class="text-right">Цена</th>
 						<th class="text-right">Наличие</th>
+						<th class="text-right">Кол-во</th>
 						<th class="text-right"></th>
 					</tr>
 					</thead>
@@ -440,6 +460,7 @@ if ($elementId > 0)
 								$mfIsInternalSku = ($mfCodeRow === 'MOTOR_FORCE_INTERNAL'
 									|| ($mfXmlRow !== '' && mb_strpos($mfXmlRow, 'MOTOR_FORCE_INTERNAL') !== false));
 								$mfPendingTxt = '';
+								$mfPendingQty = 0.0;
 								$mfIsExtRow = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
 								if ($mfIsInternalSku && $amt <= 1e-9 && function_exists('mf_supplier_orders_pending_arrival_for_product'))
 								{
@@ -447,6 +468,7 @@ if ($elementId > 0)
 									if (is_array($mfPr) && trim((string)($mfPr['label'] ?? '')) !== '')
 									{
 										$mfPendingTxt = (string)$mfPr['label'];
+										$mfPendingQty = (float)($mfPr['qty'] ?? 0);
 									}
 								}
 								?>
@@ -458,14 +480,48 @@ if ($elementId > 0)
 									<?=htmlspecialcharsbx((string)($amt))?>
 								<?php endif; ?>
 							</td>
-							<td class="text-right">
+							<td class="text-right mf-detail-stock-table__qty-stepper">
 								<?php
-								$mfRowExternal = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
+								$mfRowExternal = $mfIsExtRow;
 								$mfNoPriceRow = ($storePrice === null || (float)$storePrice <= 0);
 								$mfRequestPriceRow = !$mfRowExternal && $mfNoPriceRow;
 								$mfShowCartBtn = $mfRowExternal || (!$mfNoPriceRow && (float)$amt > 1e-9);
-								?>
-								<?php if ($mfRequestPriceRow): ?>
+								$mfMaxQtyDetail = 0.0;
+								if ($mfRowExternal)
+								{
+									$mfMaxQtyDetail = 0.0;
+								}
+								elseif ($mfPendingTxt !== '' && $mfPendingQty > 1e-9)
+								{
+									$mfMaxQtyDetail = round($mfPendingQty, 3);
+								}
+								elseif ($amt > 1e-9)
+								{
+									$mfMaxQtyDetail = round($amt, 3);
+								}
+								if ($mfRequestPriceRow): ?>
+									<span class="text-muted">—</span>
+								<?php elseif ($mfRowExternal || !$mfNoPriceRow): ?>
+									<div class="mf-search-qty mf-search-qty--detail" data-max-qty="<?= htmlspecialcharsbx((string)$mfMaxQtyDetail) ?>">
+										<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
+										<input
+											type="number"
+											class="mf-search-qty__input js-mf-qty-input"
+											value="1"
+											min="1"
+											step="1"
+											inputmode="numeric"
+											aria-label="Количество"
+										>
+										<button type="button" class="mf-search-qty__btn js-mf-qty-plus" aria-label="Увеличить количество">+</button>
+									</div>
+								<?php else: ?>
+									<span class="text-muted">—</span>
+								<?php endif; ?>
+							</td>
+							<td class="text-right">
+								<?php
+								if ($mfRequestPriceRow): ?>
 									<button
 										type="button"
 										class="btn btn-sm btn-warning js-mf-request-price-global"
