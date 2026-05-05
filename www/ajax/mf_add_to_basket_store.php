@@ -33,7 +33,9 @@ try
 		throw new RuntimeException('Pricing functions not loaded');
 	}
 
-	$price = mf_ep_display_price_for_store($productId, $storeId, $qty);
+	$price = function_exists('mf_ep_basket_unit_price_with_fallback')
+		? mf_ep_basket_unit_price_with_fallback($productId, $storeId, $qty)
+		: mf_ep_display_price_for_store($productId, $storeId, $qty);
 	if ($price === null || $price <= 0)
 	{
 		throw new RuntimeException('No price for store');

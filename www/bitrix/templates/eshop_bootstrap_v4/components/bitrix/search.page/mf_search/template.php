@@ -134,11 +134,12 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					<tbody>
 						<?php foreach ($stores as $s): ?>
 							<?php
+							$mfExternal = !empty($s['external_warehouse']);
 							$mfOrdOnly = !empty($s['order_only']);
 							$mfAmtRounded = round((float)$s['amount'], 3);
 							$mfPendingDisp = trim((string)($s['pending_supplier_display'] ?? ''));
 							$mfStockCell = '';
-							if ($mfOrdOnly)
+							if ($mfExternal)
 							{
 								$mfStockCell = 'Под заказ';
 							}
@@ -150,9 +151,11 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							{
 								$mfStockCell = htmlspecialcharsbx((string)$mfAmtRounded);
 							}
-							$mfMaxQtyRounded = isset($s['pending_supplier_qty'])
-								? round((float)$s['pending_supplier_qty'], 3)
-								: $mfAmtRounded;
+							$mfMaxQtyRounded = $mfExternal
+								? 0.0
+								: (isset($s['pending_supplier_qty'])
+									? round((float)$s['pending_supplier_qty'], 3)
+									: $mfAmtRounded);
 							?>
 							<tr>
 								<td><?=htmlspecialcharsbx((string)$s['title'])?></td>
@@ -170,13 +173,9 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								<td class="mf-ta-r">
 									<?php
 									$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
-									$mfRequestPrice = $mfOrdOnly || $mfNoPrice;
+									$mfRequestPrice = !$mfExternal && ($mfOrdOnly || $mfNoPrice);
 									?>
-									<?php if ($mfOrdOnly): ?>
-										<span class="mf-search-stock__order-only">Под заказ</span>
-									<?php elseif ($mfNoPrice): ?>
-										<span class="mf-search-stock__order-only">—</span>
-									<?php else: ?>
+									<?php if ($mfExternal || !$mfNoPrice): ?>
 										<div class="mf-search-stock__actions">
 											<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
 												<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
@@ -192,6 +191,8 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 												<button type="button" class="mf-search-qty__btn js-mf-qty-plus" aria-label="Увеличить количество">+</button>
 											</div>
 										</div>
+									<?php else: ?>
+										<span class="mf-search-stock__order-only">—</span>
 									<?php endif; ?>
 								</td>
 								<td class="mf-ta-r">

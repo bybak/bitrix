@@ -450,7 +450,7 @@ if ($elementId > 0)
 									}
 								}
 								?>
-								<?php if ($mfIsExtRow && $amt <= 1e-9): ?>
+								<?php if ($mfIsExtRow): ?>
 									Под заказ
 								<?php elseif ($mfPendingTxt !== ''): ?>
 									<?=htmlspecialcharsbx($mfPendingTxt)?>
@@ -462,12 +462,8 @@ if ($elementId > 0)
 								<?php
 								$mfRowExternal = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
 								$mfNoPriceRow = ($storePrice === null || (float)$storePrice <= 0);
-								$mfPodZakazRow = $mfRowExternal && $amt <= 1e-9;
-								$mfRequestPriceRow = $mfPodZakazRow || $mfNoPriceRow;
-								$mfShowCartBtn = !$mfRequestPriceRow
-									&& $storePrice !== null
-									&& (float)$storePrice > 0
-									&& ($amt > 0 || $mfRowExternal);
+								$mfRequestPriceRow = !$mfRowExternal && $mfNoPriceRow;
+								$mfShowCartBtn = $mfRowExternal || (!$mfNoPriceRow && (float)$amt > 1e-9);
 								?>
 								<?php if ($mfRequestPriceRow): ?>
 									<button

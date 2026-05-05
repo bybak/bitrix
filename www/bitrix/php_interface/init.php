@@ -1935,6 +1935,70 @@ if (!function_exists('mf_catalog_listing_display_price'))
 	}
 }
 
+if (!function_exists('mf_ep_basket_unit_price_with_fallback'))
+{
+	/**
+	 * Цена за единицу для добавления в корзину с выбранного склада.
+	 * Для внешнего склада, если по его типу цены строки нет — подставляем минимальную
+	 * витринную цену по карте mf_supplier_store_to_price_group (как mf_catalog_listing_display_price),
+	 * затем при пустой карте — оптимальную цену каталога Bitrix (если mf_catalog_use_bitrix_base_price_fallback).
+	 */
+	function mf_ep_basket_unit_price_with_fallback(int $productId, int $storeId, float $qty = 1.0): ?float
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		if ($productId <= 0 || $storeId <= 0 || !function_exists('mf_ep_display_price_for_store'))
+		{
+			return null;
+		}
+
+		$p = mf_ep_display_price_for_store($productId, $storeId, $qty);
+		if ($p !== null && (float)$p > 0)
+		{
+			return (float)$p;
+		}
+
+		$ext = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId);
+		if ($ext && function_exists('mf_catalog_listing_display_price'))
+		{
+			$p2 = mf_catalog_listing_display_price($productId);
+			if ($p2 !== null && (float)$p2 > 0)
+			{
+				return (float)$p2;
+			}
+		}
+
+		if ($ext && class_exists(\CCatalogProduct::class))
+		{
+			global $USER;
+			$groups = [2];
+			if (is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized() && method_exists($USER, 'GetUserGroupArray'))
+			{
+				$g = $USER->GetUserGroupArray();
+				if (is_array($g) && $g !== [])
+				{
+					$groups = array_map('intval', $g);
+				}
+			}
+			$siteId = defined('SITE_ID') ? SITE_ID : false;
+			$opt = \CCatalogProduct::GetOptimalPrice($productId, 1, $groups, 'N', [], $siteId, []);
+			if (is_array($opt) && !empty($opt['RESULT_PRICE']) && is_array($opt['RESULT_PRICE']))
+			{
+				$rp = $opt['RESULT_PRICE'];
+				$disc = (float)($rp['DISCOUNT_PRICE'] ?? 0);
+				$base = (float)($rp['BASE_PRICE'] ?? 0);
+				$pick = $disc > 0 ? $disc : $base;
+				if ($pick > 0)
+				{
+					return $pick;
+				}
+			}
+		}
+
+		return null;
+	}
+}
+
 if (!function_exists('mf_catalog_use_bitrix_base_price_fallback'))
 {
 	/**

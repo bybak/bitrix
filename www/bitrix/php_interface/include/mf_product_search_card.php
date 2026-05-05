@@ -56,7 +56,8 @@ if (!function_exists('mf_product_search_card_min_price_print'))
 if (!function_exists('mf_product_search_card_stores'))
 {
 	/**
-	 * @return array<int, array{store_id:int,title:string,delivery_term:string,amount:float,price:?float,price_fmt:string,order_only?:bool}> order_only: внешний склад и остаток 0
+	 * @return array<int, array{store_id:int,title:string,delivery_term:string,amount:float,price:?float,price_fmt:string,order_only?:bool,external_warehouse?:bool}>
+	 *         external_warehouse: внешний прайс/склад; order_only: внешний склад и остаток 0 (служебно).
 	 */
 	function mf_product_search_card_stores(int $productId): array
 	{
@@ -140,9 +141,9 @@ if (!function_exists('mf_product_search_card_stores'))
 				: (function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null);
 
 			$deliveryTerm = function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : '—';
-			$orderOnly = function_exists('mf_ep_store_is_external_warehouse')
-				&& mf_ep_store_is_external_warehouse($storeId)
-				&& $amt <= 1e-9;
+			$isExternal = function_exists('mf_ep_store_is_external_warehouse')
+				&& mf_ep_store_is_external_warehouse($storeId);
+			$orderOnly = $isExternal && $amt <= 1e-9;
 
 			return [
 				'store_id' => $storeId,
@@ -152,6 +153,7 @@ if (!function_exists('mf_product_search_card_stores'))
 				'price' => $price,
 				'price_fmt' => mf_product_search_card_money($price),
 				'order_only' => $orderOnly,
+				'external_warehouse' => $isExternal,
 			];
 		};
 
@@ -357,11 +359,12 @@ if (!function_exists('mf_product_search_card_render'))
 						<tbody>
 							<?php foreach ($stores as $s): ?>
 								<?php
+								$mfExternal = !empty($s['external_warehouse']);
 								$mfOrdOnly = !empty($s['order_only']);
 								$mfAmtRounded = round((float)$s['amount'], 3);
 								$mfPendingDisp = trim((string)($s['pending_supplier_display'] ?? ''));
 								$mfStockCell = '';
-								if ($mfOrdOnly)
+								if ($mfExternal)
 								{
 									$mfStockCell = 'Под заказ';
 								}
@@ -373,9 +376,11 @@ if (!function_exists('mf_product_search_card_render'))
 								{
 									$mfStockCell = htmlspecialcharsbx((string)$mfAmtRounded);
 								}
-								$mfMaxQtyRounded = isset($s['pending_supplier_qty'])
-									? round((float)$s['pending_supplier_qty'], 3)
-									: $mfAmtRounded;
+								$mfMaxQtyRounded = $mfExternal
+									? 0.0
+									: (isset($s['pending_supplier_qty'])
+										? round((float)$s['pending_supplier_qty'], 3)
+										: $mfAmtRounded);
 								?>
 								<tr>
 									<td><?=htmlspecialcharsbx((string)$s['title'])?></td>
@@ -393,13 +398,9 @@ if (!function_exists('mf_product_search_card_render'))
 									<td class="mf-ta-r">
 										<?php
 										$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
-										$mfRequestPrice = $mfOrdOnly || $mfNoPrice;
+										$mfRequestPrice = !$mfExternal && ($mfOrdOnly || $mfNoPrice);
 										?>
-										<?php if ($mfOrdOnly): ?>
-											<span class="mf-search-stock__order-only">Под заказ</span>
-										<?php elseif ($mfNoPrice): ?>
-											<span class="mf-search-stock__order-only">—</span>
-										<?php else: ?>
+										<?php if ($mfExternal || !$mfNoPrice): ?>
 											<div class="mf-search-stock__actions">
 												<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
 													<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
@@ -415,6 +416,8 @@ if (!function_exists('mf_product_search_card_render'))
 													<button type="button" class="mf-search-qty__btn js-mf-qty-plus" aria-label="Увеличить количество">+</button>
 												</div>
 											</div>
+										<?php else: ?>
+											<span class="mf-search-stock__order-only">—</span>
 										<?php endif; ?>
 									</td>
 									<td class="mf-ta-r">
