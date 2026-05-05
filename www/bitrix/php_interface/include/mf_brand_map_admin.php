@@ -193,10 +193,23 @@ if (
 )
 {
 	$ma = trim((string)($_POST['manual_alias'] ?? ''));
-	$mt = trim((string)($_POST['manual_target'] ?? ''));
+	$mtSelect = trim((string)($_POST['manual_target'] ?? ''));
+	$mtCustom = trim((string)($_POST['manual_target_custom'] ?? ''));
+	if ($mtCustom !== '')
+	{
+		$mt = $mtCustom;
+	}
+	elseif ($mtSelect === MF_BM_MAP_SKIP)
+	{
+		$mt = MF_BM_MAP_SKIP;
+	}
+	else
+	{
+		$mt = $mtSelect;
+	}
 	if ($ma === '' || $mt === '')
 	{
-		$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Укажи строку бренда (как в файле) и вариант в списке.'];
+		$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Укажи строку бренда (как в файле) и целевой канон: из списка или свой текст в поле ниже.'];
 	}
 	else
 	{
@@ -283,10 +296,29 @@ if (
 	$hl = mf_brand_hl_ensure(true);
 	$saved = 0;
 	$skipped = 0;
-	foreach ($_POST['map'] as $alias => $canonical)
+	$mapCustom = isset($_POST['map_custom']) && is_array($_POST['map_custom']) ? $_POST['map_custom'] : [];
+	$mapAliases = array_values(array_unique(array_merge(
+		array_keys($_POST['map']),
+		array_keys($mapCustom)
+	)));
+
+	foreach ($mapAliases as $mapAliasKey)
 	{
-		$alias = trim((string)$alias);
-		$canonical = trim((string)$canonical);
+		$alias = trim((string)$mapAliasKey);
+		$fromSelect = trim((string)(($_POST['map'][$mapAliasKey] ?? '')));
+		$customCanon = trim((string)($mapCustom[$mapAliasKey] ?? ''));
+		if ($customCanon !== '')
+		{
+			$canonical = $customCanon;
+		}
+		elseif ($fromSelect === MF_BM_MAP_SKIP)
+		{
+			$canonical = MF_BM_MAP_SKIP;
+		}
+		else
+		{
+			$canonical = $fromSelect;
+		}
 		if ($alias === '')
 		{
 			$skipped++;
@@ -477,6 +509,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 		Слева бренды из <code>mf_stock_import_missing</code>. Выбери канонический бренд из каталога — сохраним как alias→canonical в HL <code>mf_brand_alias</code>.
 		Вариант «Не сопоставлять» помечает бренд в таблице <code>mf_brand_import_skip</code>: такие строки не обрабатываются при импорте остатков и при загрузке внешних прайсов (остатки и цены по ним не меняются).
 		<br/>Список в селекте совпадает с выгрузкой каталога: значения <code>MF_BRAND</code> и <code>MF_BRAND_NORM</code> только у <b>выгружаемых</b> активных <b>товаров</b> (инфоблок каталога, без торговых предложений). Дополнительно подмешиваются каноны из <code>mf_brand_alias</code>, чтобы выбранная цель сопоставления не пропадала из списка.
+		Можно указать <b>свой канон текстом</b> (поле под селектом в таблице и в блоке ручного сопоставления): непустое значение сохраняется вместо выбора из списка — удобно, если нужного написания ещё нет среди товаров каталога.
 		<br/>Блок <b>ниже</b> нужен, если в файле поставщика встречается бренд, которого <b>нет</b> в списке «ненайденных» (он уже сопоставляется с товарами) — например, завести «Ski-Doo» → «BRP» при существующем в каталоге Ski-Doo. Сохраняется с приоритетом, выше встроенных правил.
 	</div>
 
@@ -506,7 +539,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 		<input type="hidden" name="bm_action" value="manual_map">
 		<div style="font-weight:600; margin-bottom:8px;">Ручное сопоставление (любой текст бренда)</div>
 		<div style="color:#555; font-size:13px; margin-bottom:10px; line-height:1.4;">
-			Впиши строку <b>как в прайсе/остатках</b> и выбери, к какому бренду из каталога относить при импорте.
+			Впиши строку <b>как в прайсе/остатках</b> и укажи канон: из списка или <b>свой текст</b> в поле ниже (непустое поле заменяет выбор в списке; для «Не сопоставлять» список оставь, поле своего канона очисти).
 			Это не меняет уже записанные на товарах значения <code>MF_BRAND</code>, только логику поиска/матчинг при загрузке.
 		</div>
 		<div style="display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px;">
@@ -514,15 +547,17 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 				<label for="id_manual_alias" style="display:block; margin-bottom:4px; color:#333;">Текст бренда (из файла)</label>
 				<input type="text" name="manual_alias" id="id_manual_alias" value="" placeholder="например Ski-Doo" style="min-width:280px; padding:4px 8px;"/>
 			</div>
-			<div>
-				<label for="id_manual_target" style="display:block; margin-bottom:4px; color:#333;">Считать как бренд каталога</label>
-				<select name="manual_target" id="id_manual_target" style="min-width:360px; padding:4px 8px;">
+			<div style="min-width:360px;">
+				<label for="id_manual_target" style="display:block; margin-bottom:4px; color:#333;">Считать как бренд каталога (список)</label>
+				<select name="manual_target" id="id_manual_target" style="width:100%; max-width:420px; padding:4px 8px;">
 					<option value="">— выбери —</option>
 					<option value="<?= mf_bm_escape(MF_BM_MAP_SKIP) ?>">— Не сопоставлять (пропуск при импорте) —</option>
 					<?php foreach ($catalogBrands as $bCh): ?>
 						<option value="<?= mf_bm_escape((string)$bCh) ?>"><?= mf_bm_escape((string)$bCh) ?></option>
 					<?php endforeach; ?>
 				</select>
+				<label for="id_manual_target_custom" style="display:block; margin:8px 0 4px 0; color:#333;">Свой канон (если заполнено — в приоритете над списком)</label>
+				<input type="text" name="manual_target_custom" id="id_manual_target_custom" value="" placeholder="например HONDA или W.S.M." style="width:100%; max-width:420px; padding:4px 8px;"/>
 			</div>
 			<div>
 				<input type="submit" class="adm-btn-save" name="bm_manual_save" value="Сохранить в словарь"/>
@@ -654,7 +689,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 						</span>
 					</span>
 				</td>
-				<td class="adm-list-table-cell">Сопоставить с брендом каталога</td>
+				<td class="adm-list-table-cell">Сопоставить с брендом каталога / свой канон</td>
 			</tr>
 			</thead>
 			<tbody>
@@ -689,6 +724,10 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 									</option>
 								<?php endforeach; ?>
 							</select>
+							<div style="margin-top:6px;">
+								<label style="font-size:12px;color:#555;display:block;margin-bottom:2px;">Свой канон (необязательно; если заполнено — сохранится вместо выбора выше)</label>
+								<input type="text" name="map_custom[<?= mf_bm_escape($alias) ?>]" value="" placeholder="<?= mf_bm_escape('Свой текст канона') ?>" style="min-width:420px;max-width:100%;padding:4px 8px;box-sizing:border-box;"/>
+							</div>
 						</td>
 					</tr>
 				<?php endforeach; ?>
