@@ -486,6 +486,26 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							$mfOem = trim((string)($mfRow['PROPERTY_OEM_VALUE'] ?? ''));
 						}
 
+						// ЧПУ из индекса поиска устаревает после смены CODE в админке/CSV — всегда строим путь из актуального CODE префетча.
+						if ($mfCode !== '')
+						{
+							$path = '/products/' . rawurlencode($mfCode) . '/';
+							$oldUrl = (string)($arItem['URL'] ?? '');
+							$qpos = strpos($oldUrl, '?');
+							if ($qpos !== false)
+							{
+								$href = $path . substr($oldUrl, $qpos);
+							}
+							else
+							{
+								$href = $path;
+								if ($qs !== '' && strpos($href, '?') === false)
+								{
+									$href .= $qs;
+								}
+							}
+						}
+
 						// Prepare analog cards to render inside the main card.
 						$mfAnalogs = ($mfItemId > 0 && isset($mfAnalogsByProductId[$mfItemId])) ? (array)$mfAnalogsByProductId[$mfItemId] : [];
 						$analogsData = [];
