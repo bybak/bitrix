@@ -5,7 +5,8 @@ declare(strict_types=1);
 /**
  * Админка: выгрузка каталога в CSV / XLSX и загрузка CSV того же формата (обновление по id).
  * Колонки фиксированные; колонка «Фото» — все URL как на карточке catalog.element / bootstrap_v4 (через « | »):
- * все MF_EXT_IMAGES → все URL meta аналогов → при MORE_PHOTO все слоты mf_mf_product_img_url(CODE,n) → иначе PREVIEW/DETAIL в /upload/.
+ * все MF_EXT_IMAGES → все URL meta аналогов → при непустой галерее (MORE_PHOTO или анонс/деталь)
+ * все слоты mf_mf_product_img_url(CODE,n), как после подмены SRC в шаблоне → иначе только /upload/.
  */
 
 use Bitrix\Main\Loader;
@@ -154,6 +155,46 @@ function mf_ce_more_photo_slot_count(array $el): int
 	return (int)$v > 0 ? 1 : 0;
 }
 
+/**
+ * Число слотов галереи на деталке, которые шаблон bootstrap_v4 переписывает на mf_mf_product_img_url(CODE,n),
+ * когда MF_EXT_IMAGES и картинки meta аналогов пусты: сначала файловое MORE_PHOTO, иначе 1–2 картинки из PREVIEW/DETAIL
+ * (как собирает компонент catalog.element при отсутствии свойства MORE_PHOTO).
+ */
+function mf_ce_catalog_detail_gallery_slot_count(array $el): int
+{
+	$n = mf_ce_more_photo_slot_count($el);
+	if ($n > 0)
+	{
+		return $n;
+	}
+	$prevId = (int)($el['PREVIEW_PICTURE'] ?? 0);
+	$detailId = (int)($el['DETAIL_PICTURE'] ?? 0);
+	if ($prevId <= 0 && $detailId <= 0)
+	{
+		return 0;
+	}
+	if ($prevId > 0 && $detailId <= 0)
+	{
+		return 1;
+	}
+	if ($detailId > 0 && $prevId <= 0)
+	{
+		return 1;
+	}
+	if ($prevId === $detailId)
+	{
+		return 1;
+	}
+	$prevPath = mf_ce_iblock_file_web_path($prevId);
+	$detailPath = mf_ce_iblock_file_web_path($detailId);
+	if ($prevPath !== '' && $detailPath !== '' && $prevPath === $detailPath)
+	{
+		return 1;
+	}
+
+	return 2;
+}
+
 function mf_ce_section_name(int $iblockId, int $sectionId): string
 {
 	static $cache = [];
@@ -217,9 +258,9 @@ function mf_ce_section_chain_path(int $iblockId, int $sectionId): string
 
 /**
  * Все URL картинок как на детальной с шаблоном eshop_bootstrap_v4 → catalog.element / bootstrap_v4.
- * Порядок: все MF_EXT_IMAGES → все URL meta аналогов → при непустом MORE_PHOTO по слотам
- * mf_mf_product_img_url(CODE,1..n) → иначе превью и (если отличается) детальная из /upload/.
- * Без слотов MORE_PHOTO схему /mf-img/ не подставляем.
+ * Порядок: все MF_EXT_IMAGES → все URL meta аналогов → при непустой «эффективной» галерее (см. mf_ce_catalog_detail_gallery_slot_count)
+ * по слотам mf_mf_product_img_url(CODE,1..n) → иначе превью и (если отличается) детальная из /upload/.
+ * Если есть символьный код и хотя бы одна картинка (MORE_PHOTO или анонс/деталь), подставляется та же схема URL, что на сайте после подмены SRC.
  *
  * @return list<string>
  */
@@ -270,7 +311,7 @@ function mf_ce_all_photo_urls(array $el, int $elementId): array
 	}
 
 	$code = trim((string)($el['CODE'] ?? ''));
-	$nSlots = mf_ce_more_photo_slot_count($el);
+	$nSlots = mf_ce_catalog_detail_gallery_slot_count($el);
 	if ($code !== '' && $nSlots > 0 && function_exists('mf_mf_product_img_url'))
 	{
 		for ($i = 1; $i <= $nSlots; $i++)
@@ -1183,7 +1224,7 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 	<p class="adm-info-message" style="max-width:720px">
 		Каталог: инфоблок ID <strong><?= (int)$iblockId ?></strong>.
 		В файл всегда входят колонки: id, бренд, артикул, OEM, наименование, <strong>цепочка разделов</strong> (от корня через «<strong> =&gt; </strong>», как в навигации каталога), краткий и детальный текст, SEO (title / description / keywords), ЧПУ (slug), <strong>все URL фото как на сайте</strong> в одной ячейке через « | »
-		(все MF_EXT_IMAGES при наличии, иначе все фото из метаданных аналогов, иначе при заполненном MORE_PHOTO — по слотам URL как на деталке через <code>mf_mf_product_img_url</code>, иначе превью и при отличии — деталь в <code>/upload/</code>). Без «фиктивного» <code>/mf-img/.../0001.jpg</code>, если на карточке изображений нет.
+		(все MF_EXT_IMAGES при наличии, иначе все фото из метаданных аналогов, иначе при непустой галерее на деталке — как в шаблоне: слоты MORE_PHOTO или картинки анонс/деталь — по слотам URL через <code>mf_mf_product_img_url</code> (как после подмены SRC на <code>/mf-img/…</code>), иначе только превью и при отличии — деталь в <code>/upload/</code>). Без «фиктивного» <code>/mf-img/.../0001.jpg</code>, если на карточке нет ни одного изображения.
 		Редиректы (MF_IS_REDIRECT) не выгружаются.
 		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
 		XLSX — ZIP со сжатием, при тех же данных файл обычно меньше CSV; на очень больших каталогах надёжнее CSV (быстрее, меньше таймаутов).
