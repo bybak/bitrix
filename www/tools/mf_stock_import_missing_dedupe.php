@@ -9,6 +9,7 @@
  *   php /var/www/html/tools/mf_stock_import_missing_dedupe.php --batch=8000
  *   php /var/www/html/tools/mf_stock_import_missing_dedupe.php --skip-build   (ids уже в mf_sim_dedupe_ids)
  *   php .../mf_stock_import_missing_dedupe.php --progress-every=5   (лог прогресса каждые N батчей; по умолчанию 1)
+ *   php .../mf_stock_import_missing_dedupe.php --queue-chunks=8   (N проходов по таблице при сборе очереди; меньше пиковый /tmp у MySQL)
  *
  * Таблица-очередь ID к удалению: mf_sim_dedupe_ids (временная, создаётся скриптом).
  * По завершении дропается. При обрыве можно --skip-build и добить батчи вручную.
@@ -35,6 +36,7 @@ $dryRun = in_array('--dry-run', $argv, true);
 $skipBuild = in_array('--skip-build', $argv, true);
 $batch = 5000;
 $progressEvery = 1;
+$queueChunks = 1;
 foreach ($argv as $arg)
 {
 	if (strpos($arg, '--batch=') === 0)
@@ -44,6 +46,10 @@ foreach ($argv as $arg)
 	if (strpos($arg, '--progress-every=') === 0)
 	{
 		$progressEvery = max(1, min(1000, (int)substr($arg, 17)));
+	}
+	if (strpos($arg, '--queue-chunks=') === 0)
+	{
+		$queueChunks = max(1, min(256, (int)substr($arg, 15)));
 	}
 }
 
@@ -101,23 +107,57 @@ if (!$skipBuild)
 	");
 
 	$tQueue0 = microtime(true);
-	out('Заполнение очереди ID дублей (один полный проход по таблице, без промежуточного %)… старт '
-		. date('H:i:s'));
-	$sqlInsert = "
-		INSERT INTO {$queueTable} (ID)
-		SELECT x.id_del FROM (
-			SELECT ID AS id_del,
-				ROW_NUMBER() OVER (
-					PARTITION BY UF_WAREHOUSE_XML_ID, UF_UNIQ_KEY
-					ORDER BY IFNULL(UF_LAST_SEEN, '1970-01-01') DESC, ID DESC
-				) AS rn
-			FROM mf_stock_import_missing
-		) AS x
-		WHERE x.rn > 1
-	";
+	if ($queueChunks > 1)
+	{
+		out('Заполнение очереди ID дублей: '
+			. "{$queueChunks} проходов (хеш пары склад+ключ → меньше временных файлов MySQL), без % по строкам… старт "
+			. date('H:i:s'));
+	}
+	else
+	{
+		out('Заполнение очереди ID дублей (один полный проход по таблице, без промежуточного %)… старт '
+			. date('H:i:s'));
+	}
+	// Одна и та же пара (UF_WAREHOUSE_XML_ID, UF_UNIQ_KEY) всегда попадает в один чанк → ROW_NUMBER() корректен.
+	$chunkKeyExpr = <<<'SQL'
+CONCAT(
+	IF(UF_WAREHOUSE_XML_ID IS NULL, 'N', 'V'),
+	CHAR_LENGTH(IFNULL(UF_WAREHOUSE_XML_ID, '')),
+	IFNULL(UF_WAREHOUSE_XML_ID, ''),
+	IF(UF_UNIQ_KEY IS NULL, 'N', 'V'),
+	CHAR_LENGTH(IFNULL(UF_UNIQ_KEY, '')),
+	IFNULL(UF_UNIQ_KEY, '')
+)
+SQL;
+	$chunkKeyExpr = str_replace(["\r", "\n"], '', trim($chunkKeyExpr));
 	try
 	{
-		$conn->queryExecute($sqlInsert);
+		for ($ci = 0; $ci < $queueChunks; $ci++)
+		{
+			if ($queueChunks > 1)
+			{
+				out(sprintf('  [очередь] проход %d / %d…', $ci + 1, $queueChunks));
+			}
+			$chunkFilter = '';
+			if ($queueChunks > 1)
+			{
+				$chunkFilter = ' WHERE MOD(CRC32(' . $chunkKeyExpr . '), ' . (int)$queueChunks . ') = ' . (int)$ci;
+			}
+			$sqlInsert = "
+				INSERT INTO {$queueTable} (ID)
+				SELECT x.id_del FROM (
+					SELECT ID AS id_del,
+						ROW_NUMBER() OVER (
+							PARTITION BY UF_WAREHOUSE_XML_ID, UF_UNIQ_KEY
+							ORDER BY IFNULL(UF_LAST_SEEN, '1970-01-01') DESC, ID DESC
+						) AS rn
+					FROM mf_stock_import_missing
+					{$chunkFilter}
+				) AS x
+				WHERE x.rn > 1
+			";
+			$conn->queryExecute($sqlInsert);
+		}
 		$tQueueSec = microtime(true) - $tQueue0;
 		out(sprintf('Очередь собрана за %s (окончание %s)', mf_dedupe_fmt_duration($tQueueSec), date('H:i:s')));
 	}
