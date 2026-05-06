@@ -4,7 +4,8 @@ import { PopupOptions } from 'main.popup';
 import { UserType } from 'im.v2.const';
 import { Core } from 'im.v2.application.core';
 import { Feature, FeatureManager } from 'im.v2.lib.feature';
-import { MessengerPopup, SegmentButton } from 'im.v2.component.elements';
+import { SegmentButton } from 'im.v2.component.elements.button';
+import { MessengerPopup } from 'im.v2.component.elements.popup';
 
 import { AddGuestsTab } from './components/add-guests-tab';
 import { AddEmployeesTab } from './components/add-employees-tab';
@@ -78,6 +79,10 @@ export const AddToCollab = {
 				className: 'bx-im-add-to-collab__scope',
 			};
 		},
+		isEnabledCollabersInvitation(): boolean
+		{
+			return FeatureManager.isFeatureAvailable(Feature.enabledCollabersInvitation);
+		},
 		tabComponent(): BitrixVueComponentProps
 		{
 			return this.activeTabId === TabId.guests ? AddGuestsTab : AddEmployeesTab;
@@ -92,10 +97,15 @@ export const AddToCollab = {
 		{
 			return FeatureManager.isFeatureAvailable(Feature.inviteByLinkAvailable);
 		},
+		isChangeInviteLanguageAvailable(): boolean
+		{
+			return FeatureManager.isFeatureAvailable(Feature.changeInviteLanguageAvailable);
+		},
 		finalHeight(): number
 		{
-			const inviteLinkBlockHeight = 58 + 12;
 			const tabsBlockHeight = 38;
+			const inviteLinkBlockHeight = 58 + 12;
+			const inviteLanguageBlockHeight = 44;
 
 			let finalHeight = TAB_CONTENT_HEIGHT;
 			if (this.isCollaber)
@@ -108,8 +118,17 @@ export const AddToCollab = {
 				finalHeight -= inviteLinkBlockHeight;
 			}
 
+			if (!this.isChangeInviteLanguageAvailable)
+			{
+				finalHeight -= inviteLanguageBlockHeight;
+			}
+
 			return finalHeight;
 		},
+	},
+	created()
+	{
+		this.activeTabId = this.isEnabledCollabersInvitation ? TabId.guests : TabId.employees;
 	},
 	methods:
 	{
@@ -126,7 +145,11 @@ export const AddToCollab = {
 			@close="$emit('close')"
 		>
 			<div class="bx-im-add-to-collab__tabs">
-				<SegmentButton :tabs="Tabs" @segmentSelected="onTabSwitch" />
+				<SegmentButton 
+					:tabs="Tabs" 
+					:activeTabId="activeTabId" 
+					@segmentSelected="onTabSwitch"
+				/>
 			</div>
 			<KeepAlive>
 				<component
@@ -136,6 +159,8 @@ export const AddToCollab = {
 					@close="$emit('close')"
 					@openHelpdeskSlider="disableAutoHide"
 					@closeHelpdeskSlider="enableAutoHide"
+					@openLanguageSelector="disableAutoHide"
+					@closeLanguageSelector="enableAutoHide"
 				/>
 			</KeepAlive>
 		</MessengerPopup>

@@ -1,5 +1,6 @@
 import { Extension, Type } from 'main.core';
 import { InfoHelper } from 'ui.info-helper';
+import { Analytics } from './analytics';
 import { BaseProvider } from './providers/base-provider';
 import { PopupProvider } from './providers/popup-provider';
 import { SliderProvider } from './providers/slider-provider';
@@ -10,6 +11,7 @@ export class FeaturePromoter
 	#code: string;
 	#provider: BaseProvider;
 	#options: FeaturePromoterConfiguration;
+	#analytics: Analytics;
 
 	constructor(options: FeaturePromoterConfiguration)
 	{
@@ -21,7 +23,7 @@ export class FeaturePromoter
 		this.#options = options;
 		this.#options.bindElement = options.bindElement ?? null;
 		this.#code = options.code ?? '';
-
+		this.#analytics = options.analytics ?? null;
 		const settings = Extension.getSettings('ui.info-helper');
 		this.#provider = this.#createProvider(settings);
 	}
@@ -31,9 +33,19 @@ export class FeaturePromoter
 		return this.#options;
 	}
 
+	getCode(): string
+	{
+		return this.#code;
+	}
+
 	getProvider(): BaseProvider
 	{
 		return this.#provider;
+	}
+
+	getAnalytics(): Analytics
+	{
+		return this.#analytics;
 	}
 
 	show(): void
@@ -63,13 +75,14 @@ export class FeaturePromoter
 			return new PopupProvider({
 				bindElement: this.getOptions().bindElement,
 				code: this.#code,
+				analytics: this.#analytics,
 				featureId: this.getOptions().featureId ?? null,
 			});
 		}
 		else
 		{
 			const provider = new SliderProvider({ featureId: this.getOptions().featureId ?? null });
-			InfoHelper.sliderProviderForOldFormat = provider;
+			InfoHelper.sliderProviderForOldFormat ??= provider;
 
 			return provider;
 		}

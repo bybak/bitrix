@@ -223,6 +223,7 @@ this.BX = this.BX || {};
 	 */
 	var _disableTargetScroll = /*#__PURE__*/new WeakSet();
 	var _enableTargetScroll = /*#__PURE__*/new WeakSet();
+	var _startDrag = /*#__PURE__*/new WeakSet();
 	var Popup = /*#__PURE__*/function (_EventEmitter) {
 	  babelHelpers.inherits(Popup, _EventEmitter);
 	  babelHelpers.createClass(Popup, null, [{
@@ -246,36 +247,56 @@ this.BX = this.BX || {};
 	    value: function getOption(option, defaultValue) {
 	      if (!main_core.Type.isUndefined(this.options[option])) {
 	        return this.options[option];
-	      } else if (!main_core.Type.isUndefined(defaultValue)) {
-	        return defaultValue;
-	      } else {
-	        return this.defaultOptions[option];
 	      }
+	      if (!main_core.Type.isUndefined(defaultValue)) {
+	        return defaultValue;
+	      }
+	      return this.defaultOptions[option];
 	    }
 	  }]);
-	  function Popup(options) {
+	  function Popup(_options) {
 	    var _this;
 	    babelHelpers.classCallCheck(this, Popup);
 	    _this = babelHelpers.possibleConstructorReturn(this, babelHelpers.getPrototypeOf(Popup).call(this));
+	    _classPrivateMethodInitSpec(babelHelpers.assertThisInitialized(_this), _startDrag);
 	    _classPrivateMethodInitSpec(babelHelpers.assertThisInitialized(_this), _enableTargetScroll);
 	    _classPrivateMethodInitSpec(babelHelpers.assertThisInitialized(_this), _disableTargetScroll);
+	    babelHelpers.defineProperty(babelHelpers.assertThisInitialized(_this), "handleAutoHide", function (event) {
+	      if (_this.isDestroyed()) {
+	        return;
+	      }
+	      if (_this.autoHideHandler !== null) {
+	        if (_this.autoHideHandler(event)) {
+	          _this._tryCloseByEvent(event);
+	        }
+	      } else if (event.target !== _this.getPopupContainer() && !_this.getPopupContainer().contains(event.target)) {
+	        _this._tryCloseByEvent(event);
+	      }
+	    });
+	    babelHelpers.defineProperty(babelHelpers.assertThisInitialized(_this), "handleDocumentKeyUp", function (event) {
+	      if (event.keyCode === 27) {
+	        checkEscPressed(_this.getZindex(), function () {
+	          _this.close();
+	        });
+	      }
+	    });
 	    _this.setEventNamespace('BX.Main.Popup');
 	    var _arguments = Array.prototype.slice.call(arguments),
 	      popupId = _arguments[0],
 	      bindElement = _arguments[1],
-	      params = _arguments[2]; //compatible arguments
+	      params = _arguments[2]; // compatible arguments
 
 	    _this.compatibleMode = params && main_core.Type.isBoolean(params.compatibleMode) ? params.compatibleMode : true;
-	    if (main_core.Type.isPlainObject(options) && !bindElement && !params) {
-	      params = options;
-	      popupId = options.id;
-	      bindElement = options.bindElement;
+	    if (main_core.Type.isPlainObject(_options) && !bindElement && !params) {
+	      params = _options;
+	      popupId = _options.id;
+	      bindElement = _options.bindElement;
 	      _this.compatibleMode = false;
 	    }
 	    params = params || {};
 	    _this.params = params;
 	    if (!main_core.Type.isStringFilled(popupId)) {
-	      popupId = 'popup-window-' + main_core.Text.getRandom().toLowerCase();
+	      popupId = "popup-window-".concat(main_core.Text.getRandom().toLowerCase());
 	    }
 	    _this.emit('onInit', new main_core_events.BaseEvent({
 	      compatData: [popupId, bindElement, params]
@@ -299,12 +320,10 @@ this.BX = this.BX || {};
 	    _this.angleArrowElement = null;
 	    _this.overlay = null;
 	    _this.titleBar = null;
-	    _this.bindOptions = babelHelpers["typeof"](params.bindOptions) === 'object' ? params.bindOptions : {};
+	    _this.bindOptions = main_core.Type.isObject(params.bindOptions) ? params.bindOptions : {};
 	    _this.autoHide = params.autoHide === true;
 	    _this.disableScroll = params.disableScroll === true || params.isScrollBlock === true;
 	    _this.autoHideHandler = main_core.Type.isFunction(params.autoHideHandler) ? params.autoHideHandler : null;
-	    _this.handleAutoHide = _this.handleAutoHide.bind(babelHelpers.assertThisInitialized(_this));
-	    _this.handleOverlayClick = _this.handleOverlayClick.bind(babelHelpers.assertThisInitialized(_this));
 	    _this.isAutoHideBinded = false;
 	    _this.closeByEsc = params.closeByEsc === true;
 	    _this.isCloseByEscBinded = false;
@@ -324,7 +343,7 @@ this.BX = this.BX || {};
 	    _this.contentBackground = null;
 	    _this.borderRadius = null;
 	    _this.contentBorderRadius = null;
-	    _this.targetContainer = main_core.Type.isElementNode(params.targetContainer) ? params.targetContainer : document.body;
+	    _this.setTargetContainer(params.targetContainer);
 	    _this.dragOptions = {
 	      cursor: '',
 	      callback: function callback() {},
@@ -338,7 +357,6 @@ this.BX = this.BX || {};
 	    _this.animationCloseEventType = null;
 	    _this.handleDocumentMouseMove = _this.handleDocumentMouseMove.bind(babelHelpers.assertThisInitialized(_this));
 	    _this.handleDocumentMouseUp = _this.handleDocumentMouseUp.bind(babelHelpers.assertThisInitialized(_this));
-	    _this.handleDocumentKeyUp = _this.handleDocumentKeyUp.bind(babelHelpers.assertThisInitialized(_this));
 	    _this.handleResizeWindow = _this.handleResizeWindow.bind(babelHelpers.assertThisInitialized(_this));
 	    _this.handleResize = _this.handleResize.bind(babelHelpers.assertThisInitialized(_this));
 	    _this.handleMove = _this.handleMove.bind(babelHelpers.assertThisInitialized(_this));
@@ -350,16 +368,18 @@ this.BX = this.BX || {};
 	      popupClassName += ' popup-window-with-titlebar';
 	    }
 	    if (params.className && main_core.Type.isStringFilled(params.className)) {
-	      popupClassName += ' ' + params.className;
+	      popupClassName += " ".concat(params.className);
 	    }
 	    if (params.darkMode) {
 	      popupClassName += ' popup-window-dark';
 	    }
+	    _this.designSystemContext = params.darkMode ? '--ui-context-content-dark' : '--ui-context-content-light';
+	    popupClassName += " ".concat(_this.designSystemContext);
 	    if (params.titleBar) {
 	      _this.titleBar = main_core.Tag.render(_templateObject || (_templateObject = babelHelpers.taggedTemplateLiteral(["\n\t\t\t\t<div class=\"popup-window-titlebar\" id=\"popup-window-titlebar-", "\"></div>\n\t\t\t"])), popupId);
 	    }
 	    if (params.closeIcon) {
-	      var className = 'popup-window-close-icon' + (params.titleBar ? ' popup-window-titlebar-close-icon' : '');
+	      var className = "popup-window-close-icon".concat(params.titleBar ? ' popup-window-titlebar-close-icon' : '');
 	      if (Object.values(CloseIconSize).includes(params.closeIconSize) && params.closeIconSize !== CloseIconSize.SMALL) {
 	        className += " --".concat(params.closeIconSize);
 	      }
@@ -372,19 +392,16 @@ this.BX = this.BX || {};
 	    /**
 	     * @private
 	     */
-	    _this.contentContainer = main_core.Tag.render(_templateObject3 || (_templateObject3 = babelHelpers.taggedTemplateLiteral(["<div id=\"popup-window-content-", "\" class=\"popup-window-content\"></div>"])), popupId);
+	    _this.contentContainer = main_core.Tag.render(_templateObject3 || (_templateObject3 = babelHelpers.taggedTemplateLiteral(["\n\t\t\t<div id=\"popup-window-content-", "\" class=\"popup-window-content\"></div>\n\t\t"])), popupId);
 
 	    /**
 	     * @private
 	     */
-	    _this.popupContainer = main_core.Tag.render(_templateObject4 || (_templateObject4 = babelHelpers.taggedTemplateLiteral(["<div\n\t\t\t\tclass=\"", "\"\n\t\t\t\tid=\"", "\"\n\t\t\t\tstyle=\"display: none; position: absolute; left: 0; top: 0;\"\n\t\t\t>", "</div>"])), popupClassName, popupId, [_this.titleBar, _this.contentContainer, _this.closeIcon]);
-	    _this.targetContainer.appendChild(_this.popupContainer);
+	    _this.popupContainer = main_core.Tag.render(_templateObject4 || (_templateObject4 = babelHelpers.taggedTemplateLiteral(["\n\t\t\t<div\n\t\t\t\tclass=\"", "\"\n\t\t\t\tid=\"", "\"\n\t\t\t\tstyle=\"display: none; position: absolute; left: 0; top: 0;\"\n\t\t\t>", "</div>\n\t\t"])), popupClassName, popupId, [_this.titleBar, _this.contentContainer, _this.closeIcon]);
+	    _this.getTargetContainer().append(_this.popupContainer);
 	    _this.zIndexComponent = main_core_zIndexManager.ZIndexManager.register(_this.popupContainer, params.zIndexOptions);
 	    _this.buttonsContainer = null;
 	    if (params.contentColor && main_core.Type.isStringFilled(params.contentColor)) {
-	      if (params.contentColor === 'white' || params.contentColor === 'gray') {
-	        popupClassName += ' popup-window-content-' + params.contentColor;
-	      }
 	      _this.setContentColor(params.contentColor);
 	    }
 	    if (params.angle) {
@@ -396,6 +413,7 @@ this.BX = this.BX || {};
 	    _this.setOffset(params);
 	    _this.setBindElement(bindElement);
 	    _this.setTitleBar(params.titleBar);
+	    _this.setDraggable(params.draggable);
 	    _this.setContent(params.content);
 	    _this.setButtons(params.buttons);
 	    _this.setWidth(params.width);
@@ -415,6 +433,7 @@ this.BX = this.BX || {};
 	    _this.setCacheable(params.cacheable);
 	    _this.setToFrontOnShow(params.toFrontOnShow);
 	    _this.setFixed(params.fixed);
+	    _this.setDesignSystemContext(params.designSystemContext);
 
 	    // Compatibility
 	    if (params.contentNoPaddings) {
@@ -514,7 +533,7 @@ this.BX = this.BX || {};
 	    value: function setBindElement(bindElement) {
 	      if (bindElement === null) {
 	        this.bindElement = null;
-	      } else if (babelHelpers["typeof"](bindElement) === 'object') {
+	      } else if (main_core.Type.isObject(bindElement)) {
 	        if (main_core.Type.isDomNode(bindElement) || main_core.Type.isNumber(bindElement.top) && main_core.Type.isNumber(bindElement.left)) {
 	          this.bindElement = bindElement;
 	        } else if (main_core.Type.isNumber(bindElement.clientX) && main_core.Type.isNumber(bindElement.clientY)) {
@@ -535,31 +554,30 @@ this.BX = this.BX || {};
 	      if (main_core.Type.isDomNode(bindElement)) {
 	        if (this.isTargetDocumentBody()) {
 	          return this.isFixed() ? bindElement.getBoundingClientRect() : main_core.Dom.getPosition(bindElement);
-	        } else {
-	          return this.getPositionRelativeToTarget(bindElement);
 	        }
-	      } else if (bindElement && babelHelpers["typeof"](bindElement) === 'object') {
+	        return this.getPositionRelativeToTarget(bindElement);
+	      }
+	      if (bindElement && main_core.Type.isObject(bindElement)) {
 	        if (!main_core.Type.isNumber(bindElement.bottom)) {
 	          bindElement.bottom = bindElement.top;
 	        }
 	        return bindElement;
-	      } else {
-	        var windowSize = this.getWindowSize();
-	        var windowScroll = this.getWindowScroll();
-	        var popupWidth = this.getPopupContainer().offsetWidth;
-	        var popupHeight = this.getPopupContainer().offsetHeight;
-	        this.bindOptions.forceTop = true;
-	        return {
-	          left: windowSize.innerWidth / 2 - popupWidth / 2 + windowScroll.scrollLeft,
-	          top: windowSize.innerHeight / 2 - popupHeight / 2 + (this.isFixed() ? 0 : windowScroll.scrollTop),
-	          bottom: windowSize.innerHeight / 2 - popupHeight / 2 + (this.isFixed() ? 0 : windowScroll.scrollTop),
-	          //for optimisation purposes
-	          windowSize: windowSize,
-	          windowScroll: windowScroll,
-	          popupWidth: popupWidth,
-	          popupHeight: popupHeight
-	        };
 	      }
+	      var windowSize = this.getWindowSize();
+	      var windowScroll = this.getWindowScroll();
+	      var popupWidth = this.getPopupContainer().offsetWidth;
+	      var popupHeight = this.getPopupContainer().offsetHeight;
+	      this.bindOptions.forceTop = true;
+	      return {
+	        left: windowSize.innerWidth / 2 - popupWidth / 2 + windowScroll.scrollLeft,
+	        top: windowSize.innerHeight / 2 - popupHeight / 2 + (this.isFixed() ? 0 : windowScroll.scrollTop),
+	        bottom: windowSize.innerHeight / 2 - popupHeight / 2 + (this.isFixed() ? 0 : windowScroll.scrollTop),
+	        // for optimisation purposes
+	        windowSize: windowSize,
+	        windowScroll: windowScroll,
+	        popupWidth: popupWidth,
+	        popupHeight: popupHeight
+	      };
 	    }
 	    /**
 	     * @internal
@@ -586,12 +604,11 @@ this.BX = this.BX || {};
 	          innerWidth: window.innerWidth,
 	          innerHeight: window.innerHeight
 	        };
-	      } else {
-	        return {
-	          innerWidth: this.getTargetContainer().offsetWidth,
-	          innerHeight: this.getTargetContainer().offsetHeight
-	        };
 	      }
+	      return {
+	        innerWidth: this.getTargetContainer().offsetWidth,
+	        innerHeight: this.getTargetContainer().offsetHeight
+	      };
 	    } // private
 	  }, {
 	    key: "getWindowScroll",
@@ -601,12 +618,11 @@ this.BX = this.BX || {};
 	          scrollLeft: window.pageXOffset,
 	          scrollTop: window.pageYOffset
 	        };
-	      } else {
-	        return {
-	          scrollLeft: this.getTargetContainer().scrollLeft,
-	          scrollTop: this.getTargetContainer().scrollTop
-	        };
 	      }
+	      return {
+	        scrollLeft: this.getTargetContainer().scrollLeft,
+	        scrollTop: this.getTargetContainer().scrollTop
+	      };
 	    }
 	  }, {
 	    key: "setAngle",
@@ -637,17 +653,17 @@ this.BX = this.BX || {};
 	          position: position,
 	          offset: 0,
 	          defaultOffset: Math.max(defaultOffset, angleMinLeft)
-	          //Math.max(Type.isNumber(params.offset) ? params.offset : 0, angleMinLeft)
+	          // Math.max(Type.isNumber(params.offset) ? params.offset : 0, angleMinLeft)
 	        };
 
 	        this.getPopupContainer().appendChild(this.angle.element);
 	      }
-	      if (babelHelpers["typeof"](params) === 'object' && params.position && ['top', 'right', 'bottom', 'left', 'hide'].includes(params.position)) {
-	        main_core.Dom.removeClass(this.angle.element, className + '-' + this.angle.position);
-	        main_core.Dom.addClass(this.angle.element, className + '-' + params.position);
+	      if (main_core.Type.isObject(params) && params.position && ['top', 'right', 'bottom', 'left', 'hide'].includes(params.position)) {
+	        main_core.Dom.removeClass(this.angle.element, "".concat(className, "-").concat(this.angle.position));
+	        main_core.Dom.addClass(this.angle.element, "".concat(className, "-").concat(params.position));
 	        this.angle.position = params.position;
 	      }
-	      if (babelHelpers["typeof"](params) === 'object' && main_core.Type.isNumber(params.offset)) {
+	      if (main_core.Type.isObject(params) && main_core.Type.isNumber(params.offset)) {
 	        var offset = params.offset;
 	        var minOffset, maxOffset;
 	        if (this.angle.position === 'top') {
@@ -655,7 +671,7 @@ this.BX = this.BX || {};
 	          maxOffset = this.getPopupContainer().offsetWidth - Popup.getOption('angleMaxTop');
 	          maxOffset = maxOffset < minOffset ? Math.max(minOffset, offset) : maxOffset;
 	          this.angle.offset = Math.min(Math.max(minOffset, offset), maxOffset);
-	          this.angle.element.style.left = this.angle.offset + 'px';
+	          this.angle.element.style.left = "".concat(this.angle.offset, "px");
 	          this.angle.element.style.marginLeft = 0;
 	          this.angle.element.style.removeProperty('top');
 	        } else if (this.angle.position === 'bottom') {
@@ -663,7 +679,7 @@ this.BX = this.BX || {};
 	          maxOffset = this.getPopupContainer().offsetWidth - Popup.getOption('angleMaxBottom');
 	          maxOffset = maxOffset < minOffset ? Math.max(minOffset, offset) : maxOffset;
 	          this.angle.offset = Math.min(Math.max(minOffset, offset), maxOffset);
-	          this.angle.element.style.marginLeft = this.angle.offset + 'px';
+	          this.angle.element.style.marginLeft = "".concat(this.angle.offset, "px");
 	          this.angle.element.style.left = 0;
 	          this.angle.element.style.removeProperty('top');
 	        } else if (this.angle.position === 'right') {
@@ -671,7 +687,7 @@ this.BX = this.BX || {};
 	          maxOffset = this.getPopupContainer().offsetHeight - Popup.getOption('angleMaxRight');
 	          maxOffset = maxOffset < minOffset ? Math.max(minOffset, offset) : maxOffset;
 	          this.angle.offset = Math.min(Math.max(minOffset, offset), maxOffset);
-	          this.angle.element.style.top = this.angle.offset + 'px';
+	          this.angle.element.style.top = "".concat(this.angle.offset, "px");
 	          this.angle.element.style.removeProperty('left');
 	          this.angle.element.style.removeProperty('margin-left');
 	        } else if (this.angle.position === 'left') {
@@ -679,7 +695,7 @@ this.BX = this.BX || {};
 	          maxOffset = this.getPopupContainer().offsetHeight - Popup.getOption('angleMaxLeft');
 	          maxOffset = maxOffset < minOffset ? Math.max(minOffset, offset) : maxOffset;
 	          this.angle.offset = Math.min(Math.max(minOffset, offset), maxOffset);
-	          this.angle.element.style.top = this.angle.offset + 'px';
+	          this.angle.element.style.top = "".concat(this.angle.offset, "px");
 	          this.angle.element.style.removeProperty('left');
 	          this.angle.element.style.removeProperty('margin-left');
 	        }
@@ -751,30 +767,25 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "setWidthProperty",
 	    value: function setWidthProperty(property, width) {
+	      var _this2 = this;
 	      var props = ['width', 'minWidth', 'maxWidth'];
-	      if (props.indexOf(property) === -1) {
+	      if (!props.includes(property)) {
 	        return;
 	      }
 	      if (main_core.Type.isNumber(width) && width >= 0) {
 	        this[property] = width;
-	        this.getResizableContainer().style[property] = width + 'px';
+	        this.getResizableContainer().style[property] = "".concat(width, "px");
 	        this.getContentContainer().style.overflowX = 'auto';
 	        this.getPopupContainer().classList.add('popup-window-fixed-width');
-	        if (this.getTitleContainer() && main_core.Browser.isIE11()) {
-	          this.getTitleContainer().style[property] = width + 'px';
-	        }
 	      } else if (width === null || width === false) {
 	        this[property] = null;
 	        this.getResizableContainer().style.removeProperty(main_core.Text.toKebabCase(property));
 	        var hasOtherProps = props.some(function (prop) {
-	          return this.getResizableContainer().style.getPropertyValue(main_core.Text.toKebabCase(prop)) !== '';
-	        }, this);
+	          return _this2.getResizableContainer().style.getPropertyValue(main_core.Text.toKebabCase(prop)) !== '';
+	        });
 	        if (!hasOtherProps) {
 	          this.getContentContainer().style.removeProperty('overflow-x');
 	          this.getPopupContainer().classList.remove('popup-window-fixed-width');
-	        }
-	        if (this.getTitleContainer() && main_core.Browser.isIE11()) {
-	          this.getTitleContainer().style.removeProperty(main_core.Text.toKebabCase(property));
 	        }
 	      }
 	    }
@@ -784,21 +795,22 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "setHeightProperty",
 	    value: function setHeightProperty(property, height) {
+	      var _this3 = this;
 	      var props = ['height', 'minHeight', 'maxHeight'];
-	      if (props.indexOf(property) === -1) {
+	      if (!props.includes(property)) {
 	        return;
 	      }
 	      if (main_core.Type.isNumber(height) && height >= 0) {
 	        this[property] = height;
-	        this.getResizableContainer().style[property] = height + 'px';
+	        this.getResizableContainer().style[property] = "".concat(height, "px");
 	        this.getContentContainer().style.overflowY = 'auto';
 	        this.getPopupContainer().classList.add('popup-window-fixed-height');
 	      } else if (height === null || height === false) {
 	        this[property] = null;
 	        this.getResizableContainer().style.removeProperty(main_core.Text.toKebabCase(property));
 	        var hasOtherProps = props.some(function (prop) {
-	          return this.getResizableContainer().style.getPropertyValue(main_core.Text.toKebabCase(prop)) !== '';
-	        }, this);
+	          return _this3.getResizableContainer().style.getPropertyValue(main_core.Text.toKebabCase(prop)) !== '';
+	        });
 	        if (!hasOtherProps) {
 	          this.getContentContainer().style.removeProperty('overflow-y');
 	          this.getPopupContainer().classList.remove('popup-window-fixed-height');
@@ -810,7 +822,7 @@ this.BX = this.BX || {};
 	    value: function setPadding(padding) {
 	      if (main_core.Type.isNumber(padding) && padding >= 0) {
 	        this.padding = padding;
-	        this.getPopupContainer().style.padding = padding + 'px';
+	        this.getPopupContainer().style.padding = "".concat(padding, "px");
 	      } else if (padding === null) {
 	        this.padding = null;
 	        this.getPopupContainer().style.removeProperty('padding');
@@ -826,7 +838,7 @@ this.BX = this.BX || {};
 	    value: function setContentPadding(padding) {
 	      if (main_core.Type.isNumber(padding) && padding >= 0) {
 	        this.contentPadding = padding;
-	        this.getContentContainer().style.padding = padding + 'px';
+	        this.getContentContainer().style.padding = "".concat(padding, "px");
 	      } else if (padding === null) {
 	        this.contentPadding = null;
 	        this.getContentContainer().style.removeProperty('padding');
@@ -957,12 +969,45 @@ this.BX = this.BX || {};
 	          this.getPopupContainer().appendChild(this.resizeIcon);
 	        }
 
-	        //Compatibility
+	        // Compatibility
 	        this.setMinWidth(mode.minWidth);
 	        this.setMinHeight(mode.minHeight);
 	      } else if (mode === false && this.resizeIcon) {
 	        main_core.Dom.remove(this.resizeIcon);
 	        this.resizeIcon = null;
+	      }
+	    }
+	  }, {
+	    key: "getDesignSystemContext",
+	    value: function getDesignSystemContext() {
+	      return this.designSystemContext;
+	    }
+	  }, {
+	    key: "setDesignSystemContext",
+	    value: function setDesignSystemContext(context) {
+	      if (main_core.Type.isString(context)) {
+	        if (this.popupContainer !== null) {
+	          main_core.Dom.removeClass(this.popupContainer, this.designSystemContext);
+	          main_core.Dom.addClass(this.popupContainer, context);
+	        }
+	        this.designSystemContext = context;
+	      }
+	    }
+	  }, {
+	    key: "setTargetContainer",
+	    value: function setTargetContainer(targetContainer) {
+	      var newTargetContainer = main_core.Type.isElementNode(targetContainer) ? targetContainer : document.body;
+	      if (newTargetContainer === this.targetContainer) {
+	        return;
+	      }
+	      this.targetContainer = newTargetContainer;
+	      if (this.getPopupContainer()) {
+	        main_core_zIndexManager.ZIndexManager.unregister(this.getPopupContainer());
+	        this.getTargetContainer().append(this.getPopupContainer());
+	        main_core_zIndexManager.ZIndexManager.register(this.getPopupContainer());
+	      }
+	      if (this.overlay) {
+	        main_core.Dom.append(this.overlay.element, this.getTargetContainer());
 	      }
 	    }
 	  }, {
@@ -988,7 +1033,7 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "getResizableContainer",
 	    value: function getResizableContainer() {
-	      return main_core.Browser.isIE11() ? this.getContentContainer() : this.getPopupContainer();
+	      return this.getPopupContainer();
 	    }
 	  }, {
 	    key: "getTitleContainer",
@@ -1001,7 +1046,7 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "onTitleMouseDown",
 	    value: function onTitleMouseDown(event) {
-	      this._startDrag(event, {
+	      _classPrivateMethodGet(this, _startDrag, _startDrag2).call(this, event, {
 	        cursor: 'move',
 	        callback: this.handleMove,
 	        eventName: 'Drag'
@@ -1013,7 +1058,7 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "handleResizeMouseDown",
 	    value: function handleResizeMouseDown(event) {
-	      this._startDrag(event, {
+	      _classPrivateMethodGet(this, _startDrag, _startDrag2).call(this, event, {
 	        cursor: 'nwse-resize',
 	        eventName: 'Resize',
 	        callback: this.handleResize
@@ -1095,10 +1140,10 @@ this.BX = this.BX || {};
 	      if (!this.titleBar) {
 	        return;
 	      }
-	      if (babelHelpers["typeof"](params) === 'object' && main_core.Type.isDomNode(params.content)) {
+	      if (main_core.Type.isObject(params) && main_core.Type.isDomNode(params.content)) {
 	        this.titleBar.innerHTML = '';
 	        this.titleBar.appendChild(params.content);
-	      } else if (typeof params === 'string') {
+	      } else if (main_core.Type.isString(params)) {
 	        this.titleBar.innerHTML = '';
 	        this.titleBar.appendChild(main_core.Dom.create('span', {
 	          props: {
@@ -1107,10 +1152,18 @@ this.BX = this.BX || {};
 	          text: params
 	        }));
 	      }
-	      if (this.params.draggable) {
-	        this.titleBar.style.cursor = 'move';
-	        main_core.Event.bind(this.titleBar, 'mousedown', this.onTitleMouseDown);
+	    }
+	  }, {
+	    key: "setDraggable",
+	    value: function setDraggable(draggable) {
+	      var _draggable$element;
+	      this.params.draggable = draggable;
+	      var element = (_draggable$element = draggable === null || draggable === void 0 ? void 0 : draggable.element) !== null && _draggable$element !== void 0 ? _draggable$element : this.titleBar;
+	      if (!draggable || !element) {
+	        return;
 	      }
+	      main_core.Dom.style(element, 'cursor', 'move');
+	      main_core.Event.bind(element, 'mousedown', this.onTitleMouseDown);
 	    }
 	  }, {
 	    key: "setClosingByEsc",
@@ -1131,7 +1184,7 @@ this.BX = this.BX || {};
 	    key: "bindClosingByEsc",
 	    value: function bindClosingByEsc() {
 	      if (this.closeByEsc && !this.isCloseByEscBinded) {
-	        main_core.Event.bind(document, 'keyup', this.handleDocumentKeyUp);
+	        main_core.Event.bind(this.targetContainer.ownerDocument, 'keyup', this.handleDocumentKeyUp, true);
 	        this.isCloseByEscBinded = true;
 	      }
 	    }
@@ -1142,7 +1195,7 @@ this.BX = this.BX || {};
 	    key: "unbindClosingByEsc",
 	    value: function unbindClosingByEsc() {
 	      if (this.isCloseByEscBinded) {
-	        main_core.Event.unbind(document, 'keyup', this.handleDocumentKeyUp);
+	        main_core.Event.unbind(this.targetContainer.ownerDocument, 'keyup', this.handleDocumentKeyUp, true);
 	        this.isCloseByEscBinded = false;
 	      }
 	    }
@@ -1169,14 +1222,8 @@ this.BX = this.BX || {};
 	        if (this.isCompatibleMode()) {
 	          main_core.Event.bind(this.getPopupContainer(), 'click', this.handleContainerClick);
 	        }
-	        if (this.overlay && this.overlay.element) {
-	          main_core.Event.bind(this.overlay.element, 'click', this.handleOverlayClick);
-	        } else {
-	          if (this.isCompatibleMode()) {
-	            main_core.Event.bind(document, 'click', this.handleAutoHide);
-	          } else {
-	            document.addEventListener('click', this.handleAutoHide, true);
-	          }
+	        if (!this.hasOverlay()) {
+	          main_core.Event.bind(this.targetContainer.ownerDocument, 'click', this.handleAutoHide, !this.isCompatibleMode());
 	        }
 	      }
 	    }
@@ -1191,32 +1238,9 @@ this.BX = this.BX || {};
 	        if (this.isCompatibleMode()) {
 	          main_core.Event.unbind(this.getPopupContainer(), 'click', this.handleContainerClick);
 	        }
-	        if (this.overlay && this.overlay.element) {
-	          main_core.Event.unbind(this.overlay.element, 'click', this.handleOverlayClick);
-	        } else {
-	          if (this.isCompatibleMode()) {
-	            main_core.Event.unbind(document, 'click', this.handleAutoHide);
-	          } else {
-	            document.removeEventListener('click', this.handleAutoHide, true);
-	          }
+	        if (!this.hasOverlay()) {
+	          main_core.Event.unbind(this.targetContainer.ownerDocument, 'click', this.handleAutoHide, !this.isCompatibleMode());
 	        }
-	      }
-	    }
-	    /**
-	     * @private
-	     */
-	  }, {
-	    key: "handleAutoHide",
-	    value: function handleAutoHide(event) {
-	      if (this.isDestroyed()) {
-	        return;
-	      }
-	      if (this.autoHideHandler !== null) {
-	        if (this.autoHideHandler(event)) {
-	          this._tryCloseByEvent(event);
-	        }
-	      } else if (event.target !== this.getPopupContainer() && !this.getPopupContainer().contains(event.target)) {
-	        this._tryCloseByEvent(event);
 	      }
 	    }
 	    /**
@@ -1224,13 +1248,16 @@ this.BX = this.BX || {};
 	     */
 	  }, {
 	    key: "_tryCloseByEvent",
+	    /**
+	     * @private
+	     */
 	    value: function _tryCloseByEvent(event) {
-	      var _this2 = this;
+	      var _this4 = this;
 	      if (this.isCompatibleMode()) {
 	        this.tryCloseByEvent(event);
 	      } else {
 	        setTimeout(function () {
-	          _this2.tryCloseByEvent(event);
+	          _this4.tryCloseByEvent(event);
 	        }, 0);
 	      }
 	    }
@@ -1250,26 +1277,37 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "handleOverlayClick",
 	    value: function handleOverlayClick(event) {
-	      this.tryCloseByEvent(event);
-	      event.stopPropagation();
+	      if (this.autoHide) {
+	        this.tryCloseByEvent(event);
+	        event.stopPropagation();
+	      }
 	    }
 	  }, {
 	    key: "setOverlay",
 	    value: function setOverlay(params) {
 	      if (this.overlay === null) {
+	        this.unbindAutoHide();
 	        this.overlay = {
-	          element: main_core.Tag.render(_templateObject9 || (_templateObject9 = babelHelpers.taggedTemplateLiteral(["\n\t\t\t\t\t<div class=\"popup-window-overlay\" id=\"popup-window-overlay-", "\"></div>\n\t\t\t\t"])), this.getId())
+	          element: main_core.Tag.render(_templateObject9 || (_templateObject9 = babelHelpers.taggedTemplateLiteral(["\n\t\t\t\t\t<div \n\t\t\t\t\t\tclass=\"popup-window-overlay\" \n\t\t\t\t\t\tid=\"popup-window-overlay-", "\"\n\t\t\t\t\t\tonclick=\"", "\"\n\t\t\t\t\t></div>\n\t\t\t\t"])), this.getId(), this.handleOverlayClick.bind(this))
 	        };
 	        this.resizeOverlay();
-	        this.targetContainer.appendChild(this.overlay.element);
+	        main_core.Dom.append(this.overlay.element, this.getTargetContainer());
 	        this.getZIndexComponent().setOverlay(this.overlay.element);
 	      }
-	      if (params && main_core.Type.isNumber(params.opacity) && params.opacity >= 0 && params.opacity <= 100) {
-	        this.overlay.element.style.opacity = parseFloat(params.opacity / 100).toPrecision(3);
+	      if (main_core.Type.isNumber(params === null || params === void 0 ? void 0 : params.opacity) && params.opacity >= 0 && params.opacity <= 100) {
+	        main_core.Dom.style(this.overlay.element, 'opacity', parseFloat(params.opacity / 100).toPrecision(3));
 	      }
-	      if (params && params.backgroundColor) {
-	        this.overlay.element.style.backgroundColor = params.backgroundColor;
+	      if (params !== null && params !== void 0 && params.backgroundColor) {
+	        main_core.Dom.style(this.overlay.element, 'background-color', params.backgroundColor);
 	      }
+	      if (params !== null && params !== void 0 && params.blur) {
+	        main_core.Dom.style(this.overlay.element, 'backdrop-filter', params.blur);
+	      }
+	    }
+	  }, {
+	    key: "hasOverlay",
+	    value: function hasOverlay() {
+	      return this.overlay !== null && this.overlay.element !== null;
 	    }
 	  }, {
 	    key: "removeOverlay",
@@ -1298,14 +1336,14 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "showOverlay",
 	    value: function showOverlay() {
-	      var _this3 = this;
+	      var _this5 = this;
 	      if (this.overlay !== null && this.overlay.element !== null) {
 	        this.overlay.element.style.display = 'block';
 	        var popupHeight = this.getPopupContainer().offsetHeight;
 	        this.overlayTimeout = setInterval(function () {
-	          if (popupHeight !== _this3.getPopupContainer().offsetHeight) {
-	            _this3.resizeOverlay();
-	            popupHeight = _this3.getPopupContainer().offsetHeight;
+	          if (popupHeight !== _this5.getPopupContainer().offsetHeight) {
+	            _this5.resizeOverlay();
+	            popupHeight = _this5.getPopupContainer().offsetHeight;
 	          }
 	        }, 1000);
 	      }
@@ -1323,8 +1361,8 @@ this.BX = this.BX || {};
 	          scrollWidth = this.getTargetContainer().scrollWidth;
 	          scrollHeight = this.getTargetContainer().scrollHeight;
 	        }
-	        this.overlay.element.style.width = scrollWidth + 'px';
-	        this.overlay.element.style.height = scrollHeight + 'px';
+	        this.overlay.element.style.width = "".concat(scrollWidth, "px");
+	        this.overlay.element.style.height = "".concat(scrollHeight, "px");
 	      }
 	    }
 	  }, {
@@ -1352,7 +1390,7 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "show",
 	    value: function show() {
-	      var _this4 = this;
+	      var _this6 = this;
 	      if (this.isShown() || this.isDestroyed()) {
 	        return;
 	      }
@@ -1377,18 +1415,18 @@ this.BX = this.BX || {};
 	      }
 	      this.adjustPosition();
 	      this.animateOpening(function () {
-	        if (_this4.isDestroyed()) {
+	        if (_this6.isDestroyed()) {
 	          return;
 	        }
-	        main_core.Dom.removeClass(_this4.getPopupContainer(), _this4.animationShowClassName);
-	        _this4.emit('onAfterShow', new main_core_events.BaseEvent({
-	          compatData: [_this4]
+	        main_core.Dom.removeClass(_this6.getPopupContainer(), _this6.animationShowClassName);
+	        _this6.emit('onAfterShow', new main_core_events.BaseEvent({
+	          compatData: [_this6]
 	        }));
 	      });
 	      this.bindClosingByEsc();
 	      if (this.isCompatibleMode()) {
 	        setTimeout(function () {
-	          _this4.bindAutoHide();
+	          _this6.bindAutoHide();
 	        }, 100);
 	      } else {
 	        this.bindAutoHide();
@@ -1397,7 +1435,7 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "close",
 	    value: function close() {
-	      var _this5 = this;
+	      var _this7 = this;
 	      if (this.isDestroyed() || !this.isShown()) {
 	        return;
 	      }
@@ -1411,26 +1449,26 @@ this.BX = this.BX || {};
 	        _classPrivateMethodGet(this, _enableTargetScroll, _enableTargetScroll2).call(this);
 	      }
 	      this.animateClosing(function () {
-	        if (_this5.isDestroyed()) {
+	        if (_this7.isDestroyed()) {
 	          return;
 	        }
-	        _this5.hideOverlay();
-	        _this5.getPopupContainer().style.display = 'none';
-	        main_core.Dom.removeClass(_this5.getPopupContainer(), '--open');
-	        main_core.Dom.removeClass(_this5.getPopupContainer(), _this5.animationCloseClassName);
-	        _this5.unbindClosingByEsc();
-	        if (_this5.isCompatibleMode()) {
+	        _this7.hideOverlay();
+	        _this7.getPopupContainer().style.display = 'none';
+	        main_core.Dom.removeClass(_this7.getPopupContainer(), '--open');
+	        main_core.Dom.removeClass(_this7.getPopupContainer(), _this7.animationCloseClassName);
+	        _this7.unbindClosingByEsc();
+	        if (_this7.isCompatibleMode()) {
 	          setTimeout(function () {
-	            _this5.unbindAutoHide();
+	            _this7.unbindAutoHide();
 	          }, 0);
 	        } else {
-	          _this5.unbindAutoHide();
+	          _this7.unbindAutoHide();
 	        }
-	        _this5.emit('onAfterClose', new main_core_events.BaseEvent({
-	          compatData: [_this5]
+	        _this7.emit('onAfterClose', new main_core_events.BaseEvent({
+	          compatData: [_this7]
 	        }));
-	        if (!_this5.isCacheable()) {
-	          _this5.destroy();
+	        if (!_this7.isCacheable()) {
+	          _this7.destroy();
 	        }
 	      });
 	    }
@@ -1444,7 +1482,11 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "toggle",
 	    value: function toggle() {
-	      this.isShown() ? this.close() : this.show();
+	      if (this.isShown()) {
+	        this.close();
+	      } else {
+	        this.show();
+	      }
 	    }
 	    /**
 	     *
@@ -1454,19 +1496,23 @@ this.BX = this.BX || {};
 	    key: "animateOpening",
 	    value: function animateOpening(callback) {
 	      main_core.Dom.removeClass(this.getPopupContainer(), this.animationCloseClassName);
-	      if (this.animationShowClassName !== null) {
+	      if (this.animationShowClassName === null) {
+	        callback();
+	      } else {
 	        main_core.Dom.addClass(this.getPopupContainer(), this.animationShowClassName);
-	        if (this.animationCloseEventType !== null) {
-	          var eventName = this.animationCloseEventType + 'end';
-	          this.getPopupContainer().addEventListener(eventName, function handleTransitionEnd() {
+	        if (this.animationCloseEventType === null) {
+	          callback();
+	        } else {
+	          var eventName = "".concat(this.animationCloseEventType, "end");
+	          var className = this.animationShowClassName;
+	          this.getPopupContainer().addEventListener(eventName, function handleTransitionEnd(event) {
+	            if (!main_core.Dom.hasClass(event.target, className)) {
+	              return;
+	            }
 	            this.removeEventListener(eventName, handleTransitionEnd);
 	            callback();
 	          });
-	        } else {
-	          callback();
 	        }
-	      } else {
-	        callback();
 	      }
 	    }
 	    /**
@@ -1476,19 +1522,23 @@ this.BX = this.BX || {};
 	    key: "animateClosing",
 	    value: function animateClosing(callback) {
 	      main_core.Dom.removeClass(this.getPopupContainer(), this.animationShowClassName);
-	      if (this.animationCloseClassName !== null) {
+	      if (this.animationCloseClassName === null) {
+	        callback();
+	      } else {
 	        main_core.Dom.addClass(this.getPopupContainer(), this.animationCloseClassName);
-	        if (this.animationCloseEventType !== null) {
-	          var eventName = this.animationCloseEventType + 'end';
-	          this.getPopupContainer().addEventListener(eventName, function handleTransitionEnd() {
+	        if (this.animationCloseEventType === null) {
+	          callback();
+	        } else {
+	          var eventName = "".concat(this.animationCloseEventType, "end");
+	          var className = this.animationCloseClassName;
+	          this.getPopupContainer().addEventListener(eventName, function handleTransitionEnd(event) {
+	            if (!main_core.Dom.hasClass(event.target, className)) {
+	              return;
+	            }
 	            this.removeEventListener(eventName, handleTransitionEnd);
 	            callback();
 	          });
-	        } else {
-	          callback();
 	        }
-	      } else {
-	        callback();
 	      }
 	    }
 	  }, {
@@ -1522,12 +1572,13 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "isShown",
 	    value: function isShown() {
-	      return !this.isDestroyed() && this.getPopupContainer().style.display === 'block';
+	      var _this$getPopupContain;
+	      return !this.isDestroyed() && ((_this$getPopupContain = this.getPopupContainer()) === null || _this$getPopupContain === void 0 ? void 0 : _this$getPopupContain.style.display) === 'block';
 	    }
 	  }, {
 	    key: "destroy",
 	    value: function destroy() {
-	      var _this6 = this;
+	      var _this8 = this;
 	      if (this.destroyed) {
 	        return;
 	      }
@@ -1541,7 +1592,7 @@ this.BX = this.BX || {};
 	      this.unbindClosingByEsc();
 	      if (this.isCompatibleMode()) {
 	        setTimeout(function () {
-	          _this6.unbindAutoHide();
+	          _this8.unbindAutoHide();
 	        }, 0);
 	      } else {
 	        this.unbindAutoHide();
@@ -1566,18 +1617,20 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "adjustPosition",
 	    value: function adjustPosition(bindOptions) {
-	      if (bindOptions && babelHelpers["typeof"](bindOptions) === 'object') {
+	      var _bindElementPos$windo, _bindElementPos$windo2, _bindElementPos$popup, _bindElementPos$popup2;
+	      if (bindOptions && main_core.Type.isObject(bindOptions)) {
 	        this.bindOptions = bindOptions;
 	      }
 	      var bindElementPos = this.getBindElementPos(this.bindElement);
 	      if (!this.bindOptions.forceBindPosition && this.bindElementPos !== null && bindElementPos.top === this.bindElementPos.top && bindElementPos.left === this.bindElementPos.left) {
 	        return;
 	      }
-	      this.bindElementPos = bindElementPos;
-	      var windowSize = bindElementPos.windowSize ? bindElementPos.windowSize : this.getWindowSize();
-	      var windowScroll = bindElementPos.windowScroll ? bindElementPos.windowScroll : this.getWindowScroll();
-	      var popupWidth = bindElementPos.popupWidth ? bindElementPos.popupWidth : this.popupContainer.offsetWidth;
-	      var popupHeight = bindElementPos.popupHeight ? bindElementPos.popupHeight : this.popupContainer.offsetHeight;
+	      var bindElementVanished = bindElementPos.top === 0 && bindElementPos.left === 0 && bindElementPos.width === 0 && bindElementPos.height === 0;
+	      this.bindElementPos = bindElementVanished && this.bindElementPos !== null ? this.bindElementPos : bindElementPos;
+	      var windowSize = (_bindElementPos$windo = bindElementPos.windowSize) !== null && _bindElementPos$windo !== void 0 ? _bindElementPos$windo : this.getWindowSize();
+	      var windowScroll = (_bindElementPos$windo2 = bindElementPos.windowScroll) !== null && _bindElementPos$windo2 !== void 0 ? _bindElementPos$windo2 : this.getWindowScroll();
+	      var popupWidth = (_bindElementPos$popup = bindElementPos.popupWidth) !== null && _bindElementPos$popup !== void 0 ? _bindElementPos$popup : this.popupContainer.offsetWidth;
+	      var popupHeight = (_bindElementPos$popup2 = bindElementPos.popupHeight) !== null && _bindElementPos$popup2 !== void 0 ? _bindElementPos$popup2 : this.popupContainer.offsetHeight;
 	      var angleTopOffset = Popup.getOption('angleTopOffset');
 	      var left = this.bindElementPos.left + this.offsetLeft - (this.isTopOrBottomAngle() ? Popup.getOption('angleLeftOffset') : 0);
 	      if (!this.bindOptions.forceLeft && left + popupWidth + this.bordersWidth >= windowSize.innerWidth + windowScroll.scrollLeft && windowSize.innerWidth + windowScroll.scrollLeft - popupWidth - this.bordersWidth > 0) {
@@ -1617,19 +1670,19 @@ this.BX = this.BX || {};
 	        }
 	      } else {
 	        top = this.bindElementPos.bottom + this.offsetTop + this.getAngleHeight();
-	        if (!this.bindOptions.forceTop && top + popupHeight > windowSize.innerHeight + windowScroll.scrollTop && this.bindElementPos.top - popupHeight - this.getAngleHeight() >= 0)
-	          //Can we place the PopupWindow above the bindElement?
-	          {
-	            //The PopupWindow doesn't place below the bindElement. We should place it above.
-	            top = this.bindElementPos.top - popupHeight;
-	            if (this.isTopOrBottomAngle()) {
-	              top -= angleTopOffset;
-	              this.setAngle({
-	                position: 'bottom'
-	              });
-	            }
-	            top += Popup.getOption('positionTopXOffset');
-	          } else if (this.isBottomAngle()) {
+	        if (!this.bindOptions.forceTop && top + popupHeight > windowSize.innerHeight + windowScroll.scrollTop
+	        // Can we place the PopupWindow above the bindElement?
+	        && this.bindElementPos.top - popupHeight - this.getAngleHeight() >= 0) {
+	          // The PopupWindow doesn't place below the bindElement. We should place it above.
+	          top = this.bindElementPos.top - popupHeight;
+	          if (this.isTopOrBottomAngle()) {
+	            top -= angleTopOffset;
+	            this.setAngle({
+	              position: 'bottom'
+	            });
+	          }
+	          top += Popup.getOption('positionTopXOffset');
+	        } else if (this.isBottomAngle()) {
 	          top += angleTopOffset;
 	          this.setAngle({
 	            position: 'top'
@@ -1645,8 +1698,8 @@ this.BX = this.BX || {};
 	      this.emit('onBeforeAdjustPosition', event);
 	      main_core.Dom.adjust(this.popupContainer, {
 	        style: {
-	          top: event.top + 'px',
-	          left: event.left + 'px'
+	          top: "".concat(event.top, "px"),
+	          left: "".concat(event.left, "px")
 	        }
 	      });
 	    }
@@ -1722,20 +1775,10 @@ this.BX = this.BX || {};
 	     * @private
 	     */
 	  }, {
-	    key: "handleDocumentKeyUp",
-	    value: function handleDocumentKeyUp(event) {
-	      var _this7 = this;
-	      if (event.keyCode === 27) {
-	        checkEscPressed(this.getZindex(), function () {
-	          _this7.close();
-	        });
-	      }
-	    }
+	    key: "handleResizeWindow",
 	    /**
 	     * @private
 	     */
-	  }, {
-	    key: "handleResizeWindow",
 	    value: function handleResizeWindow() {
 	      if (this.isShown()) {
 	        this.adjustPosition();
@@ -1750,10 +1793,10 @@ this.BX = this.BX || {};
 	  }, {
 	    key: "handleMove",
 	    value: function handleMove(offsetX, offsetY, pageX, pageY) {
-	      var left = parseInt(this.popupContainer.style.left) + offsetX;
-	      var top = parseInt(this.popupContainer.style.top) + offsetY;
-	      if (babelHelpers["typeof"](this.params.draggable) === 'object' && this.params.draggable.restrict) {
-	        //Left side
+	      var left = parseInt(this.popupContainer.style.left, 10) + offsetX;
+	      var top = parseInt(this.popupContainer.style.top, 10) + offsetY;
+	      if (main_core.Type.isObject(this.params.draggable) && this.params.draggable.restrict) {
+	        // Left side
 	        if (left < 0) {
 	          left = 0;
 	        }
@@ -1767,7 +1810,7 @@ this.BX = this.BX || {};
 	          scrollHeight = this.getTargetContainer().scrollHeight;
 	        }
 
-	        //Right side
+	        // Right side
 	        var floatWidth = this.popupContainer.offsetWidth;
 	        var floatHeight = this.popupContainer.offsetHeight;
 	        if (left > scrollWidth - floatWidth) {
@@ -1777,57 +1820,22 @@ this.BX = this.BX || {};
 	          top = scrollHeight - floatHeight;
 	        }
 
-	        //Top side
+	        // Top side
 	        if (top < 0) {
 	          top = 0;
 	        }
 	      }
-	      this.popupContainer.style.left = left + 'px';
-	      this.popupContainer.style.top = top + 'px';
-	    }
-	    /**
-	     * @private
-	     */
-	  }, {
-	    key: "_startDrag",
-	    value: function _startDrag(event, options) {
-	      options = options || {};
-	      if (main_core.Type.isStringFilled(options.cursor)) {
-	        this.dragOptions.cursor = options.cursor;
-	      }
-	      if (main_core.Type.isStringFilled(options.eventName)) {
-	        this.dragOptions.eventName = options.eventName;
-	      }
-	      if (main_core.Type.isFunction(options.callback)) {
-	        this.dragOptions.callback = options.callback;
-	      }
-	      this.dragPageX = event.pageX;
-	      this.dragPageY = event.pageY;
-	      this.dragged = false;
-	      main_core.Event.bind(document, 'mousemove', this.handleDocumentMouseMove);
-	      main_core.Event.bind(document, 'mouseup', this.handleDocumentMouseUp);
-	      if (document.body.setCapture) {
-	        document.body.setCapture();
-	      }
-	      document.body.ondrag = function () {
-	        return false;
-	      };
-	      document.body.onselectstart = function () {
-	        return false;
-	      };
-	      document.body.style.cursor = this.dragOptions.cursor;
-	      document.body.style.MozUserSelect = 'none';
-	      this.popupContainer.style.MozUserSelect = 'none';
-	      if (this.shouldFrontOnShow()) {
-	        this.bringToFront();
-	      }
-	      event.preventDefault();
+	      this.popupContainer.style.left = "".concat(left, "px");
+	      this.popupContainer.style.top = "".concat(top, "px");
 	    }
 	    /**
 	     * @private
 	     */
 	  }, {
 	    key: "handleDocumentMouseMove",
+	    /**
+	     * @private
+	     */
 	    value: function handleDocumentMouseMove(event) {
 	      if (this.dragPageX === event.pageX && this.dragPageY === event.pageY) {
 	        return;
@@ -1890,13 +1898,46 @@ this.BX = this.BX || {};
 	    main_core.Dom.removeClass(target, 'popup-window-disable-scroll');
 	  }
 	}
+	function _startDrag2(event, options) {
+	  options = options || {};
+	  if (main_core.Type.isStringFilled(options.cursor)) {
+	    this.dragOptions.cursor = options.cursor;
+	  }
+	  if (main_core.Type.isStringFilled(options.eventName)) {
+	    this.dragOptions.eventName = options.eventName;
+	  }
+	  if (main_core.Type.isFunction(options.callback)) {
+	    this.dragOptions.callback = options.callback;
+	  }
+	  this.dragPageX = event.pageX;
+	  this.dragPageY = event.pageY;
+	  this.dragged = false;
+	  main_core.Event.bind(document, 'mousemove', this.handleDocumentMouseMove);
+	  main_core.Event.bind(document, 'mouseup', this.handleDocumentMouseUp);
+	  if (document.body.setCapture) {
+	    document.body.setCapture();
+	  }
+	  document.body.ondrag = function () {
+	    return false;
+	  };
+	  document.body.onselectstart = function () {
+	    return false;
+	  };
+	  document.body.style.cursor = this.dragOptions.cursor;
+	  document.body.style.MozUserSelect = 'none';
+	  this.popupContainer.style.MozUserSelect = 'none';
+	  if (this.shouldFrontOnShow()) {
+	    this.bringToFront();
+	  }
+	  event.preventDefault();
+	}
 	babelHelpers.defineProperty(Popup, "options", {});
 	babelHelpers.defineProperty(Popup, "defaultOptions", {
-	  //left offset for popup about target
+	  // left offset for popup about target
 	  angleLeftOffset: 40,
-	  //when popup position is 'top' offset distance between popup body and target node
+	  // when popup position is 'top' offset distance between popup body and target node
 	  positionTopXOffset: -11,
-	  //offset distance between popup body and target node if use angle, sum with positionTopXOffset
+	  // offset distance between popup body and target node if use angle, sum with positionTopXOffset
 	  angleTopOffset: 10,
 	  popupZindex: 1000,
 	  popupOverlayZindex: 1100,
@@ -2579,9 +2620,13 @@ this.BX = this.BX || {};
 	/**
 	 * @memberof BX.Main
 	 */
-	var Menu = /*#__PURE__*/function () {
+	var Menu = /*#__PURE__*/function (_EventEmitter) {
+	  babelHelpers.inherits(Menu, _EventEmitter);
 	  function Menu(options) {
+	    var _this;
 	    babelHelpers.classCallCheck(this, Menu);
+	    _this = babelHelpers.possibleConstructorReturn(this, babelHelpers.getPrototypeOf(Menu).call(this));
+	    _this.setEventNamespace('BX.Main.Menu');
 	    var _arguments = Array.prototype.slice.call(arguments),
 	      id = _arguments[0],
 	      bindElement = _arguments[1],
@@ -2594,31 +2639,38 @@ this.BX = this.BX || {};
 	      bindElement = options.bindElement;
 	      menuItems = options.items;
 	      if (!main_core.Type.isStringFilled(id)) {
-	        id = 'menu-popup-' + main_core.Text.getRandom();
+	        id = "menu-popup-".concat(main_core.Text.getRandom());
 	      }
 	    }
-	    this.id = id;
-	    this.bindElement = bindElement;
+	    _this.emit('onInit', {
+	      id: id,
+	      bindElement: bindElement,
+	      menuItems: menuItems,
+	      params: params
+	    });
+	    _this.id = id;
+	    _this.bindElement = bindElement;
 
 	    /**
 	     *
 	     * @type {MenuItem[]}
 	     */
-	    this.menuItems = [];
-	    this.itemsContainer = null;
-	    this.params = params && babelHelpers["typeof"](params) === 'object' ? params : {};
-	    this.parentMenuWindow = null;
-	    this.parentMenuItem = null;
+	    _this.menuItems = [];
+	    _this.itemsContainer = null;
+	    _this.params = params && babelHelpers["typeof"](params) === 'object' ? params : {};
+	    _this.parentMenuWindow = null;
+	    _this.parentMenuItem = null;
 	    if (menuItems && main_core.Type.isArray(menuItems)) {
 	      for (var i = 0; i < menuItems.length; i++) {
-	        this.addMenuItemInternal(menuItems[i], null);
+	        _this.addMenuItemInternal(menuItems[i], null);
 	      }
 	    }
-	    this.layout = {
+	    _this.layout = {
 	      menuContainer: null,
 	      itemsContainer: null
 	    };
-	    this.popupWindow = this.__createPopup();
+	    _this.popupWindow = _this.__createPopup();
+	    return _this;
 	  }
 
 	  /**
@@ -2884,7 +2936,7 @@ this.BX = this.BX || {};
 	    }
 	  }]);
 	  return Menu;
-	}();
+	}(main_core_events.EventEmitter);
 
 	var MenuManager = /*#__PURE__*/function () {
 	  /**

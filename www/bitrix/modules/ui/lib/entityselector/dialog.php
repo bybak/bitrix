@@ -4,6 +4,7 @@ namespace Bitrix\UI\EntitySelector;
 
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\ORM\Fields\ExpressionField;
+use Bitrix\Main\Type\Dictionary;
 use Bitrix\Main\UI\EntitySelector\EntityUsageTable;
 
 class Dialog implements \JsonSerializable
@@ -28,6 +29,9 @@ class Dialog implements \JsonSerializable
 	/** @var PreselectedCollection */
 	protected $preselectedItems;
 
+	/** @var EntityErrorCollection */
+	protected $errors;
+
 	/** @var string */
 	protected $context;
 
@@ -48,6 +52,9 @@ class Dialog implements \JsonSerializable
 
 	/** @var int */
 	protected int $recentItemsLimit = 50;
+
+	/** @var Dictionary */
+	protected $customData;
 
 	protected const MAX_RECENT_ITEMS_LIMIT = 50;
 
@@ -87,6 +94,7 @@ class Dialog implements \JsonSerializable
 		$this->recentItems = new RecentCollection();
 		$this->globalRecentItems = new RecentCollection();
 		$this->preselectedItems = new PreselectedCollection();
+		$this->errors = new EntityErrorCollection();
 
 		if (isset($options['preselectedItems']) && is_array($options['preselectedItems']))
 		{
@@ -96,6 +104,11 @@ class Dialog implements \JsonSerializable
 		if (isset($options['recentItemsLimit']) && is_int($options['recentItemsLimit']))
 		{
 			$this->recentItemsLimit = max(1, min($options['recentItemsLimit'], static::MAX_RECENT_ITEMS_LIMIT));
+		}
+
+		if (isset($options['customData']) && is_array($options['customData']))
+		{
+			$this->setCustomData($options['customData']);
 		}
 	}
 
@@ -296,17 +309,42 @@ class Dialog implements \JsonSerializable
 		return $this->entities[$entityId] ?? null;
 	}
 
+	public function setCustomData(array $customData): self
+	{
+		$this->getCustomData()->setValues($customData);
+
+		return $this;
+	}
+
+	/**
+	 * @return Dictionary
+	 */
+	public function getCustomData(): Dictionary
+	{
+		if ($this->customData === null)
+		{
+			$this->customData = new Dictionary();
+		}
+
+		return $this->customData;
+	}
+
 	/**
 	 * @internal
 	 */
 	public function load(): void
 	{
 		$entities = [];
+		$entitiesToFill = [];
 		foreach ($this->getEntities() as $entity)
 		{
 			if ($entity->hasDynamicLoad())
 			{
 				$entities[] = $entity->getId();
+				if ($entity->shouldFillRecentItems())
+				{
+					$entitiesToFill[] = $entity->getId();
+				}
 			}
 		}
 
@@ -315,10 +353,10 @@ class Dialog implements \JsonSerializable
 			return;
 		}
 
-		$this->fillRecentItems($entities);
+		$this->fillRecentItems($entitiesToFill);
 		if ($this->getContext() !== null)
 		{
-			$this->fillGlobalRecentItems($entities);
+			$this->fillGlobalRecentItems($entitiesToFill);
 		}
 
 		foreach ($entities as $entityId)
@@ -508,6 +546,16 @@ class Dialog implements \JsonSerializable
 		$dialog->applyFilters();
 
 		return $dialog->getItemCollection();
+	}
+
+	public function getErrors(): EntityErrorCollection
+	{
+		return $this->errors;
+	}
+
+	public function addError(EntityError $error): void
+	{
+		$this->errors->add($error);
 	}
 
 	public function saveRecentItems(array $recentItems)
@@ -729,7 +777,7 @@ class Dialog implements \JsonSerializable
 		return $this->jsonSerialize();
 	}
 
-	public function jsonSerialize()
+	public function jsonSerialize(): array
 	{
 		$json = [
 			'id' => $this->getId(),
@@ -758,6 +806,16 @@ class Dialog implements \JsonSerializable
 		if ($this->getPreselectedCollection()->count() > 0)
 		{
 			$json['preselectedItems'] = $this->getPreselectedCollection();
+		}
+
+		if ($this->customData !== null && $this->getCustomData()->count() > 0)
+		{
+			$json['customData'] = $this->getCustomData()->getValues();
+		}
+
+		if ($this->getErrors()->count() > 0)
+		{
+			$json['errors'] = $this->getErrors();
 		}
 
 		return $json;

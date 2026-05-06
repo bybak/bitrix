@@ -7,6 +7,7 @@ import { Utils } from 'im.v2.lib.utils';
 import { formatFieldsWithConfig } from 'im.v2.model';
 
 import { chatFieldsConfig } from './format/field-config';
+import { AutoDeleteModel } from './nested-modules/auto-delete/auto-delete';
 import { CollabsModel } from './nested-modules/collabs/collabs';
 import { InputActionsModel } from './nested-modules/input-actions';
 
@@ -30,6 +31,7 @@ export class ChatsModel extends BuilderModel
 		return {
 			collabs: CollabsModel,
 			inputActions: InputActionsModel,
+			autoDelete: AutoDeleteModel,
 		};
 	}
 
@@ -51,7 +53,7 @@ export class ChatsModel extends BuilderModel
 			avatar: '',
 			color: Color.base,
 			extranet: false,
-			counter: 0,
+			containsCollaber: false,
 			userCounter: 0,
 			lastReadId: 0,
 			markedId: 0,
@@ -64,7 +66,7 @@ export class ChatsModel extends BuilderModel
 			savedPositionMessageId: 0,
 			managerList: [],
 			inputActionList: {},
-			muteList: [],
+			isMuted: false,
 			quoteId: 0,
 			ownerId: 0,
 			entityLink: {},
@@ -78,18 +80,20 @@ export class ChatsModel extends BuilderModel
 			hasPrevPage: false,
 			hasNextPage: false,
 			diskFolderId: 0,
-			role: UserRole.guest,
+			role: UserRole.member,
 			permissions: {
 				manageUi: UserRole.none,
 				manageSettings: UserRole.none,
 				manageUsersAdd: UserRole.none,
 				manageUsersDelete: UserRole.none,
-				manageMessages: UserRole.none,
+				manageMessages: UserRole.member,
 			},
 			tariffRestrictions: {
 				isHistoryLimitExceeded: false,
 			},
 			parentChatId: 0,
+			backgroundId: '',
+			isTextareaEnabled: true,
 		};
 	}
 
@@ -184,6 +188,25 @@ export class ChatsModel extends BuilderModel
 
 				return state.collection[dialogId].type === ChatType.support24Question;
 			},
+			/** @function chats/isSelfChat */
+			isSelfChat: () => (dialogId: string): boolean => {
+				return Core.getUserId().toString() === dialogId;
+			},
+			/** @function chats/getBackgroundId */
+			getBackgroundId: (state: ChatState) => (dialogId: string): string => {
+				if (!state.collection[dialogId])
+				{
+					return '';
+				}
+
+				return state.collection[dialogId].backgroundId;
+			},
+			/** @function chats/getCollectionByChatType */
+			getCollectionByChatType: (state: ChatState) => (type: $Values<typeof ChatType>): ImModelChat[] => {
+				return Object.values(state.collection).filter((item) => {
+					return item.type === type;
+				});
+			},
 		};
 	}
 
@@ -263,29 +286,28 @@ export class ChatsModel extends BuilderModel
 
 				store.commit('delete', { dialogId: payload.dialogId });
 			},
-			/** @function chats/clearCounters */
-			clearCounters: (store) => {
-				store.commit('clearCounters');
+			/** @function chats/clearMarkedChatsByType */
+			clearMarkedChatsByType: (store, payload: { type: $Values<typeof ChatType> }) => {
+				store.commit('clearMarkedChatsByType', payload);
+			},
+			/** @function chats/clearMarkedChats */
+			clearMarkedChats: (store) => {
+				store.commit('clearMarkedChats');
 			},
 			/** @function chats/mute */
 			mute: (store, payload: {dialogId: string}) => {
-				const existingItem = store.state.collection[payload.dialogId];
+				const existingItem: ImModelChat = store.state.collection[payload.dialogId];
 				if (!existingItem)
 				{
 					return;
 				}
 
-				const currentUserId = Core.getUserId();
-				if (existingItem.muteList.includes(currentUserId))
-				{
-					return;
-				}
-				const muteList = [...existingItem.muteList, currentUserId];
+				this.store.dispatch('counters/setMuteStatus', { chatId: existingItem.chatId, status: true })
 
 				store.commit('update', {
 					actionName: 'mute',
 					dialogId: payload.dialogId,
-					fields: this.formatFields({ muteList }),
+					fields: this.formatFields({ isMuted: true }),
 				});
 			},
 			/** @function chats/unmute */
@@ -296,13 +318,12 @@ export class ChatsModel extends BuilderModel
 					return;
 				}
 
-				const currentUserId = Core.getUserId();
-				const muteList = existingItem.muteList.filter((item) => item !== currentUserId);
+				this.store.dispatch('counters/setMuteStatus', { chatId: existingItem.chatId, status: false })
 
 				store.commit('update', {
 					actionName: 'unmute',
 					dialogId: payload.dialogId,
-					fields: this.formatFields({ muteList }),
+					fields: this.formatFields({ isMuted: false }),
 				});
 			},
 			/** @function chats/setLastMessageViews */
@@ -383,17 +404,26 @@ export class ChatsModel extends BuilderModel
 			delete: (state: ChatState, payload) => {
 				delete state.collection[payload.dialogId];
 			},
-			clearCounters: (state: ChatState) => {
-				Object.keys(state.collection).forEach((key) => {
-					state.collection[key].counter = 0;
-					state.collection[key].markedId = 0;
+			clearMarkedChatsByType: (state: ChatState, payload: { type: $Values<typeof ChatType> }) => {
+				const { type } = payload;
+				const items = this.store.getters['chats/getCollectionByChatType'](type);
+
+				items.forEach((item: ImModelChat) => {
+					state.collection[item.dialogId].markedId = 0;
+				});
+			},
+			clearMarkedChats: (state: ChatState) => {
+				Object.values(state.collection).forEach((chat) => {
+					const { dialogId } = chat;
+
+					state.collection[dialogId].markedId = 0;
 				});
 			},
 		};
 	}
 
-	formatFields(fields: JsonObject): JsonObject
+	formatFields(rawFields: JsonObject): JsonObject
 	{
-		return formatFieldsWithConfig(fields, chatFieldsConfig);
+		return formatFieldsWithConfig(rawFields, chatFieldsConfig);
 	}
 }

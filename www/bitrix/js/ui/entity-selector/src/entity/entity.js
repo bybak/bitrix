@@ -26,7 +26,9 @@ export default class Entity
 	searchFields: OrderedArray<SearchField> = null;
 	dynamicLoad: boolean = false;
 	dynamicSearch: boolean = false;
+	dynamicSearchMatchMode: 'all' | 'exact' = 'exact';
 	substituteEntityId: string = null;
+	fillRecentItems: boolean = true;
 	searchCacheLimits: RegExp[] = [];
 	filters: Map<string, EntityFilter> = new Map();
 
@@ -52,6 +54,7 @@ export default class Entity
 		this.tagOptions = Type.isPlainObject(options.tagOptions) ? options.tagOptions : {};
 		this.badgeOptions = Type.isArray(options.badgeOptions) ? options.badgeOptions : [];
 		this.substituteEntityId = Type.isStringFilled(options.substituteEntityId) ? options.substituteEntityId : null;
+		this.fillRecentItems = Type.isBoolean(options.fillRecentItems) ? options.fillRecentItems : true;
 
 		if (Type.isArray(options.filters))
 		{
@@ -82,6 +85,7 @@ export default class Entity
 		this.setSearchable(options.searchable);
 		this.setDynamicLoad(options.dynamicLoad);
 		this.setDynamicSearch(options.dynamicSearch);
+		this.setDynamicSearchMatchMode(options.dynamicSearchMatchMode);
 		this.setSearchFields(options.searchFields);
 		this.setSearchCacheLimits(options.searchCacheLimits);
 	}
@@ -373,6 +377,19 @@ export default class Entity
 		}
 	}
 
+	setDynamicSearchMatchMode(mode: 'all' | 'exact'): void
+	{
+		if (mode === 'all' || mode === 'exact')
+		{
+			this.dynamicSearchMatchMode = mode;
+		}
+	}
+
+	getDynamicSearchMatchMode(): 'all' | 'exact'
+	{
+		return this.dynamicSearchMatchMode;
+	}
+
 	getFilters(): EntityFilter[]
 	{
 		return Array.from(this.filters.values());
@@ -407,6 +424,11 @@ export default class Entity
 		return this.substituteEntityId;
 	}
 
+	shouldFillRecentItems(): boolean
+	{
+		return this.fillRecentItems;
+	}
+
 	toJSON()
 	{
 		return {
@@ -417,6 +439,7 @@ export default class Entity
 			dynamicSearch: this.hasDynamicSearch(),
 			filters: this.getFilters(),
 			substituteEntityId: this.getSubstituteEntityId(),
+			fillRecentItems: this.shouldFillRecentItems(),
 		};
 	}
 }

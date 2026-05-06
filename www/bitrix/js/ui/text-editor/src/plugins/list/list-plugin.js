@@ -1,5 +1,6 @@
 import { Loc } from 'main.core';
 import type { BBCodeElementNode } from 'ui.bbcode.model';
+import { Outline } from 'ui.icon-set.api.core';
 import { $findMatchingParent } from 'ui.lexical.utils';
 
 import Button from '../../toolbar/button';
@@ -46,10 +47,13 @@ import type {
 
 export class ListPlugin extends BasePlugin
 {
+	#maxIndent: number = 5;
+
 	constructor(editor: TextEditor)
 	{
 		super(editor);
 
+		this.#maxIndent = editor.getOption('list.maxIndent', this.#maxIndent);
 		this.#registerListeners();
 		this.#registerComponents();
 	}
@@ -196,7 +200,17 @@ export class ListPlugin extends BasePlugin
 			),
 			this.getEditor().registerCommand(
 				INDENT_CONTENT_COMMAND,
-				() => !this.#isIndentPermitted(1),
+				(payload) => {
+					const totalDepth = this.#getTotalListDepth();
+					if (totalDepth > 0)
+					{
+						payload?.event.preventDefault();
+
+						return totalDepth > this.#maxIndent;
+					}
+
+					return false;
+				},
 				COMMAND_PRIORITY_CRITICAL,
 			),
 		);
@@ -206,7 +220,7 @@ export class ListPlugin extends BasePlugin
 	{
 		this.getEditor().getComponentRegistry().register('bulleted-list', (): Button => {
 			const button: Button = new Button();
-			button.setContent('<span class="ui-icon-set --bulleted-list"></span>');
+			button.setIcon(Outline.BULLETED_LIST);
 			button.setBlockType('bullet');
 			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_BULLETED_LIST'));
 			button.subscribe('onClick', (): void => {
@@ -228,7 +242,7 @@ export class ListPlugin extends BasePlugin
 
 		this.getEditor().getComponentRegistry().register('numbered-list', (): Button => {
 			const button: Button = new Button();
-			button.setContent('<span class="ui-icon-set --numbered-list"></span>');
+			button.setIcon(Outline.NUMBERED_LIST);
 			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_NUMBERED_LIST'));
 			button.setBlockType('number');
 			button.subscribe('onClick', (): void => {
@@ -249,12 +263,12 @@ export class ListPlugin extends BasePlugin
 		});
 	}
 
-	#isIndentPermitted(maxDepth: number): boolean
+	#getTotalListDepth(): number
 	{
 		const selection: RangeSelection = $getSelection();
 		if (!$isRangeSelection(selection))
 		{
-			return false;
+			return 0;
 		}
 
 		const elementNodesInSelection: Set<ElementNode> = this.#getElementNodesInSelection(selection);
@@ -277,7 +291,7 @@ export class ListPlugin extends BasePlugin
 			}
 		}
 
-		return totalDepth <= maxDepth;
+		return totalDepth;
 	}
 
 	#getElementNodesInSelection(selection: RangeSelection): Set<ElementNode>

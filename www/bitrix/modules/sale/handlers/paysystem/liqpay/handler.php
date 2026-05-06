@@ -27,7 +27,7 @@ class LiqPayHandler extends PaySystem\ServiceHandler
 	 * @throws Main\ArgumentOutOfRangeException
 	 * @throws Main\NotImplementedException
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		$busValues = $this->getParamsBusValue($payment);
 		$busValues['LIQPAY_PATH_TO_RESULT_URL'] = $this->getPathResultUrl($payment);
@@ -112,8 +112,9 @@ class LiqPayHandler extends PaySystem\ServiceHandler
 	{
 		$sum = self::getValueByTag(self::getOperationXml($request), 'amount');
 		$paymentSum = $this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY');
+		$currency = $payment->getCurrency();
 
-		return PriceMaths::roundPrecision($paymentSum) === PriceMaths::roundPrecision($sum);
+		return PriceMaths::roundByFormatCurrency($paymentSum, $currency) === PriceMaths::roundByFormatCurrency($sum, $currency);
 	}
 
 	/**

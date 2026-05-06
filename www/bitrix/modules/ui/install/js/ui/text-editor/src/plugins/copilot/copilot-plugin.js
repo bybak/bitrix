@@ -1,8 +1,10 @@
 import { Runtime, Type, Dom, Tag, Loc, Event } from 'main.core';
 import type { BaseEvent } from 'main.core.events';
 import type { Copilot, CopilotOptions } from 'ai.copilot';
+import { Outline } from 'ui.icon-set.api.core';
 import { DIALOG_VISIBILITY_COMMAND, HIDE_DIALOG_COMMAND } from '../../commands';
 import { $createNodesFromText } from '../../helpers/create-nodes-from-text';
+import { getEditorPaddings } from '../../helpers/get-editor-paddings';
 import { $getSelectionPosition } from '../../helpers/get-selection-position';
 
 import {
@@ -12,7 +14,6 @@ import {
 	$isTextNode,
 	createCommand,
 	$getRoot,
-	$setSelection,
 	$isParagraphNode,
 	$createParagraphNode,
 	COMMAND_PRIORITY_EDITOR,
@@ -24,10 +25,12 @@ import {
 	type RangeSelection,
 } from 'ui.lexical.core';
 
+import { $restoreSelection } from '../../helpers/restore-selection';
+
 import Button from '../../toolbar/button';
 import BasePlugin from '../base-plugin';
 
-import { type TextEditor } from '../../text-editor';
+import { TextEditor } from '../../text-editor';
 
 import './copilot.css';
 import { CustomParagraphNode } from '../paragraph/custom-paragraph-node';
@@ -84,7 +87,14 @@ export class CopilotPlugin extends BasePlugin
 			),
 			this.getEditor().registerCommand(
 				HIDE_DIALOG_COMMAND,
-				(): boolean => {
+				(payload): boolean => {
+					if (payload?.sender === 'copilot')
+					{
+						return false;
+					}
+
+					this.#lastSelection = null;
+
 					this.#hide();
 
 					return false;
@@ -152,13 +162,13 @@ export class CopilotPlugin extends BasePlugin
 	{
 		this.getEditor().getComponentRegistry().register('copilot', (): Button => {
 			const button: Button = new Button();
-			const copilotIconClass = '--copilot-ai';
-			const refreshIconClass = '--refresh-5 ui-text-editor-copilot-loading';
+			const copilotIconClass = `--${Outline.COPILOT}`;
+			const refreshIconClass = `--${Outline.REFRESH} ui-text-editor-copilot-loading`;
 			const icon = Tag.render`
-				<span class="ui-icon-set ${copilotIconClass}" style="--ui-icon-set__icon-color: #8e52ec"></span>
+				<span class="ui-icon-set ${copilotIconClass}" style="--ui-icon-set__icon-color: var(--ui-color-copilot-primary)"></span>
 			`;
 			button.setContent(icon);
-			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_COPILOT'));
+			button.setTooltip(this.getCopilotName());
 			button.subscribe('onClick', (): void => {
 				this.getEditor().focus();
 
@@ -219,6 +229,11 @@ export class CopilotPlugin extends BasePlugin
 		return this.#copilot !== null && this.#copilot.isShown();
 	}
 
+	getCopilotName(): string
+	{
+		return TextEditor.getGlobalOption('copilot.name', Loc.getMessage('TEXT_EDITOR_BTN_COPILOT'));
+	}
+
 	show({ onShow, onError } = {})
 	{
 		if (this.isCopilotLoaded())
@@ -249,7 +264,7 @@ export class CopilotPlugin extends BasePlugin
 				return;
 			}
 
-			this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND);
+			this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND, { sender: 'copilot' });
 
 			const selectionText = selection.getTextContent();
 			const editorPosition = Dom.getPosition(this.getEditor().getScrollerContainer());
@@ -378,27 +393,32 @@ export class CopilotPlugin extends BasePlugin
 		this.getEditor().update(() => {
 			this.#restoreSelection();
 
-			const selectionPosition = $getSelectionPosition(this.getEditor(), $getSelection(), document.body);
+			const selection: RangeSelection = $getSelection();
+			const selectionPosition = $getSelectionPosition(this.getEditor(), selection, document.body);
 			if (selectionPosition === null)
 			{
 				return;
 			}
 
+			this.#lastSelection = selection.clone();
+
 			const { top, left, bottom } = selectionPosition;
 			const scrollerRect: DOMRect = Dom.getPosition(this.getEditor().getScrollerContainer());
 			const popupWidth = Math.min(scrollerRect.width, 600);
+
+			const editorPaddings = getEditorPaddings(this.getEditor());
 
 			let offsetLeft = popupWidth / 2;
 			if (left - offsetLeft < scrollerRect.left)
 			{
 				// Left boundary
 				const overflow = scrollerRect.left - (left - offsetLeft);
-				offsetLeft -= overflow + 16;
+				offsetLeft -= overflow + editorPaddings.left;
 			}
 			else if (scrollerRect.right < (left + popupWidth - offsetLeft))
 			{
 				// Right boundary
-				offsetLeft += (left + popupWidth - offsetLeft) - scrollerRect.right + 16;
+				offsetLeft += (left + popupWidth - offsetLeft) - scrollerRect.right + editorPaddings.right;
 			}
 
 			if (bottom < scrollerRect.top || top > scrollerRect.bottom)
@@ -422,16 +442,10 @@ export class CopilotPlugin extends BasePlugin
 
 	#restoreSelection(): boolean
 	{
-		const selection = $getSelection();
-		if (!$isRangeSelection(selection) && this.#lastSelection !== null)
-		{
-			$setSelection(this.#lastSelection);
-			this.#lastSelection = null;
+		const success = $restoreSelection(this.#lastSelection);
+		this.#lastSelection = null;
 
-			return true;
-		}
-
-		return false;
+		return success;
 	}
 
 	#handleCopilotSave(event: BaseEvent): void
@@ -489,10 +503,8 @@ export class CopilotPlugin extends BasePlugin
 		Event.unbind(this.getEditor().getScrollerContainer(), 'scroll', this.#onEditorScroll);
 		this.getEditor().resetHighlightSelection();
 		this.getEditor().update(() => {
-			if (!this.#restoreSelection())
-			{
-				this.getEditor().focus();
-			}
+			this.#restoreSelection();
+			// this.getEditor().focus();
 		});
 	}
 

@@ -1,12 +1,13 @@
-<?
+<?php
+
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Loader;
-use Bitrix\Main\Type\DateTime;
-use Bitrix\Main\Type\Date,
-	\Bitrix\Main\HttpApplication;
+use Bitrix\Im\V2\Service\Locator;
 
 if(!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED!==true)
+{
 	die();
+}
 
 Loc::loadMessages(__FILE__);
 
@@ -14,7 +15,7 @@ class ImRouterComponent extends \CBitrixComponent
 {
 	private const NETWORK_LINE = 'networkLines';
 
-	/** @var HttpRequest $request */
+	/** @var \Bitrix\Main\HttpRequest $request */
 	protected $request = array();
 	protected $errors = array();
 	protected $aliasData = array();
@@ -22,6 +23,11 @@ class ImRouterComponent extends \CBitrixComponent
 	private function showFullscreenChat()
 	{
 		$this->includeComponentTemplate();
+	}
+
+	private function showAirTemplate(): void
+	{
+		$this->setTemplateName('air');
 	}
 
 	private function showBlankPage()
@@ -128,8 +134,17 @@ class ImRouterComponent extends \CBitrixComponent
 		else
 		{
 			global $USER;
+			if ($this->isChatEmbeddedOnPage())
+			{
+				$this->showAirTemplate();
+			}
 			if ($USER->IsAuthorized() && !\Bitrix\Im\User::getInstance()->isConnector())
 			{
+				if ($this->isDesktopRequest())
+				{
+					$this->handleDesktopRequest();
+				}
+
 				$this->checkNetworkLines();
 				$this->showFullscreenChat();
 			}
@@ -188,5 +203,27 @@ class ImRouterComponent extends \CBitrixComponent
 		{
 			ShowError($error);
 		}
+	}
+
+	private function isChatEmbeddedOnPage(): bool
+	{
+		return Locator::getMessenger()->getApplication()->shouldHideQuickAccess();
+	}
+
+	private function isDesktopRequest(): bool
+	{
+		return \Bitrix\Im\V2\Application\Context::getCurrent()->isDesktop();
+	}
+
+	private function handleDesktopRequest(): void
+	{
+		if (!$this->isDesktopRequest())
+		{
+			return;
+		}
+
+		$desktopVersion = (int)($this->request->getQuery('BXD_API_VERSION') ?? 0);
+		CIMMessenger::SetDesktopVersion($desktopVersion);
+		CIMMessenger::SetDesktopStatusOnline(null, false);
 	}
 }

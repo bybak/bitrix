@@ -20,6 +20,7 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 /** @var string $componentPath */
 /** @var \CMailClientMessageNewComponent $component */
 
+\Bitrix\Main\Loader::includeModule('ui');
 \Bitrix\UI\Toolbar\Facade\Toolbar::deleteFavoriteStar();
 
 \Bitrix\Main\UI\Extension::load([
@@ -32,25 +33,28 @@ if ($arResult['TO_PLUG_EXTENSION_SALES_LETTER_TEMPLATE'])
 	\Bitrix\Main\UI\Extension::load('mail.saleslettertemplate');
 }
 
-$this->setViewTarget('inside_pagetitle'); ?>
-<div></div>
-<?php
-$this->endViewTarget();
-
-$this->setViewTarget('above_pagetitle'); ?>
-
-<div class="mail-message-new-head">
-	<span class="mail-msg-title-icon mail-msg-title-icon-outcome"></span>
-	<span class="mail-message-new-title-text"><?=Loc::getMessage('MAIL_NEW_MESSAGE_TITLE')?></span>
-</div>
-
-<?php
+$APPLICATION->setTitle(Loc::getMessage('MAIL_NEW_MESSAGE_TITLE'));
+\Bitrix\UI\Toolbar\Facade\Toolbar::addBeforeTitleHtml('
+	<div class="mail-message-new-head">
+		<span class="mail-msg-title-icon mail-msg-title-icon-outcome"></span>
+	</div>'
+);
 
 $emailsLimitToSendMessage = Helper\LicenseManager::getEmailsLimitToSendMessage();
-
-$this->endViewTarget();
-
 $message = $arResult['MESSAGE'];
+
+$analyticsElement = 'compose_button';
+if (isset($message['__type']))
+{
+	if ($message['__type'] === 'forward')
+	{
+		$analyticsElement = 'forward';
+	}
+	elseif ($message['__type'] === 'reply')
+	{
+		$analyticsElement = 'reply';
+	}
+}
 ?>
 
 <div class="mail-msg-view-wrapper">
@@ -242,6 +246,32 @@ $message = $arResult['MESSAGE'];
 
 		var mailForm = BXMainMailForm.getForm('<?=\CUtil::jsEscape($formId) ?>');
 		mailForm.init();
+
+		(function() {
+			const formId = '<?= \CUtil::jsEscape($formId) ?>';
+			const form = document.getElementById(formId);
+			if (!form)
+			{
+				return;
+			}
+
+			const sendButton = form.querySelector('.main-mail-form-submit-button');
+
+			if (sendButton)
+			{
+				BX.bind(sendButton, 'click', function() {
+					BX.UI.Analytics.sendData({
+						tool: 'mail',
+						event: 'mail_send',
+						category: 'mail_operations',
+						type: 'mail',
+						c_section: '<?= \CUtil::JSEscape($arResult['ANALYTICS']['SOURCE'] ?? 'mail') ?>',
+						c_element: '<?= \CUtil::JSEscape($analyticsElement) ?>'
+					});
+				});
+			}
+		})();
+
 	});
 
 </script>

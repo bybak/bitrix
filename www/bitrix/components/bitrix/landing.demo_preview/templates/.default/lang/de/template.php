@@ -1,0 +1,26 @@
+<?php
+$MESS["LANDING_404_ERROR"] = "Vorlage wurde nicht gefunden";
+$MESS["LANDING_LOADER_WAIT_MSGVER_1"] = "Bitte warten Sie, der Onlineshop wird jetzt erstellt.";
+$MESS["LANDING_PREVIEW_MAINPAGE_BUTTON_CANCEL_TEXT"] = "Abbrechen";
+$MESS["LANDING_PREVIEW_MAINPAGE_BUTTON_OK_TEXT"] = "Ja";
+$MESS["LANDING_PREVIEW_MAINPAGE_MESSAGE"] = "Ihre Startseite verwendet bereits eine Vorlage. Importieren einer neuen Vorlage führt dazu, dass die aktuelle Vorlage und alle von Ihnen vorgenommenen Änderungen unwiderruflich gelöscht werden.<br />Möchten Sie die aktuelle Vorlage löschen und eine neue installieren?";
+$MESS["LANDING_PREVIEW_MAINPAGE_TITLE"] = "Neue Vorlage installieren";
+$MESS["LANDING_TPL_BUTTON_CANCEL"] = "Abbrechen";
+$MESS["LANDING_TPL_BUTTON_CREATE"] = "Erstellen";
+$MESS["LANDING_TPL_BUTTON_CREATE_KB"] = "Wissensbasis erstellen";
+$MESS["LANDING_TPL_BUTTON_CREATE_PAGE"] = "Seite erstellen";
+$MESS["LANDING_TPL_BUTTON_CREATE_SITE"] = "Website erstellen";
+$MESS["LANDING_TPL_BUTTON_CREATE_STORE"] = "Onlineshop erstellen";
+$MESS["LANDING_TPL_BUTTON_REPLACE_PAGE"] = "Vorlage anwenden";
+$MESS["LANDING_TPL_BUTTON_SHOW_IN_MOBILE"] = "Auf mobilem Gerät öffnen";
+$MESS["LANDING_TPL_DEMO_PREVIEW_LOGO_WELCOME_PAGE"] = "Startseite";
+$MESS["LANDING_TPL_HEADER_LOGO_BITRIX"] = "Bitrix";
+$MESS["LANDING_TPL_HEADER_LOGO_KB"] = "Wissensbasis";
+$MESS["LANDING_TPL_HEADER_LOGO_SITE"] = "Websites";
+$MESS["LANDING_TPL_HEADER_RIGHT_CREATE_HINT_MSGVER_1"] = "Sie sind nicht berechtigt, Websites zu erstellen. Kontaktieren Sie bitte den Administrator Ihres Accounts.";
+$MESS["LANDING_TPL_POPUP_REPEAT_BUTTON"] = "Neustart";
+$MESS["LANDING_TPL_POPUP_REPEAT_TEXT"] = "Etwas ist schiefgegangen. Klicken Sie auf Neustart und versuchen Sie es erneut.";
+$MESS["LANDING_TPL_POPUP_TEXT"] = "Den QR-Code einscannen, um die Website zu öffnen";
+$MESS["LANDING_TPL_POPUP_TEXT_KB"] = "Scannen Sie den QR-Code ein, um die Wissensbasis zu öffnen.";
+$MESS["LANDING_TPL_POPUP_TEXT_STORE"] = "Scannen Sie den QR-Code ein, um den Onlineshop zu öffnen.";
+$MESS["LANDING_TPL_TITLE"] = "Vorlagenvorschau";

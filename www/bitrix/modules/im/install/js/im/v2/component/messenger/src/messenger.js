@@ -1,58 +1,37 @@
+import 'planner';
+import 'ui.fontawesome4';
+import 'im.integration.viewer';
 import 'ui.design-tokens';
 import 'ui.fonts.opensans';
 import 'im.v2.css.tokens';
 import 'im.v2.css.icons';
 import 'im.v2.css.classes';
 
-import { MessengerNavigation } from 'im.v2.component.navigation';
-import { RecentListContainer } from 'im.v2.component.list.container.recent';
-import { OpenlineListContainer } from 'im.v2.component.list.container.openline';
-import { ChannelListContainer } from 'im.v2.component.list.container.channel';
-import { CollabListContainer } from 'im.v2.component.list.container.collab';
-import { ChatContent } from 'im.v2.component.content.chat';
-import { CreateChatContent, UpdateChatContent } from 'im.v2.component.content.chat-forms.forms';
 import { OpenlinesContent } from 'im.v2.component.content.openlines';
-import { OpenlinesV2Content } from 'im.v2.component.content.openlinesV2';
-import { NotificationContent } from 'im.v2.component.content.notification';
-import { MarketContent } from 'im.v2.component.content.market';
-import { SettingsContent } from 'im.v2.component.content.settings';
-import { CopilotListContainer } from 'im.v2.component.list.container.copilot';
-import { CopilotContent } from 'im.v2.component.content.copilot';
-import { Analytics } from 'im.v2.lib.analytics';
-
+import { BulkActionsManager } from 'im.v2.lib.bulk-actions';
+import { CounterManager } from 'im.v2.lib.counter';
+import { EscManager } from 'im.v2.lib.esc-manager';
 import { Logger } from 'im.v2.lib.logger';
 import { InitManager } from 'im.v2.lib.init';
-import { Layout } from 'im.v2.const';
-import { CallManager } from 'im.v2.lib.call';
+import { Layout, type LayoutType } from 'im.v2.const';
 import { ThemeManager } from 'im.v2.lib.theme';
 import { DesktopManager } from 'im.v2.lib.desktop';
 import { LayoutManager } from 'im.v2.lib.layout';
 
+import { LayoutComponentMap } from './config/component-map';
+import { DesktopOverlay } from './components/desktop-overlay';
+
 import './css/messenger.css';
 
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
+import type { BitrixVueComponentProps } from 'ui.vue3';
 import type { ImModelLayout } from 'im.v2.model';
 
 // @vue/component
 export const Messenger = {
 	name: 'MessengerRoot',
-	components: {
-		MessengerNavigation,
-		RecentListContainer,
-		ChannelListContainer,
-		CollabListContainer,
-		OpenlineListContainer,
-		ChatContent,
-		CreateChatContent,
-		UpdateChatContent,
-		OpenlinesContent,
-		NotificationContent,
-		OpenlinesV2Content,
-		MarketContent,
-		SettingsContent,
-		CopilotListContainer,
-		CopilotContent,
-	},
+	components: { OpenlinesContent, DesktopOverlay },
 	data(): JsonObject
 	{
 		return {
@@ -65,25 +44,29 @@ export const Messenger = {
 		{
 			return this.$store.getters['application/getLayout'];
 		},
-		layoutName(): string
+		layoutName(): LayoutType
 		{
-			return this.layout?.name;
-		},
-		currentLayout(): {name: string, list: string, content: string}
-		{
-			return Layout[this.layout.name];
+			return this.layout.name;
 		},
 		entityId(): string
 		{
 			return this.layout.entityId;
 		},
+		hasListComponent(): boolean
+		{
+			return Boolean(this.listComponent);
+		},
+		listComponent(): ?BitrixVueComponentProps
+		{
+			return LayoutComponentMap[this.layoutName].list;
+		},
+		contentComponent(): BitrixVueComponentProps
+		{
+			return LayoutComponentMap[this.layoutName].content;
+		},
 		isOpenline(): boolean
 		{
-			return this.layout.name === Layout.openlines.name;
-		},
-		hasList(): boolean
-		{
-			return Boolean(this.currentLayout.list);
+			return this.layout.name === Layout.openlines;
 		},
 		containerClasses(): string[]
 		{
@@ -93,10 +76,6 @@ export const Messenger = {
 				'--desktop': DesktopManager.isDesktop(),
 			};
 		},
-		callContainerClass(): string[]
-		{
-			return [CallManager.viewContainerClass];
-		},
 	},
 	watch:
 	{
@@ -104,7 +83,7 @@ export const Messenger = {
 		{
 			handler(newLayoutName)
 			{
-				if (newLayoutName !== Layout.openlines.name)
+				if (newLayoutName !== Layout.openlines)
 				{
 					return;
 				}
@@ -116,65 +95,62 @@ export const Messenger = {
 	},
 	created()
 	{
-		InitManager.start();
-		LayoutManager.init();
+		InitManager.init();
+		// emit again because external code expects to receive it after the messenger is opened (not via quick-access).
+		CounterManager.getInstance().emitCounters();
+
+		LayoutManager.getInstance().bindEvents({ emitter: this.getEmitter() });
+		BulkActionsManager.getInstance().bindEvents({ emitter: this.getEmitter() });
+
 		Logger.warn('MessengerRoot created');
 
-		this.getLayoutManager().restoreLastLayout();
-		this.sendAnalytics();
+		void this.getLayoutManager().prepareInitialLayout();
+	},
+	mounted()
+	{
+		EscManager.getInstance().register({
+			messengerContainer: this.$refs.container,
+			context: { emitter: this.getEmitter() },
+		});
 	},
 	beforeUnmount()
 	{
 		this.getLayoutManager().destroy();
+		EscManager.getInstance().unregister();
 	},
 	methods:
 	{
-		onNavigationClick({ layoutName, layoutEntityId }: {layoutName: string, layoutEntityId: string | number})
-		{
-			let entityId = layoutEntityId;
-
-			const lastOpenedElement = this.getLayoutManager().getLastOpenedElement(layoutName);
-			if (!entityId && lastOpenedElement)
-			{
-				entityId = lastOpenedElement;
-			}
-
-			this.getLayoutManager().setLayout({ name: layoutName, entityId });
-		},
 		onEntitySelect({ layoutName, entityId })
 		{
-			this.getLayoutManager().setLayout({ name: layoutName, entityId });
+			void this.getLayoutManager().setLayout({ name: layoutName, entityId });
 		},
 		getLayoutManager(): LayoutManager
 		{
 			return LayoutManager.getInstance();
 		},
-		sendAnalytics()
+		getEmitter(): EventEmitter
 		{
-			Analytics.getInstance().onOpenMessenger();
+			return this.$Bitrix.eventEmitter;
 		},
 	},
 	template: `
-		<div class="bx-im-messenger__scope bx-im-messenger__container" :class="containerClasses">
-			<div class="bx-im-messenger__navigation_container">
-				<MessengerNavigation :currentLayoutName="currentLayout.name" @navigationClick="onNavigationClick" />
-			</div>
+		<div class="bx-im-messenger__scope bx-im-messenger__container --ui-context-content-light" :class="containerClasses" ref="container">
 			<div class="bx-im-messenger__layout_container">
 				<div class="bx-im-messenger__layout_content">
-					<div v-if="currentLayout.list" class="bx-im-messenger__list_container">
+					<div v-if="hasListComponent" class="bx-im-messenger__list_container">
 						<KeepAlive>
-							<component :is="currentLayout.list" @selectEntity="onEntitySelect" />
+							<component :is="listComponent" @selectEntity="onEntitySelect" />
 						</KeepAlive>
 					</div>
-					<div class="bx-im-messenger__content_container" :class="{'--with-list': hasList}">
+					<div class="bx-im-messenger__content_container" :class="{'--with-list': hasListComponent}">
 						<div v-if="openlinesContentOpened" class="bx-im-messenger__openlines_container" :class="{'--hidden': !isOpenline}">
 							<OpenlinesContent v-show="isOpenline" :entityId="entityId" />
 						</div>
-						<component v-if="!isOpenline" :is="currentLayout.content" :entityId="entityId" />
+						<component v-if="!isOpenline" :is="contentComponent" :entityId="entityId" />
 					</div>
 				</div>
 			</div>
 		</div>
-		<div :class="callContainerClass"></div>
+		<DesktopOverlay />
 	`,
 };

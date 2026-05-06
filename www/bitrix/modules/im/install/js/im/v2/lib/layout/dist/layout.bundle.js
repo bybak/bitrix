@@ -2,12 +2,13 @@
 this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
-(function (exports,main_core_events,im_v2_application_core,im_v2_lib_analytics,im_v2_lib_localStorage,im_v2_const,im_v2_lib_logger,im_v2_lib_channel,im_v2_lib_access,im_v2_lib_feature,im_v2_lib_bulkActions) {
+(function (exports,main_core,main_core_events,im_v2_application_core,im_v2_lib_analytics,im_v2_lib_localStorage,im_v2_const,im_v2_lib_logger,im_v2_lib_channel,im_v2_lib_access,im_v2_lib_feature,im_v2_lib_bulkActions) {
 	'use strict';
 
 	const TypesWithoutContext = new Set([im_v2_const.ChatType.comment]);
-	const LayoutsWithoutLastOpenedElement = new Set([im_v2_const.Layout.channel.name, im_v2_const.Layout.market.name]);
+	const LayoutsWithoutLastOpenedElement = new Set([im_v2_const.Layout.channel, im_v2_const.Layout.market, im_v2_const.Layout.taskComments]);
 	var _instance = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("instance");
+	var _emitter = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("emitter");
 	var _lastOpenedElement = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("lastOpenedElement");
 	var _onGoToMessageContext = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("onGoToMessageContext");
 	var _onDesktopReload = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("onDesktopReload");
@@ -21,15 +22,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	var _handleContextAccess = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleContextAccess");
 	var _getChat = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getChat");
 	class LayoutManager {
-	  static getInstance() {
-	    if (!babelHelpers.classPrivateFieldLooseBase(this, _instance)[_instance]) {
-	      babelHelpers.classPrivateFieldLooseBase(this, _instance)[_instance] = new this();
-	    }
-	    return babelHelpers.classPrivateFieldLooseBase(this, _instance)[_instance];
-	  }
-	  static init() {
-	    LayoutManager.getInstance();
-	  }
 	  constructor() {
 	    Object.defineProperty(this, _getChat, {
 	      value: _getChat2
@@ -64,11 +56,27 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    Object.defineProperty(this, _onGoToMessageContext, {
 	      value: _onGoToMessageContext2
 	    });
+	    Object.defineProperty(this, _emitter, {
+	      writable: true,
+	      value: void 0
+	    });
 	    Object.defineProperty(this, _lastOpenedElement, {
 	      writable: true,
 	      value: {}
 	    });
-	    main_core_events.EventEmitter.subscribe(im_v2_const.EventType.dialog.goToMessageContext, babelHelpers.classPrivateFieldLooseBase(this, _onGoToMessageContext)[_onGoToMessageContext].bind(this));
+	  }
+	  static getInstance() {
+	    if (!babelHelpers.classPrivateFieldLooseBase(this, _instance)[_instance]) {
+	      babelHelpers.classPrivateFieldLooseBase(this, _instance)[_instance] = new this();
+	    }
+	    return babelHelpers.classPrivateFieldLooseBase(this, _instance)[_instance];
+	  }
+	  bindEvents(context) {
+	    const {
+	      emitter
+	    } = context;
+	    babelHelpers.classPrivateFieldLooseBase(this, _emitter)[_emitter] = emitter;
+	    babelHelpers.classPrivateFieldLooseBase(this, _emitter)[_emitter].subscribe(im_v2_const.EventType.dialog.goToMessageContext, babelHelpers.classPrivateFieldLooseBase(this, _onGoToMessageContext)[_onGoToMessageContext].bind(this));
 	    main_core_events.EventEmitter.subscribe(im_v2_const.EventType.desktop.onReload, babelHelpers.classPrivateFieldLooseBase(this, _onDesktopReload)[_onDesktopReload].bind(this));
 	  }
 	  async setLayout(config) {
@@ -99,10 +107,12 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      entityId: currentLayout.entityId
 	    });
 	  }
-	  restoreLastLayout() {
+	  prepareInitialLayout() {
 	    const layoutConfig = im_v2_lib_localStorage.LocalStorageManager.getInstance().get(im_v2_const.LocalStorageKey.layoutConfig);
 	    if (!layoutConfig) {
-	      return Promise.resolve();
+	      return this.setLayout({
+	        name: im_v2_const.Layout.chat
+	      });
 	    }
 	    im_v2_lib_logger.Logger.warn('LayoutManager: last layout was restored', layoutConfig);
 	    im_v2_lib_localStorage.LocalStorageManager.getInstance().remove(im_v2_const.LocalStorageKey.layoutConfig);
@@ -135,7 +145,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return !TypesWithoutContext.has(type);
 	  }
 	  destroy() {
-	    main_core_events.EventEmitter.unsubscribe(im_v2_const.EventType.dialog.goToMessageContext, babelHelpers.classPrivateFieldLooseBase(this, _onGoToMessageContext)[_onGoToMessageContext]);
+	    babelHelpers.classPrivateFieldLooseBase(this, _emitter)[_emitter].unsubscribe(im_v2_const.EventType.dialog.goToMessageContext, babelHelpers.classPrivateFieldLooseBase(this, _onGoToMessageContext)[_onGoToMessageContext]);
 	    main_core_events.EventEmitter.unsubscribe(im_v2_const.EventType.desktop.onReload, babelHelpers.classPrivateFieldLooseBase(this, _onDesktopReload)[_onDesktopReload].bind(this));
 	  }
 	  deleteLastOpenedElement(layoutName) {
@@ -150,6 +160,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        delete babelHelpers.classPrivateFieldLooseBase(this, _lastOpenedElement)[_lastOpenedElement][layoutName];
 	      }
 	    });
+	  }
+	  isEmbeddedMode() {
+	    return this.isQuickAccessHidden();
+	  }
+	  isQuickAccessHidden() {
+	    const settings = main_core.Extension.getSettings('im.v2.lib.layout');
+	    return settings.get('isQuickAccessHidden', false);
+	  }
+	  isValidLayout(layoutName) {
+	    return Object.values(im_v2_const.Layout).includes(layoutName);
+	  }
+	  isChatLayout(layoutName) {
+	    const chatLayouts = [im_v2_const.Layout.chat, im_v2_const.Layout.channel, im_v2_const.Layout.copilot, im_v2_const.Layout.openlines, im_v2_const.Layout.openlinesV2, im_v2_const.Layout.collab, im_v2_const.Layout.taskComments];
+	    return chatLayouts.includes(layoutName);
 	  }
 	}
 	async function _onGoToMessageContext2(event) {
@@ -166,9 +190,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  if (TypesWithoutContext.has(type)) {
 	    return;
 	  }
-	  const isCopilotLayout = type === im_v2_const.ChatType.copilot;
 	  void this.setLayout({
-	    name: isCopilotLayout ? im_v2_const.Layout.copilot.name : im_v2_const.Layout.chat.name,
+	    name: im_v2_const.Layout.chat,
 	    entityId: dialogId,
 	    contextId: messageId
 	  });
@@ -181,7 +204,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  if (currentLayout.name === config.name) {
 	    return;
 	  }
-	  if (config.name === im_v2_const.Layout.copilot.name) {
+	  if (config.name === im_v2_const.Layout.copilot) {
 	    im_v2_lib_analytics.Analytics.getInstance().copilot.onOpenTab();
 	  }
 	  im_v2_lib_analytics.Analytics.getInstance().onOpenTab(config.name);
@@ -204,8 +227,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    name,
 	    entityId
 	  } = this.getLayout();
-	  const CHAT_LAYOUTS = new Set([im_v2_const.ChatType.chat, im_v2_const.ChatType.channel, im_v2_const.ChatType.copilot, im_v2_const.ChatType.lines, im_v2_const.ChatType.openlinesV2, im_v2_const.ChatType.collab]);
-	  if (CHAT_LAYOUTS.has(name) && entityId) {
+	  if (this.isChatLayout(name) && entityId) {
 	    babelHelpers.classPrivateFieldLooseBase(this, _clearBulkActionsCollection)[_clearBulkActionsCollection]();
 	  }
 	}
@@ -216,7 +238,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  } = config;
 	  babelHelpers.classPrivateFieldLooseBase(this, _closeChannelComments)[_closeChannelComments]();
 	  if (contextId) {
-	    main_core_events.EventEmitter.emit(im_v2_const.EventType.dialog.goToMessageContext, {
+	    babelHelpers.classPrivateFieldLooseBase(this, _emitter)[_emitter].emit(im_v2_const.EventType.dialog.goToMessageContext, {
 	      messageId: contextId,
 	      dialogId
 	    });
@@ -231,7 +253,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  } = this.getLayout();
 	  const isChannelOpened = im_v2_lib_channel.ChannelManager.isChannel(dialogId);
 	  if (isChannelOpened) {
-	    main_core_events.EventEmitter.emit(im_v2_const.EventType.dialog.closeComments);
+	    babelHelpers.classPrivateFieldLooseBase(this, _emitter)[_emitter].emit(im_v2_const.EventType.dialog.closeComments);
 	  }
 	}
 	async function _handleContextAccess2(config) {
@@ -246,7 +268,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    hasAccess,
 	    errorCode
 	  } = await im_v2_lib_access.AccessManager.checkMessageAccess(messageId);
-	  if (!hasAccess && errorCode === im_v2_lib_access.AccessErrorCode.messageAccessDeniedByTariff) {
+	  if (!hasAccess && errorCode === im_v2_const.ErrorCode.message.accessDeniedByTariff) {
 	    im_v2_lib_analytics.Analytics.getInstance().historyLimit.onGoToContextLimitExceeded({
 	      dialogId
 	    });
@@ -265,5 +287,5 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 
 	exports.LayoutManager = LayoutManager;
 
-}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX.Event,BX.Messenger.v2.Application,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Const,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib));
+}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX,BX.Event,BX.Messenger.v2.Application,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Const,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib));
 //# sourceMappingURL=layout.bundle.js.map

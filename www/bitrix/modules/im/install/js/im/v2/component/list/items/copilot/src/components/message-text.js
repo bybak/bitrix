@@ -4,7 +4,7 @@ import { Core } from 'im.v2.application.core';
 import { Settings } from 'im.v2.const';
 import { Utils } from 'im.v2.lib.utils';
 import { Parser } from 'im.v2.lib.parser';
-import { AvatarSize, MessageAvatar } from 'im.v2.component.elements';
+import { AvatarSize, MessageAvatar } from 'im.v2.component.elements.avatar';
 
 import type { ImModelUser, ImModelChat, ImModelRecentItem, ImModelMessage } from 'im.v2.model';
 
@@ -37,6 +37,10 @@ export const MessageText = {
 		message(): ImModelMessage
 		{
 			return this.$store.getters['recent/getMessage'](this.recentItem.dialogId);
+		},
+		chatCounter(): number
+		{
+			return this.$store.getters['counters/getCounterByChatId'](this.dialog.chatId);
 		},
 		showLastMessage(): boolean
 		{
@@ -113,7 +117,7 @@ export const MessageText = {
 	template: `
 		<div class="bx-im-list-copilot-item__message_container">
 			<span class="bx-im-list-copilot-item__message_text">
-				<span v-if="recentItem.draft.text && dialog.counter === 0" v-html="preparedDraftContent"></span>
+				<span v-if="recentItem.draft.text && chatCounter === 0" v-html="preparedDraftContent"></span>
 				<span v-else-if="!showLastMessage">{{ hiddenMessageText }}</span>
 				<template v-else>
 					<span v-if="isLastMessageAuthor" class="bx-im-list-copilot-item__message_author-icon --self"></span>

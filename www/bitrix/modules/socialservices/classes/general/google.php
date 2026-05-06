@@ -66,18 +66,18 @@ class CSocServGoogleOAuth extends CSocServAuth
 		$isForIntranet = $params['FOR_INTRANET'] ?? false;
 		if ($isForIntranet)
 		{
-			return array("ON_CLICK" => 'onclick="BX.util.popup(\''.htmlspecialcharsbx(CUtil::JSEscape($url)).'\', 580, 400)"');
+			return array("ON_CLICK" => 'onclick="BX.util.popup(\''.htmlspecialcharsbx(CUtil::JSEscape($url)).'\', 680, 800)"');
 		}
 
 		$phrase = $isForIntranet ? GetMessage("socserv_google_form_note_intranet") : GetMessage("socserv_google_form_note");
 
-		return '<a href="javascript:void(0)" onclick="BX.util.popup(\''.htmlspecialcharsbx(CUtil::JSEscape($url)).'\', 580, 400)" class="bx-ss-button google-button"></a><span class="bx-spacer"></span><span>'.$phrase.'</span>';
+		return '<a href="javascript:void(0)" onclick="BX.util.popup(\''.htmlspecialcharsbx(CUtil::JSEscape($url)).'\', 680, 800)" class="bx-ss-button google-button"></a><span class="bx-spacer"></span><span>'.$phrase.'</span>';
 	}
 
 	public function GetOnClickJs($arParams)
 	{
 		$url = static::getUrl('opener', null, $arParams);
-		return "BX.util.popup('".CUtil::JSEscape($url)."', 580, 400)";
+		return "BX.util.popup('".CUtil::JSEscape($url)."', 680, 800)";
 	}
 
 	public function getUrl($location = 'opener', $addScope = null, $arParams = array())
@@ -291,7 +291,24 @@ class CSocServGoogleOAuth extends CSocServAuth
 				{
 					$arFields = $this->prepareUser($arGoogleUser);
 					$authError = $this->AuthorizeUser($arFields);
+
+					if ($authError !== true)
+					{
+						$this->log(static::ID, 'Authorize user error: ' . $authError);
+					}
 				}
+				elseif (isset($arGoogleUser["error"]))
+				{
+					$this->log(static::ID, 'Google error: ' . $arGoogleUser["error"]);
+				}
+				else
+				{
+					$this->log(static::ID, 'Not found current user');
+				}
+			}
+			else
+			{
+				$this->log(static::ID, 'Cannot load access token');
 			}
 		}
 
@@ -375,7 +392,7 @@ class CSocServGoogleOAuth extends CSocServAuth
 		{
 			$this->onAfterMobileAuth();
 		}
-		else
+		elseif (!isset($_REQUEST['auth_service_error']))
 		{
 			$this->onAfterWebAuth($addParams, $mode, $url);
 		}

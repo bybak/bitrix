@@ -64,7 +64,7 @@ class WooppayHandler extends Sale\PaySystem\ServiceHandler implements Sale\PaySy
 	 * @throws Main\ObjectPropertyException
 	 * @throws Main\SystemException
 	 */
-	public function initiatePay(Sale\Payment $payment, Main\Request $request = null): Sale\PaySystem\ServiceResult
+	public function initiatePay(Sale\Payment $payment, ?Main\Request $request = null): Sale\PaySystem\ServiceResult
 	{
 		$result = new Sale\PaySystem\ServiceResult();
 
@@ -124,8 +124,8 @@ class WooppayHandler extends Sale\PaySystem\ServiceHandler implements Sale\PaySy
 	private function getTemplateParams(Sale\Payment $payment): array
 	{
 		return [
-			'sum' => Sale\PriceMaths::roundPrecision($payment->getSum()),
-			'currency' => $payment->getField('CURRENCY'),
+			'sum' => Sale\PriceMaths::roundByFormatCurrency($payment->getSum(), $payment->getCurrency()),
+			'currency' => $payment->getCurrency(),
 		];
 	}
 
@@ -528,7 +528,7 @@ class WooppayHandler extends Sale\PaySystem\ServiceHandler implements Sale\PaySy
 	 * @param Sale\Payment|null $payment
 	 * @return bool
 	 */
-	protected function isTestMode(Sale\Payment $payment = null): bool
+	protected function isTestMode(?Sale\Payment $payment = null): bool
 	{
 		return $this->getBusinessValue($payment, 'WOOPPAY_TEST_MODE') === 'Y';
 	}
@@ -574,7 +574,7 @@ class WooppayHandler extends Sale\PaySystem\ServiceHandler implements Sale\PaySy
 	 * @param string $action
 	 * @return string
 	 */
-	protected function getUrl(Sale\Payment $payment = null, $action): string
+	protected function getUrl(?Sale\Payment $payment = null, $action): string
 	{
 		$url = parent::getUrl($payment, $action);
 		if ($payment !== null && ($action === 'history' || $action === 'historyReceipt'))
@@ -837,13 +837,14 @@ class WooppayHandler extends Sale\PaySystem\ServiceHandler implements Sale\PaySy
 	 */
 	private function isSumCorrect(Sale\Payment $payment, $sum): bool
 	{
+		$currency = $payment->getCurrency();
 		Sale\PaySystem\Logger::addDebugInfo(
 			__CLASS__
-			.': WooppaySum = '.Sale\PriceMaths::roundPrecision($sum)
-			.'; paymentSum = '.Sale\PriceMaths::roundPrecision($payment->getSum())
+			. ': WooppaySum = ' . Sale\PriceMaths::roundByFormatCurrency($sum, $currency)
+			. '; paymentSum = ' . Sale\PriceMaths::roundByFormatCurrency($payment->getSum(), $currency)
 		);
 
-		return Sale\PriceMaths::roundPrecision($sum) === Sale\PriceMaths::roundPrecision($payment->getSum());
+		return Sale\PriceMaths::roundByFormatCurrency($sum, $currency) === Sale\PriceMaths::roundByFormatCurrency($payment->getSum(), $currency);
 	}
 
 	/**

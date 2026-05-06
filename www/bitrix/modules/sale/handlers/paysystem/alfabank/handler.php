@@ -43,7 +43,7 @@ class AlfaBankHandler extends SberbankOnlineHandler
 	 * @param string $action
 	 * @return string
 	 */
-	protected function getUrl(Payment $payment = null, $action): string
+	protected function getUrl(?Payment $payment = null, $action): string
 	{
 		$url = parent::getUrl($payment, $action);
 		if ($payment !== null && $action === 'formUrl')
@@ -59,7 +59,7 @@ class AlfaBankHandler extends SberbankOnlineHandler
 	 */
 	protected function getUrlList()
 	{
-		$testUrl = 'https://web.rbsuat.com/ab_by/';
+		$testUrl = 'https://abby.rbsuat.com/payment/';
 		$activeUrl = 'https://ecom.alfabank.by/payment/';
 
 		return [

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Bitrix\Main\Messenger\Internals\Storage\Db;
 
 use Bitrix\Main\ArgumentException;
+use Bitrix\Main\ArgumentOutOfRangeException;
+use Bitrix\Main\DB\SqlQueryException;
 use Bitrix\Main\Messenger\Entity\MessageBox;
 use Bitrix\Main\Messenger\Entity\MessageBoxCollection;
 use Bitrix\Main\Messenger\Internals\Exception\Storage\MappingException;
@@ -12,6 +14,7 @@ use Bitrix\Main\Messenger\Internals\Exception\Storage\PersistenceException;
 use Bitrix\Main\Messenger\Internals\Storage\Db\Model\MessengerMessageTable;
 use Bitrix\Main\ObjectPropertyException;
 use Bitrix\Main\ORM\Entity;
+use Bitrix\Main\ORM\Objectify\Collection;
 use Bitrix\Main\ORM\Query\Query;
 use Bitrix\Main\Messenger\Internals\Storage\Db\Model\MessageStatus;
 use Bitrix\Main\SystemException;
@@ -39,36 +42,80 @@ class MessageRepository
 
 		$item = $query->fetchObject();
 
-		if ($item === null)
+		if (!$item)
 		{
 			return null;
 		}
 
-		return $this->mapper->convertFromOrm($item);
+		return $this->getEntityFromOrmItem($item);
 	}
 
 	/**
+	 * @throws ArgumentOutOfRangeException
 	 * @throws MappingException
 	 * @throws SystemException
 	 */
-	public function getReadyMessagesOfQueue(string $queueId, int $limit = 50): MessageBoxCollection
+	public function getReadyMessagesOfQueue(
+		string $queueId,
+		int $limit = 50,
+		int $processingLimit = 100,
+	): MessageBoxCollection
 	{
 		$query = $this->buildReadyMessageQuery($queueId);
 
-		$query->setLimit($limit > 0 ? min($limit, 1000) : 50);
+		$limit = $limit > 0 ? min($limit, 1000) : 50;
 
+		if ($limit > $processingLimit)
+		{
+			// @todo This is a temporary solution to avoid fetching more messages than the receiver can process.
+			//  The better solution is to implement synchronization primitives.
+			//  After implementing synchronization primitives, this check can be removed and the receiver will be able
+			//  to fetch as many messages as it can process without worrying about other receivers.
+			throw new ArgumentOutOfRangeException(
+				sprintf(
+					'The requested limit (%d) is greater than the processing limit (%d)',
+					$limit,
+					$processingLimit,
+				),
+			);
+		}
+
+		$query->setLimit($processingLimit);
+
+		/** @var Collection $items */
 		$items = $query->fetchCollection();
 
 		$collection = new MessageBoxCollection();
 
-		if (!$items || $items->isEmpty())
+		if ($items->isEmpty())
+		{
+			return $collection;
+		}
+
+		$items = $items->filter(
+			fn($item) => $item->getStatus() === MessageStatus::New->value,
+		);
+
+		if ($items->isEmpty())
 		{
 			return $collection;
 		}
 
 		foreach ($items as $ormItem)
 		{
-			$collection->add($this->mapper->convertFromOrm($ormItem));
+			if ($messageBox = $this->getEntityFromOrmItem($ormItem))
+			{
+				$collection->add($messageBox);
+
+				if (--$limit < 1)
+				{
+					break;
+				}
+			}
+			else
+			{
+				$ormItem->delete();
+			}
 		}
 
 		return $collection;
@@ -87,50 +134,27 @@ class MessageRepository
 		$query
 			->setSelect(['*'])
 			->where('QUEUE_ID', '=', $queueId)
-			->where('STATUS', '=', MessageStatus::New->value)
 			->where('AVAILABLE_AT', '<=', new DateTime())
-			->setOrder(['CREATED_AT' => 'ASC'])
+			// @todo Use synchronization primitives (after implementation) instead of status field to avoid
+			->setOrder(['STATUS' => 'DESC', 'CREATED_AT' => 'ASC'])
 		;
 
 		return $query;
 	}
 
 	/**
+	 * @internal
+	 *
 	 * @throws ArgumentException
-	 * @throws ObjectPropertyException
+	 * @throws SqlQueryException
 	 * @throws SystemException
 	 */
-	public function getStaleMessages(): MessageBoxCollection
+	public function requeueStaleMessages(DateTime $thresholdDate): void
 	{
-		$collection = new MessageBoxCollection();
-
 		/** @var MessengerMessageTable $tableClass */
 		$tableClass = $this->tableEntity->getDataClass();
 
-		$thresholdDate = DateTime::createFromText('-2 day');
-
-		$query = $tableClass::query();
-
-		$query
-			->setSelect(['*'])
-			->where('STATUS', '=', MessageStatus::Processing->value)
-			->where('UPDATED_AT', '<', $thresholdDate)
-			->setOrder(['CREATED_AT' => 'ASC'])
-		;
-
-		$items = $query->fetchCollection();
-
-		if (!$items || $items->isEmpty())
-		{
-			return $collection;
-		}
-
-		foreach ($items as $ormItem)
-		{
-			$collection->add($this->mapper->convertFromOrm($ormItem));
-		}
-
-		return $collection;
+		$tableClass::requeueStaleMessages($thresholdDate);
 	}
 
 	/**
@@ -189,11 +213,10 @@ class MessageRepository
 		}
 
 		$ids = array_map(
-			function (MessageBox $item)
-			{
+			function (MessageBox $item) {
 				return $item->getId();
 			},
-			$items->toArray()
+			$items->toArray(),
 		);
 
 		try
@@ -211,6 +234,18 @@ class MessageRepository
 		if (!$result->isSuccess())
 		{
 			throw new PersistenceException('Unable to update status: ' . $result->getError()->getMessage());
+		}
+	}
+
+	private function getEntityFromOrmItem($ormItem): ?MessageBox
+	{
+		try
+		{
+			return $this->mapper->convertFromOrm($ormItem);
+		}
+		catch (ArgumentException)
+		{
+			return null;
 		}
 	}
 }

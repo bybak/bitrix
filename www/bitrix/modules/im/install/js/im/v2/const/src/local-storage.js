@@ -7,4 +7,6 @@ export const LocalStorageKey = Object.freeze({
 	lastNotificationId: 'lastNotificationId',
 	layoutConfig: 'layoutConfig',
 	audioPlaybackRate: 'audioPlaybackRate',
+	emotePopupTab: 'emotePopupTab',
+	taskCommentsCardOpened: 'taskCommentsCardOpened',
 });

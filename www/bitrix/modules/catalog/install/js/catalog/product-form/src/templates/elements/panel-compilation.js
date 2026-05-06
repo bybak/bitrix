@@ -8,7 +8,6 @@ import {FormCompilationType} from '../../types/form-compilation-type';
 import {FormHelpdeskCode} from '../../types/form-helpdesk-code';
 import {ajax, Event, Tag, Dom, Loc, Type} from 'main.core';
 import {Loader} from 'main.loader';
-import {Label, LabelColor} from 'ui.label';
 import {MessageCard} from 'ui.messagecard';
 import 'ui.vue.components.hint';
 import 'ui.notification';
@@ -25,11 +24,6 @@ Vue.component(config.templatePanelCompilation,
 	},
 	created()
 	{
-		this.newLabel = new Label({
-			text: this.localize.CATALOG_FORM_COMPILATION_PRODUCT_NEW_LABEL,
-			color: LabelColor.PRIMARY,
-			fill: true
-		});
 		this.popup = null;
 		this.compilationLink = null;
 
@@ -41,19 +35,8 @@ Vue.component(config.templatePanelCompilation,
 
 		let header = '';
 		let description = '';
-		if (this.isFacebookForm())
-		{
-			header = this.localize.CATALOG_FORM_COMPILATION_INFO_MESSAGE_TITLE_FACEBOOK;
-			description = Tag.render`
-				<p>${this.localize.CATALOG_FORM_COMPILATION_INFO_MESSAGE_BODY_FACEBOOK_FIRST_BLOCK}</p>
-				<p>${this.localize.CATALOG_FORM_COMPILATION_INFO_MESSAGE_BODY_FACEBOOK_SECOND_BLOCK}</p>
-			`;
-		}
-		else
-		{
-			header = this.localize.CATALOG_FORM_COMPILATION_INFO_MESSAGE_TITLE;
-			description = this.localize.CATALOG_FORM_COMPILATION_INFO_MESSAGE_BODY_MARKETING_2;
-		}
+		header = this.localize.CATALOG_FORM_COMPILATION_INFO_MESSAGE_TITLE;
+		description = this.localize.CATALOG_FORM_COMPILATION_INFO_MESSAGE_BODY_MARKETING_2;
 
 		this.message = new MessageCard({
 			id: 'compilationInfo',
@@ -68,7 +51,6 @@ Vue.component(config.templatePanelCompilation,
 	},
 	mounted()
 	{
-		this.$refs.label.appendChild(this.newLabel.render());
 		this.$refs.message.appendChild(this.message.getLayout());
 	},
 	data()
@@ -79,17 +61,9 @@ Vue.component(config.templatePanelCompilation,
 	},
 	methods:
 	{
-		isFacebookForm()
-		{
-			return this.compilationOptions.type === FormCompilationType.FACEBOOK;
-		},
 		openHelpDesk()
 		{
-			this.helpdeskCode =
-				this.isFacebookForm()
-					? FormHelpdeskCode.COMPILATION_FACEBOOK
-					: FormHelpdeskCode.COMMON_COMPILATION
-			;
+			this.helpdeskCode = FormHelpdeskCode.COMMON_COMPILATION;
 
 			top.BX.Helper.show('redirect=detail&code=' + this.helpdeskCode);
 		},
@@ -97,12 +71,6 @@ Vue.component(config.templatePanelCompilation,
 		{
 			if (this.compilationOptions.disabledSwitcher)
 			{
-				return;
-			}
-
-			if (this.isFacebookForm())
-			{
-				this.openHelpDesk();
 				return;
 			}
 
@@ -257,10 +225,6 @@ Vue.component(config.templatePanelCompilation,
 		{
 			creationStorePopup.close();
 		},
-		onNewLabelClick(event: BaseEvent)
-		{
-			event.preventDefault();
-		},
 		onLabelClick()
 		{
 			if (this.compilationOptions.isLimitedStore)
@@ -337,7 +301,6 @@ Vue.component(config.templatePanelCompilation,
 								<span class="ui-hint-icon"></span>
 							</div>
 						</div>
-						<div ref="label" @click="onNewLabelClick"></div>
 						<div class="tariff-lock" v-if="compilationOptions.isLimitedStore"></div>
 					</label>
 				</div>

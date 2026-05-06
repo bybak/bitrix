@@ -237,7 +237,9 @@ CREATE TABLE b_user
 	INDEX ix_b_user_activity_date (LAST_ACTIVITY_DATE),
 	INDEX IX_B_USER_XML_ID (XML_ID),
 	INDEX ix_user_last_login(LAST_LOGIN),
-	INDEX ix_user_date_register(DATE_REGISTER)
+	INDEX ix_user_date_register(DATE_REGISTER),
+	INDEX ix_b_user_external_auth_id_active (EXTERNAL_AUTH_ID, ACTIVE),
+	INDEX ix_b_user_personal_birthdate (PERSONAL_BIRTHDATE)
 );
 
 CREATE TABLE b_user_password
@@ -491,7 +493,8 @@ CREATE TABLE b_user_option
 	VALUE mediumtext null,
 	COMMON char(1) not null default 'N',
 	PRIMARY KEY (ID),
-	UNIQUE INDEX ux_user_category_name(USER_ID, CATEGORY, NAME)
+	UNIQUE INDEX ux_user_category_name(USER_ID, CATEGORY, NAME),
+	INDEX ix_b_user_option_category_name (CATEGORY, NAME)
 );
 
 CREATE TABLE b_captcha
@@ -741,7 +744,8 @@ CREATE TABLE b_rating_voting_reaction
 
 CREATE TABLE b_rating_prepare
 (
-	ID int NULL
+	ID int not null,
+	PRIMARY KEY (ID)
 );
 
 CREATE TABLE b_rating_rule
@@ -816,27 +820,18 @@ insert into b_rating_weight (RATING_FROM, RATING_TO, WEIGHT, COUNT) VALUES (-100
 
 CREATE TABLE b_event_log
 (
-	/*SYSTEM GENERATED*/
-	ID INT not null auto_increment,
-	TIMESTAMP_X timestamp,
-
-	/*CALLER INFO*/
-	SEVERITY VARCHAR(50) not null, /*SECURITY, WARNING, NOTICE*/
-	AUDIT_TYPE_ID VARCHAR(50) not null, /*LOGIN_OK, LOGIN_WRONG_PASSWORD*/
-	MODULE_ID VARCHAR(50) not null, /*main, iblock, main.register */
-	ITEM_ID VARCHAR(255) not null, /*user login, element id*/
-
-	/*FROM $_SERVER*/
+	ID BIGINT not null auto_increment,
+	TIMESTAMP_X datetime,
+	SEVERITY VARCHAR(50) not null,
+	AUDIT_TYPE_ID VARCHAR(50) not null,
+	MODULE_ID VARCHAR(50) not null,
+	ITEM_ID VARCHAR(255) not null,
 	REMOTE_ADDR VARCHAR(40),
-	USER_AGENT TEXT, /*2000 for oracle and mssql*/
-	REQUEST_URI TEXT, /*2000 for oracle and mssql*/
-
-	/*FROM CONSTANTS AND VARIABLES*/
-	SITE_ID CHAR(2), /*if defined*/
-	USER_ID INT, /*if logged in*/
-	GUEST_ID INT, /* if statistics installed*/
-
-	/*ADDITIONAL*/
+	USER_AGENT TEXT,
+	REQUEST_URI TEXT,
+	SITE_ID CHAR(2),
+	USER_ID INT,
+	GUEST_ID INT,
 	DESCRIPTION MEDIUMTEXT,
 	PRIMARY KEY (ID),
 	INDEX ix_b_event_log_time(TIMESTAMP_X),
@@ -975,8 +970,8 @@ CREATE TABLE b_user_access
 	PRIMARY KEY (ID),
 	UNIQUE INDEX ux_ua_user_access (USER_ID, ACCESS_CODE),
 	INDEX ix_ua_user_provider (USER_ID, PROVIDER_ID),
-	INDEX ix_ua_access (ACCESS_CODE),
-	INDEX ix_ua_provider (PROVIDER_ID)
+	INDEX ix_ua_provider (PROVIDER_ID),
+	INDEX ix_b_user_access_access_code_user_id (ACCESS_CODE, USER_ID)
 );
 
 insert into b_user_access (USER_ID, PROVIDER_ID, ACCESS_CODE) values (0, 'group', 'G2');
@@ -1321,8 +1316,8 @@ CREATE TABLE b_consent_user_consent
   ORIGIN_ID VARCHAR(30) DEFAULT NULL,
   ORIGINATOR_ID VARCHAR(30) DEFAULT NULL,
   PRIMARY KEY (ID),
-  INDEX IX_B_CONSENT_USER_CONSENT (AGREEMENT_ID),
-  INDEX IX_CONSENT_USER_CONSENT_USER_ORIGIN (USER_ID, ORIGIN_ID)
+  INDEX IX_CONSENT_USER_CONSENT_USER_ORIGIN (USER_ID, ORIGIN_ID),
+  INDEX ix_b_consent_user_consent_agreement_id_user_id (AGREEMENT_ID, USER_ID)
 );
 
 CREATE TABLE b_consent_agreement
@@ -1668,4 +1663,13 @@ CREATE TABLE `b_main_messenger_message`
 	PRIMARY KEY(`ID`),
 	INDEX IX_QUEUE_ID_STATUS_AVAILABLE_AT (`QUEUE_ID`, `STATUS`, `AVAILABLE_AT`),
 	INDEX IX_STATUS_AVAILABLE_AT (`STATUS`, `UPDATED_AT`)
+);
+
+CREATE TABLE b_persistent_storage (
+	`KEY` varchar(255) NOT NULL,
+	`VALUE` text NOT NULL,
+	`CREATED_AT` datetime NOT NULL,
+	`EXPIRED_AT` datetime NOT NULL,
+	PRIMARY KEY (`KEY`),
+	INDEX `B_PERSISTENT_STORAGE_IX1` (`EXPIRED_AT`)
 );

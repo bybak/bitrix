@@ -1,7 +1,12 @@
+import 'im.v2.css.classes';
+import 'im.v2.css.icons';
+import 'im.v2.css.tokens';
+
 import { Logger } from 'im.v2.lib.logger';
-import { ChatService } from 'im.v2.provider.service';
-import { BaseChatContent } from 'im.v2.component.content.elements';
-import { ChatTextarea } from 'im.v2.component.textarea';
+import { ChatService } from 'im.v2.provider.service.chat';
+
+import { TaskChatPlaceholder } from './placeholder/placeholder';
+import { TaskChatContent } from './content/task-content';
 
 import type { ImModelChat } from 'im.v2.model';
 
@@ -10,10 +15,14 @@ import './css/task-chat-opener.css';
 // @vue/component
 export const TaskChatOpener = {
 	name: 'TaskChatOpener',
-	components: { BaseChatContent, ChatTextarea },
+	components: { TaskChatContent, TaskChatPlaceholder },
 	props: {
 		chatId: {
 			type: Number,
+			required: true,
+		},
+		chatType: {
+			type: String,
 			required: true,
 		},
 	},
@@ -27,9 +36,9 @@ export const TaskChatOpener = {
 			return this.dialog.dialogId;
 		},
 	},
-	created()
+	created(): Promise
 	{
-		void this.onChatOpen();
+		return this.onChatOpen();
 	},
 	methods: {
 		async onChatOpen()
@@ -37,13 +46,11 @@ export const TaskChatOpener = {
 			if (this.dialog.inited)
 			{
 				Logger.warn(`TaskChatOpener: chat ${this.chatId} is already loaded`);
-				// Analytics.getInstance().onOpenChat(this.dialog);
 
 				return;
 			}
 
 			await this.loadChat();
-			// Analytics.getInstance().onOpenChat(this.dialog);
 		},
 		async loadChat(): Promise
 		{
@@ -62,19 +69,8 @@ export const TaskChatOpener = {
 		},
 	},
 	template: `
-		<div class="bx-im-messenger__scope bx-im-task-chat-opener__container">
-			<div v-if="!dialog.inited">...</div>
-			<BaseChatContent v-else :dialogId="dialogId" :withHeader="false" :withSidebar="false">
-				<template #textarea="{ onTextareaMount }">
-					<ChatTextarea
-						:dialogId="dialogId"
-						:key="dialogId"
-						:withMarket="false"
-						:withAudioInput="false"
-						@mounted="onTextareaMount"
-					/>
-				</template>
-			</BaseChatContent>
+		<div class="bx-im-messenger__scope bx-im-task-chat-opener__container --ui-context-content-light">
+			<TaskChatContent :dialogId="dialogId" />
 		</div>
 	`,
 };

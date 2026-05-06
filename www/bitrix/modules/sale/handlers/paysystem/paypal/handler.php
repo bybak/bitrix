@@ -23,9 +23,9 @@ class PayPalHandler
 	extends PaySystem\ServiceHandler
 	implements PaySystem\IPrePayable
 {
-	const DELIMITER_PAYMENT_ID = ':';
+	public const DELIMITER_PAYMENT_ID = '-';
 
-	private $prePaymentSetting = array();
+	private array $prePaymentSetting = [];
 
 	/**
 	 * @return array
@@ -215,14 +215,15 @@ class PayPalHandler
 
 		$serviceResult->setPsData($fields);
 
-		$paymentSum = PriceMaths::roundPrecision($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'));
+		$paymentCurrency = $this->getBusinessValue($payment, 'PAYMENT_CURRENCY');
+		$paymentSum = PriceMaths::roundByFormatCurrency($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'), $paymentCurrency);
 
 		$payPalSum = (float)$keys["mc_gross"];
 		if ($keys["tax"])
 		{
 			$payPalSum -= (float)$keys["tax"];
 		}
-		$payPalSum = PriceMaths::roundPrecision($payPalSum);
+		$payPalSum = PriceMaths::roundByFormatCurrency($payPalSum, $paymentCurrency);
 
 		PaySystem\Logger::addDebugInfo('PayPal: payPalSum='.$payPalSum."; paymentSum=".$paymentSum);
 
@@ -276,14 +277,15 @@ class PayPalHandler
 
 		$serviceResult->setPsData($fields);
 
-		$paymentSum = PriceMaths::roundPrecision($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'));
+		$paymentCurrency = $this->getBusinessValue($payment, 'PAYMENT_CURRENCY');
+		$paymentSum = PriceMaths::roundByFormatCurrency($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'), $paymentCurrency);
 
 		$payPalSum = (float)$request->get("mc_gross");
 		if ($request->get('tax'))
 		{
 			$payPalSum -= (float)$request->get('tax');
 		}
-		$payPalSum = PriceMaths::roundPrecision($payPalSum);
+		$payPalSum = PriceMaths::roundByFormatCurrency($payPalSum, $paymentCurrency);
 
 		PaySystem\Logger::addDebugInfo('PayPal: payPalSum='.$payPalSum."; paymentSum=".$paymentSum);
 
@@ -350,7 +352,7 @@ class PayPalHandler
 	 * @param Request|null $request
 	 * @return PaySystem\ServiceResult
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		$this->setExtraParams([
 			'URL' => $this->getUrl($payment, 'pay'),
@@ -365,7 +367,7 @@ class PayPalHandler
 	 * @param Payment $payment
 	 * @return array
 	 */
-	public function getParamsBusValue(Payment $payment = null)
+	public function getParamsBusValue(?Payment $payment = null)
 	{
 		$params = parent::getParamsBusValue($payment);
 
@@ -417,7 +419,7 @@ class PayPalHandler
 	 * @param Payment $payment
 	 * @return bool
 	 */
-	protected function isTestMode(Payment $payment = null)
+	protected function isTestMode(?Payment $payment = null)
 	{
 		return $this->getBusinessValue($payment, 'PS_IS_TEST') == 'Y';
 	}
@@ -444,7 +446,7 @@ class PayPalHandler
 	 * @param Request $request
 	 * @return bool
 	 */
-	public function initPrePayment(Payment $payment = null, Request $request)
+	public function initPrePayment(?Payment $payment = null, Request $request)
 	{
 		$this->prePaymentSetting = array(
 			'USER' => $this->getBusinessValue($payment, 'PAYPAL_USER'),
@@ -598,21 +600,21 @@ class PayPalHandler
 			if($res = $ht->post($url, $arFields))
 			{
 				$result = $this->parsePrePaymentResult($res);
-				if($result["ACK"] == "Success" && in_array($result["CHECKOUTSTATUS"], array("PaymentActionNotInitiated")))
-				{
+			if ($result["ACK"] === "Success" && in_array($result["CHECKOUTSTATUS"], ["PaymentActionNotInitiated"]))
+			{
 					$arFields["METHOD"] = "DoExpressCheckoutPayment";
 					$arFields["PAYERID"] = $this->prePaymentSetting['payerId'];
 					$arFields["PAYMENTACTION"] = "Sale";
-					$arFields["PAYMENTREQUEST_0_AMT"] = number_format($this->prePaymentSetting['ORDER_PRICE'], 2, ".", "");
+					$arFields["PAYMENTREQUEST_0_AMT"] = PriceMaths::roundByFormatCurrency($this->prePaymentSetting['ORDER_PRICE'], $this->prePaymentSetting['CURRENCY'], 2);
 					$arFields["PAYMENTREQUEST_0_CURRENCYCODE"] = $this->prePaymentSetting['CURRENCY'];
 					$arFields["PAYMENTREQUEST_0_DESC"] = "Order #".$this->prePaymentSetting['ORDER_ID'];
 					$arFields["PAYMENTREQUEST_0_NOTETEX"] = "Order #".$this->prePaymentSetting['ORDER_ID'];
 					$arFields["PAYMENTREQUEST_0_INVNUM"] = $this->prePaymentSetting['ORDER_ID'];
 
-					if(DoubleVal($this->prePaymentSetting['DELIVERY_PRICE']) > 0)
-					{
-						$arFields["PAYMENTREQUEST_0_SHIPPINGAMT"] = number_format($this->prePaymentSetting['DELIVERY_PRICE'], 2, ".", "");
-					}
+				if(DoubleVal($this->prePaymentSetting['DELIVERY_PRICE']) > 0)
+				{
+					$arFields["PAYMENTREQUEST_0_SHIPPINGAMT"] = PriceMaths::roundByFormatCurrency($this->prePaymentSetting['DELIVERY_PRICE'], $this->prePaymentSetting['CURRENCY'], 2);
+				}
 					$orderProps = $this->getProps();
 
 					if(!empty($orderProps))
@@ -628,11 +630,11 @@ class PayPalHandler
 
 					if(!empty($orderData["BASKET_ITEMS"]))
 					{
-						$arFields["PAYMENTREQUEST_0_ITEMAMT"] = number_format($this->prePaymentSetting['ORDER_PRICE']-$this->prePaymentSetting['DELIVERY_PRICE'], 2, ".", "");
+						$arFields["PAYMENTREQUEST_0_ITEMAMT"] = PriceMaths::roundByFormatCurrency($this->prePaymentSetting['ORDER_PRICE'] - $this->prePaymentSetting['DELIVERY_PRICE'], $this->prePaymentSetting['CURRENCY']);
 						foreach($orderData["BASKET_ITEMS"] as $i => $val)
 						{
 							$arFields["L_PAYMENTREQUEST_0_NAME".$i] = $val["NAME"];
-							$arFields["L_PAYMENTREQUEST_0_AMT".$i] = number_format($val["PRICE"], 2, ".", "");
+							$arFields["L_PAYMENTREQUEST_0_AMT".$i] = PriceMaths::roundByFormatCurrency($val["PRICE"], $this->prePaymentSetting['CURRENCY'], 2);
 							$arFields["L_PAYMENTREQUEST_0_QTY".$i] = $val["QUANTITY"];
 							$arFields["L_PAYMENTREQUEST_0_NUMBER".$i] = $val["PRODUCT_ID"];
 						}
@@ -713,7 +715,7 @@ class PayPalHandler
 					"USER" => $this->prePaymentSetting['USER'],
 					"PWD" => $this->prePaymentSetting['PWD'],
 					"SIGNATURE" => $this->prePaymentSetting['SIGNATURE'],
-					"PAYMENTREQUEST_0_AMT" => number_format($orderData["AMOUNT"], 2, ".", ""),
+					"PAYMENTREQUEST_0_AMT" => PriceMaths::roundByFormatCurrency($orderData["AMOUNT"], $this->prePaymentSetting['CURRENCY'], 2),
 					"PAYMENTREQUEST_0_CURRENCYCODE" => $this->prePaymentSetting['CURRENCY'],
 					"RETURNURL" => $this->prePaymentSetting['SERVER_NAME'].$orderData["PATH_TO_ORDER"],
 					"CANCELURL" => $this->prePaymentSetting['SERVER_NAME'].$APPLICATION->GetCurPageParam("paypal=Y&paypal_error=Y", array("paypal", "paypal_error")),
@@ -725,11 +727,11 @@ class PayPalHandler
 
 			if(!empty($orderData["BASKET_ITEMS"]))
 			{
-				$arFields["PAYMENTREQUEST_0_ITEMAMT"] = number_format($orderData["AMOUNT"], 2, ".", "");
+				$arFields["PAYMENTREQUEST_0_ITEMAMT"] = PriceMaths::roundByFormatCurrency($orderData["AMOUNT"], $this->prePaymentSetting['CURRENCY']);
 				foreach($orderData["BASKET_ITEMS"] as $k => $val)
 				{
 					$arFields["L_PAYMENTREQUEST_0_NAME".$k] = $val["NAME"];
-					$arFields["L_PAYMENTREQUEST_0_AMT".$k] = number_format($val["PRICE"], 2, ".", "");
+					$arFields["L_PAYMENTREQUEST_0_AMT".$k] = PriceMaths::roundByFormatCurrency($val["PRICE"], $this->prePaymentSetting['CURRENCY'], 2);
 					$arFields["L_PAYMENTREQUEST_0_QTY".$k] = $val["QUANTITY"];
 				}
 			}

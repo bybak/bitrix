@@ -1,5 +1,12 @@
 <?php
 
+/**
+ * Bitrix vars
+ * @global CMain $APPLICATION
+ * @var array $arAuthResult From CMain::AuthForm()
+ * @var string $last_login wrapper.php
+ */
+
 use Bitrix\Main\Web\Json;
 
 if(!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true) die();
@@ -69,6 +76,7 @@ switch($_REQUEST['bxsender']):
 <form name="form_auth" method="post" action="" novalidate>
 	<input type="hidden" name="AUTH_FORM" value="Y">
 	<input type="hidden" name="TYPE" value="AUTH">
+	<?= bitrix_sessid_post(); ?>
 
 	<div class="bx-core-popup-auth-field">
 		<div class="bx-core-popup-auth-field-caption"><?=GetMessage("AUTH_LOGIN")?></div>

@@ -20,14 +20,11 @@ class QueueConfig
 		public readonly string $handler,
 		public readonly string $moduleId,
 		public readonly ?string $brokerCode,
-		public readonly RetryStrategyInterface $retryStrategy
+		public readonly RetryStrategyInterface $retryStrategy,
+		public readonly int $limit,
+		public readonly int $totalProcessingLimit,
 	)
 	{
-	}
-
-	private static function isValidHandler(string $className): bool
-	{
-		return class_exists($className) && is_subclass_of($className, ReceiverInterface::class);
 	}
 
 	/**
@@ -39,9 +36,18 @@ class QueueConfig
 	{
 		Loader::requireModule($this->moduleId);
 
-		if (!static::isValidHandler($this->handler))
+		if (!class_exists($this->handler))
 		{
-			throw new ConfigurationException(sprintf('The class "%s" is not valid handler', $this->handler));
+			throw new ConfigurationException(
+				sprintf('The class "%s" does not exist', $this->handler),
+			);
+		}
+
+		if (!is_subclass_of($this->handler, ReceiverInterface::class))
+		{
+			throw new ConfigurationException(
+				sprintf('The class "%s" does not implement "%s"', $this->handler, ReceiverInterface::class),
+			);
 		}
 
 		$brokerManager = ServiceLocator::getInstance()->get(BrokerManager::class);
@@ -52,6 +58,7 @@ class QueueConfig
 		$receiver
 			->setQueueId($this->queueId)
 			->setBroker($brokerManager->getBroker($this->queueId))
+			->setLimit($this->limit)
 		;
 
 		return $receiver;

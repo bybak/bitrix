@@ -25,9 +25,9 @@ use Bitrix\Main\ORM\Data\Internal\MergeTrait;
  *
  * <<< ORMENTITYANNOTATION
  * @method static EO_Status_Query query()
- * @method static EO_Status_Result getByPrimary($primary, array $parameters = array())
+ * @method static EO_Status_Result getByPrimary($primary, array $parameters = [])
  * @method static EO_Status_Result getById($id)
- * @method static EO_Status_Result getList(array $parameters = array())
+ * @method static EO_Status_Result getList(array $parameters = [])
  * @method static EO_Status_Entity getEntity()
  * @method static \Bitrix\Im\Model\EO_Status createObject($setDefaultValues = true)
  * @method static \Bitrix\Im\Model\EO_Status_Collection createCollection()
@@ -107,10 +107,27 @@ class StatusTable extends Entity\DataManager
 				'data_type' => 'datetime',
 				//'title' => Loc::getMessage('STATUS_ENTITY_EVENT_UNTIL_DATE_FIELD'),
 			),
+			'EVENT_LOG' => array(
+				'data_type' => 'string',
+				'default_value' => 'N',
+				'validation' => array(__CLASS__, 'validateEventLog'),
+			),
 			'USER' => array(
 				'data_type' => 'Bitrix\Main\User',
 				'reference' => array('=this.USER_ID' => 'ref.ID'),
 			),
+		);
+	}
+
+	/**
+	 * Returns validators for EVENT_LOG field.
+	 *
+	 * @return array
+	 */
+	public static function validateEventLog()
+	{
+		return array(
+			new Entity\Validator\Length(null, 1),
 		);
 	}
 	/**

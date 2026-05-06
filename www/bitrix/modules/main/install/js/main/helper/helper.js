@@ -16,6 +16,7 @@ BX.Helper =
 	notifyButton: '',
 	isAdmin: "N",
 	version: 2,
+	counter: null,
 
 	init : function(params)
 	{
@@ -31,6 +32,7 @@ BX.Helper =
 		this.helpUrl = params.helpUrl || '';
 		this.notifyNum = params.notifyNum || '';
 		this.isAdmin = (params.isAdmin && params.isAdmin === 'Y') ? 'Y' : 'N';
+		this.isNewHelpdesk = params.isNewHelpdesk && params.isNewHelpdesk === 'Y';
 
 		if(this.openBtn)
 		{
@@ -124,16 +126,11 @@ BX.Helper =
 
 	show: function(additionalParam, sliderOptions)
 	{
-		if (this.isOpen())
-		{
-			return;
-		}
-
 		if (!BX.Type.isPlainObject(sliderOptions))
 		{
 			sliderOptions = {};
 		}
-		
+
 		//compote code
 		const frameOpenUrl = this.frameOpenUrl + ((this.frameOpenUrl.indexOf("?") < 0) ? "?" : "&") +
 			(BX.type.isNotEmptyString(additionalParam) ? additionalParam : "");
@@ -154,7 +151,7 @@ BX.Helper =
 				promise.fulfill(this.getContent());
 				return promise;
 			}.bind(this),
-			width: 860,
+			width: this.isNewHelpdesk ? null : 860,
 			cacheable: false,
 			zIndex: sliderOptions.zIndex || null,
 			events: {
@@ -206,7 +203,7 @@ BX.Helper =
 				className: 'helper-container'
 			},
 			children: [
-				this.getLoader(),
+				this.isNewHelpdesk ? this.getNewLoader() : this.getLoader(),
 				this.getFrame()
 			]
 		});
@@ -256,6 +253,23 @@ BX.Helper =
 		return this.popupLoader;
 	},
 
+	getNewLoader()
+	{
+		if (this.popupLoader)
+		{
+			return this.popupLoader;
+		}
+
+		const loader = new BX.Loader({
+			size: 100,
+		});
+
+		loader.show();
+		this.popupLoader = loader.data.container;
+
+		return this.popupLoader;
+	},
+
 	getSliderId: function()
 	{
 		return "main:helper";
@@ -296,14 +310,45 @@ BX.Helper =
 
 		if (!isNaN(parseFloat(num)) && isFinite(num) && num > 0)
 		{
-			var numBlock = '<div class="help-cl-count"><span class="help-cl-count-digit">' + (num > 99 ? '99+' : num) + '</span></div>';
+			this.showCounter(num);
 		}
 		else
 		{
-			numBlock = "";
+			this.counter?.destroy();
 		}
-		this.notifyBlock.innerHTML = numBlock;
+
 		this.notifyNum = num;
+	},
+
+	showCounter: function(num)
+	{
+		if (!this.notifyBlock)
+		{
+			return;
+		}
+
+		if (this.counter)
+		{
+			if (Number(num) > 0)
+			{
+				this.counter.update(num);
+			}
+			else
+			{
+				this.counter.destroy();
+			}
+		}
+		else if (BX.UI.Counter)
+		{
+			this.counter = new BX.UI.Counter({
+				color: BX.UI.Counter.Color.DANGER,
+				size: BX.UI.Counter.Size.MEDIUM,
+				value: Number(num),
+				useAirDesign: true,
+				style: BX.UI.CounterStyle.FILLED_ALERT,
+			});
+			this.counter.renderTo(this.notifyBlock);
+		}
 	},
 
 	showFlyingHero : function(url)

@@ -2,11 +2,12 @@ import { Type, Text } from 'main.core';
 import { LabelColor } from 'ui.label';
 
 import { Utils } from 'im.v2.lib.utils';
-import { ImModelSidebarTaskItem } from 'im.v2.model';
-import { ChatAvatar, AvatarSize } from 'im.v2.component.elements';
+import { ChatAvatar, AvatarSize } from 'im.v2.component.elements.avatar';
 import { highlightText } from 'im.v2.lib.text-highlighter';
 
 import './css/task-item.css';
+
+import type { ImModelSidebarTaskItem } from 'im.v2.model';
 
 // @vue/component
 export const TaskItem = {
@@ -15,10 +16,6 @@ export const TaskItem = {
 	props: {
 		task: {
 			type: Object,
-			required: true,
-		},
-		contextDialogId: {
-			type: String,
 			required: true,
 		},
 		searchQuery: {
@@ -112,12 +109,10 @@ export const TaskItem = {
 					<ChatAvatar 
 						:size="AvatarSize.XS"
 						:avatarDialogId="taskAuthorDialogId"
-						:contextDialogId="contextDialogId"
 					/>
 					<div class="bx-im-sidebar-task-item__forward-small-icon bx-im-sidebar__forward-small-icon"></div>
 					<ChatAvatar 
-						:avatarDialogId="taskResponsibleDialogId" 
-						:contextDialogId="contextDialogId" 
+						:avatarDialogId="taskResponsibleDialogId"
 						:size="AvatarSize.XS" 
 					/>
 					<div class="bx-im-sidebar-task-item__status-text" :class="statusColorClass">

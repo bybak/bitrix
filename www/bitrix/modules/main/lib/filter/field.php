@@ -22,8 +22,9 @@ class Field
 	protected $iconParams = [];
 
 	protected ?string $subtype = null;
+	protected ?array $exclude = null;
 
-	public function __construct(DataProvider $dataProvider, $id, array $params = null)
+	public function __construct(DataProvider $dataProvider, $id, ?array $params = null)
 	{
 		$this->dataProvider = $dataProvider;
 		$this->id = $id;
@@ -40,6 +41,7 @@ class Field
 		$this->isPartial = $params['partial'] ?? false;
 		$this->data = $params['data'] ?? null;
 		$this->subtype = $params['subtype'] ?? null;
+		$this->exclude = $params['exclude'] ?? null;
 	}
 
 	/**
@@ -231,7 +233,7 @@ class Field
 	 * @param array|null $options Options array.
 	 * @return array
 	 */
-	public function toArray(array $options = null)
+	public function toArray(?array $options = null)
 	{
 		if(!is_array($options))
 		{
@@ -280,6 +282,11 @@ class Field
 		if ($this->subtype)
 		{
 			$result['subtype'] = $this->subtype;
+		}
+
+		if ($this->exclude)
+		{
+			$result['exclude'] = $this->exclude;
 		}
 
 		return $result;

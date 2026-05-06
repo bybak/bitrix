@@ -1,0 +1,2 @@
+<?php
+$MESS["REST_V3_EXCEPTIONS_UNKNOWNAGGREGATEFUNCTIONEXCEPTION"] = 'Unknown aggregate function "#FUNCTION#".';

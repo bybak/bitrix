@@ -17,18 +17,9 @@ use Bitrix\Im\V2\Result;
 
 class NullChat extends Chat
 {
-	private $preparedParams = [];
-
 	protected function getDefaultType(): string
 	{
 		return '';
-	}
-
-	public function setPreparedParams(array $params): self
-	{
-		$this->preparedParams = $params;
-
-		return $this;
 	}
 
 	public function getAuthor(): User
@@ -70,6 +61,11 @@ class NullChat extends Chat
 		return $this;
 	}
 
+	public function readAllMessages(bool $byEvent = false): Result
+	{
+		return new Result();
+	}
+
 	public function readMessages(?MessageCollection $messages, bool $byEvent = false): Result
 	{
 		return new Result();
@@ -78,19 +74,6 @@ class NullChat extends Chat
 	public function getSelfRelation(): ?Relation
 	{
 		return null;
-	}
-
-	public function createChatIfNotExists(array $params): self
-	{
-		$params = array_merge($this->preparedParams, $params);
-
-		$addResult = ChatFactory::getInstance()->addChat($params);
-		if (!$addResult->isSuccess() || !$addResult->hasResult())
-		{
-			return $this;
-		}
-
-		return $addResult->getResult()['CHAT'];
 	}
 
 	/**
@@ -166,5 +149,15 @@ class NullChat extends Chat
 	public function getPrevMessageId(): int
 	{
 		return 0;
+	}
+
+	public function onAfterMessagesRead(MessageCollection $messages, int $readerId): Result
+	{
+		return new Result();
+	}
+
+	public function onAfterAllMessagesRead(int $readerId): Result
+	{
+		return new Result();
 	}
 }

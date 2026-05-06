@@ -16,6 +16,8 @@ use Bitrix\Rest\AuthStorageInterface;
 use Bitrix\Rest\Engine\Access;
 use Bitrix\Rest\Engine\Access\HoldEntity;
 use Bitrix\Rest\Event\Session;
+use Bitrix\Rest\Internal\Access\UserAccessChecker;
+use Bitrix\Rest\Internal\Access\UserContext;
 use Bitrix\Rest\OAuthService;
 use Bitrix\Main\SystemException;
 
@@ -153,7 +155,7 @@ class Auth
 							$error = true;
 						}
 					}
-					elseif (!\CRestUtil::makeAuth($tokenInfo))
+					elseif (!\CRestUtil::makeAuth($tokenInfo, self::AUTH_TYPE, $clientInfo['ID'] ?? 0))
 					{
 						$tokenInfo = array('error' => 'authorization_error', 'error_description' => 'Unable to authorize user');
 						$error = true;
@@ -255,11 +257,17 @@ class Auth
 
 			if(is_array($tokenInfo))
 			{
-				if($tokenInfo['result'])
+				if(isset($tokenInfo['result']))
 				{
 					$authResult = $tokenInfo['result'];
 					$authResult['user_id'] = $authResult['parameters'][static::PARAM_LOCAL_USER];
 					unset($authResult['parameters'][static::PARAM_LOCAL_USER]);
+					$accessChecker = new UserAccessChecker(new UserContext((int)$authResult['user_id']));
+
+					if (!$accessChecker->canAuthorize())
+					{
+						return ['error' => 'ACCESS_DENIED', 'error_description' => "Current user can't be authorized in this context"];
+					}
 
 					// compatibility with old oauth response
 					if(!isset($authResult['expires']) && isset($authResult['expires_in']))

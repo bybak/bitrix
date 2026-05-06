@@ -3,6 +3,7 @@ namespace Bitrix\Landing\Internals;
 
 use \Bitrix\Main\Localization\Loc;
 use \Bitrix\Main\Entity;
+use \Bitrix\Main\ORM;
 
 Loc::loadMessages(__FILE__);
 
@@ -13,16 +14,16 @@ Loc::loadMessages(__FILE__);
  *
  * <<< ORMENTITYANNOTATION
  * @method static EO_Block_Query query()
- * @method static EO_Block_Result getByPrimary($primary, array $parameters = array())
+ * @method static EO_Block_Result getByPrimary($primary, array $parameters = [])
  * @method static EO_Block_Result getById($id)
- * @method static EO_Block_Result getList(array $parameters = array())
+ * @method static EO_Block_Result getList(array $parameters = [])
  * @method static EO_Block_Entity getEntity()
  * @method static \Bitrix\Landing\Internals\EO_Block createObject($setDefaultValues = true)
  * @method static \Bitrix\Landing\Internals\EO_Block_Collection createCollection()
  * @method static \Bitrix\Landing\Internals\EO_Block wakeUpObject($row)
  * @method static \Bitrix\Landing\Internals\EO_Block_Collection wakeUpCollection($rows)
  */
-class BlockTable extends Entity\DataManager
+class BlockTable extends ORM\Data\DataManager
 {
 	/**
 	 * Returns DB table name for entity.

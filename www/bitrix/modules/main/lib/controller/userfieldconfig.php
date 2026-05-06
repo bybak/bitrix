@@ -103,7 +103,7 @@ class UserFieldConfig extends Controller
 		return new Error(Loc::getMessage('MAIN_USER_FIELD_CONTROLLER_ERROR'));
 	}
 
-	public function getTypesAction(string $moduleId, \CRestServer $restServer = null): ?array
+	public function getTypesAction(string $moduleId, ?\CRestServer $restServer = null): ?array
 	{
 		$access = $this->getAccess($moduleId, $restServer);
 		if (!$access)
@@ -143,6 +143,7 @@ class UserFieldConfig extends Controller
 	{
 		$allowedKeys = [
 			'editFormLabel' => true,
+			'helpMessage' => true,
 			'multiple' => true,
 			'userTypeId' => true,
 			'fieldName' => true,
@@ -165,6 +166,16 @@ class UserFieldConfig extends Controller
 		{
 			$fields['showFilter'] = 'E';
 		}
+
+		if (isset($fields['helpMessage']) && !is_array($fields['helpMessage']))
+		{
+			$fields['helpMessage'] = [];
+		}
+
+		$fields['helpMessage'] = array_map(
+			static fn($tooltip) => mb_substr(trim($tooltip), 0, 255),
+			$fields['helpMessage'] ?? [],
+		);
 
 		return $converter->process($fields);
 	}
@@ -294,7 +305,7 @@ class UserFieldConfig extends Controller
 		}
 	}
 
-	public function getAction(string $moduleId, int $id, \CRestServer $restServer = null): ?array
+	public function getAction(string $moduleId, int $id, ?\CRestServer $restServer = null): ?array
 	{
 		$access = $this->getAccess($moduleId, $restServer);
 		if (!$access)
@@ -327,8 +338,8 @@ class UserFieldConfig extends Controller
 		array $select = ['*'],
 		array $order = [],
 		array $filter = [],
-		PageNavigation $pageNavigation = null,
-		\CRestServer $restServer = null
+		?PageNavigation $pageNavigation = null,
+		?\CRestServer $restServer = null
 	): ?Page
 	{
 		$access = $this->getAccess($moduleId, $restServer);
@@ -381,7 +392,7 @@ class UserFieldConfig extends Controller
 		});
 	}
 
-	public function addAction(string $moduleId, array $field, \CRestServer $restServer = null): ?array
+	public function addAction(string $moduleId, array $field, ?\CRestServer $restServer = null): ?array
 	{
 		$access = $this->getAccess($moduleId, $restServer);
 		if (!$access)
@@ -427,7 +438,7 @@ class UserFieldConfig extends Controller
 		return null;
 	}
 
-	public function updateAction(string $moduleId, int $id, array $field, \CRestServer $restServer = null): ?array
+	public function updateAction(string $moduleId, int $id, array $field, ?\CRestServer $restServer = null): ?array
 	{
 		$access = $this->getAccess($moduleId, $restServer);
 		if (!$access)
@@ -464,7 +475,7 @@ class UserFieldConfig extends Controller
 		return null;
 	}
 
-	public function deleteAction(string $moduleId, int $id, \CRestServer $restServer = null): void
+	public function deleteAction(string $moduleId, int $id, ?\CRestServer $restServer = null): void
 	{
 		$access = $this->getAccess($moduleId, $restServer);
 		if (!$access)

@@ -9,8 +9,10 @@ use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Error;
 use Bitrix\Main\ErrorCollection;
 use Bitrix\Main\ModuleManager;
+use Bitrix\Main;
 use Bitrix\Rest\Preset\Data\Section;
 use Bitrix\Rest\Preset\Data\Element;
+use Bitrix\Rest\Internal;
 
 Loc::loadMessages(__FILE__);
 
@@ -71,7 +73,7 @@ class RestIntegratorsListComponent extends CBitrixComponent
 		$isAdmin = \CRestUtil::isAdmin();
 		if ($this->arParams['TYPE'] === 'LIST')
 		{
-			if (!$isAdmin && isset($items[$code]) && $items[$code]['ADMIN_ONLY'] === 'Y')
+			if (!$isAdmin && isset($items[$code]['ADMIN_ONLY']) && $items[$code]['ADMIN_ONLY'] === 'Y')
 			{
 				$this->errors->setError(new Error(Loc::getMessage('REST_INTEGRATION_LIST_ERROR_ACCESS_DENIED')));
 
@@ -80,34 +82,39 @@ class RestIntegratorsListComponent extends CBitrixComponent
 			$items = Element::getList($code);
 		}
 
-		$items = array_filter(
-			$items,
-			function ($item) use ($isAdmin)
-			{
-				$need = true;
-				if (
-					!$isAdmin
-					&&
-					(
-						$item['ADMIN_ONLY'] === 'Y'
-						||
-						(
-							!empty($item['OPTIONS'])
-							&&
-							(
-								$item['OPTIONS']['WIDGET_NEEDED'] !== 'D'
-								|| $item['OPTIONS']['APPLICATION_NEEDED'] !== 'D'
-							)
-						)
-					)
-				)
-				{
-					$need = false;
-				}
+		if (!$isAdmin)
+		{
+			global $USER;
+			$userContext = new Internal\Access\UserContext($USER?->GetID());
+			$accessChecker = new Internal\Access\Preset\PresetAccessChecker($userContext);
 
-				return $need;
-			}
-		);
+			$items = array_filter(
+				$items,
+				function ($item) use ($accessChecker)
+				{
+					if (($item['ADMIN_ONLY'] ?? 'N') === 'Y')
+					{
+						return false;
+					}
+
+					if (empty($item['OPTIONS']))
+					{
+						return true; // this is a section
+					}
+
+					try
+					{
+						$accessChecker->ensureCanCreateOwn($item);
+
+						return true;
+					}
+					catch (Main\SystemException $e)
+					{
+						return false;
+					}
+				}
+			);
+		}
 
 		$this->arResult['ITEMS'] = $this->getItems($items);
 

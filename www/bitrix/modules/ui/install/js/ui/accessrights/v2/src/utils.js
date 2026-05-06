@@ -1,4 +1,4 @@
-import { Loc, Text, Type } from 'main.core';
+import { ajax as Ajax, Loc, Text, Type } from 'main.core';
 import type { AccessRightItem, Variable, VariableCollection } from './store/model/access-rights-model';
 
 export function shouldRowBeRendered(accessRightItem: AccessRightItem): boolean
@@ -35,6 +35,13 @@ export function getSelectedVariables(
 	return selectedVariables;
 }
 
+export function isUseGroupHeadValuesInHintByVariables(
+	selectedVariables: VariableCollection,
+): boolean
+{
+	return [...selectedVariables].some(([, value]) => value.isUseGroupHeadValuesInHint === true);
+}
+
 export function getMultipleSelectedVariablesTitle(selectedVariables: VariableCollection): string
 {
 	const lastVariable: Variable = [...selectedVariables.values()].pop();
@@ -69,9 +76,10 @@ export function getMultipleSelectedVariablesHintHtml(
 	selectedVariables: VariableCollection,
 	hintTitle: string,
 	allVariables: VariableCollection,
+	isInherit: boolean = false,
 ): string
 {
-	if (selectedVariables.size < 2)
+	if (!isInherit && selectedVariables.size < 2)
 	{
 		return '';
 	}
@@ -139,4 +147,14 @@ export function normalizeAliasKey(key: string, separator = DEFAULT_ALIAS_SEPARAT
 	const parsed = parseAliasKey(key, separator);
 
 	return compileAliasKey(parsed, separator);
+}
+
+export function saveSortConfigForAllUserGroups(categoryName: string, sortConfig: Record<string, number>): Promise
+{
+	return Ajax.runAction('ui.accessrights.setUserSortConfig', {
+		data: {
+			name: categoryName,
+			userSortConfig: sortConfig,
+		},
+	});
 }

@@ -10,14 +10,13 @@ use Bitrix\Disk\File;
 use Bitrix\Im\V2\Analytics\Event\ChatEvent;
 use Bitrix\Im\V2\Chat;
 use Bitrix\Im\V2\Chat\CollabChat;
-use Bitrix\Im\V2\Relation\Reason;
+use Bitrix\Im\V2\Relation\AddUsersConfig;
+use Bitrix\ImBot\Bot\Support24;
 use Bitrix\Main\Loader;
 
 class ChatAnalytics extends AbstractAnalytics
 {
 	public const SUBMIT_CREATE_NEW = 'submit_create_new';
-
-	protected const JOIN = 'join';
 	protected const ADD_DEPARTMENT = 'add_department';
 	protected const ADD_USER = 'add_user';
 	protected const DELETE_USER = 'delete_user';
@@ -27,6 +26,8 @@ class ChatAnalytics extends AbstractAnalytics
 	protected const DELETE_DEPARTMENT = 'delete_department';
 	protected const EDIT_PERMISSIONS = 'edit_permissions';
 	protected const SET_TYPE = 'set_type';
+	protected const AUTODELETE_ON = 'autodelete_on';
+	protected const AUTODELETE_OFF = 'autodelete_off';
 
 	protected static array $oneTimeEvents = [];
 	protected static array|bool $blockSingleUserEvents = [];
@@ -42,31 +43,27 @@ class ChatAnalytics extends AbstractAnalytics
 		});
 	}
 
-	public function addAddUser(Reason $reason = Reason::DEFAULT, bool $isJoin = false): void
+	public function addAddUser(AddUsersConfig $config): void
 	{
 		if ($this->isSingleUserEventsBlocked())
 		{
 			return;
 		}
 
-		$this->async(function () use ($reason, $isJoin) {
-			if ($isJoin)
-			{
-				$eventName = self::JOIN;
-			}
-			else
-			{
-				$eventName = match ($reason) {
-					Reason::STRUCTURE => self::ADD_DEPARTMENT,
-					default => self::ADD_USER,
-				};
-			}
+		if ($config->skipAnalytics)
+		{
+			return;
+		}
 
+		$this->async(function () {
 			$this
-				->createChatEvent($eventName)
+				->createChatEvent(self::ADD_USER)
 				?->send()
 			;
-			(new CopilotAnalytics($this->chat))->addAddUser();
+			if ($this->chat instanceof Chat\CopilotChat)
+			{
+				(new CopilotAnalytics($this->chat))->addAddUser();
+			}
 		});
 	}
 
@@ -82,7 +79,10 @@ class ChatAnalytics extends AbstractAnalytics
 				->createChatEvent(self::DELETE_USER)
 				?->send()
 			;
-			(new CopilotAnalytics($this->chat))->addDeleteUser();
+			if ($this->chat instanceof Chat\CopilotChat)
+			{
+				(new CopilotAnalytics($this->chat))->addDeleteUser();
+			}
 		});
 	}
 
@@ -92,6 +92,34 @@ class ChatAnalytics extends AbstractAnalytics
 			$this
 				->createChatEvent($flag ? self::FOLLOW_COMMENTS : self::UNFOLLOW_COMMENTS)
 				?->send()
+			;
+		});
+	}
+
+	public function addAutoDeleteOn(int $messagesAutoDeleteDelay): void
+	{
+		$this->async(function () use ($messagesAutoDeleteDelay) {
+			$this
+				->createChatEvent(self::AUTODELETE_ON)
+				?->setP2(null)
+				->setP3('timer_' . $messagesAutoDeleteDelay)
+				->setP4(null)
+				->setP5(null)
+				->send()
+			;
+		});
+	}
+
+	public function addAutoDeleteOff(): void
+	{
+		$this->async(function () {
+			$this
+				->createChatEvent(self::AUTODELETE_OFF)
+				?->setP2(null)
+				->setP3(null)
+				->setP4(null)
+				->setP5(null)
+				->send()
 			;
 		});
 	}
@@ -166,12 +194,12 @@ class ChatAnalytics extends AbstractAnalytics
 		string $eventName,
 	): ?ChatEvent
 	{
-		if (!$this->isChatTypeAllowed($this->chat))
+		if (!$this->isChatTypeAllowed($this->chat, $eventName))
 		{
 			return null;
 		}
 
-		return (new ChatEvent($eventName, $this->chat));
+		return (new ChatEvent($eventName, $this->chat, $this->getContext()->getUserId()));
 	}
 
 	protected function isFirstTimeEvent(string $eventName): bool
@@ -217,5 +245,27 @@ class ChatAnalytics extends AbstractAnalytics
 		}
 
 		return self::$blockSingleUserEvents[$this->chat->getId()] ?? false;
+	}
+
+	protected function getUnavailableChatTypesForEvent(?string $event = null): array
+	{
+		$unavailableTypes = match ($event)
+		{
+			self::SUBMIT_CREATE_NEW => [Chat\PrivateChat::class, Chat\ExternalChat::class],
+			default => [],
+		};
+
+		return array_merge(parent::getUnavailableChatTypesForEvent($event), $unavailableTypes);
+	}
+
+	protected function getUnavailableChatEntityTypesForEvent(?string $event = null): array
+	{
+		$unavailableEntityTypes = match ($event)
+		{
+			self::SUBMIT_CREATE_NEW => ['SUPPORT24_QUESTION'] /** @see Support24::CHAT_ENTITY_TYPE */,
+			default => [],
+		};
+
+		return array_merge(parent::getUnavailableChatEntityTypesForEvent($event), $unavailableEntityTypes);
 	}
 }

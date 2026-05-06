@@ -54,7 +54,15 @@ class CMailClientConfigDirsComponent extends CBitrixComponent implements Control
 		if (!$mailboxId)
 		{
 			showError(Loc::getMessage('MAIL_CLIENT_ELEMENT_NOT_FOUND'));
+
 			return;
+		}
+
+		if (!Mail\Helper\MailboxAccess::hasCurrentUserAccessToEditMailbox($mailboxId))
+		{
+			showError(Loc::getMessage('MAIL_CLIENT_DENIED'));
+
+			return false;
 		}
 
 		$mailboxHelper = Mail\Helper\Mailbox::createInstance($mailboxId, false);
@@ -93,14 +101,14 @@ class CMailClientConfigDirsComponent extends CBitrixComponent implements Control
 		if (!$mailboxId || (empty($dirs) && empty($dirsTypes)))
 		{
 			$this->errorCollection[] = new Error(Loc::getMessage('MAIL_CLIENT_FORM_ERROR'));
+
 			return false;
 		}
 
-		global $USER;
-
-		if (!Mail\Helper\Message::isMailboxOwner($mailboxId, $USER->GetID()))
+		if (!Mail\Helper\MailboxAccess::hasCurrentUserAccessToEditMailbox($mailboxId))
 		{
 			$this->errorCollection[] = new Error('access denied');
+
 			return false;
 		}
 
@@ -125,9 +133,7 @@ class CMailClientConfigDirsComponent extends CBitrixComponent implements Control
 			return false;
 		}
 
-		global $USER;
-
-		if (!Mail\Helper\Message::isMailboxOwner($mailboxId, $USER->GetID()))
+		if (!Mail\Helper\MailboxAccess::hasCurrentUserAnyAccessToMailbox($mailboxId))
 		{
 			$this->errorCollection[] = new Error('access denied');
 			return false;

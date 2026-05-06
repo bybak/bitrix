@@ -5,7 +5,10 @@ namespace Bitrix\Im\V2\Entity\User;
 use Bitrix\Im\Model\StatusTable;
 use Bitrix\Im\V2\Entity\EntityCollection;
 use Bitrix\Main\ORM\Fields\Relations\Reference;
+use Bitrix\Main\ORM\Query\Filter\Helper;
 use Bitrix\Main\ORM\Query\Join;
+use Bitrix\Main\Search\Content;
+use Bitrix\Main\UserIndexTable;
 use Bitrix\Main\UserTable;
 
 /**
@@ -68,46 +71,84 @@ class UserCollection extends EntityCollection
 		}
 	}
 
-	public function filterExtranet(): self
+	public static function findByName(string $searchString, array $excludeUserIds, int $limit): self
 	{
-		$filteredUsers = new static();
+		$matchString = self::prepareSearchString($searchString);
 
-		foreach ($this as $user)
+		if ($matchString === null)
 		{
-			if (!$user->isExtranet())
+			return new static();
+		}
+
+		$usersQuery = UserTable::query()
+			->setSelect(['ID'])
+			->registerRuntimeField(
+				'USER_INDEX',
+				new Reference(
+					'USER_INDEX',
+					UserIndexTable::class,
+					Join::on('this.ID', 'ref.USER_ID'),
+					['join_type' => 'INNER']
+				)
+			)
+			->where('ACTIVE', 'Y')
+			->where('IS_REAL_USER', true)
+			->whereNotIn('ID', $excludeUserIds)
+			->whereMatch('USER_INDEX.SEARCH_USER_CONTENT', $matchString)
+			->setLimit($limit);
+
+		$userIds = array_map('intval', array_column($usersQuery->fetchAll(), 'ID'));
+
+		return new static($userIds);
+	}
+
+	private static function prepareSearchString(string $query): ?string
+	{
+		$preparedString = Content::prepareStringToken($query);
+		$matchString = Helper::matchAgainstWildcard($preparedString);
+
+		if (!Content::canUseFulltextSearch($matchString))
+		{
+			return null;
+		}
+
+		return $matchString;
+	}
+
+	public static function filterUserIds(array $userIds, callable $predicate, ?int $limit = null): array
+	{
+		$filteredUserIds = [];
+		foreach ($userIds as $userId)
+		{
+			if ($limit !== null && count($filteredUserIds) >= $limit)
 			{
-				$filteredUsers[] = $user;
+				return $filteredUserIds;
+			}
+
+			$user = User::getInstance((int)$userId);
+			if ($predicate($user))
+			{
+				$filteredUserIds[(int)$userId] = (int)$userId;
 			}
 		}
 
-		return $filteredUsers;
+		return $filteredUserIds;
 	}
 
-	public static function filterOnlineUserId(array $userIds): array
+	public static function hasUserByType(array $userIds, UserType $type): bool
 	{
-		if (empty($userIds))
-		{
-			return [];
-		}
+		$filter = static fn (User $user) => $user->getType() === $type;
+		$firstUserByType = static::filterUserIds($userIds, $filter, 1);
 
-		$result = UserTable::query()
-			->setSelect(['ID'])
-			->whereIn('ID', $userIds)
-			->where('IS_ONLINE', true)
-			->fetchAll()
-		;
-		$onlineUsers = [];
-		foreach ($result as $row)
-		{
-			$onlineUsers[] = (int)$row['ID'];
-		}
-
-		return $onlineUsers;
+		return !empty($firstUserByType);
 	}
 
 	public function toRestFormat(array $option = []): array
 	{
-		$this->fillOnlineData();
+		if (!($option['WITHOUT_ONLINE'] ?? false))
+		{
+			$this->fillOnlineData();
+		}
 
 		return parent::toRestFormat($option);
 	}

@@ -1,5 +1,19 @@
 <?php
 return [
+	'rest' => [
+		'value' => [
+			'defaultNamespace' => '\\Bitrix\\Rest\\V3\\Realisation\\Controller',
+			'routes' => [
+				'documentation' => 'rest.documentation.openApi',
+				'scopes' => 'rest.scope.list',
+			],
+			'documentation' => [
+				'methods' => [
+					'batch' => \Bitrix\Rest\V3\Documentation\BatchMethodProvider::class,
+				]
+			]
+		]
+	],
 	'controllers' => [
 		'value' => [
 			'defaultNamespace' => '\\Bitrix\\Rest\\Controller',

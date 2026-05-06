@@ -1,4 +1,4 @@
-<?
+<?php
 if (!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED !== true)
 {
 	die();
@@ -37,10 +37,10 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 
 	protected function getContextPostFix()
 	{
-		return $this->contextPostfix.$this->arParams['MANIFEST_CODE'].$this->arParams['APP'];
+		return $this->contextPostfix.$this->arParams['MANIFEST_CODE'].($this->arParams['APP'] ?? '');
 	}
 
-	protected function getContext()
+	protected function getUserContext()
 	{
 		return Helper::getInstance()->getContextUser($this->getContextPostFix());
 	}
@@ -86,15 +86,15 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 
 			if ($result['ERRORS_UPLOAD_FILE'] === '')
 			{
-				$context = $this->getContext();
+				$userContext = $this->getUserContext();
 
-				$setting = new Setting($context);
+				$setting = new Setting($userContext);
 				$setting->deleteFull();
 
-				$structure = new Structure($context);
+				$structure = new Structure($userContext);
 				if ($structure->unpack($fileInfo))
 				{
-					$result['IMPORT_CONTEXT'] = $context;
+					$result['IMPORT_CONTEXT'] = $userContext;
 					$result['APP'] = $app;
 					$result['IMPORT_FOLDER_FILES'] = $structure->getFolder();
 					$result['IMPORT_ACCESS'] = true;
@@ -170,6 +170,16 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 		}
 
 		return true;
+	}
+
+	protected function areCompatibleManifests(array $manifestData1, array $manifestData2): bool
+	{
+		return !empty(
+			array_intersect(
+				$manifestData1['COMPATIBILITY_TAGS'] ?? [],
+				$manifestData2['COMPATIBILITY_TAGS'] ?? [],
+			)
+		);
 	}
 
 	protected function prepareResult()
@@ -364,7 +374,7 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 			$app = AppTable::getByClientId($this->arParams['APP']);
 			if ($app['ACTIVE'] === 'Y')
 			{
-				$request = Application::getInstance()->getContext()->getRequest();
+				$request = $this->request;
 				$check_hash = $request->getQuery("check_hash");
 				$install_hash = $request->getQuery("install_hash");
 				$appInfo = Client::getApp(
@@ -377,6 +387,8 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 				if ($appInfo)
 				{
 					$appInfo = $appInfo["ITEMS"];
+
+					$app['TYPE'] = $appInfo['TYPE'] ?? null;
 
 					if (
 						($appInfo['TYPE'] === AppTable::TYPE_CONFIGURATION || $appInfo['TYPE'] === AppTable::TYPE_BIC_DASHBOARD)
@@ -421,17 +433,22 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 				{
 					try
 					{
-						$context = $this->getContext();
+						$userContext = $this->getUserContext();
 
-						$setting = new Setting($context);
+						$setting = new Setting($userContext);
 						$setting->deleteFull();
 
-						$structure = new Structure($context);
+						$structure = new Structure($userContext);
 						if($structure->unpack($_FILES["CONFIGURATION"]))
 						{
-							$result['IMPORT_CONTEXT'] = $context;
+							$result['IMPORT_CONTEXT'] = $userContext;
 							$result['IMPORT_FOLDER_FILES'] = $structure->getFolder();
 						}
+
+						$setting->set(
+							Setting::SETTING_ACTION_ADDITIONAL_OPTION,
+							$this->arParams['ADDITIONAL'] ?? null,
+						);
 					}
 					catch (\Exception $e)
 					{
@@ -460,9 +477,19 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 					{
 						if(!empty($result['MANIFEST']))
 						{
-							if($result['IMPORT_MANIFEST_FILE']['CODE'] != $result['MANIFEST']['CODE'])
+							if (
+								$result['IMPORT_MANIFEST_FILE']['CODE'] != $result['MANIFEST']['CODE']
+								&&
+								!$this->areCompatibleManifests(
+									$result['MANIFEST'],
+									$result['IMPORT_MANIFEST_FILE']
+								)
+							)
 							{
-								$this->errors->setError(new Error(Loc::getMessage('REST_CONFIGURATION_IMPORT_MANIFEST_NOT_CURRENT')));
+								$this->errors->setError(
+									new Error(Loc::getMessage('REST_CONFIGURATION_IMPORT_MANIFEST_NOT_CURRENT'))
+								);
+
 								return false;
 							}
 							else
@@ -517,8 +544,7 @@ class CRestConfigurationImportComponent extends CBitrixComponent
 						);
 						if($file && $file->getFileId() > 0)
 						{
-							$server = Application::getInstance()->getContext()->getServer();
-							$documentRoot = $server->getDocumentRoot();
+							$documentRoot = Application::getDocumentRoot();
 							$filePath = $documentRoot.\CFile::GetPath(
 									$file->getFileId()
 							);

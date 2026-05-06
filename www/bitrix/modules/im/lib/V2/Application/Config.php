@@ -2,12 +2,23 @@
 
 namespace Bitrix\Im\V2\Application;
 
-use Bitrix\Im\Promotion;
+use Bitrix\Call\Recent;
+use Bitrix\Im\V2\Anchor\DI\AnchorContainer;
+use Bitrix\Im\V2\Application\Config\PreloadedEntities;
 use Bitrix\Im\V2\Common\ContextCustomer;
-use Bitrix\ImOpenLines\V2\Queue\Queue;
+use Bitrix\Im\V2\Entity\User\User;
+use Bitrix\Im\V2\Integration\AI\CopilotNameResolver;
+use Bitrix\Im\V2\Integration\AI\Transcription\TranscribeManager;
+use Bitrix\Im\V2\Promotion\Internals\DeviceType;
+use Bitrix\Im\V2\Integration\AI\EngineManager;
+use Bitrix\Im\V2\Reading\Counter\Entity\UserCounters;
+use Bitrix\Im\V2\Reading\Counter\UserCountersCollector;
 use Bitrix\ImOpenLines\V2\Status\Status;
 use Bitrix\Im\V2\TariffLimit\Limit;
+use Bitrix\Intranet\Portal;
 use Bitrix\Main\Application;
+use Bitrix\Main\DI\ServiceLocator;
+use Bitrix\Main\Loader;
 
 class Config implements \JsonSerializable
 {
@@ -16,26 +27,29 @@ class Config implements \JsonSerializable
 	private const NODE = '#bx-im-external-recent-list';
 	private const RU_REGIONS = ['ru', 'by', 'kz', 'uz'];
 
-	private bool $isDesktop = false;
+	private Context $applicationContext;
 
-	public function setDesktopFlag(bool $isDesktop): self
+	public function __construct(?Context $applicationContext = null)
 	{
-		$this->isDesktop = $isDesktop;
-
-		return $this;
+		$this->applicationContext = $applicationContext ?? Context::getCurrent();
 	}
-
 
 	public function jsonSerialize(): array
 	{
+		$countersCollection = $this->getCounters();
+		$counters = $countersCollection->toRestFormat();
+		$notificationCounter = $countersCollection->getNotificationCounter();
+
 		return [
 			'node' => self::NODE,
 			'preloadedList' => $this->getPreloadedList(),
+			'activeCalls' => $this->getActiveCalls(),
 			'permissions' => $this->getPermissions(),
 			'marketApps' => $this->getMarketApps(),
-			'currentUser' => $this->getCurrentUser(),
+			'isCurrentUserAdmin' => $this->getCurrentUser()->isAdmin(),
 			'loggerConfig' => $this->getLoggerConfig(),
-			'counters' => $this->getCounters(),
+			'counters' => $counters,
+			'notificationCounter' => $notificationCounter,
 			'settings' => $this->getSettings(),
 			'promoList' => $this->getPromoList(),
 			'phoneSettings' => $this->getPhoneSettings(),
@@ -43,7 +57,37 @@ class Config implements \JsonSerializable
 			'featureOptions' => $this->getFeatureOptions(),
 			'sessionStatusMap' => $this->getSessionStatusMap(),
 			'tariffRestrictions' => $this->getTariffRestrictions(),
+			'anchors' => $this->getAnchors(),
+			'copilot' => $this->getCopilotData(),
+			'preloadedEntities' => $this->getPreloadedEntities()->toRestFormat(),
+			'serviceHealthUrl' => $this->getServiceHealthUrl(),
+			'aiSettings' => $this->getAiSettings(),
 		];
+	}
+
+	public function getDesktopDownloadLink(): string
+	{
+		$region = Application::getInstance()->getLicense()->getRegion();
+
+		return match ($region) {
+			'ru' => 'https://www.bitrix24.ru/features/downloads/',
+			'by' => 'https://www.bitrix24.by/apps/desktop.php',
+			'kz' => 'https://www.bitrix24.kz/apps/desktop.php',
+			'uz' => 'https://www.bitrix24.uz/apps/desktop.php',
+			'uk' => 'https://www.bitrix24.uk/apps/desktop.php',
+			'in' => 'https://www.bitrix24.in/apps/desktop.php',
+			'eu' => 'https://www.bitrix24.eu/apps/desktop.php',
+			'br' => 'https://www.bitrix24.com.br/apps/desktop.php',
+			'la' => 'https://www.bitrix24.es/apps/desktop.php',
+			'mx' => 'https://www.bitrix24.mx/apps/desktop.php',
+			'co' => 'https://www.bitrix24.co/apps/desktop.php',
+			'tr' => 'https://www.bitrix24.com.tr/apps/desktop.php',
+			'fr' => 'https://www.bitrix24.fr/apps/desktop.php',
+			'it' => 'https://www.bitrix24.it/apps/desktop.php',
+			'pl' => 'https://www.bitrix24.pl/apps/desktop.php',
+			'de' => 'https://www.bitrix24.de/apps/desktop.php',
+			default => 'https://www.bitrix24.com/apps/desktop.php',
+		};
 	}
 
 	public function getInternetCheckLink(): string
@@ -57,6 +101,18 @@ class Config implements \JsonSerializable
 			;
 	}
 
+	protected function getServiceHealthUrl(): string
+	{
+		$license = Application::getInstance()->getLicense();
+
+		$baseUrl = $license->isCis()
+			? 'https://status.bitrix24.ru/json_status.php?reg='
+			: 'https://status.bitrix24.com/json_status.php?reg='
+		;
+
+		return $baseUrl . $license->getRegion();
+	}
+
 	protected function getPreloadedList(): array
 	{
 		return \Bitrix\Im\Recent::getList($this->getContext()->getUserId(), [
@@ -65,7 +121,18 @@ class Config implements \JsonSerializable
 			'JSON' => 'Y',
 			'GET_ORIGINAL_TEXT' => 'Y',
 			'SHORT_INFO' => 'Y',
+			'WITH_COUNTERS' => 'N',
 		]) ?: [];
+	}
+
+	protected function getActiveCalls(): array
+	{
+		if (!Loader::includeModule('call'))
+		{
+			return [];
+		}
+
+		return Recent::getActiveCalls();
 	}
 
 	protected function getPermissions(): array
@@ -85,18 +152,9 @@ class Config implements \JsonSerializable
 		return (new \Bitrix\Im\V2\Marketplace\Application())->toRestFormat();
 	}
 
-	protected function getCurrentUser(): array
+	protected function getCurrentUser(): User
 	{
-		$currentUser =  \CIMContactList::GetUserData([
-			'ID' => $this->getContext()->getUserId(),
-			'PHONES' => 'Y',
-			'SHOW_ONLINE' => 'N',
-			'EXTRA_FIELDS' => 'Y',
-			'DATE_ATOM' => 'Y'
-		])['users'][$this->getContext()->getUserId()];
-		$currentUser['isAdmin'] = $this->getContext()->getUser()->isAdmin();
-
-		return $currentUser;
+		return User::getCurrent();
 	}
 
 	protected function getLoggerConfig(): array
@@ -104,9 +162,9 @@ class Config implements \JsonSerializable
 		return \Bitrix\Im\Settings::getLoggerConfig();
 	}
 
-	protected function getCounters(): array
+	protected function getCounters(): UserCounters
 	{
-		return (new \Bitrix\Im\V2\Message\CounterService($this->getContext()->getUserId()))->get();
+		return ServiceLocator::getInstance()->get(UserCountersCollector::class)->get($this->getContext()->getUserId());
 	}
 
 	protected function getSettings(): array
@@ -119,9 +177,10 @@ class Config implements \JsonSerializable
 
 	protected function getPromoList(): array
 	{
-		$promoType = $this->isDesktop ? Promotion::DEVICE_TYPE_DESKTOP : Promotion::DEVICE_TYPE_BROWSER;
+		$promoService = ServiceLocator::getInstance()->get('Im.Services.Promotion');
+		$promoType = $this->applicationContext->isDesktop() ? DeviceType::DESKTOP : DeviceType::BROWSER;
 
-		return Promotion::getActive($promoType);
+		return $promoService->getActive($promoType)->toRestFormat();
 	}
 
 	protected function getPhoneSettings(): array
@@ -152,5 +211,44 @@ class Config implements \JsonSerializable
 	protected function getTariffRestrictions(): array
 	{
 		return Limit::getInstance()->getRestrictions();
+	}
+
+	protected function getAnchors(): array
+	{
+		$anchorProvider = AnchorContainer::getInstance()
+			->getAnchorProvider()
+			->setContext($this->getContext());
+
+		return $anchorProvider->getUserAnchors();
+	}
+
+	protected function getCopilotData(): array
+	{
+		return [
+			'availableEngines' => (new EngineManager())->getAvailableEnginesForRest(),
+			'botName' => CopilotNameResolver::getInstance()->getName(),
+		];
+	}
+
+	protected function getPreloadedEntities(): PreloadedEntities
+	{
+		return new PreloadedEntities();
+	}
+
+	protected function getAiSettings(): array
+	{
+		return [
+			'maxTranscribableFileSize' => TranscribeManager::MAX_TRANSCRIBABLE_FILE_SIZE,
+		];
+	}
+
+	public function getPortalSettingsUrl(): string
+	{
+		if (!Loader::includeModule('intranet'))
+		{
+			return '';
+		}
+
+		return Portal::getInstance()->getSettings()->getSettingsUrl();
 	}
 }

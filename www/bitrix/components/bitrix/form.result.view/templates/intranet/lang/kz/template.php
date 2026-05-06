@@ -1,0 +1,22 @@
+<?php
+$MESS["FORM_ACCESS_DENIED"] = "Веб-нысанға қол жеткізу үшін құқықтар жеткіліксіз.";
+$MESS["FORM_CURRENT_STATUS"] = "Ағымдағы мәртебе: ";
+$MESS["FORM_DATE_CREATE"] = "Жасалды:";
+$MESS["FORM_DOWNLOAD"] = "Жүктеу";
+$MESS["FORM_DOWNLOAD_FILE"] = "#FILE_NAME# файлын жүктеу";
+$MESS["FORM_EDIT"] = "Өзгерту";
+$MESS["FORM_EDIT_USER"] = "Пайдаланушы профайлы";
+$MESS["FORM_FORM_NAME"] = "Нысан:";
+$MESS["FORM_GUEST"] = "Келуші:";
+$MESS["FORM_GUEST_ALT"] = "Келушінің профилі";
+$MESS["FORM_MODULE_NOT_INSTALLED"] = "Веб-нысандар модулі орнатылмаған.";
+$MESS["FORM_NOT_AUTH"] = "(авторланбаған)";
+$MESS["FORM_NOT_REGISTERED"] = "(тіркелмеген)";
+$MESS["FORM_PRINT"] = "Басып шығару";
+$MESS["FORM_RECORD_NOT_FOUND"] = "Жазба табылмады";
+$MESS["FORM_RESULT_ACCESS_DENIED"] = "Нәтижеге қол жеткізу үшін құқықтар жеткіліксіз.";
+$MESS["FORM_RESULT_ID"] = "Өтінім нөмірі: ";
+$MESS["FORM_SESSION"] = "Сессия:";
+$MESS["FORM_TIMESTAMP"] = "Өзгертілген:";
+$MESS["FORM_USER"] = "Пайдаланушы:";
+$MESS["FORM_VIEW_FILE"] = "Файлды қарау";

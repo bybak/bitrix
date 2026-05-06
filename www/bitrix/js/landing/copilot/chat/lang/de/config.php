@@ -1,0 +1,5 @@
+<?php
+$MESS["LANDING_COPILOT_CHAT_BOT_TITLE_MSGVER_2"] = "Webdesigner #COPILOT_NAME#";
+$MESS["LANDING_COPILOT_CHAT_INPUT_PLACEHOLDER"] = "Geben Sie Ihren Vorschlag ein";
+$MESS["LANDING_COPILOT_CHAT_SUBTITLE"] = "Erstellen Sie Ihre Website in wenigen Minuten";
+$MESS["LANDING_COPILOT_CHAT_TITLE_MSGVER_2"] = "Webdesigner #COPILOT_NAME#";

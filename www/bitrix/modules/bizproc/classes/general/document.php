@@ -1,22 +1,30 @@
 <?php
 
+use Bitrix\Bizproc\UI\WorkflowUserView;
 use Bitrix\Main;
 use Bitrix\Bizproc;
 use Bitrix\Main\Event;
 use Bitrix\Main\EventManager;
+use Bitrix\Bizproc\Workflow\Template\Collection\Usages;
+use Bitrix\Bizproc\Workflow\Template\SourceType;
 
 /**
  * Bizproc API Helper for external usage.
  */
 class CBPDocument
 {
-	const PARAM_TAGRET_USER = 'TargetUser';
-	const PARAM_MODIFIED_DOCUMENT_FIELDS = 'ModifiedDocumentField';
-	const PARAM_USE_FORCED_TRACKING = 'UseForcedTracking';
-	const PARAM_IGNORE_SIMULTANEOUS_PROCESSES_LIMIT = 'IgnoreSimultaneousProcessesLimit';
-	const PARAM_DOCUMENT_EVENT_TYPE = 'DocumentEventType';
-	const PARAM_DOCUMENT_TYPE = '__DocumentType';
-	const PARAM_PRE_GENERATED_WORKFLOW_ID = 'PreGeneratedWorkflowId';
+	public const PARAM_TAGRET_USER = 'TargetUser';
+	public const PARAM_MODIFIED_DOCUMENT_FIELDS = 'ModifiedDocumentField';
+	public const PARAM_USE_FORCED_TRACKING = 'UseForcedTracking';
+	public const PARAM_IGNORE_SIMULTANEOUS_PROCESSES_LIMIT = 'IgnoreSimultaneousProcessesLimit';
+	public const PARAM_DOCUMENT_EVENT_TYPE = 'DocumentEventType';
+	public const PARAM_DOCUMENT_TYPE = '__DocumentType';
+	public const PARAM_PRE_GENERATED_WORKFLOW_ID = 'PreGeneratedWorkflowId';
+	public const PARAM_USED_DOCUMENT_FIELDS = 'UsedDocumentField';
+	public const PARAM_TRIGGER_EVENT= 'TriggerEvent';
+	public const PARAM_TRIGGER_EVENT_DATA = 'TriggerEventData';
+
+	public const PARAM_START_WORKFLOW_DELAY = 'StartWorkflowDelay';
 
 	public static function migrateDocumentType($oldType, $newType)
 	{
@@ -336,23 +344,40 @@ class CBPDocument
 	public static function startWorkflow($workflowTemplateId, $documentId, $parameters, &$errors, $parentWorkflow = null)
 	{
 		$errors = [];
-		$runtime = CBPRuntime::GetRuntime();
-
 		$parameters = static::prepareWorkflowParameters($parameters);
+		$startDelay = $parameters[static::PARAM_START_WORKFLOW_DELAY] ?? null;
+		unset($parameters[static::PARAM_START_WORKFLOW_DELAY]);
+
+		static $useDelays;
+		$useDelays ??= (Main\Config\Option::get('bizproc', 'disable_start_workflow_delay') !== 'Y');
+		$shouldStartLater = $useDelays && $startDelay !== null;
+		if ($shouldStartLater)
+		{
+			$parameters[static::PARAM_IGNORE_SIMULTANEOUS_PROCESSES_LIMIT] = true;
+		}
 
 		try
 		{
-			$wi = $runtime->CreateWorkflow($workflowTemplateId, $documentId, $parameters, $parentWorkflow);
-			$wi->Start();
-			return $wi->GetInstanceId();
+			$wi = CBPRuntime::GetRuntime()->createWorkflow($workflowTemplateId, $documentId, $parameters, $parentWorkflow);
+			self::setUsedDocumentFields($wi, $workflowTemplateId);
+			if ($shouldStartLater)
+			{
+				$wi->startLater($startDelay);
+			}
+			else
+			{
+				$wi->start();
+			}
+
+			return $wi->getInstanceId();
 		}
 		catch (Exception $e)
 		{
-			$errors[] = array(
+			$errors[] = [
 				"code" => $e->getCode(),
 				"message" => $e->getMessage(),
-				"file" => $e->getFile()." [".$e->getLine()."]"
-			);
+				"file" => $e->getFile() . " [" . $e->getLine() . "]",
+			];
 		}
 
 		return null;
@@ -361,14 +386,12 @@ class CBPDocument
 	public static function startDebugWorkflow($workflowTemplateId, $documentId, $parameters, &$errors): ?string
 	{
 		$errors = [];
-		$runtime = CBPRuntime::GetRuntime(true);
-
 		$parameters = static::prepareWorkflowParameters($parameters);
 
 		try
 		{
-			$workflow = $runtime->createDebugWorkflow($workflowTemplateId, $documentId, $parameters);
-			$workflow->Start();
+			$workflow = CBPRuntime::getRuntime()->createDebugWorkflow($workflowTemplateId, $documentId, $parameters);
+			$workflow->start();
 
 			return $workflow->getInstanceId();
 		}
@@ -412,6 +435,11 @@ class CBPDocument
 			$parameters[static::PARAM_PRE_GENERATED_WORKFLOW_ID] = CBPRuntime::generateWorkflowId();
 		}
 
+		if (!isset($parameters[static::PARAM_TRIGGER_EVENT_DATA]))
+		{
+			$parameters[static::PARAM_TRIGGER_EVENT_DATA] = [];
+		}
+
 		return $parameters;
 	}
 
@@ -441,12 +469,13 @@ class CBPDocument
 
 		$arParameters[static::PARAM_DOCUMENT_EVENT_TYPE] = $autoExecute;
 
-		$arWT = CBPWorkflowTemplateLoader::SearchTemplatesByDocumentType($documentType, $autoExecute);
-		foreach ($arWT as $wt)
+		$templates = CBPWorkflowTemplateLoader::SearchTemplatesByDocumentType($documentType, $autoExecute);
+		foreach ($templates as $template)
 		{
 			try
 			{
-				$wi = $runtime->CreateWorkflow($wt["ID"], $documentId, $arParameters);
+				$wi = $runtime->CreateWorkflow($template['ID'], $documentId, $arParameters);
+				self::setUsedDocumentFields($wi, $template['ID']);
 				$wi->Start();
 			}
 			catch (Exception $e)
@@ -458,6 +487,28 @@ class CBPDocument
 				);
 			}
 		}
+	}
+
+	public static function setUsedDocumentFields(CBPWorkflow $workflow, int $tplId): void
+	{
+		static $usagesCache = [];
+
+		if (!isset($usagesCache[$tplId]))
+		{
+			$usages = new Usages();
+
+			foreach ($workflow->getRootActivity()->walkRecursive() as $child)
+			{
+				$sources = $child->collectUsages();
+				$usages->addOwnerSources($child->getName(), $sources);
+			}
+
+			$usagesCache[$tplId] = $usages->getValuesBySourceType(
+				SourceType::DocumentField
+			);
+		}
+
+		$workflow->getRootActivity()->setProperties([static::PARAM_USED_DOCUMENT_FIELDS => $usagesCache[$tplId]]);
 	}
 
 	/**
@@ -533,20 +584,24 @@ class CBPDocument
 		{
 			Bizproc\Workflow\Entity\WorkflowInstanceTable::delete($workflowId);
 			CBPTaskService::DeleteByWorkflow($workflowId);
-			CBPStateService::DeleteWorkflow($workflowId);
-			Bizproc\Workflow\Entity\WorkflowMetadataTable::deleteByWorkflowId($workflowId);
-			Bizproc\Result\Entity\ResultTable::deleteByWorkflowId($workflowId);
-
-			if (!Bizproc\Debugger\Session\Manager::isDebugWorkflow($workflowId))
-			{
-				CBPTrackingService::DeleteByWorkflow($workflowId);
-			}
-
-			$event = new Event('bizproc', 'onAfterWorkflowKill', ['ID' => $workflowId]);
-			EventManager::getInstance()->send($event);
+			self::killCompletedWorkflowWithoutTasks($workflowId);
 		}
 
 		return $errors;
+	}
+
+	public static function killCompletedWorkflowWithoutTasks($workflowId): void
+	{
+		CBPStateService::deleteWorkflow($workflowId);
+		Bizproc\Workflow\Entity\WorkflowMetadataTable::deleteByWorkflowId($workflowId);
+		Bizproc\Result\Entity\ResultTable::deleteByWorkflowId($workflowId);
+		if (!Bizproc\Debugger\Session\Manager::isDebugWorkflow($workflowId))
+		{
+			CBPTrackingService::deleteByWorkflow($workflowId);
+		}
+
+		$event = new Event('bizproc', 'onAfterWorkflowKill', ['ID' => $workflowId]);
+		EventManager::getInstance()->send($event);
 	}
 
 	/**
@@ -681,8 +736,9 @@ class CBPDocument
 	 * @param array $errors Error collection.
 	 * @param null | array $allowedDelegationType
 	 * @return bool
+	 * @throws Exception
 	 */
-	public static function delegateTasks($fromUserId, $toUserId, $ids = array(), &$errors = array(), $allowedDelegationType = null)
+	public static function delegateTasks(int $fromUserId, int $toUserId, array|int $ids = [], array &$errors = [], ?array $allowedDelegationType = null): bool
 	{
 		$filter = [
 			'USER_ID' => $fromUserId,
@@ -702,39 +758,46 @@ class CBPDocument
 		$isSinglePostfix = count($ids) === 1 ? '_SINGLE_MSGVER_1' : '_MSGVER_1';
 
 		$iterator = CBPTaskService::GetList(
-				array('ID'=>'ASC'),
-				$filter,
-				false,
-				false,
-				array('ID', 'NAME', 'WORKFLOW_ID', 'ACTIVITY_NAME', 'DELEGATION_TYPE')
+			['ID'=>'ASC'],
+			$filter,
+			false,
+			false,
+			['ID', 'NAME', 'WORKFLOW_ID', 'ACTIVITY_NAME', 'DELEGATION_TYPE']
 		);
 		$found = false;
 		$trackingService = null;
-		$sendImNotify = (CModule::IncludeModule("im"));
+		$sendImNotify = CModule::IncludeModule("im");
 		$workflowIdsToSync = [];
 
 		while ($task = $iterator->fetch())
 		{
-			if ((int)$task['DELEGATION_TYPE'] === CBPTaskDelegationType::ExactlyNone)
+			$taskId = $task['ID'];
+			$taskName = $task['NAME'];
+			$delegationType = (int)$task['DELEGATION_TYPE'];
+
+			if ($delegationType === CBPTaskDelegationType::ExactlyNone)
 			{
 				$errors[] = Main\Localization\Loc::getMessage('BPCGDOC_ERROR_DELEGATE_2_SINGLE_MSGVER_1');
 
 				continue;
 			}
 
-			if ($allowedDelegationType && !in_array((int)$task['DELEGATION_TYPE'], $allowedDelegationType, true))
+			if ($allowedDelegationType && !in_array($delegationType, $allowedDelegationType, true))
 			{
 				$errors[] = GetMessage(
-					'BPCGDOC_ERROR_DELEGATE_' . $task['DELEGATION_TYPE'] . $isSinglePostfix,
-					['#NAME#' => $task['NAME']],
+					"BPCGDOC_ERROR_DELEGATE_{$delegationType}{$isSinglePostfix}",
+					['#NAME#' => $taskName],
 				);
 			}
-			elseif (!CBPTaskService::delegateTask($task['ID'], $fromUserId, $toUserId))
+			elseif (!CBPTaskService::delegateTask($taskId, $fromUserId, $toUserId))
 			{
-				$errors[] = GetMessage('BPCGDOC_ERROR_DELEGATE' . $isSinglePostfix, ['#NAME#' => $task['NAME']]);
+				$errors[] = GetMessage("BPCGDOC_ERROR_DELEGATE{$isSinglePostfix}", ['#NAME#' => $taskName]);
 			}
 			else
 			{
+				$workflowId = $task['WORKFLOW_ID'];
+				$activityName = $task['ACTIVITY_NAME'];
+
 				if (!$found)
 				{
 					$runtime = CBPRuntime::GetRuntime();
@@ -745,35 +808,58 @@ class CBPDocument
 				$found = true;
 
 				$trackingService->Write(
-					$task['WORKFLOW_ID'],
+					$workflowId,
 					CBPTrackingType::Custom,
-					$task['ACTIVITY_NAME'],
+					$activityName,
 					CBPActivityExecutionStatus::Executing,
 					CBPActivityExecutionResult::None,
 					GetMessage('BPCGDOC_DELEGATE_LOG_TITLE'),
-					GetMessage('BPCGDOC_DELEGATE_LOG_MSGVER_1', array(
-						'#NAME#' => $task['NAME'],
-						'#FROM#' => '{=user:user_'.$fromUserId.'}',
-						'#TO#' => '{=user:user_'.$toUserId.'}'
-					))
+					GetMessage(
+						'BPCGDOC_DELEGATE_LOG_MSGVER_1',
+						[
+							'#NAME#' => $taskName,
+							'#FROM#' => '{=user:user_' . $fromUserId . '}',
+							'#TO#' => '{=user:user_' . $toUserId . '}',
+						]
+					)
 				);
-				$workflowIdsToSync[$task['WORKFLOW_ID']] = true;
+				$workflowIdsToSync[$workflowId] = true;
+				$workflow = WorkflowUserView::create($workflowId, $toUserId);
 
-				if ($sendImNotify)
+				if ($sendImNotify && $workflow !== null)
 				{
-					CIMNotify::Add(array(
-						"MESSAGE_TYPE" => IM_MESSAGE_SYSTEM,
+					$processName = $workflow->getProcessName();
+
+					CIMNotify::Add([
+						'MESSAGE_TYPE' => IM_MESSAGE_SYSTEM,
 						'FROM_USER_ID' => $fromUserId,
 						'TO_USER_ID' => $toUserId,
-						"NOTIFY_TYPE" => IM_NOTIFY_FROM,
-						"NOTIFY_MODULE" => "bizproc",
-						"NOTIFY_EVENT" => "delegate_task",
-						"NOTIFY_TAG" => "BIZPROC|TASK|".$task['ID'],
-						'MESSAGE' => GetMessage('BPCGDOC_DELEGATE_NOTIFY_TEXT_MSGVER_1', array(
-							'#TASK_URL#' => '/company/personal/bizproc/'.(int)$task['ID'].'/',
-							'#TASK_NAME#' => $task['NAME']
-						))
-					));
+						'NOTIFY_TYPE' => IM_NOTIFY_FROM,
+						'NOTIFY_MODULE' => 'bizproc',
+						'NOTIFY_EVENT' => 'delegate_task',
+						'NOTIFY_TAG' => "BIZPROC|TASK|{$taskId}",
+						'MESSAGE' => GetMessage(
+							'BPCGDOC_DELEGATE_NOTIFY_TEXT_SIMPLE',
+							[
+								'#TASK_NAME#' => $taskName,
+								'#PROCESS_NAME#' => $processName,
+							],
+						),
+						'PARAMS' => [
+							'COMPONENT_ID' => 'BizprocEntity',
+							'COMPONENT_PARAMS' => [
+								'SUBJECT' => GetMessage('BPCGDOC_DELEGATE_NOTIFY_TEXT_DEFAULT'),
+								'ENTITY' => [
+									'TITLE' => $processName,
+									'HREF' => "/company/personal/bizproc/{$taskId}/",
+									'CONTENT_TYPE' => 'text',
+									'CONTENT' => [
+										'VALUE' => $taskName,
+									],
+								],
+							],
+						],
+					]);
 				}
 			}
 		}
@@ -933,8 +1019,8 @@ class CBPDocument
 			echo $documentService->GetFieldInputControl(
 				$documentType,
 				$arParameter,
-				array("Form" => $formName, "Field" => $parameterKeyExt),
-				$arParametersValues[$parameterKey],
+				['Form' => $formName, 'Field' => $parameterKeyExt],
+				$arParametersValues[$parameterKey] ?? null,
 				false,
 				true
 			);
@@ -1381,15 +1467,9 @@ class CBPDocument
 	 */
 	public static function canUserOperateDocument($operation, $userId, $parameterDocumentId, $arParameters = array())
 	{
-		[$moduleId, $entity, $documentId] = CBPHelper::ParseDocumentId($parameterDocumentId);
-
-		if ($moduleId <> '')
-			CModule::IncludeModule($moduleId);
-
-		if (class_exists($entity))
-			return call_user_func_array(array($entity, "CanUserOperateDocument"), array($operation, $userId, $documentId, $arParameters));
-
-		return false;
+		return CBPRuntime::getRuntime()->getDocumentService()->canUserOperateDocument(
+			$operation, $userId, $parameterDocumentId, $arParameters
+		);
 	}
 
 	/**
@@ -1401,36 +1481,24 @@ class CBPDocument
 	 * @param array $arParameters - Additional parameters.
 	 * @return bool
 	 */
-	public static function canUserOperateDocumentType($operation, $userId, $parameterDocumentType, $arParameters = array())
+	public static function canUserOperateDocumentType($operation, $userId, $parameterDocumentType, $arParameters = [])
 	{
-		[$moduleId, $entity, $documentType] = CBPHelper::ParseDocumentId($parameterDocumentType);
-
-		if ($moduleId <> '')
-			CModule::IncludeModule($moduleId);
-
-		if (class_exists($entity))
-			return call_user_func_array(array($entity, "CanUserOperateDocumentType"), array($operation, $userId, $documentType, $arParameters));
-
-		return false;
+		return CBPRuntime::getRuntime()->getDocumentService()->canUserOperateDocumentType(
+			$operation, $userId, $parameterDocumentType, $arParameters
+		);
 	}
 
 	/**
 	 * Get document admin page URL.
 	 *
 	 * @param array $parameterDocumentId - Document id array(MODULE_ID, ENTITY, DOCUMENT_ID).
-	 * @return string - URL.
+	 * @return ?string - URL.
 	 */
 	public static function getDocumentAdminPage($parameterDocumentId)
 	{
-		[$moduleId, $entity, $documentId] = CBPHelper::ParseDocumentId($parameterDocumentId);
-
-		if ($moduleId <> '')
-			CModule::IncludeModule($moduleId);
-
-		if (class_exists($entity))
-			return call_user_func_array(array($entity, "GetDocumentAdminPage"), array($documentId));
-
-		return "";
+		return CBPRuntime::getRuntime()->getDocumentService()->getDocumentAdminPage(
+			$parameterDocumentId
+		);
 	}
 
 	/**
@@ -1440,15 +1508,9 @@ class CBPDocument
 	 */
 	public static function getDocumentName($parameterDocumentId)
 	{
-		[$moduleId, $entity, $documentId] = CBPHelper::ParseDocumentId($parameterDocumentId);
-
-		if ($moduleId <> '')
-			CModule::IncludeModule($moduleId);
-
-		if (class_exists($entity) && method_exists($entity, 'getDocumentName'))
-			return call_user_func_array(array($entity, "getDocumentName"), array($documentId));
-
-		return "";
+		return CBPRuntime::getRuntime()->getDocumentService()->getDocumentName(
+			$parameterDocumentId
+		);
 	}
 
 	/**
@@ -1528,29 +1590,19 @@ class CBPDocument
 
 	public static function getAllowableUserGroups($parameterDocumentType)
 	{
-		[$moduleId, $entity, $documentType] = CBPHelper::ParseDocumentId($parameterDocumentType);
-
-		if ($moduleId <> '')
-			CModule::IncludeModule($moduleId);
-
-		if (class_exists($entity))
-		{
-			$result = call_user_func_array(array($entity, "GetAllowableUserGroups"), array($documentType));
-			$result1 = array();
-			foreach ($result as $key => $value)
-				$result1[mb_strtolower($key)] = $value;
-			return $result1;
-		}
-
-		return array();
+		return CBPRuntime::getRuntime()->getDocumentService()->getAllowableUserGroups(
+			$parameterDocumentType
+		);
 	}
 
-	public static function onAfterTMDayStart($data)
+	public static function onAfterTMDayStart(array $data): void
 	{
 		if (!CModule::IncludeModule("im"))
+		{
 			return;
+		}
 
-		$userId = (int) $data['USER_ID'];
+		$userId = (int)$data['USER_ID'];
 
 		$iterator = Bizproc\Workflow\Entity\WorkflowInstanceTable::getList(
 			[
@@ -1566,21 +1618,22 @@ class CBPDocument
 		$row = $iterator->fetch();
 		if (!empty($row['CNT']))
 		{
-			$path = IsModuleInstalled('bitrix24') ? '/bizproc/bizproc/?type=is_locked'
-				: Main\Config\Option::get("bizproc", "locked_wi_path", '/services/bp/instances.php?type=is_locked');
+			$path = IsModuleInstalled('bitrix24')
+				? '/bizproc/bizproc/?type=is_locked'
+				: Main\Config\Option::get('bizproc', 'locked_wi_path', '/services/bp/instances.php?type=is_locked');
 
-			CIMNotify::Add(array(
+			CIMNotify::Add([
 				'FROM_USER_ID' => 0,
 				'TO_USER_ID' => $userId,
-				"NOTIFY_TYPE" => IM_NOTIFY_SYSTEM,
-				"NOTIFY_MODULE" => "bizproc",
-				"NOTIFY_EVENT" => "wi_locked",
-				'TITLE' => GetMessage('BPCGDOC_WI_LOCKED_NOTICE_TITLE'),
-				'MESSAGE' => 	GetMessage('BPCGDOC_WI_LOCKED_NOTICE_MESSAGE', array(
-					'#PATH#' => $path,
-					'#CNT#' => $row['CNT']
-				))
-			));
+				'NOTIFY_TYPE' => IM_NOTIFY_SYSTEM,
+				'NOTIFY_MODULE' => 'bizproc',
+				'NOTIFY_EVENT' => 'wi_locked',
+				'TITLE' => Main\Localization\Loc::getMessage('BPCGDOC_WI_LOCKED_NOTICE_MESSAGE_DEFAULT_TITLE'),
+				'MESSAGE' => Main\Localization\Loc::getMessage(
+					'BPCGDOC_WI_LOCKED_NOTICE_MESSAGE_DEFAULT',
+					['#PATH#' => $path, '#CNT#' => $row['CNT']]
+				),
+			]);
 		}
 	}
 
@@ -1765,18 +1818,8 @@ class CBPDocument
 
 	public static function getUserGroups(array $parameterDocumentType, array $parameterDocumentId, int $userId)
 	{
-		[$moduleId, $entity, $documentType] = CBPHelper::ParseDocumentId($parameterDocumentType);
-
-		if ($moduleId)
-		{
-			\Bitrix\Main\Loader::includeModule($moduleId);
-		}
-
-		if (class_exists($entity) && method_exists($entity, 'GetUserGroups'))
-		{
-			return call_user_func([$entity, 'GetUserGroups'], $parameterDocumentType, $parameterDocumentId, $userId);
-		}
-
-		return null;
+		return CBPRuntime::getRuntime()->getDocumentService()->getUserGroups(
+			$parameterDocumentType, $parameterDocumentId, $userId
+		);
 	}
 }

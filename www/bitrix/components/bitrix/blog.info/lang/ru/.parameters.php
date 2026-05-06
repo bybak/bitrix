@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS ['BI_PATH_TO_BLOG'] = "Шаблон пути к странице блога";
 $MESS ['BI_PATH_TO_BLOG_CATEGORY'] = "Шаблон пути к странице блога c фильтром по тегу";
 $MESS ['BI_PATH_TO_USER'] = "Шаблон пути к странице пользователя блога";
@@ -9,4 +9,3 @@ $MESS ['BI_BLOG_URL'] = "Путь блога";
 $MESS ['BI_CATEGORY_ID'] = "Идентификатор тега для фильтрации";
 $MESS ['BLOG_PROPERTY_LIST'] = "Какие свойства блога выводить";
 $MESS ['B_VARIABLE_ALIASES'] = "Имена переменных";
-?>

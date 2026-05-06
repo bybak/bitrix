@@ -1,0 +1,2 @@
+<?php
+$MESS['REST_V3_EXCEPTION_UNKNOWNAGGREGATEFUNCTIONEXCEPTION'] = 'Неизвестная агрегатная функция `#FUNCTION#`';

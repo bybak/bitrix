@@ -1,5 +1,6 @@
 <?php
 use Bitrix\Main\Loader;
+use Bitrix\Main\LoaderException;
 use Bitrix\Main\Localization\Loc;
 
 Loc::loadMessages(__FILE__);
@@ -735,138 +736,161 @@ class CListsLiveFeed
 	/**
 	 * Called from LiveFeed
 	 * @param array $comment
+	 * @throws LoaderException
 	 */
-	public static function OnAfterSonetLogEntryAddComment($comment)
+	public static function OnAfterSonetLogEntryAddComment(array $comment): void
 	{
-		if ($comment["EVENT_ID"] != "lists_new_element_comment")
+		if ($comment['EVENT_ID'] !== 'lists_new_element_comment')
 		{
 			return;
 		}
 
 		$logQuery = CSocNetLog::getList(
-			array(),
-			array(
-				"ID" => $comment["LOG_ID"],
-				"EVENT_ID" => "lists_new_element",
-			),
+			[],
+			['ID' => $comment['LOG_ID'], 'EVENT_ID' => 'lists_new_element'],
 			false,
 			false,
-			array("ID", "SOURCE_ID", "URL", "TITLE", "USER_ID", "PARAMS")
+			['ID', 'SOURCE_ID', 'URL', 'TITLE', 'PARAMS'],
 		);
 
-		if (($log = $logQuery->fetch()) && (intval($log["SOURCE_ID"]) > 0))
+		$log = $logQuery->fetch();
+		if (!$log || (int)$log['SOURCE_ID'] <= 0)
 		{
-			$params = unserialize($log["PARAMS"], ['allowed_classes' => false]);
-			$title = $log["TITLE"]." - ".$params["ELEMENT_NAME"];
+			return;
+		}
 
-			$userIdsToNotify = self::getUserIdsFromRights($log['ID']);
+		$params = unserialize($log['PARAMS'], ['allowed_classes' => false]);
 
-			foreach ($userIdsToNotify as $userId)
-			{
-				CListsLiveFeed::notifyComment(
-					[
-						"LOG_ID" => $comment["LOG_ID"],
-						"MESSAGE_ID" => $comment["SOURCE_ID"],
-						"TO_USER_ID" => $userId,
-						"FROM_USER_ID" => $comment["USER_ID"],
-						"URL" => $log["URL"],
-						"TITLE" => $title,
-					]
-				);
-			}
+		foreach (self::getUserIdsFromRights($log['ID']) as $userId)
+		{
+			self::notifyComment([
+				'LOG_ID' => $comment['LOG_ID'],
+				'MESSAGE_ID' => $comment['SOURCE_ID'],
+				'TO_USER_ID' => $userId,
+				'FROM_USER_ID' => $comment['USER_ID'],
+				'URL' => $log['URL'],
+				'TITLE' => $log['TITLE'],
+				'ELEMENT_NAME' => $params['ELEMENT_NAME'],
+				'MESSAGE' => $comment['MESSAGE'],
+			]);
 		}
 	}
 
 	/**
 	 * Called from popup
 	 * @param string $entityType
-	 * @param int $entityId
-	 * $param array $comment
+	 * @param int $_entityId unused
+	 * @param array $comment
+	 * @throws LoaderException
 	 */
-	public static function OnForumCommentIMNotify($entityType, $entityId, $comment)
+	public static function OnForumCommentIMNotify(string $entityType, int $_entityId, array $comment): void
 	{
-		if ($entityType != "WF")
+		if ($entityType !== 'WF')
+		{
 			return;
+		}
 
 		$logQuery = CSocNetLog::getList(
-			array(),
-			array(
-				"ID" => $comment["LOG_ID"],
-				"EVENT_ID" => "lists_new_element",
-			),
+			[],
+			['ID' => $comment['LOG_ID'], 'EVENT_ID' => 'lists_new_element'],
 			false,
 			false,
-			array("ID", "SOURCE_ID", "URL", "TITLE", "USER_ID", "PARAMS")
+			['ID', 'SOURCE_ID', 'URL', 'TITLE', 'PARAMS'],
 		);
 
-		if (($log = $logQuery->fetch()) && (intval($log["SOURCE_ID"]) > 0))
+		$log = $logQuery->fetch();
+		if (!$log || (int)$log['SOURCE_ID'] <= 0)
 		{
-			$params = unserialize($log["PARAMS"], ['allowed_classes' => false]);
-			$title = $log["TITLE"]." - ".$params["ELEMENT_NAME"];
+			return;
+		}
 
-			$userIdsToNotify = self::getUserIdsFromRights($log['ID']);
+		$params = unserialize($log['PARAMS'], ['allowed_classes' => false]);
 
-			foreach ($userIdsToNotify as $userId)
-			{
-				CListsLiveFeed::notifyComment(
-					[
-						"LOG_ID" => $log["ID"],
-						"MESSAGE_ID" => $comment["MESSAGE_ID"],
-						"TO_USER_ID" => $userId,
-						"FROM_USER_ID" => $comment["USER_ID"],
-						"URL" => $log["URL"],
-						"TITLE" => $title,
-					]
-				);
-			}
+		foreach (self::getUserIdsFromRights($log['ID']) as $userId)
+		{
+			self::notifyComment([
+				'LOG_ID' => $log['ID'],
+				'MESSAGE_ID' => $comment['MESSAGE_ID'],
+				'TO_USER_ID' => $userId,
+				'FROM_USER_ID' => $comment['USER_ID'],
+				'URL' => $log['URL'],
+				'TITLE' => $log['TITLE'],
+				'ELEMENT_NAME' => $params['ELEMENT_NAME'],
+				'MESSAGE' => $comment['MESSAGE'],
+			]);
 		}
 	}
 
-	public static function NotifyComment($comment)
+	/**
+	 * @throws LoaderException
+	 */
+	public static function NotifyComment(array $comment): void
 	{
-		if (!Loader::includeModule("im"))
-			return;
-		if($comment["TO_USER_ID"] == $comment["FROM_USER_ID"])
-			return;
-
-		$siteDir = rtrim(SITE_DIR, '/');
-		$url = str_replace('#SITE_DIR#', $siteDir, $comment["URL"]);
-		$url .= ''.$comment['LOG_ID'].'/';
-
-		$messageAddComment = Loc::getMessage("LISTS_LF_COMMENT_MESSAGE_ADD",
-			array("#PROCESS#" => '<a href="'.$url.'" class="bx-notifier-item-action">'.$comment["TITLE"].'</a>'));
-		$userQuery = CUser::getList(
-			"id",
-			"asc",
-			array("ID_EQUAL_EXACT" => intval($comment["FROM_USER_ID"])),
-			array("FIELDS" => array("PERSONAL_GENDER"))
-		);
-		if ($user = $userQuery->fetch())
+		if (!Loader::includeModule('im'))
 		{
-			switch ($user["PERSONAL_GENDER"])
-			{
-				case "F":
-				case "M":
-				$messageAddComment = Loc::getMessage("LISTS_LF_COMMENT_MESSAGE_ADD" . '_' . $user["PERSONAL_GENDER"],
-					array("#PROCESS#" => '<a href="'.$url.'" class="bx-notifier-item-action">'.$comment["TITLE"].'</a>'));
-					break;
-				default:
-					break;
-			}
+			return;
 		}
 
-		$messageFields = array(
-			"TO_USER_ID" => $comment["TO_USER_ID"],
-			"FROM_USER_ID" => $comment["FROM_USER_ID"],
-			"NOTIFY_TYPE" => IM_NOTIFY_FROM,
-			"NOTIFY_MODULE" => "lists",
-			"NOTIFY_TAG" => "SONET|EVENT|".$comment["LOG_ID"],
-			"NOTIFY_SUB_TAG" => "FORUM|COMMENT|".$comment["MESSAGE_ID"]."|".$comment["TO_USER_ID"],
-			"NOTIFY_EVENT" => "event_lists_comment_add",
-			"NOTIFY_MESSAGE" => $messageAddComment,
+		$toUserId = (int)$comment['TO_USER_ID'];
+		$fromUserId = (int)$comment['FROM_USER_ID'];
+
+		if ($toUserId === $fromUserId)
+		{
+			return;
+		}
+
+		$logId = (int)$comment['LOG_ID'];
+		$url = str_replace('#SITE_DIR#', rtrim(SITE_DIR, '/'), $comment['URL']) . "$logId/";
+		$processName = $comment['TITLE'] . ' - ' . $comment['ELEMENT_NAME'];
+		$genderSuffix = '';
+		$userQuery = CUser::getList(
+			'id',
+			'asc',
+			[
+				'ID_EQUAL_EXACT' => $fromUserId,
+			],
+			[
+				'FIELDS' => ['PERSONAL_GENDER'],
+			],
 		);
 
-		CIMNotify::Add($messageFields);
+		if (($user = $userQuery->fetch()) && in_array($user['PERSONAL_GENDER'], ['F', 'M'], true))
+		{
+			$genderSuffix = '_' . $user['PERSONAL_GENDER'];
+		}
+
+		$notifyMessageDefault = Loc::getMessage("LISTS_LF_COMMENT_MESSAGE_ADD_DEFAULT{$genderSuffix}");
+		$notifyMessageSimple = Loc::getMessage(
+			"LISTS_LF_COMMENT_MESSAGE_ADD_SIMPLE{$genderSuffix}",
+			[
+				'#PROCESS_NAME#' => $processName,
+			],
+		);
+
+		CIMNotify::Add([
+			'TO_USER_ID' => $toUserId,
+			'FROM_USER_ID' => $fromUserId,
+			'NOTIFY_TYPE' => IM_NOTIFY_FROM,
+			'NOTIFY_MODULE' => 'lists',
+			'NOTIFY_TAG' => "SONET|EVENT|{$logId}",
+			'NOTIFY_SUB_TAG' => "FORUM|COMMENT|{$comment['MESSAGE_ID']}|{$toUserId}",
+			'NOTIFY_EVENT' => 'event_lists_comment_add',
+			'NOTIFY_MESSAGE' => $notifyMessageSimple,
+			'PARAMS' => [
+				'COMPONENT_ID' => 'BizprocEntity',
+				'COMPONENT_PARAMS' => [
+					'SUBJECT' => $notifyMessageDefault,
+					'ENTITY' => [
+						'TITLE' => $comment['TITLE'],
+						'HREF' => $url,
+						'CONTENT_TYPE' => 'text',
+						'CONTENT' => [
+							'VALUE' => $comment['MESSAGE'] ?? $processName,
+						],
+					],
+				],
+			],
+		]);
 	}
 
 	public static function OnSendMentionGetEntityFields($commentFields)

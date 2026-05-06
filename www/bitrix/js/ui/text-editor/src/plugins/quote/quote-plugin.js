@@ -1,11 +1,13 @@
 import { Loc, Type } from 'main.core';
 
 import type { BBCodeElementNode } from 'ui.bbcode.model';
+import { Outline } from 'ui.icon-set.api.core';
 
 import {
 	$getSelection,
 	$isRangeSelection,
 	$createParagraphNode,
+	$getPreviousSelection,
 	createCommand,
 	COMMAND_PRIORITY_LOW,
 	type LexicalNode,
@@ -49,6 +51,9 @@ export const FORMAT_QUOTE_COMMAND: LexicalCommand = createCommand('FORMAT_QUOTE_
 
 /** @memberof BX.UI.TextEditor.Plugins.Quote */
 export const REMOVE_QUOTE_COMMAND: LexicalCommand = createCommand('REMOVE_QUOTE_COMMAND');
+
+/** @memberof BX.UI.TextEditor.Plugins.Quote */
+export const TOGGLE_QUOTE_COMMAND: LexicalCommand = createCommand('TOGGLE_QUOTE_COMMAND');
 
 export class QuotePlugin extends BasePlugin
 {
@@ -165,7 +170,7 @@ export class QuotePlugin extends BasePlugin
 			this.getEditor().registerCommand(
 				FORMAT_QUOTE_COMMAND,
 				() => {
-					const selection: RangeSelection = $getSelection();
+					const selection: RangeSelection = $getSelection() || $getPreviousSelection();
 					if ($isRangeSelection(selection))
 					{
 						const quoteNode = $createQuoteNode();
@@ -186,7 +191,7 @@ export class QuotePlugin extends BasePlugin
 			this.getEditor().registerCommand(
 				REMOVE_QUOTE_COMMAND,
 				() => {
-					const selection: RangeSelection = $getSelection();
+					const selection: RangeSelection = $getSelection() || $getPreviousSelection();
 					if (!$isRangeSelection(selection))
 					{
 						return false;
@@ -204,6 +209,38 @@ export class QuotePlugin extends BasePlugin
 				},
 				COMMAND_PRIORITY_LOW,
 			),
+			this.getEditor().registerCommand(
+				TOGGLE_QUOTE_COMMAND,
+				() => {
+					const selection: RangeSelection = $getSelection() || $getPreviousSelection();
+					if (!$isRangeSelection(selection))
+					{
+						return false;
+					}
+
+					let quoteNode = $findMatchingParent(selection.anchor.getNode(), $isQuoteNode);
+					if (!quoteNode)
+					{
+						quoteNode = $findMatchingParent(selection.focus.getNode(), $isQuoteNode);
+					}
+
+					if (quoteNode)
+					{
+						this.getEditor().dispatchCommand(REMOVE_QUOTE_COMMAND);
+					}
+					else if (this.getEditor().getNewLineMode() === NewLineMode.LINE_BREAK)
+					{
+						this.getEditor().dispatchCommand(INSERT_QUOTE_COMMAND);
+					}
+					else
+					{
+						this.getEditor().dispatchCommand(FORMAT_QUOTE_COMMAND);
+					}
+
+					return true;
+				},
+				COMMAND_PRIORITY_LOW,
+			),
 		);
 	}
 
@@ -211,7 +248,7 @@ export class QuotePlugin extends BasePlugin
 	{
 		this.getEditor().getComponentRegistry().register('quote', (): Button => {
 			const button: Button = new Button();
-			button.setContent('<span class="ui-icon-set --quote"></span>');
+			button.setIcon(Outline.QUOTE);
 			button.setBlockType('quote');
 			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_QUOTE'));
 			button.subscribe('onClick', (): void => {

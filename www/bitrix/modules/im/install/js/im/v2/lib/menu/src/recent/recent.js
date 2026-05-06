@@ -1,32 +1,54 @@
 import { Loc, Type } from 'main.core';
-import { EventEmitter } from 'main.core.events';
+import { type EventEmitter } from 'main.core.events';
 import { MessageBox, MessageBoxButtons } from 'ui.dialogs.messagebox';
+import { type MenuItemOptions, type MenuSectionOptions, type MenuOptions } from 'ui.system.menu';
 
-import { Core } from 'im.v2.application.core';
-import { ActionByRole, EventType, SidebarDetailBlock, ChatType, UserType, ActionByUserType } from 'im.v2.const';
-import { CallManager } from 'im.v2.lib.call';
-import { ChatService, RecentService } from 'im.v2.provider.service';
-import { Utils } from 'im.v2.lib.utils';
-import { PermissionManager } from 'im.v2.lib.permission';
-import { showLeaveChatConfirm } from 'im.v2.lib.confirm';
-import { ChannelManager } from 'im.v2.lib.channel';
 import { Messenger } from 'im.public';
-import { Analytics as CallAnalytics } from 'call.lib.analytics';
+import { Core } from 'im.v2.application.core';
+import {
+	ActionByRole,
+	EventType,
+	SidebarDetailBlock,
+	ChatType,
+	UserType,
+	ActionByUserType,
+	UserRole,
+	type ApplicationContext,
+} from 'im.v2.const';
+import { Analytics } from 'im.v2.lib.analytics';
+import { CallManager } from 'im.v2.lib.call';
+import { ChannelManager } from 'im.v2.lib.channel';
+import { showLeaveChatConfirm } from 'im.v2.lib.confirm';
+import { InviteManager } from 'im.v2.lib.invite';
+import { PermissionManager } from 'im.v2.lib.permission';
+import { Utils } from 'im.v2.lib.utils';
+import { type ImModelRecentItem, type ImModelUser, type ImModelChat } from 'im.v2.model';
+import { ChatService } from 'im.v2.provider.service.chat';
+import { LegacyRecentService } from 'im.v2.provider.service.recent';
 
 import { BaseMenu } from '../base/base';
-import { InviteManager } from './invite-manager';
 
-import type { MenuItem } from 'im.v2.lib.menu';
-import type { ImModelRecentItem, ImModelUser, ImModelChat } from 'im.v2.model';
+type MenuItemContext = {
+	dialogId: string,
+	compactMode?: boolean,
+	recentItem?: ImModelRecentItem
+}
+
+const MenuSectionCode = {
+	first: 'first',
+	second: 'second',
+	third: 'third',
+};
 
 export class RecentMenu extends BaseMenu
 {
-	context: ImModelRecentItem;
+	emitter: EventEmitter;
+	context: MenuItemContext;
 	callManager: CallManager;
 	permissionManager: PermissionManager;
 	chatService: ChatService;
 
-	constructor()
+	constructor(applicationContext: ApplicationContext)
 	{
 		super();
 
@@ -34,15 +56,16 @@ export class RecentMenu extends BaseMenu
 		this.chatService = new ChatService();
 		this.callManager = CallManager.getInstance();
 		this.permissionManager = PermissionManager.getInstance();
+
+		const { emitter } = applicationContext;
+		this.emitter = emitter;
 	}
 
-	getMenuOptions(): Object
+	getMenuOptions(): MenuOptions
 	{
 		return {
 			...super.getMenuOptions(),
 			className: this.getMenuClassName(),
-			angle: true,
-			offsetLeft: 32,
 		};
 	}
 
@@ -51,11 +74,19 @@ export class RecentMenu extends BaseMenu
 		return this.context.compactMode ? '' : super.getMenuClassName();
 	}
 
-	getMenuItems(): MenuItem[]
+	getMenuItems(): MenuItemOptions | null[]
 	{
-		if (this.context.invitation.isActive)
+		if (this.#isInvitationActive())
 		{
-			return this.getInviteItems();
+			const firstGroupItems = [
+				this.getSendMessageItem(),
+				this.getOpenProfileItem(),
+			];
+
+			return [
+				...this.groupItems(firstGroupItems, MenuSectionCode.first),
+				...this.groupItems(this.getInviteItems(), MenuSectionCode.second),
+			];
 		}
 
 		return [
@@ -69,120 +100,129 @@ export class RecentMenu extends BaseMenu
 		];
 	}
 
-	getSendMessageItem(): MenuItem
+	getMenuGroups(): MenuSectionOptions[]
+	{
+		if (this.#isInvitationActive())
+		{
+			return [
+				{ code: MenuSectionCode.first },
+				{ code: MenuSectionCode.second },
+			];
+		}
+
+		return [];
+	}
+
+	getSendMessageItem(): MenuItemOptions
 	{
 		return {
-			text: Loc.getMessage('IM_LIB_MENU_WRITE_V2'),
-			onclick: () => {
-				Messenger.openChat(this.context.dialogId);
-				this.menuInstance.close();
+			title: Loc.getMessage('IM_LIB_MENU_WRITE_V2'),
+			onClick: () => {
+				void Messenger.openChat(this.context.dialogId);
 			},
 		};
 	}
 
-	getOpenItem(): MenuItem
+	getOpenItem(): MenuItemOptions
 	{
 		return {
-			text: Loc.getMessage('IM_LIB_MENU_OPEN'),
-			onclick: () => {
-				Messenger.openChat(this.context.dialogId);
-				this.menuInstance.close();
+			title: Loc.getMessage('IM_LIB_MENU_OPEN'),
+			onClick: () => {
+				void Messenger.openChat(this.context.dialogId);
 			},
 		};
 	}
 
-	getUnreadMessageItem(): ?MenuItem
+	getUnreadMessageItem(): ?MenuItemOptions
 	{
-		const dialog = this.store.getters['chats/get'](this.context.dialogId, true);
-		const showReadOption = this.context.unread || dialog.counter > 0;
+		const { recentItem, dialogId } = this.context;
+		if (!recentItem)
+		{
+			return null;
+		}
+
+		const { chatId }: ImModelChat = this.store.getters['chats/get'](dialogId, true);
+		const chatCounter = this.store.getters['counters/getCounterByChatId'](chatId);
+		const childrenCounter = this.store.getters['counters/getChildrenTotalCounter'](chatId);
+		const isChatMarkedUnread = this.store.getters['counters/getUnreadStatus'](chatId);
+		const showReadOption = isChatMarkedUnread || chatCounter > 0 || childrenCounter > 0;
 
 		return {
-			text: showReadOption ? Loc.getMessage('IM_LIB_MENU_READ') : Loc.getMessage('IM_LIB_MENU_UNREAD'),
-			onclick: () => {
+			title: showReadOption ? Loc.getMessage('IM_LIB_MENU_READ') : Loc.getMessage('IM_LIB_MENU_UNREAD'),
+			onClick: () => {
 				if (showReadOption)
 				{
-					this.chatService.readDialog(this.context.dialogId);
+					this.chatService.readDialog(dialogId);
+					Analytics.getInstance().recentContextMenu.onRead(dialogId);
 				}
 				else
 				{
-					this.chatService.unreadDialog(this.context.dialogId);
+					this.chatService.unreadDialog(dialogId);
+					Analytics.getInstance().recentContextMenu.onUnread(dialogId);
 				}
-				this.menuInstance.close();
 			},
 		};
 	}
 
-	getPinMessageItem(): ?MenuItem
+	getPinMessageItem(): ?MenuItemOptions
 	{
-		const isPinned = this.context.pinned;
+		const { dialogId } = this.context;
+		if (this.isGuestRole())
+		{
+			return null;
+		}
+
+		const recentItem = this.#getRecentItem();
+		const isPinned = recentItem ? recentItem.pinned : false;
 
 		return {
-			text: isPinned ? Loc.getMessage('IM_LIB_MENU_UNPIN_MSGVER_1') : Loc.getMessage('IM_LIB_MENU_PIN_MSGVER_1'),
-			onclick: () => {
+			title: isPinned
+				? Loc.getMessage('IM_LIB_MENU_UNPIN_MSGVER_1')
+				: Loc.getMessage('IM_LIB_MENU_PIN_MSGVER_1'),
+			onClick: () => {
 				if (isPinned)
 				{
-					this.chatService.unpinChat(this.context.dialogId);
+					this.chatService.unpinChat(dialogId);
+					Analytics.getInstance().recentContextMenu.onUnpin(dialogId);
 				}
 				else
 				{
-					this.chatService.pinChat(this.context.dialogId);
+					this.chatService.pinChat(dialogId);
+					Analytics.getInstance().recentContextMenu.onPin(dialogId);
 				}
-				this.menuInstance.close();
 			},
 		};
 	}
 
-	getMuteItem(): ?MenuItem
+	getMuteItem(): ?MenuItemOptions
 	{
-		const canMute = this.permissionManager.canPerformActionByRole(ActionByRole.mute, this.context.dialogId);
+		const { dialogId } = this.context;
+		const canMute = this.permissionManager.canPerformActionByRole(ActionByRole.mute, dialogId);
 		if (!canMute)
 		{
 			return null;
 		}
 
-		const dialog = this.store.getters['chats/get'](this.context.dialogId, true);
-		const isMuted = dialog.muteList.includes(Core.getUserId());
+		const { isMuted }: ImModelChat = this.store.getters['chats/get'](dialogId, true);
 
 		return {
-			text: isMuted ? Loc.getMessage('IM_LIB_MENU_UNMUTE_2') : Loc.getMessage('IM_LIB_MENU_MUTE_2'),
-			onclick: () => {
+			title: isMuted ? Loc.getMessage('IM_LIB_MENU_UNMUTE_2') : Loc.getMessage('IM_LIB_MENU_MUTE_2'),
+			onClick: () => {
 				if (isMuted)
 				{
-					this.chatService.unmuteChat(this.context.dialogId);
+					this.chatService.unmuteChat(dialogId);
+					Analytics.getInstance().recentContextMenu.onUnmute(dialogId);
 				}
 				else
 				{
-					this.chatService.muteChat(this.context.dialogId);
+					this.chatService.muteChat(dialogId);
+					Analytics.getInstance().recentContextMenu.onMute(dialogId);
 				}
-				this.menuInstance.close();
 			},
 		};
 	}
 
-	getCallItem(): ?MenuItem
-	{
-		const chatCanBeCalled = this.callManager.chatCanBeCalled(this.context.dialogId);
-		const chatIsAllowedToCall = this.permissionManager.canPerformActionByRole(ActionByRole.call, this.context.dialogId);
-		if (!chatCanBeCalled || !chatIsAllowedToCall)
-		{
-			return null;
-		}
-
-		return {
-			text: Loc.getMessage('IM_LIB_MENU_CALL_2'),
-			onclick: () => {
-				CallAnalytics.getInstance().onRecentStartCallClick({
-					isGroupChat: this.context.dialogId.includes('chat'),
-					chatId: this.context.chatId,
-				});
-
-				this.callManager.startCall(this.context.dialogId);
-				this.menuInstance.close();
-			},
-		};
-	}
-
-	getOpenProfileItem(): ?MenuItem
+	getOpenProfileItem(): ?MenuItemOptions
 	{
 		if (!this.isUser() || this.isBot())
 		{
@@ -192,32 +232,31 @@ export class RecentMenu extends BaseMenu
 		const profileUri = Utils.user.getProfileLink(this.context.dialogId);
 
 		return {
-			text: Loc.getMessage('IM_LIB_MENU_OPEN_PROFILE_V2'),
-			href: profileUri,
-			onclick: () => {
-				this.menuInstance.close();
+			title: Loc.getMessage('IM_LIB_MENU_OPEN_PROFILE_V2'),
+			onClick: () => {
+				BX.SidePanel.Instance.open(profileUri);
+				Analytics.getInstance().recentContextMenu.onOpenProfile(this.context.dialogId);
 			},
 		};
 	}
 
-	getHideItem(): ?MenuItem
+	getHideItem(): ?MenuItemOptions
 	{
-		if (this.context.invitation?.isActive || this.context.options?.default_user_record)
+		if (!this.#canHideChat())
 		{
 			return null;
 		}
 
 		return {
-			text: Loc.getMessage('IM_LIB_MENU_HIDE_MSGVER_1'),
-			onclick: () => {
-				RecentService.getInstance().hideChat(this.context.dialogId);
-
-				this.menuInstance.close();
+			title: Loc.getMessage('IM_LIB_MENU_HIDE_MSGVER_1'),
+			onClick: () => {
+				LegacyRecentService.getInstance().hideChat(this.context.dialogId);
+				Analytics.getInstance().recentContextMenu.onHide(this.context.dialogId);
 			},
 		};
 	}
 
-	getLeaveItem(): ?MenuItem
+	getLeaveItem(): ?MenuItemOptions
 	{
 		if (this.isCollabChat())
 		{
@@ -227,9 +266,9 @@ export class RecentMenu extends BaseMenu
 		return this.#leaveChat();
 	}
 
-	getChatsWithUserItem(): ?MenuItem
+	getChatsWithUserItem(): ?MenuItemOptions
 	{
-		if (!this.isUser() || this.isBot())
+		if (!this.isUser() || this.isBot() || this.isChatWithCurrentUser())
 		{
 			return null;
 		}
@@ -237,30 +276,33 @@ export class RecentMenu extends BaseMenu
 		const isAnyChatOpened = this.store.getters['application/getLayout'].entityId.length > 0;
 
 		return {
-			text: Loc.getMessage('IM_LIB_MENU_FIND_CHATS_WITH_USER_MSGVER_1'),
-			onclick: async () => {
+			title: Loc.getMessage('IM_LIB_MENU_FIND_SHARED_CHATS'),
+			onClick: async () => {
 				if (!isAnyChatOpened)
 				{
 					await Messenger.openChat(this.context.dialogId);
 				}
 
-				EventEmitter.emit(EventType.sidebar.open, {
+				this.emitter.emit(EventType.sidebar.open, {
 					panel: SidebarDetailBlock.chatsWithUser,
 					standalone: true,
 					dialogId: this.context.dialogId,
 				});
-				this.menuInstance.close();
+				Analytics.getInstance().recentContextMenu.onFindChatsWithUser(this.context.dialogId);
 			},
 		};
 	}
 
 	// region invitation
-	getInviteItems(): Array
+	getInviteItems(): MenuItemOptions[]
 	{
-		const items = [
-			this.getSendMessageItem(),
-			this.getOpenProfileItem(),
-		];
+		const { recentItem } = this.context;
+		if (!recentItem)
+		{
+			return [];
+		}
+
+		const items = [];
 
 		let canInvite; // TODO change to APPLICATION variable
 		if (Type.isUndefined(BX.MessengerProxy))
@@ -273,12 +315,11 @@ export class RecentMenu extends BaseMenu
 			canInvite = BX.MessengerProxy.canInvite();
 		}
 
-		const canManageInvite = canInvite && Core.getUserId() === this.context.invitation.originator;
+		const canManageInvite = canInvite && Core.getUserId() === recentItem.invitation.originator;
 		if (canManageInvite)
 		{
 			items.push(
-				this.getDelimiter(),
-				this.context.invitation.canResend ? this.getResendInviteItem() : null,
+				this.getResendInviteItem(),
 				this.getCancelInviteItem(),
 			);
 		}
@@ -286,22 +327,27 @@ export class RecentMenu extends BaseMenu
 		return items;
 	}
 
-	getResendInviteItem(): MenuItem
+	getResendInviteItem(): ?MenuItemOptions
 	{
+		const { recentItem, dialogId } = this.context;
+		if (!recentItem || !this.#canResendInvitation())
+		{
+			return null;
+		}
+
 		return {
-			text: Loc.getMessage('IM_LIB_INVITE_RESEND'),
-			onclick: () => {
-				InviteManager.resendInvite(this.context.dialogId);
-				this.menuInstance.close();
+			title: Loc.getMessage('IM_LIB_INVITE_RESEND'),
+			onClick: () => {
+				InviteManager.resendInvite(dialogId);
 			},
 		};
 	}
 
-	getCancelInviteItem(): MenuItem
+	getCancelInviteItem(): MenuItemOptions
 	{
 		return {
-			text: Loc.getMessage('IM_LIB_INVITE_CANCEL'),
-			onclick: () => {
+			title: Loc.getMessage('IM_LIB_INVITE_CANCEL'),
+			onClick: () => {
 				MessageBox.show({
 					message: Loc.getMessage('IM_LIB_INVITE_CANCEL_CONFIRM'),
 					modal: true,
@@ -314,16 +360,10 @@ export class RecentMenu extends BaseMenu
 						messageBox.close();
 					},
 				});
-				this.menuInstance.close();
 			},
 		};
 	}
 	// endregion
-
-	getDelimiter(): Object
-	{
-		return { delimiter: true };
-	}
 
 	getChat(): ImModelChat
 	{
@@ -352,13 +392,6 @@ export class RecentMenu extends BaseMenu
 		return ChannelManager.isChannel(this.context.dialogId);
 	}
 
-	isCommentsChat(): boolean
-	{
-		const { type }: ImModelChat = this.store.getters['chats/get'](this.context.dialogId, true);
-
-		return type === ChatType.comment;
-	}
-
 	isCollabChat(): boolean
 	{
 		const { type }: ImModelChat = this.store.getters['chats/get'](this.context.dialogId, true);
@@ -366,7 +399,26 @@ export class RecentMenu extends BaseMenu
 		return type === ChatType.collab;
 	}
 
-	#leaveChat(): ?MenuItem
+	isOpenChat(): boolean
+	{
+		const { type }: ImModelChat = this.store.getters['chats/get'](this.context.dialogId, true);
+
+		return type === ChatType.open;
+	}
+
+	isGuestRole(): boolean
+	{
+		const { role }: ImModelChat = this.store.getters['chats/get'](this.context.dialogId, true);
+
+		return role === UserRole.guest;
+	}
+
+	isChatWithCurrentUser(): boolean
+	{
+		return this.getCurrentUserId() === Number.parseInt(this.context.dialogId, 10);
+	}
+
+	#leaveChat(): ?MenuItemOptions
 	{
 		const canLeaveChat = this.permissionManager.canPerformActionByRole(ActionByRole.leave, this.context.dialogId);
 		if (!canLeaveChat)
@@ -374,25 +426,25 @@ export class RecentMenu extends BaseMenu
 			return null;
 		}
 
-		const text = this.isChannel()
+		const title = this.isChannel()
 			? Loc.getMessage('IM_LIB_MENU_LEAVE_CHANNEL')
 			: Loc.getMessage('IM_LIB_MENU_LEAVE_MSGVER_1')
 		;
 
 		return {
-			text,
-			onclick: async () => {
-				this.menuInstance.close();
+			title,
+			onClick: async () => {
 				const userChoice = await showLeaveChatConfirm(this.context.dialogId);
 				if (userChoice === true)
 				{
 					this.chatService.leaveChat(this.context.dialogId);
+					Analytics.getInstance().recentContextMenu.onLeave(this.context.dialogId);
 				}
 			},
 		};
 	}
 
-	#leaveCollab(): ?MenuItem
+	#leaveCollab(): ?MenuItemOptions
 	{
 		const canLeaveChat = this.permissionManager.canPerformActionByRole(ActionByRole.leave, this.context.dialogId);
 		const canLeaveCollab = this.permissionManager.canPerformActionByUserType(ActionByUserType.leaveCollab);
@@ -402,9 +454,8 @@ export class RecentMenu extends BaseMenu
 		}
 
 		return {
-			text: Loc.getMessage('IM_LIB_MENU_LEAVE_MSGVER_1'),
-			onclick: async () => {
-				this.menuInstance.close();
+			title: Loc.getMessage('IM_LIB_MENU_LEAVE_MSGVER_1'),
+			onClick: async () => {
 				const userChoice = await showLeaveChatConfirm(this.context.dialogId);
 				if (!userChoice)
 				{
@@ -414,5 +465,48 @@ export class RecentMenu extends BaseMenu
 				this.chatService.leaveCollab(this.context.dialogId);
 			},
 		};
+	}
+
+	#canHideChat(): ?boolean
+	{
+		const { dialogId } = this.context;
+		const recentItem = this.#getRecentItem();
+		if (!recentItem)
+		{
+			return null;
+		}
+
+		const isInvitation = this.#isInvitationActive();
+		const isFakeUser = recentItem.isFakeElement;
+		const isAiAssistantBot = this.store.getters['users/bots/isAiAssistant'](dialogId);
+
+		return !isInvitation && !isFakeUser && !isAiAssistantBot;
+	}
+
+	#getRecentItem(): ?ImModelRecentItem
+	{
+		return this.context.recentItem || this.store.getters['recent/get'](this.context.dialogId);
+	}
+
+	#isInvitationActive(): boolean
+	{
+		const { recentItem } = this.context;
+		if (!recentItem || !recentItem.invitation)
+		{
+			return false;
+		}
+
+		return recentItem.invitation.isActive;
+	}
+
+	#canResendInvitation(): boolean
+	{
+		const { recentItem } = this.context;
+		if (!recentItem || !recentItem.invitation)
+		{
+			return false;
+		}
+
+		return recentItem.invitation.canResend;
 	}
 }

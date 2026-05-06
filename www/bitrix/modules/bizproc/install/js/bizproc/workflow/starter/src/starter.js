@@ -1,4 +1,4 @@
-import { Type, Loc, Text, Uri } from 'main.core';
+import { Type, Loc, Text, Uri, Runtime } from 'main.core';
 import { EventEmitter } from 'main.core.events';
 import { Dialog } from 'ui.entity-selector';
 import 'ui.notification';
@@ -22,6 +22,7 @@ export class Starter extends EventEmitter
 	#signedDocumentId: ?SignedDocumentId = null;
 	#complexDocumentType: ?ComplexDocumentType = null;
 	#complexDocumentId: ?ComplexDocumentId = null;
+	#triggerType: ?string = null;
 
 	#templatesSelector: ?Dialog = null;
 	#callActionHelper: CallActionHelper;
@@ -33,6 +34,8 @@ export class Starter extends EventEmitter
 		this.setEventNamespace('BX.Bizproc.Workflow.Starter');
 
 		this.#setDocumentType(data);
+		this.#triggerType = data.triggerType || null;
+
 		if (Type.isNil(this.#complexDocumentType) && Type.isNil(this.#signedDocumentType))
 		{
 			throw new TypeError('document type is empty');
@@ -51,6 +54,7 @@ export class Starter extends EventEmitter
 			signedDocumentType: this.#signedDocumentType,
 			complexDocumentId: this.#complexDocumentId,
 			signedDocumentId: this.#signedDocumentId,
+			triggerType: data.triggerType || '',
 			customAjaxUrl: this.#hasCustomAjaxUrl ? data.ajaxUrl : null,
 		});
 
@@ -110,6 +114,7 @@ export class Starter extends EventEmitter
 				signedDocumentType: config.signedDocumentType,
 				signedDocumentId: config.signedDocumentId,
 				templates: config.templates || null,
+				triggerType: config.triggerType || null,
 				ajaxUrl: config.ajaxUrl || '',
 			});
 		}
@@ -174,25 +179,23 @@ export class Starter extends EventEmitter
 
 	#showTemplatesSlider(callback: ?Function = null): void
 	{
-		const sliderOptions = {
-			width: 970,
-			cacheable: false,
-			events: {
-				onCloseComplete: Type.isFunction(callback) ? callback : () => {},
-			},
-		};
+		Runtime
+			.loadExtension('bizproc.router')
+			.then(({ Router }) => {
+				const options = {
+					requestMethod: 'get',
+					requestParams: {
+						signedDocumentType: this.#signedDocumentType,
+						signedDocumentId: this.#signedDocumentId,
+					},
+					events: {
+						onCloseComplete: Type.isFunction(callback) ? callback : () => {},
+					},
+				};
 
-		const componentParams = {
-			signedDocumentType: this.#signedDocumentType,
-			signedDocumentId: this.#signedDocumentId,
-		};
-
-		const url = BX.Uri.addParam(
-			'/bitrix/components/bitrix/bizproc.workflow.start.list/',
-			componentParams,
-		);
-
-		BX.SidePanel.Instance.open(url, sliderOptions);
+				Router.openWorkflowStartList(options);
+			})
+			.catch((e) => console.error(e));
 	}
 
 	// compatibility
@@ -430,6 +433,11 @@ export class Starter extends EventEmitter
 		if (this.#signedDocumentId)
 		{
 			url = Uri.addParam(url, { signedDocumentId: this.#signedDocumentId });
+		}
+
+		if (Type.isStringFilled(this.#triggerType))
+		{
+			url = Uri.addParam(url, { triggerType: this.#triggerType });
 		}
 
 		return url;

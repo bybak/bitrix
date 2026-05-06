@@ -368,7 +368,8 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	  _t17,
 	  _t18,
 	  _t19,
-	  _t20;
+	  _t20,
+	  _t21;
 	var _limits = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("limits");
 	var _getFormatString = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getFormatString");
 	var _getMultiplierByFormat = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getMultiplierByFormat");
@@ -444,6 +445,7 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	var _biPopup = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("biPopup");
 	var _dateFormat$1 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("dateFormat");
 	var _dateFormatShort$1 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("dateFormatShort");
+	var _efficiencyPopup = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("efficiencyPopup");
 	var _loadTimeline = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("loadTimeline");
 	var _setDataFromResponse = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("setDataFromResponse");
 	var _renderItemTitle = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("renderItemTitle");
@@ -467,8 +469,10 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	var _renderEfficiencyPopupContent = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("renderEfficiencyPopupContent");
 	var _createBiButton = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("createBiButton");
 	var _createBiPopup = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("createBiPopup");
+	var _getBiMenuTopOffset = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getBiMenuTopOffset");
 	var _showBiMenu = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("showBiMenu");
 	var _renderBiPopupContent = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("renderBiPopupContent");
+	var _getBiPopupButton = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getBiPopupButton");
 	var _renderLoadingStub = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("renderLoadingStub");
 	var _hasErrors = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("hasErrors");
 	class Timeline {
@@ -481,11 +485,17 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	    Object.defineProperty(this, _renderLoadingStub, {
 	      value: _renderLoadingStub2
 	    });
+	    Object.defineProperty(this, _getBiPopupButton, {
+	      value: _getBiPopupButton2
+	    });
 	    Object.defineProperty(this, _renderBiPopupContent, {
 	      value: _renderBiPopupContent2
 	    });
 	    Object.defineProperty(this, _showBiMenu, {
 	      value: _showBiMenu2
+	    });
+	    Object.defineProperty(this, _getBiMenuTopOffset, {
+	      value: _getBiMenuTopOffset2
 	    });
 	    Object.defineProperty(this, _createBiPopup, {
 	      value: _createBiPopup2
@@ -588,6 +598,10 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	      writable: true,
 	      value: void 0
 	    });
+	    Object.defineProperty(this, _efficiencyPopup, {
+	      writable: true,
+	      value: void 0
+	    });
 	    babelHelpers.classPrivateFieldLooseBase(this, _container)[_container] = babelHelpers.classPrivateFieldLooseBase(this, _renderContainer)[_renderContainer]();
 	    setTimeout(() => {
 	      babelHelpers.classPrivateFieldLooseBase(this, _textCrop)[_textCrop]();
@@ -609,7 +623,8 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	        width: 950,
 	        allowChangeHistory: false,
 	        cacheable: false,
-	        loader: '/bitrix/js/bizproc/workflow/timeline/img/skeleton.svg'
+	        loader: '/bitrix/js/bizproc/workflow/timeline/img/skeleton.svg',
+	        printable: true
 	      });
 	    }).catch(response => console.error(response.errors));
 	  }
@@ -680,7 +695,8 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	          averageDuration: getInteger(response.data.stats.averageDuration, null),
 	          efficiency: getString(response.data.stats.efficiency)
 	        },
-	        biMenu: getArray(response.data.biMenu, null)
+	        biMenu: getArray(response.data.biMenu, null),
+	        isBiBuilderDisabled: getBool(response.data.isBiBuilderDisabled, false)
 	      };
 	      for (const user of getArray(response.data.users)) {
 	        babelHelpers.classPrivateFieldLooseBase(this, _data$1)[_data$1].users.set(main_core.Text.toInteger(user.id), user);
@@ -926,7 +942,7 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	  }
 	}
 	function _createEfficiencyPopup2() {
-	  return new main_popup.Popup({
+	  babelHelpers.classPrivateFieldLooseBase(this, _efficiencyPopup)[_efficiencyPopup] = new main_popup.Popup({
 	    width: 403,
 	    minHeight: 345,
 	    closeIcon: true,
@@ -956,19 +972,15 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	      }
 	    }
 	  });
+	  return babelHelpers.classPrivateFieldLooseBase(this, _efficiencyPopup)[_efficiencyPopup];
 	}
 	function _getEfficiencyData2() {
 	  let logoClass = '--first';
 	  let notice = main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_NO_STATS');
 	  switch (babelHelpers.classPrivateFieldLooseBase(this, _data$1)[_data$1].stats.efficiency) {
 	    case 'fast':
-	      if (DurationFormatter.formatTimeInterval(babelHelpers.classPrivateFieldLooseBase(this, _data$1)[_data$1].stats.averageDuration) === DurationFormatter.formatTimeInterval(babelHelpers.classPrivateFieldLooseBase(this, _data$1)[_data$1].executionTime)) {
-	        logoClass = '--slow';
-	        notice = main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_PERFORMED_SLOWLY');
-	      } else {
-	        logoClass = '--fast';
-	        notice = main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_PERFORMED_QUICKLY');
-	      }
+	      logoClass = '--fast';
+	      notice = main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_PERFORMED_QUICKLY');
 	      break;
 	    case 'slow':
 	      logoClass = '--slow';
@@ -1076,10 +1088,10 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	  }
 	  if (menu.length === 1) {
 	    const linkBtn = main_core.Tag.render(_t15 || (_t15 = _$2`
-				<a class="ui-btn ui-btn-light-border ui-btn-themes" href="${0}" target="_blank">
+				<a class="ui-btn ui-btn-light-border ui-btn-themes" onclick="${0}" target="_blank">
 					${0}
 				</a>
-			`), main_core.Text.encode(menu[0].URL), main_core.Text.encode(main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_BUTTON')));
+			`), main_core.Text.encode(menu[0].ON_CLICK), main_core.Text.encode(main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_BUTTON')));
 	    main_core.Dom.prepend(linkBtn, toolbarNode);
 	    return;
 	  }
@@ -1099,7 +1111,7 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	    content: babelHelpers.classPrivateFieldLooseBase(this, _renderBiPopupContent)[_renderBiPopupContent](menu),
 	    bindElement: {
 	      left: 555,
-	      top: 502
+	      top: babelHelpers.classPrivateFieldLooseBase(this, _getBiMenuTopOffset)[_getBiMenuTopOffset]()
 	    },
 	    padding: 17,
 	    borderRadius: '18px',
@@ -1107,29 +1119,56 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 	  });
 	  return babelHelpers.classPrivateFieldLooseBase(this, _biPopup)[_biPopup];
 	}
+	function _getBiMenuTopOffset2() {
+	  var _babelHelpers$classPr, _babelHelpers$classPr2, _babelHelpers$classPr3, _babelHelpers$classPr4;
+	  const containerHeight = (_babelHelpers$classPr = babelHelpers.classPrivateFieldLooseBase(this, _efficiencyPopup)[_efficiencyPopup]) == null ? void 0 : (_babelHelpers$classPr2 = _babelHelpers$classPr.getPopupContainer()) == null ? void 0 : _babelHelpers$classPr2.offsetHeight;
+	  const topOffset = (_babelHelpers$classPr3 = babelHelpers.classPrivateFieldLooseBase(this, _efficiencyPopup)[_efficiencyPopup]) == null ? void 0 : (_babelHelpers$classPr4 = _babelHelpers$classPr3.bindElementPos) == null ? void 0 : _babelHelpers$classPr4.top;
+	  if (containerHeight && topOffset) {
+	    return containerHeight + topOffset + 20;
+	  }
+	  return 522;
+	}
 	function _showBiMenu2(menu, event) {
 	  new main_popup.Menu({
 	    bindElement: event.target,
 	    items: menu.map(item => {
 	      return {
 	        text: item.TEXT,
-	        href: item.URL,
-	        target: '_blank'
+	        onclick: item.ON_CLICK
 	      };
 	    })
 	  }).show();
 	}
 	function _renderBiPopupContent2(menu) {
+	  const btn = babelHelpers.classPrivateFieldLooseBase(this, _getBiPopupButton)[_getBiPopupButton](menu);
+	  return main_core.Tag.render(_t17 || (_t17 = _$2`
+			<div class="bizproc-timeline-popup">
+				<div class="bizproc-timeline-popup-title">${0}</div>
+				<p class="bizproc-timeline-popup-info">${0}</p>
+				${0}
+			</div>
+		`), main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TITLE'), main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TIP'), btn);
+	}
+	function _getBiPopupButton2(menu) {
 	  let btn = null;
-	  if (menu.length === 1) {
-	    btn = main_core.Tag.render(_t17 || (_t17 = _$2`
-				<a class="ui-btn ui-btn-light-border ui-btn-round ui-btn-xs" href="${0}" target="_blank">
+	  if (babelHelpers.classPrivateFieldLooseBase(this, _data$1)[_data$1].isBiBuilderDisabled) {
+	    const clickHandler = () => top.BX.UI.InfoHelper.show('limit_crm_BI_constructor');
+	    btn = main_core.Tag.render(_t18 || (_t18 = _$2`
+				<a class="ui-btn ui-btn-light-border ui-btn-round ui-btn-xs ui-btn-icon-lock ui-icon-set__scope --with-left-icon" onclick="${0}">
 					<span class="ui-btn-text">${0}</span>
 				</a>
-			`), main_core.Text.encode(menu[0].URL), main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_LINK'));
+			`), clickHandler, main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_LINK'));
+	    return btn;
+	  }
+	  if (menu.length === 1) {
+	    btn = main_core.Tag.render(_t19 || (_t19 = _$2`
+				<a class="ui-btn ui-btn-light-border ui-btn-round ui-btn-xs" onclick="${0}" target="_blank">
+					<span class="ui-btn-text">${0}</span>
+				</a>
+			`), main_core.Text.encode(menu[0].ON_CLICK), main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_LINK'));
 	  } else {
 	    const clickHandler = babelHelpers.classPrivateFieldLooseBase(this, _showBiMenu)[_showBiMenu].bind(this, menu);
-	    btn = main_core.Tag.render(_t18 || (_t18 = _$2`
+	    btn = main_core.Tag.render(_t20 || (_t20 = _$2`
 				<a 
 					class="ui-btn ui-btn-light-border ui-btn-round ui-btn-xs ui-btn-dropdown"
 					onclick="${0}"
@@ -1138,16 +1177,10 @@ this.BX.Bizproc = this.BX.Bizproc || {};
 				</a>
 			`), clickHandler, main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_LINK'));
 	  }
-	  return main_core.Tag.render(_t19 || (_t19 = _$2`
-			<div class="bizproc-timeline-popup">
-				<div class="bizproc-timeline-popup-title">${0}</div>
-				<p class="bizproc-timeline-popup-info">${0}</p>
-				${0}
-			</div>
-		`), main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TITLE'), main_core.Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TIP'), btn);
+	  return btn;
 	}
 	function _renderLoadingStub2() {
-	  return main_core.Tag.render(_t20 || (_t20 = _$2`
+	  return main_core.Tag.render(_t21 || (_t21 = _$2`
 			<img src="/bitrix/js/bizproc/workflow/timeline/img/skeleton.svg"
 				 style="width:100%; margin: 0; padding: 0;"/>
 		`));

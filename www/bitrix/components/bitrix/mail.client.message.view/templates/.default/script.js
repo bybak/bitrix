@@ -32,6 +32,8 @@
 
 	BXMailView.prototype.init = function ()
 	{
+		this.initIframe();
+
 		if (this.options.isAjaxBody && this.options.messageBodyElementId)
 		{
 			this.ajaxLoadMessageBody();
@@ -46,6 +48,44 @@
 		{
 			this.setRefreshFileButtonAction();
 		}
+
+		this.initAnalytics();
+	};
+
+	BXMailView.prototype.initIframe = function()
+	{
+		const options = this.options;
+		const messageBodyElement = document.getElementById(options.messageBodyElementId);
+		if (!messageBodyElement)
+		{
+			return;
+		}
+
+		const messageId = parseInt(messageBodyElement.dataset.messageId, 10);
+		const useAjax = messageBodyElement.dataset.useAjax === '1';
+
+		if (!useAjax)
+		{
+			const messageHtml = messageBodyElement.dataset.messageHtml;
+			if (messageHtml)
+			{
+				this.renderMessageBody(messageBodyElement, messageHtml, messageId);
+			}
+		}
+	};
+
+	BXMailView.prototype.renderMessageBody = function(container, html, messageId)
+	{
+		if (!this.messageBody)
+		{
+			this.messageBody = new BX.Mail.MessageBody({
+				container,
+				messageId,
+				prefix: 'mail-msg',
+			});
+		}
+
+		this.messageBody.renderTo(html);
 	};
 
 	BXMailView.prototype.ajaxLoadMessageBody = function ()
@@ -122,12 +162,25 @@
 		{
 			return;
 		}
-		messageBodyElement.innerHTML = '<div id="mail-message-wrapper">' + html + '</div>';
+
+		const iframeUrl = messageBodyElement.dataset.iframeUrl;
+		const messageId = parseInt(messageBodyElement.dataset.messageId, 10);
+
+		if (iframeUrl)
+		{
+			this.createIframe(messageBodyElement, iframeUrl, messageId);
+		}
+		else
+		{
+			this.renderMessageBody(messageBodyElement, html, messageId);
+		}
+
 		if (BX.type.isObject(options.bxMailMessage))
 		{
 			BX.onCustomEvent(options.bxMailMessage, 'MailMessage:reInitMessageBody');
 		}
-	}
+	};
+
 
 	BXMailView.prototype.ajaxLoadAttachments = function ()
 	{
@@ -294,7 +347,7 @@
 		const count = openSliders.length;
 		const prevSliderWindow = openSliders[count - 2].getFrameWindow();
 		const enableNextPage = slider.getData().get('enableNextPage');
-		if (enableNextPage && !this.pageSwapper.hasPagesBeforeEnd(3))
+		if (prevSliderWindow && enableNextPage && !this.pageSwapper.hasPagesBeforeEnd(3))
 		{
 			prevSliderWindow.document.querySelector('.main-grid-more-btn').click();
 		}
@@ -353,6 +406,60 @@
 				toggleButton();
 			});
 		});
+	};
+
+	BXMailView.prototype.initAnalytics = function()
+	{
+		const options = this.options;
+		const form = document.getElementById(options.formId);
+		let currentCElement = 'fast_reply';
+
+		if (!form)
+		{
+			return;
+		}
+
+		const controlBlock = document.getElementById(options.messageControlElementId);
+
+		if (controlBlock)
+		{
+			const setCElement = function(type)
+			{
+				currentCElement = type;
+			};
+
+			const replyBtn = controlBlock.querySelector('.js-msg-view-control-reply');
+			const replyAllBtn = controlBlock.querySelector('.js-msg-view-control-replyall');
+
+			if (replyBtn)
+			{
+				BX.bind(replyBtn, 'click', setCElement.bind(null, 'reply'));
+			}
+
+			if (replyAllBtn)
+			{
+				BX.bind(replyAllBtn, 'click', setCElement.bind(null, 'reply_all'));
+			}
+		}
+
+		const sendButton = form.querySelector('.main-mail-form-submit-button');
+
+		if (sendButton)
+		{
+			const sendAnalytics = function()
+			{
+				BX.UI.Analytics.sendData({
+					tool: 'mail',
+					category: 'mail_operations',
+					event: 'mail_send',
+					type: 'mail',
+					c_section: options.analyticsSource || 'mail',
+					c_element: currentCElement,
+				});
+			};
+
+			BX.bind(sendButton, 'click', sendAnalytics.bind());
+		}
 	};
 
 	function safeHide(elementId)

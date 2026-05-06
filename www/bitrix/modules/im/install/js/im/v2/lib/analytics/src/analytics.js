@@ -1,3 +1,4 @@
+import { Text } from 'main.core';
 import { sendData } from 'ui.analytics';
 
 import { ChatType, Layout, UserRole } from 'im.v2.const';
@@ -9,8 +10,9 @@ import { getCollabId } from './helpers/get-collab-id';
 import { getUserType } from './helpers/get-user-type';
 import { getCategoryByChatType } from './helpers/get-category-by-chat-type';
 import { getChatType } from './helpers/get-chat-type';
+import { isAiAssistant } from './helpers/is-ai-assistant';
+import { isSelfChat } from './helpers/is-self-chat';
 
-import { MessageFiles } from './classes/message-files';
 import { CollabEntities } from './classes/collab-entities';
 import { ChatEntities } from './classes/chat-entities';
 import { ChatDelete } from './classes/chat-delete';
@@ -23,6 +25,23 @@ import { Supervisor } from './classes/supervisor';
 import { CheckIn } from './classes/check-in';
 import { Copilot } from './classes/copilot';
 import { AttachMenu } from './classes/attach-menu';
+import { Vote } from './classes/vote-create';
+import { MessagePins } from './classes/message-pins';
+import { MessageForward } from './classes/message-forward';
+import { MessageContextMenu } from './classes/message-context-menu';
+import { SliderInvite } from './classes/slider-invite';
+import { DesktopMode } from './classes/desktop-mode';
+import { ChatInviteLink } from './classes/chat-invite-link';
+import { AiAssistant } from './classes/ai-assistant';
+import { Player } from './classes/player';
+import { Notification } from './classes/notification';
+import { Stickers } from './classes/stickers';
+import { MessageSearch } from './classes/message-search';
+import { RecentContextMenu } from './classes/recent-context-menu';
+import { FormatToolbar } from './classes/format-toolbar';
+import { RecentSearch } from './classes/recent-search';
+import { Mention } from './classes/mention';
+import { TaskComments } from './classes/task-comments';
 
 import type { ImModelChat } from 'im.v2.model';
 
@@ -35,7 +54,8 @@ export { getUserType } from './helpers/get-user-type';
 export class Analytics
 {
 	#excludedChats: Set<DialogId> = new Set();
-	#currentTab: string = Layout.chat.name;
+	#chatsWithTyping: Set<DialogId> = new Set();
+	#currentTab: string = Layout.chat;
 
 	chatCreate: ChatCreate = new ChatCreate();
 	chatEdit: ChatEdit = new ChatEdit();
@@ -49,7 +69,23 @@ export class Analytics
 	checkIn: CheckIn = new CheckIn();
 	copilot: Copilot = new Copilot();
 	attachMenu: AttachMenu = new AttachMenu();
-	messageFiles: MessageFiles = new MessageFiles();
+	vote: Vote = new Vote();
+	messagePins: MessagePins = new MessagePins();
+	messageForward: MessageForward = new MessageForward();
+	messageContextMenu: MessageContextMenu = new MessageContextMenu();
+	sliderInvite: SliderInvite = new SliderInvite();
+	desktopMode: DesktopMode = new DesktopMode();
+	chatInviteLink: ChatInviteLink = new ChatInviteLink();
+	aiAssistant: AiAssistant = new AiAssistant();
+	player: Player = new Player();
+	notification: Notification = new Notification();
+	stickers: Stickers = new Stickers();
+	messageSearch: MessageSearch = new MessageSearch();
+	recentContextMenu: RecentContextMenu = new RecentContextMenu();
+	formatToolbar: FormatToolbar = new FormatToolbar();
+	recentSearch: RecentSearch = new RecentSearch();
+	mention: Mention = new Mention();
+	taskComments: TaskComments = new TaskComments();
 
 	static #instance: Analytics;
 
@@ -68,28 +104,19 @@ export class Analytics
 		this.#excludedChats.add(dialogId);
 	}
 
-	onOpenMessenger()
+	onOpenTab(tabName: string): void
 	{
-		sendData({
-			event: AnalyticsEvent.openMessenger,
-			tool: AnalyticsTool.im,
-			category: AnalyticsCategory.messenger,
-		});
-	}
-
-	onOpenTab(tabName: string)
-	{
-		const existingTabs = [
-			Layout.chat.name,
-			Layout.copilot.name,
-			Layout.collab.name,
-			Layout.channel.name,
-			Layout.notification.name,
-			Layout.settings.name,
-			Layout.openlines.name,
+		const trackedTabs = [
+			Layout.copilot,
+			Layout.collab,
+			Layout.channel,
+			Layout.notification,
+			Layout.settings,
+			Layout.openlines,
+			Layout.taskComments,
 		];
 
-		if (!existingTabs.includes(tabName))
+		if (!trackedTabs.includes(tabName))
 		{
 			return;
 		}
@@ -110,7 +137,7 @@ export class Analytics
 		});
 	}
 
-	onOpenChat(dialog: ImModelChat)
+	onOpenChat(dialog: ImModelChat): void
 	{
 		if (this.#excludedChats.has(dialog.dialogId))
 		{
@@ -119,11 +146,17 @@ export class Analytics
 			return;
 		}
 
+		this.#chatsWithTyping.delete(dialog.dialogId);
 		const chatType = getChatType(dialog);
 
 		if (chatType === ChatType.copilot)
 		{
 			this.copilot.onOpenChat(dialog.dialogId);
+		}
+
+		if (isAiAssistant(dialog.dialogId))
+		{
+			this.aiAssistant.onOpenChatAI(dialog);
 		}
 
 		const currentLayout = Core.getStore().getters['application/getLayout'].name;
@@ -136,9 +169,12 @@ export class Analytics
 			type: chatType,
 			c_section: `${currentLayout}_tab`,
 			p2: getUserType(),
-			p3: `isMember_${isMember}`,
-			p5: `chatId_${dialog.chatId}`,
 		};
+
+		if (!isSelfChat(dialog.dialogId))
+		{
+			params.p5 = `chatId_${dialog.chatId}`;
+		}
 
 		if (chatType === ChatType.comment)
 		{
@@ -151,6 +187,38 @@ export class Analytics
 		{
 			params.p4 = getCollabId(dialog.chatId);
 		}
+
+		if (chatType !== ChatType.copilot)
+		{
+			params.p3 = `isMember_${isMember}`;
+		}
+
+		if (chatType === ChatType.copilot)
+		{
+			const role = Core.getStore().getters['copilot/chats/getRole'](dialog.dialogId);
+			params.p4 = `role_${Text.toCamelCase(role.code)}`;
+		}
+
+		sendData(params);
+	}
+
+	onTypeMessage(dialog: ImModelChat): void
+	{
+		if (!isSelfChat(dialog.dialogId) || this.#chatsWithTyping.has(dialog.dialogId))
+		{
+			return;
+		}
+
+		this.#chatsWithTyping.add(dialog.dialogId);
+
+		const chatType = getChatType(dialog);
+
+		const params = {
+			tool: AnalyticsTool.im,
+			category: getCategoryByChatType(chatType),
+			event: AnalyticsEvent.typeMessage,
+			p1: `chatType_${chatType}`,
+		};
 
 		sendData(params);
 	}

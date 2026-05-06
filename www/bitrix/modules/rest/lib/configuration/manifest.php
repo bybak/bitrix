@@ -60,12 +60,13 @@ class Manifest
 					'STEP' => $step,
 					'NEXT' => isset($params['NEXT']) ? $params['NEXT'] : null,
 					'ITEM_CODE' => $params['ITEM_CODE'] ? : null,
-					'ADDITIONAL_OPTION' => is_array($params['ADDITIONAL_OPTION']) ? $params['ADDITIONAL_OPTION'] : [],
+					'ADDITIONAL_OPTION' => $params['ADDITIONAL_OPTION'] ?? [],
 					'SETTING' => $setting->get(Setting::SETTING_MANIFEST),
 					'USER_ID' => $setting->get(Setting::SETTING_USER_ID) ?? 0,
 				]
 			);
 			EventManager::getInstance()->send($event);
+
 			foreach ($event->getResults() as $eventResult)
 			{
 				$parameters = $eventResult->getParameters();
@@ -77,7 +78,8 @@ class Manifest
 				$result[] = [
 					'NEXT' => isset($parameters['NEXT']) ? $parameters['NEXT'] : false,
 					'ERROR_MESSAGES' => $parameters['ERROR_MESSAGES'] ?? null,
-					'ERROR_ACTION' => $parameters['ERROR_ACTION'] ?? null
+					'ERROR_ACTION' => $parameters['ERROR_ACTION'] ?? null,
+					'ERROR_EXCEPTION' => $parameters['ERROR_EXCEPTION'] ?? null,
 				];
 			}
 		}

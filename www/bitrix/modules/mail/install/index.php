@@ -118,19 +118,8 @@ Class mail extends CModule
 
 				$group = new CGroup;
 
-				$dbResult = CGroup::GetList(
-					'id',
-					'asc',
-					array(
-						"STRING_ID" => $arGroup["STRING_ID"],
-						"STRING_ID_EXACT_MATCH" => "Y"
-					)
-				);
-				if ($arExistsGroup = $dbResult->Fetch())
-				{
-					$groupID = $arExistsGroup["ID"];
-				}
-				else
+				$groupID = CGroup::GetIDByCode($arGroup["STRING_ID"]);
+				if (!$groupID)
 				{
 					if (file_exists($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/bitrix24"))
 					{
@@ -202,6 +191,15 @@ Class mail extends CModule
 			RegisterModuleDependences('tasks', 'OnTaskDelete', 'mail', '\\Bitrix\\Mail\\Integration\\Intranet\\Secretary', 'onTaskDelete');
 
 			CAgent::AddAgent("CMailbox::CleanUp();", "mail", "N", 60*60*24);
+
+			$startTime = \ConvertTimeStamp(time() + \CTimeZone::GetOffset() + 600, 'FULL');
+			CAgent::AddAgent(
+				name: "\Bitrix\Mail\Access\Install\AccessInstaller::install();",
+				module: $this->MODULE_ID,
+				interval: 60,
+				next_exec: $startTime,
+				existError: false,
+			);
 
 			return true;
 		}

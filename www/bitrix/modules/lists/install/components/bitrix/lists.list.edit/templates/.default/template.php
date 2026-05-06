@@ -80,6 +80,10 @@ if (!IsModuleInstalled("intranet"))
 
 	$APPLICATION->SetAdditionalCSS("/bitrix/js/lists/css/intranet-common.css");
 }
+else
+{
+	\Bitrix\Main\UI\Extension::load(['intranet.old-interface.intranet-common']);
+}
 
 \Bitrix\UI\Toolbar\Facade\Toolbar::deleteFavoriteStar();
 
@@ -88,8 +92,8 @@ if ($arResult["IBLOCK_ID"])
 	\Bitrix\UI\Toolbar\Facade\Toolbar::addButton([
 			'link' => $arResult["LIST_URL"],
 			'color' => \Bitrix\UI\Buttons\Color::LINK,
-			'text' => GetMessage("CT_BLLE_TOOLBAR_RETURN_LIST_ELEMENT"),
-			'classList' => ['lists-list-back'],
+			'text' => GetMessage("CT_BLLE_TOOLBAR_RETURN_LIST_ELEMENT_MSGVER_1"),
+			'icon' => \Bitrix\UI\Buttons\Icon::BACK,
 		]
 	);
 }

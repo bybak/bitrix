@@ -1,6 +1,6 @@
 import { Settings } from 'im.v2.const';
 import { SelectableBackground, ThemeManager, type BackgroundStyle } from 'im.v2.lib.theme';
-import { SettingsService } from 'im.v2.provider.service';
+import { SettingsService } from 'im.v2.provider.service.settings';
 
 import './css/background.css';
 
@@ -27,9 +27,8 @@ export const ChatBackground = {
 		},
 		onBackgroundClick(backgroundId: string)
 		{
-			const preparedBackgroundId = Number.parseInt(backgroundId, 10);
 			const settingsService = new SettingsService();
-			settingsService.changeSetting(Settings.appearance.background, preparedBackgroundId);
+			settingsService.changeSetting(Settings.appearance.background, backgroundId);
 		},
 	},
 	template: `

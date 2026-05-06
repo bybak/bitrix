@@ -19,6 +19,7 @@ use Bitrix\Currency\CurrencyManager;
 use Bitrix\Iblock;
 use Bitrix\Iblock\ElementTable;
 use Bitrix\Iblock\PropertyTable;
+use Bitrix\Iblock\UI\FileUploader\PropertyController;
 use Bitrix\Iblock\Url\AdminPage\BuilderManager;
 use Bitrix\Main;
 use Bitrix\Main\Config\Ini;
@@ -36,11 +37,13 @@ use Bitrix\Main\ORM\Fields\ScalarField;
 use Bitrix\Main\ORM\Fields\StringField;
 use Bitrix\Main\ORM\Fields\TextField;
 use Bitrix\Main\Page\Asset;
+use Bitrix\Main\Security\Random;
 use Bitrix\Main\Text\HtmlFilter;
 use Bitrix\Main\UI\FileInputUtility;
 use Bitrix\Main\UserField;
 use Bitrix\Main\UserFieldTable;
 use Bitrix\Highloadblock as Highload;
+use Bitrix\Main\Web\Json;
 use Bitrix\UI\EntityForm\Control;
 
 abstract class BaseForm
@@ -343,6 +346,11 @@ abstract class BaseForm
 			[
 				'name' => 'IBLOCK_ELEMENT_CONTROLLER',
 				'type' => 'iblock_element',
+				'config' => [],
+			],
+			[
+				'name' => 'FILE_CONTROLLER',
+				'type' => 'file',
 				'config' => [],
 			],
 		];
@@ -701,19 +709,12 @@ abstract class BaseForm
 					}
 					else
 					{
+						// for empty value fill as empty string - need for component extensions
+						$additionalValues[$descriptionData['view']] = $this->getFilePropertyViewHtml($description, $value);
+						$additionalValues[$descriptionData['viewList']]['SINGLE'] = $this->getFilePropertyViewHtml($description, is_array($value) ? $value[0] ?? null : $value, false);
+						$additionalValues[$descriptionData['viewList']]['MULTIPLE'] = $this->getFilePropertyViewHtml($description, is_array($value) ? $value : [$value], true);
+
 						$controlId = $description['name'] . '_uploader';
-
-						$additionalValues[$descriptionData['view']] = '';
-						$additionalValues[$descriptionData['viewList']]['SINGLE'] = '';
-						$additionalValues[$descriptionData['viewList']]['MULTIPLE'] = '';
-
-						if (!empty($value))
-						{
-							$additionalValues[$descriptionData['view']] = $this->getFilePropertyViewHtml($description, $value, $controlId);
-							$additionalValues[$descriptionData['viewList']]['SINGLE'] = $this->getFilePropertyViewHtml($description, is_array($value) ? $value[0] ?? null : $value, $controlId, false);
-							$additionalValues[$descriptionData['viewList']]['MULTIPLE'] = $this->getFilePropertyViewHtml($description, is_array($value) ? $value : [$value], $controlId, true);
-						}
-
 						$additionalValues[$descriptionData['edit']] = $this->getFilePropertyEditHtml($description, $value, $controlId);
 						$additionalValues[$descriptionData['editList']]['SINGLE'] = $this->getFilePropertyEditHtml($description, is_array($value) ? $value[0] ?? null : $value, $controlId, false);
 						$additionalValues[$descriptionData['editList']]['MULTIPLE'] = $this->getFilePropertyEditHtml($description, is_array($value) ? $value : [$value], $controlId, true);
@@ -2252,55 +2253,102 @@ abstract class BaseForm
 		return ob_get_clean();
 	}
 
-	protected function getFilePropertyEditHtml($description, $value, $controlId, bool $multipleForList = null): string
-	{
-		if ($multipleForList === null)
-		{
-			$multiple = $description['settings']['MULTIPLE'];
-		}
-		else
-		{
-			$multiple = $multipleForList ? 'Y' : 'N';
-		}
-
-		ob_start();
-
-		$this->getApplication()->IncludeComponent(
-			'bitrix:main.file.input',
-			'.default',
-			[
-				'INPUT_NAME' => $description['name'],
-				'INPUT_NAME_UNSAVED' => $description['name'] . '_tmp',
-				'INPUT_VALUE' => $value,
-				'MULTIPLE' => $multiple,
-				'MODULE_ID' => 'catalog',
-				'ALLOW_UPLOAD' => 'F',
-				'ALLOW_UPLOAD_EXT' => $description['settings']['FILE_TYPE'],
-				'MAX_FILE_SIZE' => Ini::unformatInt((string)ini_get('upload_max_filesize')),
-				'CONTROL_ID' => $controlId,
-			]
-		);
-
-		return ob_get_clean();
-	}
-
-	protected function getFilePropertyViewHtml($description, $value, $controlId, bool $multipleForList = null)
+	protected function getFilePropertyEditHtml($description, $value, $controlId, ?bool $multipleForList = null): string
 	{
 		$cid = FileInputUtility::instance()->registerControl('', $controlId);
-		$signer = new \Bitrix\Main\Security\Sign\Signer();
-		$signature = $signer->getSignature($cid, 'main.file.input');
-		if (is_array($value))
+		if (!empty($value))
 		{
-			foreach ($value as $elementOfValue)
+			if (is_array($value))
 			{
-				FileInputUtility::instance()->registerFile($cid, $elementOfValue);
+				foreach ($value as $elementOfValue)
+				{
+					FileInputUtility::instance()->registerFile($cid, $elementOfValue);
+				}
 			}
+			else
+			{
+				FileInputUtility::instance()->registerFile($cid, $value);
+			}
+		}
+
+		if ($multipleForList === null)
+		{
+			$multiple = $description['settings']['MULTIPLE'] === 'Y';
 		}
 		else
 		{
-			FileInputUtility::instance()->registerFile($cid, $value);
+			$multiple = $multipleForList;
 		}
 
+		if (!is_array($value))
+		{
+			$value = $value ? [$value] : [];
+		}
+
+		return $this->getFileUploaderHtml(
+			[
+				'FILES' => $value,
+				'MULTIPLE' => $multiple,
+				'IBLOCK_ID' => $this->entity->getIblockId(),
+				'PRODUCT_ID' => $this->entity->getId(),
+				'PROPERTY_ID' => $description['propertyId'],
+				'CONTROL_ID' => $controlId,
+			],
+		);
+	}
+
+	private function getFileUploaderHtml(array $options): string
+	{
+		$propertyName = 'PROPERTY_' . $options['PROPERTY_ID'];
+		$hiddenFieldName = $propertyName . '_tile_widget';
+		$hiddenFieldsContainer = 'file-input-' . Random::getString(10);
+
+		$options['PROPERTY_ID'] = Json::encode($options['PROPERTY_ID']);
+		$options['CONTROL_ID'] = Json::encode($options['CONTROL_ID']);
+		$options['FILES'] = Json::encode($options['FILES']);
+		$options['MULTIPLE'] = Json::encode($options['MULTIPLE']);
+
+		return <<<HTML
+			<input type="hidden" name="{$propertyName}" />
+			<div id="{$hiddenFieldsContainer}"></div>
+			<script>
+				(function() {
+					const tileWidget = new BX.UI.Uploader.TileWidget({
+						controller: 'iblock.UI.fileUploader.propertyController',
+						controllerOptions: {
+							propertyId: {$options['PROPERTY_ID']},
+							controlId: {$options['CONTROL_ID']},
+						},
+						hiddenFieldName: '{$hiddenFieldName}',
+						hiddenFieldsContainer: '#{$hiddenFieldsContainer}',
+
+						files: {$options['FILES']},
+						multiple: {$options['MULTIPLE']},
+						autoUpload: true,
+					});
+
+					tileWidget.renderTo(document.getElementById('{$hiddenFieldsContainer}'));
+					BX.Event.EventEmitter.subscribe(
+						tileWidget.getUploader(),
+						'File:onRemove',
+						() => {
+							BX.Event.EventEmitter.emit('Catalog.File.Input:onRemove');
+						},
+					);
+					BX.Event.EventEmitter.subscribe(
+						tileWidget.getUploader(),
+						'File:onUploadComplete',
+						() => {
+							BX.Event.EventEmitter.emit('Catalog.File.Input:onUploadComplete');
+						},
+					);
+				})();
+			</script>
+HTML;
+	}
+
+	protected function getFilePropertyViewHtml($description, $value, bool $multipleForList = null)
+	{
 		if ($multipleForList === null)
 		{
 			$multiple = $description['settings']['MULTIPLE'];
@@ -2318,22 +2366,32 @@ abstract class BaseForm
 			[
 				'userField' => [
 					'ID' => $description['settings']['ID'],
-					'VALUE' => $value,
-					'USER_TYPE_ID' => 'file',
+					'ENTITY_ID' => ProductTable::USER_FIELD_ENTITY_ID,
+					'FIELD_NAME' => $description['name'],
+					'USER_TYPE_ID' => UserField\Types\FileType::USER_TYPE_ID,
+					'XML_ID' => $description['settings']['XML_ID'],
+					'SORT' => $description['settings']['SORT'],
 					'MULTIPLE' => $multiple,
+					'MANDATORY' => $description['settings']['IS_REQUIRED'],
+					'SHOW_FILTER' => $description['settings']['FILTRABLE'],
+					'SHOW_IN_LIST' => 'Y',
+					'EDIT_IN_LIST' => 'Y',
+					'IS_SEARCHABLE' => $description['settings']['SEARCHABLE'],
+					'VALUE' => $value,
 				],
 				'additionalParameters' => [
 					'mode' => 'main.view',
 					'CONTEXT' => 'UI_EDITOR',
-					'URL_TEMPLATE' => '/bitrix/components/bitrix/main.file.input/ajax.php?'
-						. 'mfi_mode=down'
-						. '&fileID=#file_id#'
-						. '&cid=' . $cid
-						. '&sessid=' . bitrix_sessid()
-						. '&s=' . $signature,
 				],
 			]
 		);
+
+		if (empty($value))
+		{
+			ob_end_clean();
+
+			return '';
+		}
 
 		return ob_get_clean();
 	}
@@ -2577,22 +2635,17 @@ abstract class BaseForm
 
 	protected function getDefaultVat(): array
 	{
-		$emptyVat = null;
 		$iblockVatId = $this->entity->getIblockInfo()->getVatId();
 
 		foreach ($this->getVats() as $vat)
 		{
-			if ($vat['EXCLUDE_VAT'] === 'Y')
-			{
-				$emptyVat = $vat;
-			}
-
 			if ((int)$vat['ID'] === $iblockVatId)
 			{
 				$vat['NAME'] = Loc::getMessage(
-					"CATALOG_C_F_DEFAULT",
+					'CATALOG_C_F_DEFAULT',
 					['#VALUE#' => htmlspecialcharsbx($vat['NAME'])]
 				);
+
 				return $vat;
 			}
 		}
@@ -2602,9 +2655,9 @@ abstract class BaseForm
 			'RATE' => null,
 			'EXCLUDE_VAT' => null,
 			'NAME' => Loc::getMessage(
-				"CATALOG_C_F_DEFAULT",
-				['#VALUE#' => Loc::getMessage("CATALOG_PRODUCT_CARD_VARIATION_GRID_NOT_SELECTED")]
-			)
+				'CATALOG_C_F_DEFAULT',
+				['#VALUE#' => Loc::getMessage('CATALOG_PRODUCT_CARD_VARIATION_GRID_NOT_SELECTED')]
+			),
 		];
 	}
 
@@ -2664,5 +2717,59 @@ abstract class BaseForm
 		}
 
 		return $result;
+	}
+
+	public function parseTileWidgetFileField(Property $property, string $controlId, mixed $field): array
+	{
+		$propertyId = $property->getId();
+		$isMultiple = $property->isMultiple();
+		$propertyController = new PropertyController([
+			'propertyId' => $propertyId,
+			'controlId' => $controlId,
+		]);
+		$uploader = new \Bitrix\UI\FileUploader\Uploader($propertyController);
+
+		if (!$isMultiple || !is_array($field))
+		{
+			if (is_numeric($field))
+			{
+				$field = [$field];
+				$field = \Bitrix\Main\UI\FileInputUtility::instance()->checkFiles(
+					$controlId,
+					$field
+				);
+			}
+			else
+			{
+				$pendingFiles = $uploader->getPendingFiles([$field]);
+				$pendingFiles->makePersistent();
+				$field = $pendingFiles->getFileIds();
+			}
+		}
+		else
+		{
+			$savedFiles = [];
+			$temporaryFiles = [];
+			foreach ($field as $fileId)
+			{
+				if (is_numeric($fileId))
+				{
+					$savedFiles[] = $fileId;
+				}
+				else
+				{
+					$temporaryFiles[] = $fileId;
+				}
+			}
+			$pendingFiles = $uploader->getPendingFiles($temporaryFiles);
+			$pendingFiles->makePersistent();
+			$savedFiles = \Bitrix\Main\UI\FileInputUtility::instance()->checkFiles(
+				$controlId,
+				$savedFiles
+			);
+			$field = array_merge($savedFiles, $pendingFiles->getFileIds());
+		}
+
+		return $field;
 	}
 }

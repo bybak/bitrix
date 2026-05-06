@@ -11,6 +11,7 @@ use Bitrix\Catalog\v2\Iblock\IblockInfo;
 use Bitrix\Catalog\v2\IoC\ServiceContainer;
 use Bitrix\Iblock\Component\Tools;
 use Bitrix\Iblock\PropertyTable;
+use Bitrix\Iblock\Url\AdminPage\BuilderManager;
 use Bitrix\UI\EntitySelector\BaseProvider;
 use Bitrix\UI\EntitySelector\Dialog;
 use Bitrix\UI\EntitySelector\Item;
@@ -38,7 +39,19 @@ class ProductProvider extends BaseProvider
 			$this->options['restrictedProductTypes'] = null;
 		}
 
+		$this->options['restrictedProductIds'] =
+			(isset($options['restrictedProductIds']) && is_array($options['restrictedProductIds']))
+				? array_map('intval', $options['restrictedProductIds'])
+				: null
+		;
+
+		$this->options['defaultItemAvatar'] = $options['defaultItemAvatar'] ?? '';
+		if (!is_string($this->options['defaultItemAvatar']))
+		{
+			$this->options['defaultItemAvatar'] = '';
+		}
 		$this->options['showPriceInCaption'] = (bool)($options['showPriceInCaption'] ?? true);
+		$this->options['linkType'] = isset($options['linkType']) ? (string)$options['linkType'] : '';
 	}
 
 	public function isAvailable(): bool
@@ -132,6 +145,28 @@ class ProductProvider extends BaseProvider
 			}
 		}
 
+		if (
+			$this->options['restrictedProductIds']
+			&& is_array($this->options['restrictedProductIds'])
+			&& $recentItemsCount > 0
+		)
+		{
+			$restrictedProductIds = array_fill_keys($this->options['restrictedProductIds'], true);
+
+			/** @var RecentItem $recentItem */
+			foreach ($recentItems as $recentItem)
+			{
+				if (
+					!isset($restrictedProductIds[$recentItem->getId()])
+					&& $recentItem->isAvailable()
+				)
+				{
+					$recentItem->setAvailable(false);
+					$recentItemsCount--;
+				}
+			}
+		}
+
 		if ($recentItemsCount < self::PRODUCT_LIMIT)
 		{
 			foreach ($this->getProducts() as $product)
@@ -174,6 +209,7 @@ class ProductProvider extends BaseProvider
 			'PARENT_PREVIEW_TEXT' => true,
 			'PARENT_DETAIL_TEXT' => true,
 			'BARCODE' => true,
+			'RAW_PRICE' => true,
 		]));
 
 		return new Item([
@@ -183,9 +219,30 @@ class ProductProvider extends BaseProvider
 			'supertitle' => $product['SKU_PROPERTIES'],
 			'subtitle' => $this->getSubtitle($product),
 			'caption' => $this->getCaption($product),
-			'avatar' => $product['IMAGE'],
+			'avatar' => !empty($product['IMAGE']) ? $product['IMAGE'] : $this->options['defaultItemAvatar'],
 			'customData' => $customData,
+			'link' => $this->getLink(
+				(int)($product['PARENT_ID'] ?? $product['ID']),
+				(int)$product['IBLOCK_ID']
+			),
 		]);
+	}
+
+	protected function getLink(int $id, int $iblockId): string
+	{
+		if (!$this->options['linkType'])
+		{
+			return '';
+		}
+		$urlBuilder = BuilderManager::getInstance()->getBuilder($this->options['linkType']);
+		if (!$urlBuilder)
+		{
+			return '';
+		}
+
+		$urlBuilder->setIblockId($iblockId);
+
+		return $urlBuilder->getElementDetailUrl($id);
 	}
 
 	protected function getSubtitle(array $product): string
@@ -262,6 +319,7 @@ class ProductProvider extends BaseProvider
 			'filter' => ['=ID' => $productIds],
 			'offer_filter' => ['=ID' => $offerIds],
 			'sort' => [],
+			'limit' => 0,
 		]);
 
 		// sort $products by $productIds
@@ -391,6 +449,7 @@ class ProductProvider extends BaseProvider
 			return [];
 		}
 
+		$limit = isset($parameters['limit']) ? (int)$parameters['limit'] : null;
 		$productFilter = (array)($parameters['filter'] ?? []);
 		$offerFilter = (array)($parameters['offer_filter'] ?? []);
 		$shouldLoadOffers = (bool)($parameters['load_offers'] ?? true);
@@ -404,12 +463,17 @@ class ProductProvider extends BaseProvider
 				ProductTable::getProductTypes()
 			);
 		}
+		if ($this->options['restrictedProductIds'] !== null)
+		{
+			$additionalProductFilter['ID'] = empty($this->options['restrictedProductIds']) ? [0] : $this->options['restrictedProductIds'];
+		}
+
 		$filteredTypes[] = ProductTable::TYPE_EMPTY_SKU;
 		$additionalProductFilter['!=TYPE'] = array_values(array_unique($filteredTypes));
 
 		$products = $this->loadElements([
 			'filter' => array_merge($productFilter, $additionalProductFilter),
-			'limit' => self::PRODUCT_LIMIT,
+			'limit' => $limit ?? self::PRODUCT_LIMIT,
 		]);
 		if (empty($products))
 		{
@@ -599,10 +663,16 @@ class ProductProvider extends BaseProvider
 			$variationToProductMap[$element['ID']] = $id;
 		}
 
+		$resultCurrency = $this->getCurrency();
+
 		$priceTableResult = PriceTable::getList([
-			'select' => ['PRICE', 'CURRENCY', 'PRODUCT_ID'],
+			'select' => [
+				'PRICE',
+				'CURRENCY',
+				'PRODUCT_ID',
+			],
 			'filter' => [
-				'PRODUCT_ID' => array_keys($variationToProductMap),
+				'@PRODUCT_ID' => array_keys($variationToProductMap),
 				'=CATALOG_GROUP_ID' => $this->getBasePriceId(),
 				[
 					'LOGIC' => 'OR',
@@ -623,14 +693,18 @@ class ProductProvider extends BaseProvider
 
 			$priceValue = $price['PRICE'];
 			$currency = $price['CURRENCY'];
-			if (!empty($this->getCurrency()) && $this->getCurrency() !== $currency)
+			if (!empty($resultCurrency) && $resultCurrency !== $currency)
 			{
-				$priceValue = \CCurrencyRates::ConvertCurrency($priceValue, $currency, $this->getCurrency());
-				$currency = $this->getCurrency();
+				$priceValue = \CCurrencyRates::ConvertCurrency($priceValue, $currency, $resultCurrency);
+				$currency = $resultCurrency;
 			}
 
 			$formattedPrice = \CCurrencyLang::CurrencyFormat($priceValue, $currency, true);
 			$elements[$productId]['PRICE'] = $formattedPrice;
+			$elements[$productId]['RAW_PRICE'] = [
+				'VALUE' => (float)$priceValue,
+				'CURRENCY' => $currency,
+			];
 		}
 
 		return $elements;

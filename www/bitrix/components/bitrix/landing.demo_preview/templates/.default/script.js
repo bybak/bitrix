@@ -21,34 +21,30 @@
 		this.previewContainer = document.querySelector(".landing-template-preview");
 		this.closeButton = document.querySelector(".landing-template-preview-close");
 		this.createButton = document.querySelector(".landing-template-preview-create");
-		this.createByImportButton = document.querySelector(".landing-template-preview-create-by-import");
 		this.title = document.querySelector(".landing-template-preview-input-title");
 		this.description = document.querySelector(".landing-template-preview-input-description");
-		this.themesPalette = document.querySelector(".landing-template-preview-themes");
-		this.themesSiteColorNode = document.querySelector(".landing-template-preview-site-color");
 		this.imageContainer = document.querySelector(".preview-desktop-body-image");
 		this.loaderContainer = document.querySelector(".preview-desktop-body-loader-container");
 		this.previewFrame = document.querySelector(".preview-desktop-body-preview-frame");
 		this.baseUrlNode = document.querySelector(".landing-template-preview-base-url");
-		this.siteGroupPalette = document.querySelector(".landing-template-preview-site-group");
 		this.loader = new BX.Loader({});
 		this.messages = params.messages || {};
+		this.tool = params.tool || null;
 		this.loaderText = null;
 		this.progressBar = null;
 		this.IsLoadedFrame = false;
 		this.baseUrl = '';
-		this.color = null;
 		this.ajaxUrl = '';
 		this.ajaxParams = {};
 
 		this.createStore = BX.type.isBoolean(params.createStore)
 						? params.createStore
 						: false;
-		this.createMainpage = BX.type.isBoolean(params.createMainpage)
-			? params.createMainpage
+		this.createVibe = BX.type.isBoolean(params.createVibe)
+			? params.createVibe
 			: false;
-		this.isMainpageExists = BX.type.isBoolean(params.isMainpageExists)
-			? params.isMainpageExists
+		this.isVibeExists = BX.type.isBoolean(params.isVibeExists)
+			? params.isVibeExists
 			: false;
 
 		this.disableStoreRedirect = BX.type.isBoolean(params.disableStoreRedirect)
@@ -63,16 +59,16 @@
 		this.zipInstallPath = params.zipInstallPath
 						? params.zipInstallPath
 						: null;
-		this.appCode = params.appCode || '';
+		this.appCode = params.appCode || null;
 		this.siteId = params.siteId || 0;
 		this.langId = BX.type.isString(params.langId)
 						? params.langId
 						: '';
 		this.folderId = params.folderId || 0;
 		this.replaceLid = params.replaceLid || 0;
+		this.replaceSiteId = params.replaceSiteId || 0;
 		this.isCrmForm = (params.isCrmForm || 'N') === 'Y';
-		this.context_section = params.context_section || null;
-		this.context_element = params.context_element || null;
+		this.isKnowledgeBase = (params.isKnowledgeBase || 'N') === 'Y';
 		this.urlPreview = params.urlPreview || '';
 
 		this.onCreateButtonClick = proxy(this.onCreateButtonClick, this);
@@ -80,6 +76,9 @@
 		this.onFrameLoad = proxy(this.onFrameLoad, this);
 
 		this.init();
+
+		this.metrika = new BX.Landing.Metrika(true, this.tool);
+		this.metrika.sendData(this.getMetrikaParams('preview_template', 'success'));
 
 		return this;
 	};
@@ -111,7 +110,6 @@
 			}
 
 			this.setBaseUrl();
-			this.setDefaultColor();
 			this.showPreview();
 			this.buildHeader();
 
@@ -133,38 +131,12 @@
 			}
 		},
 
-		setColor: function (theme)
-		{
-			if (theme !== undefined)
-			{
-				this.color = theme;
-			}
-		},
-
-		setDefaultColor: function ()
-		{
-			if (this.getActiveColorNode())
-			{
-				this.color = data(this.getActiveColorNode(), "data-value");
-			}
-		},
-
-		getColor: function ()
-		{
-			return this.color;
-		},
-
 		createPreviewUrl: function ()
 		{
 			var queryParams = {};
 			if (!this.baseUrl)
 			{
 				this.setBaseUrl();
-			}
-
-			if (this.getColor())
-			{
-				queryParams = {color: this.getColor()};
 			}
 
 			return addQueryParams(this.baseUrl, queryParams);
@@ -177,30 +149,6 @@
 				new BX.Landing.SaveBtn(this.createButton);
 			}
 			this.IsLoadedFrame = true;
-		},
-
-		/**
-		 *
-		 * @returns {HTMLElement|null}
-		 */
-		getActiveColorNode: function ()
-		{
-			var active = this.themesPalette.querySelector(".active");
-			if (!active && this.themesSiteColorNode)
-			{
-				active = this.themesSiteColorNode.querySelector(".active");
-			}
-
-			return active;
-		},
-
-		/**
-		 *
-		 * @returns {HTMLElement}
-		 */
-		getActiveSiteGroupItem: function ()
-		{
-			return this.siteGroupPalette.querySelector(".active");
 		},
 
 		/**
@@ -421,19 +369,6 @@
 		{
 			var result = {};
 
-			if (this.getActiveColorNode())
-			{
-				if (this.themesSiteColorNode && this.getActiveColorNode().parentElement === this.themesSiteColorNode)
-				{
-					result[this.themesSiteColorNode.dataset.name] = this.getActiveColorNode().dataset.value;
-				}
-
-				if (this.siteGroupPalette)
-				{
-					result[this.siteGroupPalette.dataset.name] = this.getActiveSiteGroupItem().dataset.value;
-				}
-				result[this.themesPalette.dataset.name] = this.getActiveColorNode().dataset.value;
-			}
 			result[this.title.dataset.name] = this.title.value.replaceAll('&', '').replaceAll('?', '');
 			result[this.description.dataset.name] = this.description.value;
 
@@ -446,7 +381,10 @@
 		 */
 		getCreateUrl: function ()
 		{
-			return addQueryParams(this.createButton.getAttribute("href"), this.getValue());
+			const values = this.getValue();
+			values.newLanding = 'Y';
+
+			return addQueryParams(this.createButton.getAttribute("href"), values);
 		},
 
 		/**
@@ -467,9 +405,18 @@
 		{
 			event.preventDefault();
 
+			if (this.messageBox && this.messageBox.popupWindow.isShown())
+			{
+				return;
+			}
+
 			if (BX.Dom.hasClass(this.createButton.parentNode, 'needed-market-subscription'))
 			{
-				top.BX.UI.InfoHelper.show('limit_subscription_market_templates');
+				const metrikaParams = this.getMetrikaParams(this.getMetrikaCreateEvent(), 'error_market');
+				metrikaParams.p5 = ['errorType', 'need_market_subscription'];
+				this.metrika.sendData(metrikaParams);
+
+				top.BX.UI.InfoHelper.show('limit_subscription_market_access_buy_marketplus');
 				new Promise(resolve => {
 					const timerId = setInterval(() => {
 						if (BX.Dom.hasClass(this.createButton, 'ui-btn-clock'))
@@ -487,19 +434,17 @@
 				return;
 			}
 
-			// Analytic
-			const metrika = new BX.Landing.Metrika(true);
-			metrika.sendData(this.getMetrikaParams('attempt'));
-
 			if (this.isStore() && this.IsLoadedFrame)
 			{
-				this.loaderText = BX.create("div", {
-					props: {className: "landing-template-preview-loader-text"},
-					text: this.messages.LANDING_LOADER_WAIT
+				this.loaderText = BX.create('div', {
+					props: {
+						className: 'landing-template-preview-loader-text',
+					},
+					text: this.messages.LANDING_LOADER_WAIT,
 				});
 
 				this.progressBar = new BX.UI.ProgressBar({
-					column: true
+					column: true,
 				});
 
 				this.progressBar.getContainer().classList.add("ui-progressbar-landing-preview");
@@ -522,13 +467,13 @@
 			else if (this.zipInstallPath)
 			{
 				if (
-					this.isMainpage()
-					&& this.isMainpageExists
+					this.isVibe()
+					&& this.isVibeExists
 				)
 				{
 					let isClickOnButtonOk = false;
 					BX.Runtime.loadExtension('ui.dialogs.messagebox').then(() => {
-						const messageBox = new BX.UI.Dialogs.MessageBox({
+						this.messageBox = new BX.UI.Dialogs.MessageBox({
 							message: this.messages.LANDING_PREVIEW_MAINPAGE_MESSAGE,
 							title: this.messages.LANDING_PREVIEW_MAINPAGE_TITLE,
 							buttons: BX.UI.Dialogs.MessageBoxButtons.OK_CANCEL,
@@ -563,10 +508,10 @@
 								},
 							},
 						});
-						messageBox.show();
-						if (messageBox.popupWindow && messageBox.popupWindow.popupContainer)
+						this.messageBox.show();
+						if (this.messageBox.popupWindow && this.messageBox.popupWindow.popupContainer)
 						{
-							messageBox.popupWindow.popupContainer.classList.add('landing-template-preview-create-popup');
+							this.messageBox.popupWindow.popupContainer.classList.add('landing-template-preview-create-popup');
 						}
 					});
 				}
@@ -586,7 +531,8 @@
 		},
 
 		/**
-		 * @param {'success'|'attempt'} status
+		 * @param {string} event - analytic event param
+		 * @param {'success'|'attempt'|'error'} status
 		 * @return {{
 		 *  [category]: string,
 		 * 	[event]: string,
@@ -596,54 +542,76 @@
 		 *  [params]: {object},
 		 * }}
 		 */
-		getMetrikaParams: function (status)
+		getMetrikaParams: function (event, status)
 		{
-			let category = 'landings';
-			if (this.isCrmForm)
+			/**
+			 * @see \Bitrix\Landing\Metrika\Tools
+			 */
+			let tool = 'site';
+			if (this.tool === null)
 			{
-				category = 'crm_forms';
+				if (this.isCrmForm)
+				{
+					tool = 'crm_forms';
+				}
+				else if (this.isStore())
+				{
+					tool = 'shop';
+				}
+				else if (this.isKnowledgeBase)
+				{
+					tool = 'kb';
+				}
+			else if (this.isVibe())
+				{
+					tool = 'vibe';
+				}
 			}
-			if (this.isMainpage())
+			else
 			{
-				category = 'vibe';
-			}
-			if (this.isStore())
-			{
-				category = 'stores';
-			}
-			if (this.isMainpage())
-			{
-				category = 'vibe';
+				tool = this.tool;
 			}
 
+			const category = tool;
+
 			const metrikaParams = {
+				tool,
 				category,
-				event: this.isMainpage() ? 'create_template' : 'create_page_template',
-				params: {
-					appCode: this.appCode,
-				},
+				event,
+				type: 'template',
 				status,
 			};
 
-			if (this.replaceLid > 0)
+			if (this.appCode)
 			{
-				metrikaParams.event = 'replace_template';
-			}
-			else if (this.siteId !== 0)
-			{
-				metrikaParams.event = 'create_site_template';
+				metrikaParams.p1 = [
+					'appCode', this.appCode,
+				];
 			}
 
-			if (this.context_section)
+			if (this.isVibe())
 			{
-				metrikaParams.c_section = this.context_section;
+				delete metrikaParams.type;
 			}
-			if (this.context_element)
+			else
 			{
-				metrikaParams.c_element = this.context_element;
+				metrikaParams.c_section = 'site';
+				if (this.siteId !== 0)
+				{
+					metrikaParams.c_section = 'page';
+				}
 			}
 
 			return metrikaParams;
+		},
+
+		/**
+		 * Create event name for template creating
+		 * @returns {string}
+		 */
+		getMetrikaCreateEvent: function()
+		{
+			return this.isCrmForm ? 'replace_template' : 'create_template';
 		},
 
 		/**
@@ -675,7 +643,9 @@
 				'dataType': 'json',
 				'url': this.ajaxUrl,
 				'data':  BX.ajax.prepareData(this.ajaxParams),
-				'onsuccess': BX.proxy(this.createCatalogResult, this)
+				'onsuccess': (result) => {
+					this.createCatalogResult(result);
+				},
 			})
 		},
 
@@ -706,22 +676,30 @@
 		{
 			if (this.zipInstallPath)
 			{
-				let add = [];
+				let add = {};
 				const value = this.getValue();
 				for (let name in value)
 				{
 					add['additional[' + name + ']'] = value[name];
 				}
 
-				add['additional[siteId]'] = this.siteId;
-				add['additional[folderId]'] = this.folderId;
-				if (this.replaceLid > 0)
-				{
-					add['additional[replaceLid]'] = this.replaceLid;
-				}
+				add['additional[appCode]'] = this.appCode;
 
-				const metrikaParams = this.getMetrikaParams('success');
+				[
+					'siteId',
+					'replaceLid',
+					'replaceSiteId',
+					'folderId',
+				].forEach((param) => {
+					if (this[param] > 0)
+					{
+						add[`additional[${param}]`] = this[param];
+					}
+				});
 
+				const metrikaParams = this.getMetrikaParams(this.getMetrikaCreateEvent(), 'success');
+
+				add['additional[st_tool]'] = metrikaParams.tool;
 				add['additional[st_category]'] = metrikaParams.category;
 				add['additional[st_event]'] = metrikaParams.event;
 				if (metrikaParams.c_section)
@@ -732,7 +710,6 @@
 				{
 					add['additional[st_element]'] = metrikaParams.c_element;
 				}
-				add['additional[app_code]'] = this.appCode;
 
 				// 'form' is for analytic
 				add['from'] = this.createParamsStrFromUrl(url);
@@ -752,63 +729,49 @@
 						this.loader.show(popupImportLoaderContainer);
 						BX.Dom.addClass(previewFrame, 'landing-import-start');
 					}
-					add['inSlider'] = 'N';
+					add['IFRAME'] = 'Y';
 					if (this.siteId !== 0)
 					{
 						add['createType'] = 'PAGE';
 					}
-					let interval;
-					BX.ajax({
-						method: 'POST',
-						dataType: 'html',
-						url: addQueryParams(this.zipInstallPath, add),
-						onsuccess: data => {
-							const promise = new Promise((resolve, reject) => {
-								const result = BX.Dom.create('div', {html: data});
-								BX.Dom.style(result, 'display', 'none');
-								popupImport.append(result);
-								let restImportElement;
-								let count = 0;
-								interval = setInterval(
-									() => {
-										if (count > 100)
-										{
-											reject(new Error('Time is up'));
-										}
-										restImportElement = result.querySelector('.rest-configuration-wrapper');
-										if (restImportElement !== null)
-										{
-											resolve(restImportElement);
-										}
-										count++;
-									},
-									300
-								);
-							});
-							promise.then(
-								result => {
-									clearInterval(interval);
-									if (BX.Dom.hasClass(result, 'rest-configuration-wrapper'))
-									{
-										const importTitle = result.querySelector('.rest-configuration-title');
-										const importIconContainer = result.querySelector('.rest-configuration-start-icon-main-container');
-										if (importTitle && importIconContainer)
-										{
-											BX.Dom.remove(importTitle);
-											BX.Dom.insertBefore(importTitle, importIconContainer.nextSibling);
-										}
-										this.loader.hide();
-										BX.Dom.append(result, popupImport);
-										BX.Dom.style(popupImportLoaderContainer, 'display', 'none');
-									}
-								},
-								error => {
-									clearInterval(interval);
-									this.addRepeatCreateButton();
+					BX.ajax.get(
+						addQueryParams(this.zipInstallPath, add),
+						(data) => {
+							const resultNode = BX.Dom.create('div', {html: data});
+
+							const restNode = resultNode.querySelector('.rest-configuration-wrapper');
+							if (restNode)
+							{
+								const importTitle = restNode.querySelector('.rest-configuration-title');
+								const importIconContainer = restNode.querySelector(
+									'.rest-configuration-start-icon-main-container');
+								if (importTitle && importIconContainer)
+								{
+									BX.Dom.remove(importTitle);
+									BX.Dom.insertBefore(importTitle, importIconContainer.nextSibling);
 								}
-							);
-						}
-					});
+
+								popupImport.append(restNode);
+							}
+
+							const toolbarNode = resultNode.querySelector('.ui-toolbar');
+							if (toolbarNode)
+							{
+								toolbarNode.hidden = true;
+								popupImport.append(toolbarNode);
+							}
+
+							if (restNode)
+							{
+								BX.Dom.style(popupImportLoaderContainer, 'display', 'none');
+								this.loader.hide();
+							}
+							else
+							{
+								this.addRepeatCreateButton();
+							}
+						},
+					);
 				}
 			}
 			else if (this.disableStoreRedirect)
@@ -867,9 +830,9 @@
 			return this.createStore;
 		},
 
-		isMainpage: function()
+		isVibe: function()
 		{
-			return this.createMainpage;
+			return this.createVibe;
 		},
 
 		createParamsStrFromUrl(url)

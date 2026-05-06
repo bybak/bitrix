@@ -6,18 +6,21 @@ use Bitrix\Im\V2\Analytics\MessageAnalytics;
 use Bitrix\Im\V2\Chat;
 use Bitrix\Im\V2\Controller\BaseController;
 use Bitrix\Im\V2\Controller\Filter\CheckActionAccess;
+use Bitrix\Im\V2\Controller\Filter\PlatformContext;
+use Bitrix\Im\V2\Controller\Filter\DiskQuickAccessGrantor;
 use Bitrix\Im\V2\Entity\View\ViewCollection;
 use Bitrix\Im\V2\Message\Delete\DeletionMode;
 use Bitrix\Im\V2\Message\Delete\DisappearService;
 use Bitrix\Im\V2\Message\Forward\ForwardService;
 use Bitrix\Im\V2\Message\MessageError;
 use Bitrix\Im\V2\Message\PushFormat;
-use Bitrix\Im\V2\Message\Send\SendingService;
+use Bitrix\Im\V2\Message\Send\FieldsValidationService;
 use Bitrix\Im\V2\Message\Update\UpdateService;
 use Bitrix\Im\V2\Message\Delete\DeleteService;
 use Bitrix\Im\V2\MessageCollection;
 use Bitrix\Im\V2\Message\MessageService;
 use Bitrix\Im\V2\Permission\Action;
+use Bitrix\Im\V2\Reading\Reader;
 use Bitrix\Im\V2\Result;
 use Bitrix\Main\Engine\AutoWire\ExactParameter;
 use Bitrix\Main\Engine\CurrentUser;
@@ -45,6 +48,8 @@ class Message extends BaseController
 		'BOT_ID',
 		'COPILOT',
 		'SILENT_CONNECTOR',
+		'STICKER_PARAMS',
+		'AI_ASSISTANT',
 	];
 
 	public function getPrimaryAutoWiredParameter()
@@ -119,6 +124,12 @@ class Message extends BaseController
 			'send' => [
 				'+prefilters' => [
 					new CheckActionAccess(Action::Send),
+					new PlatformContext(),
+				],
+			],
+			'update' => [
+				'+prefilters' => [
+					new PlatformContext(),
 				],
 			],
 			'pin' => [
@@ -131,24 +142,22 @@ class Message extends BaseController
 					new CheckActionAccess(Action::PinMessage),
 				],
 			],
+			'list' => [
+				'+prefilters' => [
+					new DiskQuickAccessGrantor(),
+				],
+			],
 		];
 	}
 
 	/**
 	 * @restMethod im.v2.Chat.Message.read
 	 */
-	public function readAction(MessageCollection $messages): ?array
+	public function readAction(Reader $reader, CurrentUser $user, MessageCollection $messages): ?array
 	{
-		$readResult = Chat::getInstance($messages->getCommonChatId())->readMessages($messages);
+		$readResult = $reader->read($messages, (int)$user->getId());
 
-		if (!$readResult->isSuccess())
-		{
-			$this->addErrors($readResult->getErrors());
-
-			return null;
-		}
-
-		return $this->convertKeysToCamelCase($readResult->getResult());
+		return $this->formReadResult($messages->getCommonChat(), $readResult);
 	}
 
 	/**
@@ -160,12 +169,12 @@ class Message extends BaseController
 			'LAST_ID' => isset($filter['lastId']) ? (int)$filter['lastId'] : null,
 			'MESSAGE_ID' => $message->getId(),
 		];
-		$viewOrder = ['ID' => $order['id'] ?? 'ASC'];
-		$viewLimit = $this->getLimit($limit);
+		$viewOrder = ['ID' => $order['id'] ?? 'DESC'];
+		$limit = $this->getLimit($limit);
 
-		$views = ViewCollection::find($viewFilter, $viewOrder, $viewLimit);
+		$views = ViewCollection::find($viewFilter, $viewOrder, $limit);
 
-		return $this->toRestFormat($views);
+		return $this->toRestFormatWithPaginationData([$views], $limit, $views->count());
 	}
 
 	/**
@@ -329,7 +338,7 @@ class Message extends BaseController
 
 		$fields['message'] = $this->getRawValue('fields')['message'] ?? $fields['message'] ?? null;
 		$fields = $this->prepareFields($fields, self::ALLOWED_FIELDS_SEND);
-		$result = (new SendingService())->prepareFields($chat, $fields, $forwardMessages, $restServer);
+		$result = (new FieldsValidationService($chat, $fields, $restServer))->prepareFields($forwardMessages);
 
 		if (!$result->isSuccess())
 		{
@@ -356,7 +365,7 @@ class Message extends BaseController
 
 			foreach ($forwardMessages as $message)
 			{
-				(new MessageAnalytics($message))->addShareMessage();
+				(new MessageAnalytics($message))->addShareMessage($chat);
 			}
 		}
 
@@ -378,6 +387,7 @@ class Message extends BaseController
 	 */
 	public function updateAction(
 		\Bitrix\Im\V2\Message $message,
+		?\CRestServer $restServer = null,
 		array $fields = [],
 		string $urlPreview = 'Y',
 		int $botId = 0

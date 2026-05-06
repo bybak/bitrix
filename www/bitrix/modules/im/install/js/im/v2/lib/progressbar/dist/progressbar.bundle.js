@@ -5,7 +5,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 (function (exports,main_core_events,main_core,ui_progressbarjs_uploader,im_v2_const) {
 	'use strict';
 
-	const EVENT_NAMESPACE = 'BX.Messenger.v2.CallBackground.ProgressBar';
+	const EVENT_NAMESPACE = 'BX.Call.Component.v2.ProgressBar';
 	const SIZE_LOWER_THRESHOLD = 1024 * 1024 * 2;
 	const CONTAINER_WIDTH_LOWER_THRESHOLD = 240;
 	const CONTAINER_HEIGHT_LOWER_THRESHOLD = 54;
@@ -57,6 +57,11 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      this.progressBar.setProgress(this.uploadState.progress > STARTING_PROGRESS ? this.uploadState.progress : STARTING_PROGRESS);
 	      this.progressBar.setCancelDisable(true);
 	      this.progressBar.setIcon(ui_progressbarjs_uploader.Uploader.icon.cloud);
+	      this.progressBar.setProgressTitle(main_core.Loc.getMessage('IM_LIB_PROGRESSBAR_FILE_UPLOAD_SAVING'));
+	    } else if (this.uploadState.status === im_v2_const.FileStatus.preparing) {
+	      this.progressBar.setProgress(this.uploadState.progress > STARTING_PROGRESS ? this.uploadState.progress : STARTING_PROGRESS);
+	      this.progressBar.setCancelDisable(false);
+	      this.progressBar.setIcon(ui_progressbarjs_uploader.Uploader.icon.cancel);
 	      this.progressBar.setProgressTitle(main_core.Loc.getMessage('IM_LIB_PROGRESSBAR_FILE_UPLOAD_SAVING'));
 	    } else if (this.uploadState.progress === 100) {
 	      this.progressBar.setProgress(100);

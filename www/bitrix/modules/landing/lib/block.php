@@ -2,6 +2,7 @@
 namespace Bitrix\Landing;
 
 use Bitrix\Landing\Block\BlockRepo;
+use Bitrix\Landing\Block\Menu;
 use Bitrix\Landing\Site\Scope;
 use Bitrix\Landing\Site\Type;
 use \Bitrix\Main\Page\Asset;
@@ -819,7 +820,15 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 					$fields['SOURCE_PARAMS']
 				);
 			}
-			self::prepareBlockContentFromRepository($block);
+
+			$blockContentOriginal = $block->getContent();
+			$blockContent = self::prepareBlockContentFromRepository($blockContentOriginal);
+			$blockContent = self::prepareBlockVideoPlaceholders($blockContent);
+			if ($blockContent !== $blockContentOriginal)
+			{
+				$block->saveContent($blockContent);
+			}
+
 			if (isset($manifest['block']['app_code']))
 			{
 				$block->save([
@@ -844,60 +853,65 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 		}
 	}
 
-	protected static function prepareBlockContentFromRepository($block): void
+	/**
+	 * Replaces simple placeholders in the block content, like #YEAR# and #COUNTDOWN#.
+	 *
+	 * @param string $content Block content to process.
+	 *
+	 * @return string Modified content with placeholders replaced.
+	 */
+	private static function prepareBlockContentFromRepository(string $content): string
 	{
-		$blockContent = $block->getContent();
-		if (mb_strpos($blockContent, '#YEAR#') !== false)
+		if (str_contains($content, '#YEAR#'))
 		{
-			$replace = [];
-			$replace['#YEAR#'] = date("Y");
-			$blockContent = str_replace(
-				array_keys($replace),
-				array_values($replace),
-				$blockContent
-			);
-			$block->saveContent($blockContent);
+			$content = str_replace('#YEAR#', date("Y"), $content);
 		}
+
+		if (str_contains($content, '#COUNTDOWN#'))
+		{
+			$content = str_replace('#COUNTDOWN#', Countdown::getTimestamp(), $content);
+		}
+
+		return $content;
 	}
 
 	/**
-	 * New or not the block.
-	 * @param string $block Block code.
-	 * @return boolean
+	 * Replaces video-related placeholders in the block content depending on the current zone.
+	 *
+	 * @param string $content Block content to process.
+	 *
+	 * @return string Modified content with video placeholders replaced.
 	 */
-	protected static function isNewBlock($block)
+	private static function prepareBlockVideoPlaceholders(string $content): string
 	{
-		static $newBlocks = null;
-
-		if (!is_string($block))
+		if (!str_contains($content, '#DEFAULT_VIDEO_SRC#'))
 		{
-			return false;
+			return $content;
 		}
 
-		if ($newBlocks === null)
-		{
-			$newBlocks = unserialize(Manager::getOption('new_blocks'), ['allowed_classes' => false]);
-			if (!is_array($newBlocks))
-			{
-				$newBlocks = array();
-			}
-			if (
-				!isset($newBlocks['date']) ||
-				(
-					isset($newBlocks['date']) &&
-					((time() - $newBlocks['date']) > BlockRepo::NEW_BLOCK_LT)
-				)
-			)
-			{
-				$newBlocks = array();
-			}
-			if (isset($newBlocks['items']))
-			{
-				$newBlocks = $newBlocks['items'];
-			}
-		}
+		$replace = Manager::getZone() === 'ru'
+			? [
+				'#DEFAULT_VIDEO_SRC#' => 'data-src=""',
+				'#DEFAULT_VIDEO_SOURCE#' => 'data-source=""',
+				'#DEFAULT_VIDEO_PREVIEW#' => 'data-preview=""',
+				'#DEFAULT_VIDEO_STYLE#' => 'style=""',
+				'#DEFAULT_VIDEO_SRC_2#' => 'data-src=""',
+				'#DEFAULT_VIDEO_SOURCE_2#' => 'data-source=""',
+				'#DEFAULT_VIDEO_PREVIEW_2#' => 'data-preview=""',
+				'#DEFAULT_VIDEO_STYLE_2#' => 'style=""',
+			]
+			: [
+				'#DEFAULT_VIDEO_SRC#' => 'data-src="//www.youtube.com/embed/q4d8g9Dn3ww?autoplay=0&controls=1&loop=1&mute=0&rel=0"',
+				'#DEFAULT_VIDEO_SOURCE#' => 'data-source="https://www.youtube.com/watch?v=q4d8g9Dn3ww"',
+				'#DEFAULT_VIDEO_PREVIEW#' => 'data-preview="//img.youtube.com/vi/q4d8g9Dn3ww/sddefault.jpg"',
+				'#DEFAULT_VIDEO_STYLE#' => 'style="background-image:url(//img.youtube.com/vi/q4d8g9Dn3ww/sddefault.jpg)"',
+				'#DEFAULT_VIDEO_SRC_2#' => 'data-src="//www.youtube.com/embed/IISycTRZ-UA?autoplay=0&controls=1&loop=1&mute=0&rel=0"',
+				'#DEFAULT_VIDEO_SOURCE_2#' => 'data-source="https://www.youtube.com/watch?v=IISycTRZ-UA"',
+				'#DEFAULT_VIDEO_PREVIEW_2#' => 'data-preview="//img.youtube.com/vi/q4d8g9Dn3ww/sddefault.jpg"',
+				'#DEFAULT_VIDEO_STYLE_2#' => 'style="background-image:url(//img.youtube.com/vi/IISycTRZ-UA/sddefault.jpg)"',
+			];
 
-		return in_array($block, $newBlocks);
+		return str_replace(array_keys($replace), array_values($replace), $content);
 	}
 
 	/**
@@ -926,8 +940,6 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 	 */
 	public static function getLastUsed(int $count = 15): array
 	{
-		$blocks = array();
-
 		$res = Internals\BlockLastUsedTable::getList([
 			'select' => [
 				'CODE',
@@ -940,6 +952,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 			],
 			'limit' => $count ?: null,
 		]);
+		$blocks = [];
 		while ($row = $res->fetch())
 		{
 			$blocks[] = $row['CODE'];
@@ -1730,7 +1743,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 				$manifest['style']['block'] = ['type' => self::DEFAULT_WRAPPER_STYLE];
 				$manifest['block']['section'] = (array)$manifest['block']['section'];
 				if (
-					Site\Type::getCurrentScopeId() === 'MAINPAGE'
+					Site\Type::getCurrentScopeId() === Type::SCOPE_CODE_VIBE
 					&& !in_array('widgets_separators', $manifest['block']['section'], true)
 				)
 				{
@@ -1782,7 +1795,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 			// detect translated messages
 			$lang = null;
 			$langPortal = LANGUAGE_ID;
-			if (in_array($langPortal, ['ru', 'kz', 'by']))
+			if (in_array($langPortal, ['ru', 'kz', 'by', 'uz']))
 			{
 				$langPortal = 'ru';
 			}
@@ -2390,8 +2403,6 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 			);
 		}
 
-		// @tmp bug with setInnerHTML save result
-		$content = preg_replace('/&amp;([^\s]{1})/is', '&$1', $content);
 		if ($edit)
 		{
 			if ($manifest ?? null)
@@ -3845,10 +3856,9 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 
 				foreach ($data[$selector] as $pos => $value)
 				{
-					$value = trim($value['tagName'] ?? $value);
-					if (
-						preg_match('/^[a-z0-9]+$/i', $value) &&
-						isset($resultList[$pos]))
+					$sanitizer = new Sanitizer();
+					$value = $sanitizer->sanitizeNodeName($value);
+					if (isset($resultList[$pos]))
 					{
 						$valueBefore[$selector][$pos] = $resultList[$pos]->getNodeName();
 						$resultList[$pos]->setNodeName($value);
@@ -3899,7 +3909,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 		foreach ($manifest['nodes'] as $selector => $node)
 		{
 			$isFind = false;
-			$dataSelector = [];
+			$nodeData = [];
 			if (isset($data[$selector]))
 			{
 				if (!is_array($data[$selector]))
@@ -3909,7 +3919,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 					);
 				}
 				$data[$selector] = array_filter($data[$selector], fn($value) => !is_null($value));
-				$dataSelector = $data[$selector];
+				$nodeData = $data[$selector];
 				$isFind = true;
 			}
 			if (!$isFind && ($node['isWrapper'] ?? false) === true)
@@ -3922,7 +3932,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 							$data['#wrapper'],
 						);
 					}
-					$dataSelector = $data['#wrapper'];
+					$nodeData = $data['#wrapper'];
 				}
 				else
 				{
@@ -3933,7 +3943,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 							$data[$selector],
 						);
 					}
-					$dataSelector = $data[$selector];
+					$nodeData = $data[$selector];
 				}
 				$isFind = true;
 			}
@@ -3944,60 +3954,17 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 			if ($isFind)
 			{
 				// and save content from frontend in DOM by handler-class
-				$affected[$selector] = call_user_func_array(array(
+				$affected[$selector] = call_user_func([
 					Node\Type::getClassName($node['type']),
 					'saveNode',
-					), array(
-						$this,
-						$selector,
-						$dataSelector,
-						$additional,
-					));
+				], $this, $selector, $nodeData, $additional);
 			}
 		}
 
-		// additional work with menu
-		if (isset($additional['appendMenu']) && $additional['appendMenu'])
+		if (is_array($manifest['menu']) && !empty($manifest['menu']))
 		{
-			$export = $this->export();
-		}
-		else
-		{
-			$additional['appendMenu'] = false;
-		}
-		$manifest['menu'] = $manifest['menu'] ?? [];
-		foreach ($manifest['menu'] as $selector => $node)
-		{
-			if (isset($data[$selector]) && is_array($data[$selector]))
-			{
-				if (isset($data[$selector][0][0]))
-				{
-					$data[$selector] = array_shift($data[$selector]);
-				}
-				if ($additional['appendMenu'] && isset($export['menu'][$selector]))
-				{
-					$data[$selector] = array_merge(
-						$export['menu'][$selector],
-						$data[$selector]
-					);
-				}
-
-				$resultList = $doc->querySelectorAll($selector);
-				foreach ($resultList as $pos => $resultNode)
-				{
-					$parentNode = $resultNode->getParentNode();
-					if ($parentNode)
-					{
-						$parentNode->setInnerHtml(
-							$this->getMenuHtml(
-								$data[$selector],
-								$node
-							)
-						);
-					}
-					break;// we need only first position
-				}
-			}
+			$menu = new Menu($this);
+			$menu->updateMenu($data, $additional['appendMenu'] === true);
 		}
 
 		// save rebuild html as text
@@ -4056,92 +4023,6 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 		Assets\PreProcessing::blockUpdateNodeProcessing($this);
 
 		return true;
-	}
-
-	/**
-	 * Returns menu html with child submenu.
-	 * @param array $data Data array.
-	 * @param array $manifestNode Manifest node for current selector.
-	 * @param string $level Level (root or children).
-	 * @return string
-	 */
-	protected function getMenuHtml($data, $manifestNode, $level = 'root')
-	{
-		if (!is_array($data) || !isset($manifestNode[$level]))
-		{
-			return '';
-		}
-
-		$htmlContent = '';
-		$rootSelector = $manifestNode[$level];
-
-		if (
-			isset($rootSelector['ulClassName']) &&
-			isset($rootSelector['liClassName']) &&
-			isset($rootSelector['aClassName']) &&
-			is_string($rootSelector['ulClassName']) &&
-			is_string($rootSelector['liClassName']) &&
-			is_string($rootSelector['aClassName'])
-		)
-		{
-			foreach ($data as $menuItem)
-			{
-				if (
-					isset($menuItem['text']) && is_string($menuItem['text']) &&
-					isset($menuItem['href']) && is_string($menuItem['href'])
-				)
-				{
-					if ($menuItem['href'] === 'page:#landing0')
-					{
-						$res = Landing::addByTemplate(
-							$this->getSiteId(),
-							Assets\PreProcessing\Theme::getNewPageTemplate($this->getSiteId()),
-							[
-								'TITLE' => $menuItem['text'],
-							]
-						);
-						if ($res->isSuccess())
-						{
-							$menuItem['href'] = '#landing' . $res->getId();
-						}
-					}
-					if (isset($menuItem['target']) && is_string($menuItem['target']))
-					{
-						$target = $menuItem['target'];
-					}
-					else
-					{
-						$target = '_self';
-					}
-					$htmlContent .= '<li class="' . \htmlspecialcharsbx($rootSelector['liClassName']) . '">';
-					$htmlContent .= 	'<a href="' . \htmlspecialcharsbx($menuItem['href']) . '" target="' . $target . '" 
-											class="' . \htmlspecialcharsbx($rootSelector['aClassName']) . '">';
-					$htmlContent .= 		\htmlspecialcharsbx($menuItem['text']);
-					$htmlContent .= 	'</a>';
-					if (isset($menuItem['children']))
-					{
-						$htmlContent .= $this->getMenuHtml(
-							$menuItem['children'],
-							$manifestNode,
-							'children'
-						);
-					}
-					$htmlContent .= '</li>';
-				}
-			}
-			if ($htmlContent)
-			{
-				$htmlContent = '<ul class="' . \htmlspecialcharsbx($rootSelector['ulClassName']) . '">' .
-							   		$htmlContent .
-								'</ul>';
-			}
-			else if ($level == 'root')
-			{
-				$htmlContent = '<ul class="' . \htmlspecialcharsbx($rootSelector['ulClassName']) . '"></ul>';
-			}
-		}
-
-		return $htmlContent;
 	}
 
 	/**
@@ -4362,7 +4243,7 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 				if (!isset($data[$selector]['classList']))
 				{
 					$data[$selector] = [
-						'classList' => $data[$selector],
+						'classList' => (array)$data[$selector],
 					];
 				}
 				if (!isset($data[$selector]['affect']))
@@ -4394,8 +4275,12 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 
 					if ($resultNode)
 					{
-						 $contentBefore = $resultNode->getOuterHTML();
-						if ((int)$resultNode->getNodeType() === $resultNode::ELEMENT_NODE)
+						$contentBefore = $resultNode->getOuterHTML();
+						if (
+							isset($data[$relativeSelector]['classList'])
+							&& is_array($data[$relativeSelector]['classList'])
+							&& (int)$resultNode->getNodeType() === $resultNode::ELEMENT_NODE
+						)
 						{
 							$resultNode->setClassName(
 								implode(' ', $data[$relativeSelector]['classList'])
@@ -5308,5 +5193,98 @@ class Block extends \Bitrix\Landing\Internals\BaseTable
 		}
 
 		return false;
+	}
+
+	/**
+	 * Save new data to the block.
+	 * @param Block $blockInstance Block instance.
+	 * @param array $block Block data, format like used in export\import
+	 */
+	public static function saveDataToBlock(Block $blockInstance, array $block): void
+	{
+		// update cards
+		if (isset($block['cards']) && is_array($block['cards']))
+		{
+			$blockInstance->updateCards(
+				$block['cards']
+			);
+		}
+		// update style
+		if (isset($block['style']) && is_array($block['style']))
+		{
+			foreach ($block['style'] as $selector => $styleData)
+			{
+				if ($selector === '#wrapper')
+				{
+					$selector = '#' . $blockInstance->getAnchor($blockInstance->getId());
+				}
+				$styleToSet = [];
+				// compatibility for old style export
+				if (!isset($styleData['classList']) && !isset($styleData['style']))
+				{
+					foreach ((array)$styleData as $clPos => $clVal)
+					{
+						// todo: check compatibility
+						$selectorUpd = $selector . '@' . $clPos;
+						$styleToSet[$selectorUpd]['classList'] = (array)$clVal;
+					}
+				}
+
+				// new style export format (classList + style)
+				if (isset($styleData['classList']))
+				{
+					foreach ($styleData['classList'] as $clPos => $class)
+					{
+						if ($class)
+						{
+							$selectorUpd = $selector . '@' . $clPos;
+							$styleToSet[$selectorUpd]['classList'] = explode(' ', $class);
+						}
+					}
+				}
+				if (isset($styleData['style']))
+				{
+					foreach ($styleData['style'] as $stPos => $styles)
+					{
+						if (!empty($styles))
+						{
+							$selectorUpd = $selector . '@' . $stPos;
+							$styleToSet[$selectorUpd]['style'] = $styles;
+						}
+					}
+				}
+
+				if (!empty($styleToSet))
+				{
+					$blockInstance->setClasses($styleToSet);
+				}
+			}
+		}
+		// update nodes
+		if (isset($block['nodes']) && is_array($block['nodes']))
+		{
+			$blockInstance->updateNodes($block['nodes']);
+		}
+		// update menu
+		if (!empty($block['menu']))
+		{
+			$blockInstance->updateNodes($block['menu']);
+		}
+		// update attrs
+		if (!empty($block['attrs']))
+		{
+			if (isset($block['attrs']['#wrapper']))
+			{
+				$attrCode = '#' . $blockInstance->getAnchor($blockInstance->getId());
+				$block['attrs'][$attrCode] = $block['attrs']['#wrapper'];
+				unset($block['attrs']['#wrapper']);
+			}
+			$blockInstance->setAttributes($block['attrs']);
+		}
+		// update dynamic source
+		if (isset($block['dynamic']) && is_array($block['dynamic']))
+		{
+			$blockInstance->saveDynamicParams($block['dynamic']);
+		}
 	}
 }

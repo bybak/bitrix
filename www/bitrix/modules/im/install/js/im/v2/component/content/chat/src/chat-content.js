@@ -10,6 +10,8 @@ import './css/chat-content.css';
 import type { JsonObject } from 'main.core';
 import type { ImModelLayout } from 'im.v2.model';
 
+export { AiAssistantBotContent } from './components/content/ai-assistant-bot/ai-assistant-bot';
+
 // @vue/component
 export const ChatContent = {
 	name: 'ChatContent',
@@ -48,13 +50,17 @@ export const ChatContent = {
 	},
 	created()
 	{
-		EventEmitter.subscribe(EventType.dialog.openComments, this.onOpenComments);
 		EventEmitter.subscribe(EventType.dialog.closeComments, this.onCloseComments);
+
+		this.getEmitter().subscribe(EventType.dialog.openComments, this.onOpenComments);
+		this.getEmitter().subscribe(EventType.dialog.closeComments, this.onCloseComments);
 	},
 	beforeUnmount()
 	{
-		EventEmitter.unsubscribe(EventType.dialog.openComments, this.onOpenComments);
 		EventEmitter.unsubscribe(EventType.dialog.closeComments, this.onCloseComments);
+
+		this.getEmitter().unsubscribe(EventType.dialog.openComments, this.onOpenComments);
+		this.getEmitter().unsubscribe(EventType.dialog.closeComments, this.onCloseComments);
 	},
 	methods:
 	{
@@ -80,6 +86,10 @@ export const ChatContent = {
 		onCommentsAnimationEnd()
 		{
 			this.commentsAnimationFlag = false;
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 	},
 	template: `

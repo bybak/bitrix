@@ -5,15 +5,6 @@ import { ChannelManager } from 'im.v2.lib.channel';
 import type { PullExtraParams, RawChat } from '../../types/common';
 import type { MessageAddParams } from '../../types/message';
 
-const ActionNameByChatType = {
-	[ChatType.copilot]: 'recent/setCopilot',
-	[ChatType.channel]: 'recent/setChannel',
-	[ChatType.openChannel]: 'recent/setChannel',
-	[ChatType.generalChannel]: 'recent/setChannel',
-	[ChatType.collab]: 'recent/setCollab',
-	default: 'recent/setRecent',
-};
-
 export class NewMessageManager
 {
 	#params: MessageAddParams;
@@ -49,19 +40,9 @@ export class NewMessageManager
 		return chat?.type ?? '';
 	}
 
-	isLinesChat(): boolean
-	{
-		return Boolean(this.#params.lines);
-	}
-
 	isCommentChat(): boolean
 	{
 		return this.getChatType() === ChatType.comment;
-	}
-
-	isCollabChat(): boolean
-	{
-		return this.getChatType() === ChatType.collab;
 	}
 
 	isChannelChat(): boolean
@@ -83,31 +64,5 @@ export class NewMessageManager
 	isChannelListEvent(): boolean
 	{
 		return this.isChannelChat() && this.#extra.is_shared_event;
-	}
-
-	needToSkipMessageEvent(): boolean
-	{
-		return this.isLinesChat() || this.isCommentChat() || !this.isUserInChat();
-	}
-
-	getAddActions(): string[]
-	{
-		// for open channels there are two similar P&P events
-		// one adds data to default recent, another adds data to channel recent
-		// close channels are added only to default recent
-		if (this.isChannelChat() && !this.isChannelListEvent())
-		{
-			return [ActionNameByChatType.default];
-		}
-
-		if (this.isCollabChat())
-		{
-			return [ActionNameByChatType.default, ActionNameByChatType[ChatType.collab]];
-		}
-
-		const newMessageChatType = this.getChatType();
-		const actionName = ActionNameByChatType[newMessageChatType] ?? ActionNameByChatType.default;
-
-		return [actionName];
 	}
 }

@@ -1,6 +1,7 @@
 /* eslint-disable @bitrix24/bitrix24-rules/no-native-dom-methods */
 import { Loc, Type } from 'main.core';
 import type { BBCodeElementNode } from 'ui.bbcode.model';
+import { Outline } from 'ui.icon-set.api.core';
 import {
 	$normalizeTextNodes,
 	shouldWrapInParagraph,
@@ -33,6 +34,7 @@ import {
 	createCommand,
 	$isRootOrShadowRoot,
 	$createTextNode,
+	$getRoot,
 	COMMAND_PRIORITY_LOW,
 	COMMAND_PRIORITY_NORMAL,
 	INSERT_PARAGRAPH_COMMAND,
@@ -51,8 +53,14 @@ import { type SchemeValidationOptions } from '../../types/scheme-validation-opti
 
 import { $createSpoilerTitleTextNode, $isSpoilerTitleTextNode, SpoilerTitleTextNode } from './spoiler-title-text-node';
 
+/** @memberof BX.UI.TextEditor.Plugins.Spoiler */
 export const INSERT_SPOILER_COMMAND = createCommand('INSERT_SPOILER_COMMAND');
+
+/** @memberof BX.UI.TextEditor.Plugins.Spoiler */
 export const REMOVE_SPOILER_COMMAND = createCommand('REMOVE_SPOILER_COMMAND');
+
+/** @memberof BX.UI.TextEditor.Plugins.Spoiler */
+export const TOGGLE_SPOILER_COMMAND = createCommand('TOGGLE_SPOILER_COMMAND');
 
 export class SpoilerPlugin extends BasePlugin
 {
@@ -160,6 +168,7 @@ export class SpoilerPlugin extends BasePlugin
 			bbcodeMap: {
 				spoiler: 'spoiler',
 				'spoiler-content': 'spoiler',
+				'spoiler-title': 'spoiler',
 			},
 		};
 	}
@@ -168,7 +177,7 @@ export class SpoilerPlugin extends BasePlugin
 	{
 		this.getEditor().getComponentRegistry().register('spoiler', (): Button => {
 			const button: Button = new Button();
-			button.setContent('<span class="ui-icon-set --insert-spoiler"></span>');
+			button.setIcon(Outline.SPOILER);
 			button.setBlockType('spoiler');
 			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_SPOILER'));
 			button.subscribe('onClick', (): void => {
@@ -247,17 +256,24 @@ export class SpoilerPlugin extends BasePlugin
 				(payload) => {
 					this.getEditor().update(() => {
 						const title = Type.isPlainObject(payload) && Type.isStringFilled(payload.title) ? payload.title : undefined;
-						const selection = $getSelection();
+						let selection = $getSelection() || $getPreviousSelection();
+						if (selection === null)
+						{
+							selection = $getRoot().selectEnd();
+						}
+
 						const spoiler = insertSpoiler(selection, title);
 
-						spoiler.getTitleNode().select();
+						if (spoiler !== null)
+						{
+							spoiler.getContentNode()?.getChildren()[0]?.select();
+						}
 					});
 
 					return true;
 				},
 				COMMAND_PRIORITY_LOW,
 			),
-
 			this.getEditor().registerCommand(
 				REMOVE_SPOILER_COMMAND,
 				() => {
@@ -276,6 +292,34 @@ export class SpoilerPlugin extends BasePlugin
 
 						$removeSpoiler(spoilerNode);
 					});
+
+					return true;
+				},
+				COMMAND_PRIORITY_LOW,
+			),
+			this.getEditor().registerCommand(
+				TOGGLE_SPOILER_COMMAND,
+				() => {
+					const selection: RangeSelection = $getSelection() || $getPreviousSelection();
+					if (!$isRangeSelection(selection))
+					{
+						return false;
+					}
+
+					let spoilerNode = $findMatchingParent(selection.anchor.getNode(), $isSpoilerNode);
+					if (!spoilerNode)
+					{
+						spoilerNode = $findMatchingParent(selection.focus.getNode(), $isSpoilerNode);
+					}
+
+					if (spoilerNode)
+					{
+						this.getEditor().dispatchCommand(REMOVE_SPOILER_COMMAND);
+					}
+					else
+					{
+						this.getEditor().dispatchCommand(INSERT_SPOILER_COMMAND);
+					}
 
 					return true;
 				},
@@ -435,7 +479,15 @@ export class SpoilerPlugin extends BasePlugin
 
 		if (spoilerTitleNode)
 		{
-			$insertDataTransferForPlainText(event.clipboardData, selection);
+			event.preventDefault();
+			this.getEditor().update(
+				() => {
+					$insertDataTransferForPlainText(event.clipboardData, selection);
+				},
+				{
+					tag: 'paste',
+				},
+			);
 
 			return true;
 		}

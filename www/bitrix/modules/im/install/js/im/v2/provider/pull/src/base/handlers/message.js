@@ -1,17 +1,18 @@
+import { Type } from 'main.core';
 import { EventEmitter } from 'main.core.events';
-import { Store } from 'ui.vue3.vuex';
 
 import { CopilotManager } from 'im.v2.lib.copilot';
 import { Core } from 'im.v2.application.core';
 import { Logger } from 'im.v2.lib.logger';
 import { UserManager } from 'im.v2.lib.user';
-import { UuidManager } from 'im.v2.lib.uuid';
 import { InputActionListener } from 'im.v2.lib.input-action';
 import { EventType, DialogScrollThreshold, UserRole, ChatType } from 'im.v2.const';
-import { MessageService } from 'im.v2.provider.service';
+import { MessageService } from 'im.v2.provider.service.message';
 
+import { NewMessageManager } from '../../classes/new-message-manager';
 import { MessageDeleteManager } from './classes/message-delete-manager';
 
+import type { Store } from 'ui.vue3.vuex';
 import type { ImModelChat, ImModelMessage } from 'im.v2.model';
 
 import type {
@@ -28,8 +29,9 @@ import type {
 	DeleteReactionParams,
 	MessageDeleteCompletePreparedParams,
 	PrepareDeleteMessageParams,
+	RawReaction,
 } from '../../types/message';
-import type { PullExtraParams, RawFile, RawUser, RawMessage, RawChat } from '../../types/common';
+import type { RawFile, RawUser, RawMessage, RawChat } from '../../types/common';
 
 type UserId = number;
 
@@ -49,11 +51,13 @@ export class MessagePullHandler
 	{
 		Logger.warn('MessagePullHandler: handleMessageAdd', params);
 		this.#setMessageChat(params);
-		this.#setUsers(params);
+		this.#setUsers(params.users);
 		this.#setFiles(params);
 		this.#setAdditionalEntities(params);
 		this.#setCommentInfo(params);
-		this.#setCopilotRole(params);
+		this.#setCopilotData(params);
+		this.#setMessagesAutoDeleteConfig(params);
+		this.#setStickers(params);
 
 		const messageWithTemplateId = this.#store.getters['messages/isInChatCollection']({
 			messageId: params.message.templateId,
@@ -89,8 +93,8 @@ export class MessagePullHandler
 			);
 			if (hasLoadingMessage)
 			{
-				void this.#store.dispatch('messages/deleteLoadingMessageByMessageId', {
-					messageId: params.message.templateId,
+				void this.#store.dispatch('messages/delete', {
+					id: params.message.templateId,
 				});
 			}
 
@@ -98,7 +102,7 @@ export class MessagePullHandler
 			this.#handleAddingMessageToModel(params);
 		}
 
-		InputActionListener.getInstance().stopUserActionsInChat({
+		InputActionListener.getInstance().stopAction({
 			userId: params.message.senderId,
 			dialogId: params.dialogId,
 		});
@@ -109,7 +113,7 @@ export class MessagePullHandler
 	handleMessageUpdate(params: MessageUpdateParams)
 	{
 		Logger.warn('MessagePullHandler: handleMessageUpdate', params);
-		InputActionListener.getInstance().stopUserActionsInChat({
+		InputActionListener.getInstance().stopAction({
 			userId: params.senderId,
 			dialogId: params.dialogId,
 		});
@@ -166,22 +170,31 @@ export class MessagePullHandler
 			userId,
 			reaction,
 		} = params;
+
 		if (Core.getUserId() === userId)
 		{
 			actualReactionsState.ownReactions = [reaction];
 		}
 
 		const userManager = new UserManager();
-		userManager.addUsersToModel(usersShort);
+		void userManager.addUsersToModel(usersShort);
 
-		this.#store.dispatch('messages/reactions/set', [actualReactionsState]);
+		void this.#store.dispatch('messages/reactions/set', [actualReactionsState]);
 	}
 
 	handleDeleteReaction(params: DeleteReactionParams)
 	{
 		Logger.warn('MessagePullHandler: handleDeleteReaction', params);
-		const { actualReactions: { reaction: actualReactionsState } } = params;
-		this.#store.dispatch('messages/reactions/set', [actualReactionsState]);
+		const { actualReactions: { reaction: rawReaction }, reaction: reactionType, userId } = params;
+
+		const newReactionItem: RawReaction = { ...rawReaction };
+
+		if (Core.getUserId() === userId)
+		{
+			newReactionItem.ownReactionsToRemove = [reactionType];
+		}
+
+		void this.#store.dispatch('messages/reactions/set', [newReactionItem]);
 	}
 
 	handleMessageParamsUpdate(params)
@@ -195,32 +208,19 @@ export class MessagePullHandler
 		});
 	}
 
-	handleReadMessage(params: ReadMessageParams, extra: PullExtraParams)
+	handleReadMessage(params: ReadMessageParams)
 	{
 		Logger.warn('MessagePullHandler: handleReadMessage', params);
-		const uuidManager = UuidManager.getInstance();
-		if (uuidManager.hasActionUuid(extra.action_uuid))
-		{
-			Logger.warn('MessagePullHandler: handleReadMessage: we have this uuid, skip');
-			uuidManager.removeActionUuid(extra.action_uuid);
+		const { chatId, dialogId, viewedMessages, lastId } = params;
 
-			return;
-		}
+		void this.#store.dispatch('messages/readMessages', {
+			chatId,
+			messageIds: viewedMessages,
+		});
 
-		this.#store.dispatch('messages/readMessages', {
-			chatId: params.chatId,
-			messageIds: params.viewedMessages,
-		}).then(() => {
-			this.#store.dispatch('chats/update', {
-				dialogId: params.dialogId,
-				fields: {
-					counter: params.counter,
-					lastId: params.lastId,
-				},
-			});
-		}).catch((error) => {
-			// eslint-disable-next-line no-console
-			console.error('MessagePullHandler: error handling readMessage', error);
+		void this.#store.dispatch('chats/update', {
+			dialogId,
+			fields: { lastId },
 		});
 	}
 
@@ -239,7 +239,7 @@ export class MessagePullHandler
 	{
 		Logger.warn('MessagePullHandler: handlePinAdd', params);
 		this.#setFiles(params);
-		this.#setUsers(params);
+		this.#setUsers(params.users);
 		this.#store.dispatch('messages/store', params.additionalMessages);
 		this.#store.dispatch('messages/pin/add', {
 			chatId: params.pin.chatId,
@@ -263,31 +263,34 @@ export class MessagePullHandler
 	// helpers
 	#setMessageChat(params: MessageAddParams)
 	{
-		const chat = params.chat?.[params.chatId];
+		const manager = new NewMessageManager(params);
+
+		const chat = manager.getChat();
 		if (!chat)
 		{
 			return;
 		}
 
-		const chatToAdd = { ...params.chat[params.chatId], dialogId: params.dialogId };
+		const chatToAdd = { ...chat, dialogId: params.dialogId };
 		const dialogExists = Boolean(this.#getDialog(params.dialogId));
 		const messageWithoutNotification = !params.notify || params.message?.params?.NOTIFY === 'N';
 		if (!dialogExists && !messageWithoutNotification && !chatToAdd.role)
 		{
 			chatToAdd.role = UserRole.member;
 		}
-		this.#store.dispatch('chats/set', chatToAdd);
+
+		void this.#store.dispatch('chats/set', chatToAdd);
 	}
 
-	#setUsers(params: {users: {[userId: string]: RawUser} | []})
+	#setUsers(users: {[userId: string]: RawUser} | [])
 	{
-		if (!params.users)
+		if (!users)
 		{
 			return;
 		}
 
 		const userManager = new UserManager();
-		userManager.setUsersToModel(Object.values(params.users));
+		userManager.setUsersToModel(Object.values(users));
 	}
 
 	#setFiles(params: {files: {[fileId: string]: RawFile} | [], message?: RawMessage})
@@ -315,17 +318,21 @@ export class MessagePullHandler
 			messages,
 			files,
 			users,
+			stickers,
 		} = params.message.additionalEntities;
 		const newMessages = [...messages, ...additionalMessages];
-		this.#store.dispatch('messages/store', newMessages);
-		this.#store.dispatch('files/set', files);
-		this.#store.dispatch('users/set', users);
+		void this.#store.dispatch('messages/store', newMessages);
+		void this.#store.dispatch('files/set', files);
+		void this.#store.dispatch('users/set', users);
+		void this.#store.dispatch('stickers/set', stickers);
 	}
 
 	#setCommentInfo(params: MessageAddParams): void
 	{
-		const chat: RawChat = params.chat?.[params.chatId];
-		if (!chat || chat.type !== ChatType.comment)
+		const manager = new NewMessageManager(params);
+
+		const chat = manager.getChat();
+		if (!chat || !manager.isCommentChat())
 		{
 			return;
 		}
@@ -356,7 +363,7 @@ export class MessagePullHandler
 		const RELOAD_LIMIT = MessageService.getMessageRequestLimit() * 5;
 		if (dialog.inited && !chatIsOpened && unreadMessages.length > RELOAD_LIMIT)
 		{
-			this.#store.dispatch('messages/store', params.message);
+			void this.#store.dispatch('messages/store', params.message);
 			const messageService = new MessageService({ chatId: params.chatId });
 			messageService.reloadMessageList();
 
@@ -382,29 +389,35 @@ export class MessagePullHandler
 		this.#store.dispatch('messages/setChatCollection', { messages: [newMessage] });
 	}
 
-	#updateDialog(params)
+	#updateDialog(params: MessageAddParams)
 	{
-		const dialog = this.#getDialog(params.dialogId, true);
+		const manager = new NewMessageManager(params);
+		const { dialogId, chatId, message } = params;
+
+		const dialog = this.#getDialog(dialogId, true);
 
 		const dialogFieldsToUpdate = {};
-		if (params.message.id > dialog.lastMessageId)
+		if (message.id > dialog.lastMessageId)
 		{
-			dialogFieldsToUpdate.lastMessageId = params.message.id;
+			dialogFieldsToUpdate.lastMessageId = message.id;
 		}
 
-		if (params.message.senderId === Core.getUserId() && params.message.id > dialog.lastReadId)
+		if (message.senderId === Core.getUserId() && message.id > dialog.lastReadId)
 		{
-			dialogFieldsToUpdate.lastId = params.message.id;
+			dialogFieldsToUpdate.lastId = message.id;
 		}
 
-		dialogFieldsToUpdate.counter = params.counter;
+		if (manager.isUserChat() && !dialog.chatId)
+		{
+			dialogFieldsToUpdate.chatId = chatId;
+		}
 
-		this.#store.dispatch('chats/update', {
-			dialogId: params.dialogId,
+		void this.#store.dispatch('chats/update', {
+			dialogId,
 			fields: dialogFieldsToUpdate,
 		});
-		this.#store.dispatch('chats/clearLastMessageViews', {
-			dialogId: params.dialogId,
+		void this.#store.dispatch('chats/clearLastMessageViews', {
+			dialogId,
 		});
 	}
 
@@ -481,7 +494,7 @@ export class MessagePullHandler
 		return this.#store.getters['chats/get'](dialogId, temporary);
 	}
 
-	#setCopilotRole(params)
+	#setCopilotData(params)
 	{
 		if (!params.copilot)
 		{
@@ -490,6 +503,25 @@ export class MessagePullHandler
 
 		const copilotManager = new CopilotManager();
 		void copilotManager.handleMessageAdd(params.copilot);
+	}
+
+	#setMessagesAutoDeleteConfig(params: MessageAddParams)
+	{
+		const { messagesAutoDeleteConfigs } = params;
+		void this.#store.dispatch('chats/autoDelete/set', messagesAutoDeleteConfigs);
+	}
+
+	#setStickers(params: MessageAddParams)
+	{
+		const hasMessageSticker = Type.isPlainObject(params.message.params.STICKER_PARAMS);
+		if (hasMessageSticker)
+		{
+			void this.#store.dispatch('stickers/messages/set', [{
+				messageId: params.message.id,
+				...params.message.params.STICKER_PARAMS,
+			}]);
+			void this.#store.dispatch('stickers/set', params.stickers);
+		}
 	}
 
 	#prepareDeleteMessageParams(
@@ -510,7 +542,6 @@ export class MessagePullHandler
 				...baseParams,
 				newLastMessage: params.newLastMessage,
 				lastMessageViews: params.lastMessageViews,
-				counter: params.counter,
 			};
 		}
 

@@ -12,7 +12,7 @@ export type Chat = {
 	avatar: string,
 	color: string,
 	extranet: boolean,
-	counter: number,
+	containsCollaber: boolean,
 	userCounter: number,
 	lastReadId: number,
 	markedId: number,
@@ -28,10 +28,11 @@ export type Chat = {
 	},
 	savedPositionMessageId: number,
 	managerList: number[],
-	muteList: number[],
+	isMuted: boolean,
 	quoteId: number,
 	ownerId: number,
 	entityLink: {
+		id: string,
 		type: string,
 		url: string,
 	},
@@ -52,6 +53,8 @@ export type Chat = {
 		isHistoryLimitExceeded: boolean,
 	},
 	parentChatId: number,
+	backgroundId: string,
+	isTextareaEnabled: boolean,
 };
 
 export type CollabInfo = {

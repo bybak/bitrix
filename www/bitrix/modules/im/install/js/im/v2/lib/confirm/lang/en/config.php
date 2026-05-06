@@ -1,9 +1,13 @@
 <?php
+$MESS["IM_LIB_CONFIRM_ACTIVE_CALL_CONFIRM"] = "Are you sure you want to close the page? Your call will disconnect if you close the page.";
 $MESS["IM_LIB_CONFIRM_DELETE_COLLAB_TEXT"] = "This will delete the collab including all communication history. This action cannot be undone.";
 $MESS["IM_LIB_CONFIRM_DELETE_COLLAB_TITLE"] = "Delete collab";
 $MESS["IM_LIB_CONFIRM_DELETE_DESKTOP"] = "Are you sure you want to remove Bitrix24 from the list? #BR# It acts as a fast switch between your Bitrix24s helping you to keep on top of your notifications.";
 $MESS["IM_LIB_CONFIRM_DELETE_DESKTOP_CONFIRM"] = "Yes, remove";
 $MESS["IM_LIB_CONFIRM_DELETE_MESSAGES_TITLE"] = "Delete";
+$MESS["IM_LIB_CONFIRM_DELETE_STICKER_PACK_CONFIRM_CONFIRM"] = "Yes";
+$MESS["IM_LIB_CONFIRM_DELETE_STICKER_PACK_CONFIRM_TEXT"] = "Are you sure you want to delete this sticker pack for all users? This action cannot be undone.";
+$MESS["IM_LIB_CONFIRM_DELETE_STICKER_PACK_CONFIRM_TITLE"] = "Delete for everyone";
 $MESS["IM_LIB_CONFIRM_LEAVE_CHANNEL_TEXT"] = "Do you want to unsubscribe from the channel?";
 $MESS["IM_LIB_CONFIRM_LEAVE_CHANNEL_YES"] = "Yes";
 $MESS["IM_LIB_CONFIRM_LEAVE_CHAT_MSGVER_1"] = "Do you want to leave the chat?";
@@ -16,6 +20,9 @@ $MESS["IM_LIB_CONFIRM_RESTART_DESKTOP_OK"] = "OK";
 $MESS["IM_LIB_CONFIRM_RESTART_DESKTOP_RESTART"] = "Restart";
 $MESS["IM_LIB_CONFIRM_SWITCH_NOTIFICATION_MODE"] = "Do you want to switch to simple mode? All the changes you made while in advanced mode will be lost.";
 $MESS["IM_LIB_CONFIRM_SWITCH_NOTIFICATION_MODE_YES"] = "Yes";
+$MESS["IM_LIB_CONFIRM_UNLINK_STICKER_PACK_CONFIRM_CONFIRM"] = "Yes";
+$MESS["IM_LIB_CONFIRM_UNLINK_STICKER_PACK_CONFIRM_TEXT"] = "Are you sure you no longer need this sticker pack? It will remain available to other users.";
+$MESS["IM_LIB_CONFIRM_UNLINK_STICKER_PACK_CONFIRM_TITLE"] = "Remove sticker pack";
 $MESS["IM_LIB_CONFIRM_USER_CHANNEL_KICK"] = "Are you sure you want to remove this channel subscriber?";
 $MESS["IM_LIB_CONFIRM_USER_KICK"] = "Are you sure you want to remove this user?";
 $MESS["IM_LIB_CONFIRM_USER_KICK_FROM_COLLAB_TEXT"] = "Do you want to remove this member from the collab? They will lose access to the collab chat, tasks, files and meetings.";

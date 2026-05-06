@@ -5,11 +5,10 @@ namespace Bitrix\Landing\Subtype;
 use Bitrix\Landing\Assets\Manager;
 use Bitrix\Landing\Block;
 use Bitrix\Landing\Repo;
-use Bitrix\Landing\Mainpage;
 use Bitrix\Landing;
+use Bitrix\Landing\Vibe\Vibe;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
-use Bitrix\Main\UI\Extension;
 use Bitrix\Main\Web\DOM;
 use Bitrix\Main\Web\Json;
 use Bitrix\Rest\UsageStatTable;
@@ -180,7 +179,7 @@ class WidgetVue
 			$vueParams['style'] = $params['style'];
 		}
 
-		$vueParams['useDemoData'] = Mainpage\Manager::isUseDemoData();
+		$vueParams['useDemoData'] = Vibe::isUseDemoData();
 		if (
 			is_array($params['demoData'])
 			&& !empty($params['demoData'])
@@ -205,16 +204,10 @@ class WidgetVue
 		}
 
 		$vueParams = Json::encode($vueParams);
-		$type = Landing\Site\Scope::getCurrentScopeId();
 
 		return "
 			<script>
 				(() => {
-					if (BX.Landing.Env)
-					{
-						BX.Landing.Env.getInstance().setType('{$type}');
-					}
-						
 					const init = () => {
 						(new BX.Landing.WidgetVue(
 							{$vueParams}
@@ -241,24 +234,14 @@ class WidgetVue
 
 	private static function getLangPhrases(array $params): array
 	{
-		$phrases = '{}';
-
 		$lang = Loc::getCurrentLang();
 		$defaultLang = 'en';
 
-		if (is_array($params['lang']))
-		{
-			if (
-				isset($params['lang'][$lang])
-				|| isset($params['lang'][$defaultLang])
-			)
-			{
-				$lang = isset($params['lang'][$lang]) ? $lang : $defaultLang;
-				$phrases = $params['lang'][$lang];
-			}
-		}
+		$phrases = $params['lang'][$lang]
+			?? $params['lang'][$defaultLang]
+			?? [];
 
-		return $phrases;
+		return is_array($phrases) ? $phrases : [];
 	}
 
 	private static function getLoaderString(Block $block): string

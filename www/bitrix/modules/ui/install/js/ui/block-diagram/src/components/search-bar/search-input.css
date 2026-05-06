@@ -1,0 +1,91 @@
+.ui-block-diagram-search-input {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	gap: 4px;
+	width: 0;
+	height: 28px;
+	padding: 0 8px;
+	border-radius: 5px;
+	border: 1px solid var(--ui-color-design-outline-stroke);
+	box-sizing: border-box;
+}
+
+.ui-block-diagram-search-input.--open {
+	width: 268px;
+}
+
+.ui-block-diagram-search-input.--focus {
+	border: 1px solid var(--ui-color-accent-main-primary);
+}
+
+.ui-block-diagram-search-input.ui-block-diagram-open-search-bar .ui-block-diagram-search-input__input,
+.ui-block-diagram-search-input.ui-block-diagram-open-search-bar .ui-block-diagram-search-input__clear-btn,
+.ui-block-diagram-search-input.ui-block-diagram-open-search-bar .ui-block-diagram-search-input__icon {
+	display: none;
+}
+
+.ui-block-diagram-search-input.ui-block-diagram-close-search-bar .ui-block-diagram-search-input__input,
+.ui-block-diagram-search-input.ui-block-diagram-close-search-bar .ui-block-diagram-search-input__clear-btn,
+.ui-block-diagram-search-input.ui-block-diagram-close-search-bar .ui-block-diagram-search-input__icon {
+	display: none;
+}
+
+.ui-block-diagram-search-input__input {
+	width: calc(100% - 48px);
+	height: 28px;
+	padding-left: 0;
+	padding-right: 12px;
+	border: none;
+	font: var(--ui-font-size-md) var(--ui-font-family-system);
+	color: var(--ui-color-base-90);
+	letter-spacing: var(--ui-letter-spacing-l);
+	outline: none;
+	background-color: inherit;
+	box-sizing: border-box;
+}
+
+.ui-block-diagram-search-input__input::placeholder {
+	font: var(--ui-font-size-md) var(--ui-font-family-system);
+	color: var(--ui-color-design-outline-content-secondary);
+	letter-spacing: var(--ui-letter-spacing-l);
+}
+
+.ui-block-diagram-search-input__icon {
+	width: 20px;
+	height: 20px;
+	background-color: var(--ui-color-gray-50);
+}
+
+.ui-block-diagram-search-input__clear-btn {
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: none;
+	background-color: transparent;
+	cursor: pointer;
+}
+
+.ui-block-diagram-search-input__clear-btn-icon {
+	background-color: var(--ui-color-palette-gray-50);
+}
+
+@keyframes block-diagram-open-search-bar { 
+	0% { width: 36px; height: 28px; }
+	100% { width: 268px; height: 28px; }
+}
+
+@keyframes block-diagram-close-search-bar { 
+	0% { width: 268px; height: 28px; }
+	100% { width: 36px; height: 28px; }
+}
+
+
+.ui-block-diagram-open-search-bar {
+	animation: block-diagram-open-search-bar 0.3s;
+}
+
+.ui-block-diagram-close-search-bar {
+	animation: block-diagram-close-search-bar 0.3s;
+}

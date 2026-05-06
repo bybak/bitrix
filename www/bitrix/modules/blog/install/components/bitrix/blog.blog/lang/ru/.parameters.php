@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS["BB_MESSAGE_COUNT"] = "Количество сообщений, выводимых на страницу";
 $MESS["BB_PATH_TO_BLOG"] = "Шаблон пути к странице блога";
 $MESS["BB_PATH_TO_BLOG_CATEGORY"] = "Шаблон пути к странице блога c фильтром по тегу";
@@ -32,4 +32,3 @@ $MESS["RATING_TYPE_STANDART_TEXT"] = "Нравится / Не нравится (
 $MESS["RATING_TYPE_STANDART_GRAPHIC"] = "Нравится / Не нравится (графический)";
 $MESS["RATING_TYPE_LIKE_TEXT"] = "Мне нравится (текстовый)";
 $MESS["RATING_TYPE_LIKE_GRAPHIC"] = "Мне нравится (графический)";
-?>

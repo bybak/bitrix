@@ -1,97 +1,50 @@
 import { Core } from 'im.v2.application.core';
-import { RestMethod } from 'im.v2.const';
-import { runAction } from 'im.v2.lib.rest';
-import { Logger } from 'im.v2.lib.logger';
-import { UserManager } from 'im.v2.lib.user';
+import { RecentType, RestMethod } from 'im.v2.const';
+import { BaseRecentService, type RecentRestResult } from 'im.v2.provider.service.recent';
 
-import type { ChannelRestResult } from 'im.v2.provider.service';
+import type { RawMessage, RawRecentItem } from 'im.v2.provider.service.types';
 
-export class ChannelService
+export class ChannelService extends BaseRecentService
 {
-	firstPageIsLoaded: boolean = false;
-	#itemsPerPage: number = 50;
-	#isLoading: boolean = false;
-	#pagesLoaded: number = 0;
-	#hasMoreItemsToLoad: boolean = true;
 	#lastMessageId: number = 0;
 
-	async loadFirstPage(): Promise
+	getRestMethodName(): string
 	{
-		this.#isLoading = true;
-
-		const result = await this.#requestItems({ firstPage: true });
-		this.firstPageIsLoaded = true;
-
-		return result;
+		return RestMethod.imV2RecentChannelTail;
 	}
 
-	loadNextPage(): Promise
+	saveRecentItems(recentItems: RawRecentItem[]): Promise
 	{
-		if (this.#isLoading || !this.#hasMoreItemsToLoad)
-		{
-			return Promise.resolve();
-		}
-
-		this.#isLoading = true;
-
-		return this.#requestItems();
+		return Core.getStore().dispatch('recent/setCollection', {
+			type: RecentType.openChannel,
+			items: recentItems,
+		});
 	}
 
-	hasMoreItemsToLoad(): boolean
+	getRequestFilter(firstPage: boolean = false): Record
 	{
-		return this.#hasMoreItemsToLoad;
-	}
-
-	async #requestItems({ firstPage = false } = {}): Promise
-	{
-		const queryParams = {
-			data: {
-				limit: this.#itemsPerPage,
-				filter: {
-					lastMessageId: firstPage ? null : this.#lastMessageId,
-				},
-			},
+		return {
+			lastMessageId: firstPage ? null : this.#lastMessageId,
 		};
-
-		const result: ChannelRestResult = await runAction(RestMethod.imV2RecentChannelTail, queryParams)
-			.catch((error) => {
-				// eslint-disable-next-line no-console
-				console.error('Im.ChannelList: page request error', error);
-			});
-
-		this.#pagesLoaded++;
-		Logger.warn(`Im.ChannelList: ${firstPage ? 'First' : this.#pagesLoaded} page request result`, result);
-		const { messages, hasNextPage } = result;
-		this.#lastMessageId = this.#getMinMessageId(messages);
-		if (!hasNextPage)
-		{
-			this.#hasMoreItemsToLoad = false;
-		}
-
-		this.#isLoading = false;
-
-		if (firstPage)
-		{
-			void Core.getStore().dispatch('recent/clearChannelCollection');
-		}
-
-		return this.#updateModels(result);
 	}
 
-	#updateModels(restResult: ChannelRestResult): Promise
+	onAfterRequest(firstPage: boolean): void
 	{
-		const { users, chats, messages, files, recentItems } = restResult;
+		if (!firstPage)
+		{
+			return;
+		}
 
-		const usersPromise = (new UserManager()).setUsersToModel(users);
-		const dialoguesPromise = Core.getStore().dispatch('chats/set', chats);
-		const messagesPromise = Core.getStore().dispatch('messages/store', messages);
-		const filesPromise = Core.getStore().dispatch('files/set', files);
-		const recentPromise = Core.getStore().dispatch('recent/setChannel', recentItems);
-
-		return Promise.all([usersPromise, dialoguesPromise, messagesPromise, filesPromise, recentPromise]);
+		void Core.getStore().dispatch('recent/clearCollection', { type: RecentType.openChannel });
 	}
 
-	#getMinMessageId(messages: Array): string
+	handlePaginationField(result: RecentRestResult): void
+	{
+		const { messages } = result;
+		this.#lastMessageId = this.#getMinMessageId(messages);
+	}
+
+	#getMinMessageId(messages: RawMessage[]): number
 	{
 		if (messages.length === 0)
 		{

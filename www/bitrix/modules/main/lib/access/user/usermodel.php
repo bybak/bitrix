@@ -8,8 +8,11 @@
 
 namespace Bitrix\Main\Access\User;
 
+use Bitrix\HumanResources\Config\Storage;
+use Bitrix\HumanResources\Service\Container;
 use Bitrix\Main\Access\AccessCode;
 use Bitrix\Main\Engine\CurrentUser;
+use Bitrix\Main\Loader;
 use Bitrix\Main\UserAccessTable;
 use Bitrix\Main\UserTable;
 
@@ -41,6 +44,10 @@ abstract class UserModel
 	protected function __construct()
 	{
 	}
+
+	abstract public function getRoles(): array;
+
+	abstract public function getPermission(string $permissionId): ?int;
 
 	public function getUserId(): int
 	{
@@ -110,16 +117,17 @@ abstract class UserModel
 				return $this->accessCodes;
 			}
 
-			// mantis #0160102
-			$res = UserAccessTable::getList([
-				'select' => ['ACCESS_CODE'],
-				'filter' => [
-					'=USER_ID' => $this->userId,
-					'!%=ACCESS_CODE' => 'CHAT%',
-				]
-			]);
+			// mantis #0160102, #0213214
+			$res = UserAccessTable::query()
+				->setSelect(['ACCESS_CODE'])
+				->where('USER_ID', $this->userId)
+				->whereNot('PROVIDER_ID', 'imchat')
+				->exec()
+				->fetchAll();
+
 			foreach ($res as $row)
 			{
+				$this->accessCodes[] = $row['ACCESS_CODE']; // mantis 0224146
 				$signature = (new AccessCode($row['ACCESS_CODE']))->getSignature();
 				if ($signature)
 				{
@@ -127,31 +135,21 @@ abstract class UserModel
 				}
 			}
 
-			$this->accessCodes = array_values($this->accessCodes);
+			$this->accessCodes = array_unique(array_values($this->accessCodes));
+
+			if (
+				Loader::includeModule('humanresources')
+				&& Storage::instance()->isCompanyStructureConverted()
+			)
+			{
+				return $this->accessCodes;
+			}
 
 			// add employee access code
-			if (!\Bitrix\Main\ModuleManager::isModuleInstalled('intranet'))
-            {
-                return $this->accessCodes;
-            }
-
-            $user = UserTable::getList([
-                'select' => ['UF_DEPARTMENT'],
-                'filter' => [
-                    '=ID' => $this->userId,
-                ],
-                'limit' => 1
-            ])->fetch();
-
-            if (
-                $user
-                && is_array($user['UF_DEPARTMENT'])
-                && count($user['UF_DEPARTMENT'])
-                && !empty(array_values($user['UF_DEPARTMENT'])[0])
-            )
-            {
-                $this->accessCodes[] = AccessCode::ACCESS_EMPLOYEE . '0';
-            }
+			if ($this->isEmployee())
+			{
+				$this->accessCodes[] = AccessCode::ACCESS_EMPLOYEE . '0';
+			}
 		}
 		return $this->accessCodes;
 	}
@@ -161,7 +159,48 @@ abstract class UserModel
 		return (new UserSubordinate($this->userId))->getSubordinate($userId);
 	}
 
-	abstract public function getRoles(): array;
+	protected function isEmployee(): bool
+	{
+		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('intranet'))
+		{
+			return false;
+		}
 
-	abstract public function getPermission(string $permissionId): ?int;
+		$currentUser = CurrentUser::get();
+		if ((int)$currentUser->getId() === $this->userId)
+		{
+			$userData = (\CUser::GetByID($this->userId))->arResult;
+			if (
+				is_array($userData)
+				&& isset($userData[0]['ID'])
+				&& (int)$userData[0]['ID'] === $this->userId
+				&& !empty($userData[0]['UF_DEPARTMENT'])
+			)
+			{
+				return true;
+			}
+
+			return false;
+		}
+
+		$user = UserTable::getList([
+			'select' => ['UF_DEPARTMENT'],
+			'filter' => [
+				'=ID' => $this->userId,
+			],
+			'limit' => 1
+		])->fetch();
+
+		if (
+			$user
+			&& is_array($user['UF_DEPARTMENT'])
+			&& count($user['UF_DEPARTMENT'])
+			&& !empty(array_values($user['UF_DEPARTMENT'])[0])
+		)
+		{
+			return true;
+		}
+
+		return false;
+	}
 }

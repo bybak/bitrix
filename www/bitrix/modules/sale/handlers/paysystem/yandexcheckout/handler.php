@@ -58,7 +58,7 @@ class YandexCheckoutHandler
 	public const PAYMENT_METHOD_EMBEDDED = 'embedded';
 	public const PAYMENT_METHOD_TINKOFF_BANK = 'tinkoff_bank';
 	public const PAYMENT_METHOD_SBP = 'sbp';
-	public const PAYMENT_METHOD_INSTALLMENTS = 'installments';
+	public const PAYMENT_METHOD_SBER_LOAN = 'sber_loan';
 
 	public const MODE_SMART = '';
 	public const MODE_ALFABANK = 'alfabank';
@@ -72,7 +72,7 @@ class YandexCheckoutHandler
 	public const MODE_EMBEDDED = 'embedded';
 	public const MODE_TINKOFF_BANK = 'tinkoff_bank';
 	public const MODE_SBP = 'sbp';
-	public const MODE_INSTALLMENTS = 'installments';
+	public const MODE_SBER_LOAN = 'sber_loan';
 
 	public const URL = 'https://api.yookassa.ru/v3';
 
@@ -108,7 +108,7 @@ class YandexCheckoutHandler
 	 * @throws Main\ObjectPropertyException
 	 * @throws Main\SystemException
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		if ($request === null)
 		{
@@ -212,8 +212,8 @@ class YandexCheckoutHandler
 	protected function getTemplateParams(Payment $payment, $template, $additionalParams = []) : array
 	{
 		$params = [
-			'SUM' => PriceMaths::roundPrecision($payment->getSum()),
-			'CURRENCY' => $payment->getField('CURRENCY'),
+			'SUM' => PriceMaths::roundByFormatCurrency($payment->getSum(), $payment->getCurrency()),
+			'CURRENCY' => $payment->getCurrency(),
 		];
 
 		if ($template === 'template')
@@ -538,8 +538,8 @@ class YandexCheckoutHandler
 		return [
 			'description' => $this->getPaymentDescription($payment),
 			'amount' => [
-				'value' => (string)PriceMaths::roundPrecision($payment->getSum()),
-				'currency' => $payment->getField('CURRENCY'),
+				'value' => (string)PriceMaths::roundByFormatCurrency($payment->getSum(), $payment->getCurrency()),
+				'currency' => $payment->getCurrency(),
 			],
 			'capture' => true,
 			'metadata' => [
@@ -980,11 +980,12 @@ class YandexCheckoutHandler
 	 */
 	private function isSumCorrect(Payment $payment, array $paymentData)
 	{
+		$currency = $payment->getCurrency();
 		PaySystem\Logger::addDebugInfo(
-			__CLASS__.': yandexSum='.PriceMaths::roundPrecision($paymentData['amount']['value'])."; paymentSum=".PriceMaths::roundPrecision($payment->getSum())
+			__CLASS__.': yandexSum='.PriceMaths::roundByFormatCurrency($paymentData['amount']['value'], $currency)."; paymentSum=".PriceMaths::roundByFormatCurrency($payment->getSum(), $currency)
 		);
 
-		return PriceMaths::roundPrecision($paymentData['amount']['value']) === PriceMaths::roundPrecision($payment->getSum());
+		return PriceMaths::roundByFormatCurrency($paymentData['amount']['value'], $currency) === PriceMaths::roundByFormatCurrency($payment->getSum(), $currency);
 	}
 
 	/**
@@ -1039,9 +1040,10 @@ class YandexCheckoutHandler
 		}
 
 		$response = $sendResult->getData();
-
-		if ($response['status'] === static::PAYMENT_STATUS_SUCCEEDED
-			&& PriceMaths::roundPrecision($response['amount']['value']) === PriceMaths::roundPrecision($refundableSum)
+		$currency = $payment->getCurrency();
+		if (
+			$response['status'] === static::PAYMENT_STATUS_SUCCEEDED
+			&& PriceMaths::roundByFormatCurrency($response['amount']['value'], $currency) === PriceMaths::roundByFormatCurrency($refundableSum, $currency)
 		)
 		{
 			$result->setOperationType(PaySystem\ServiceResult::MONEY_LEAVING);
@@ -1094,7 +1096,7 @@ class YandexCheckoutHandler
 
 		$params = array(
 			'amount' => array(
-				'value' => (string)PriceMaths::roundPrecision($sum),
+				'value' => (string)PriceMaths::roundByFormatCurrency($sum, $payment->getField('CURRENCY')),
 				'currency' => $payment->getField('CURRENCY')
 			)
 		);
@@ -1208,7 +1210,7 @@ class YandexCheckoutHandler
 		return array(
 			'payment_id' => $payment->getField('PS_INVOICE_ID'),
 			'amount' => array(
-				'value' => (string)PriceMaths::roundPrecision($refundableSum),
+				'value' => (string)PriceMaths::roundByFormatCurrency($refundableSum, $payment->getField('CURRENCY')),
 				'currency' => $payment->getField('CURRENCY'),
 			),
 		);
@@ -1262,7 +1264,7 @@ class YandexCheckoutHandler
 			static::MODE_CASH => static::PAYMENT_METHOD_CASH,
 			static::MODE_EMBEDDED => static::PAYMENT_METHOD_EMBEDDED,
 			static::MODE_TINKOFF_BANK => static::PAYMENT_METHOD_TINKOFF_BANK,
-			static::MODE_INSTALLMENTS => static::PAYMENT_METHOD_INSTALLMENTS,
+			static::MODE_SBER_LOAN => static::PAYMENT_METHOD_SBER_LOAN,
 			static::MODE_SBP => static::PAYMENT_METHOD_SBP,
 		];
 
@@ -1332,7 +1334,7 @@ class YandexCheckoutHandler
 	 * @param string $action
 	 * @return string
 	 */
-	protected function getUrl(Payment $payment = null, $action)
+	protected function getUrl(?Payment $payment = null, $action)
 	{
 		$url = parent::getUrl($payment, $action);
 		if ($payment !== null &&
@@ -1454,7 +1456,7 @@ class YandexCheckoutHandler
 	 * @throws Main\ObjectException
 	 * @throws Main\SystemException
 	 */
-	public function repeatRecurrent(Payment $payment, Request $request = null): PaySystem\ServiceResult
+	public function repeatRecurrent(Payment $payment, ?Request $request = null): PaySystem\ServiceResult
 	{
 		if ($request === null)
 		{
@@ -1469,7 +1471,7 @@ class YandexCheckoutHandler
 	 * @param Request|null $request
 	 * @return PaySystem\ServiceResult
 	 */
-	public function cancelRecurrent(Payment $payment, Request $request = null): PaySystem\ServiceResult
+	public function cancelRecurrent(Payment $payment, ?Request $request = null): PaySystem\ServiceResult
 	{
 		return (new PaySystem\ServiceResult());
 	}
@@ -1542,11 +1544,11 @@ class YandexCheckoutHandler
 		$psMode = $this->service->getField('PS_MODE');
 
 		$baseRestrictions = parent::getRestrictionList();
-		if ($psMode === self::PAYMENT_METHOD_INSTALLMENTS)
+		if ($psMode === self::PAYMENT_METHOD_SBER_LOAN)
 		{
 			$restrictionInfo = new RestrictionInfo('Price', [
 				'MIN_VALUE' => 3000,
-				'MAX_VALUE' => 150000,
+				'MAX_VALUE' => 600000,
 			]);
 
 			$baseRestrictions->add($restrictionInfo);

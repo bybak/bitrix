@@ -1,9 +1,12 @@
-import { Type, Loc, ajax, Runtime } from 'main.core';
+import { Type, Loc, ajax, Runtime, Extension } from 'main.core';
+import { BaseEvent } from 'main.core.events';
 import { MenuManager } from 'main.popup';
 import { Messenger } from 'im.public';
 import { Waiter } from './waiter.js';
 import { SonetGroupMenu } from './sonetgroupmenu.js';
 import { RecallJoinRequest } from './recalljoinrequest.js';
+
+import type { Converter } from 'socialnetwork.collab.converter';
 
 class Common
 {
@@ -89,6 +92,7 @@ class Common
 					text: itemTitle,
 					title: itemTitle,
 					href: params.urls.requestUser,
+					onclick: (event, menuItem) => menuItem.getMenuWindow().close(),
 				});
 			}
 
@@ -107,6 +111,7 @@ class Common
 					text: itemTitle,
 					title: itemTitle,
 					href: params.urls.edit,
+					onclick: (event, menuItem) => menuItem.getMenuWindow().close(),
 				});
 
 				if (!params.hideArchiveLinks)
@@ -114,6 +119,7 @@ class Common
 					const featuresItem = {
 						text: Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_FEAT'),
 						title: Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_FEAT'),
+						onclick: (event, menuItem) => menuItem.getMenuWindow().close(),
 					};
 
 					if (params.editFeaturesAllowed)
@@ -136,6 +142,33 @@ class Common
 					menu.push(featuresItem);
 				}
 
+				const isCollabConverterEnabled = Extension.getSettings('socialnetwork.common').isCollabConverterEnabled;
+				if (
+					isCollabConverterEnabled
+					&& params.userRole === Loc.getMessage('USER_TO_GROUP_ROLE_OWNER')
+					&& !params.isProject
+					&& !params.isScrumProject
+				)
+				{
+					menu.push({
+						text: Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_CONVERT_TO_COLLAB'),
+						title: Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_CONVERT_TO_COLLAB'),
+						onclick: (event, menuItem) => {
+							menuItem.getMenuWindow().close();
+							Runtime.loadExtension('socialnetwork.collab.converter').then((exports) => {
+								const ConverterClass: Converter = exports.Converter;
+								const id = parseInt(Type.isUndefined(params.groupId) ? 0 : params.groupId, 10);
+
+								(new ConverterClass({
+									redirectAfterSuccess: true,
+								})).convertToCollab(id);
+							}).catch((error) => {
+								console.error(error);
+							});
+						},
+					});
+				}
+
 				itemTitle = Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_DELETE');
 				if (!!params.isScrumProject)
 				{
@@ -156,6 +189,7 @@ class Common
 				text: (params.perms.canModerate ? Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_EDIT') : Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_VIEW')),
 				title: (params.perms.canModerate ? Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_EDIT') : Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_VIEW')),
 				href: params.urls.members,
+				onclick: (event, menuItem) => menuItem.getMenuWindow().close(),
 			});
 
 			if (params.perms.canInitiate)
@@ -166,6 +200,7 @@ class Common
 						text: Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_REQ_IN'),
 						title: Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_REQ_IN'),
 						href: params.urls.requests,
+						onclick: (event, menuItem) => menuItem.getMenuWindow().close(),
 					});
 				}
 
@@ -199,6 +234,7 @@ class Common
 				const copyGroupItem = {
 					text: itemTitle,
 					title: itemTitle,
+					onclick: (event, menuItem) => menuItem.getMenuWindow().close(),
 				}
 				if (params.copyFeatureAllowed)
 				{
@@ -518,28 +554,6 @@ class Common
 				}, 0);
 			}
 		});
-	}
-
-	static closeGroupCardMenu(node)
-	{
-		if (!node)
-		{
-			return;
-		}
-
-		const doc = node.ownerDocument;
-		const win = doc.defaultView || doc.parentWindow;
-
-		if (
-			!win
-			|| Type.isUndefined(win.BX.Socialnetwork.UIGroupMenu)
-			|| !win.BX.Socialnetwork.UIGroupMenu.getInstance().menuPopup
-		)
-		{
-			return;
-		}
-
-		win.BX.Socialnetwork.UIGroupMenu.getInstance().menuPopup.close();
 	}
 
 	static openMessenger(groupId: number): Promise

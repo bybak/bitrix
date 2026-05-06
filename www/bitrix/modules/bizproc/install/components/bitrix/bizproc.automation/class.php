@@ -5,9 +5,10 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 	die();
 }
 
+use Bitrix\Bizproc\Debugger;
+use Bitrix\Bizproc\Internal\Service\LatestRobots\RobotVersionIndexer;
 use Bitrix\Main;
 use Bitrix\Main\Localization\Loc;
-use Bitrix\Bizproc\Debugger;
 
 Main\UI\Extension::load('ui.alerts');
 
@@ -229,17 +230,14 @@ class BizprocAutomationComponent extends \Bitrix\Bizproc\Automation\Component\Ba
 			}
 		}
 
-		$tplUser = new \CBPWorkflowTemplateUser(\CBPWorkflowTemplateUser::CurrentUser);
-
-		$canRead = $canEdit = (
-			$tplUser->isAdmin() ||
-			CBPDocument::CanUserOperateDocumentType(
-				CBPCanUserOperateOperation::CreateAutomation,
-				$GLOBALS["USER"]->GetID(),
-				$documentType,
-				['DocumentCategoryId' => $documentCategoryId]
-			)
+		$canRead = CBPDocument::CanUserOperateDocumentType(
+			CBPCanUserOperateOperation::CreateAutomation,
+			$GLOBALS["USER"]->GetID(),
+			$documentType,
+			['DocumentCategoryId' => $documentCategoryId],
 		);
+		$canEdit = $canRead;
+
 		$documentId = $this->getDocumentId();
 
 		if (!$canEdit)
@@ -325,6 +323,15 @@ class BizprocAutomationComponent extends \Bitrix\Bizproc\Automation\Component\Ba
 			$log = $tracker->getLog(array_keys($statusList));
 		}
 
+		try
+		{
+			(new RobotVersionIndexer())->ensureFreshIndex();
+		}
+		catch (Exception)
+		{
+
+		}
+
 		$availableRobots = \Bitrix\Bizproc\Automation\Engine\Template::getAvailableRobots($documentType);
 
 		$triggers = [];
@@ -334,6 +341,7 @@ class BizprocAutomationComponent extends \Bitrix\Bizproc\Automation\Component\Ba
 			$target->prepareTriggersToShow($triggers);
 		}
 
+		$tplUser = new \CBPWorkflowTemplateUser(\CBPWorkflowTemplateUser::CurrentUser);
 		$this->arResult = [
 			'CAN_EDIT' => $canEdit,
 			'CAN_DEBUG' => Debugger\Session\Manager::canUserDebugAutomation($tplUser->getId(), $documentType),
@@ -370,9 +378,11 @@ class BizprocAutomationComponent extends \Bitrix\Bizproc\Automation\Component\Ba
 				&& $this->arParams['SHOW_TEMPLATE_PROPERTIES_MENU_ON_SELECTING'] === 'Y'
 			),
 			'IS_WORKTIME_AVAILABLE' => \CBPHelper::isWorkTimeAvailable(),
+
+			'NEW_ENTITIES_BUTTON_SHOW_HINT' => $this->shouldShowNewEntitiesButtonHint(),
 		];
 
-		$this->prepareDelayMinLimitResult();
+		$this->prepareDelayLimitsResult();
 		$this->includeComponentTemplate();
 	}
 
@@ -493,10 +503,12 @@ HTML;
 		return;
 	}
 
-	private function prepareDelayMinLimitResult()
+	private function prepareDelayLimitsResult(): void
 	{
 		$this->arResult['DELAY_MIN_LIMIT_M'] = 0;
 		$this->arResult['DELAY_MIN_LIMIT_LABEL'] = '';
+		$this->arResult['DELAY_MAX_LIMIT_D'] = 0;
+		$this->arResult['DELAY_MAX_LIMIT_LABEL'] = '';
 
 		$delayMinLimit = CBPSchedulerService::getDelayMinLimit();
 		if ($delayMinLimit)
@@ -504,6 +516,15 @@ HTML;
 			$this->arResult['DELAY_MIN_LIMIT_M'] = intdiv($delayMinLimit,60);
 			$this->arResult['DELAY_MIN_LIMIT_LABEL'] = Loc::getMessage('BIZPROC_AUTOMATION_DELAY_MIN_LIMIT', [
 				'#VAL#' => \CBPHelper::FormatTimePeriod($delayMinLimit)
+			]);
+		}
+
+		$delayMaxDays = CBPSchedulerService::getDelayMaxDays();
+		if ($delayMaxDays)
+		{
+			$this->arResult['DELAY_MAX_LIMIT_D'] = $delayMaxDays;
+			$this->arResult['DELAY_MAX_LIMIT_LABEL'] = Loc::getMessage('BIZPROC_AUTOMATION_DELAY_MAX_LIMIT', [
+				'#VAL#' => $delayMaxDays
 			]);
 		}
 	}
@@ -518,5 +539,18 @@ HTML;
 			}
 		}
 		return $list;
+	}
+
+	private function shouldShowNewEntitiesButtonHint(): bool
+	{
+		$optionCategory = 'bizproc';
+		$optionName = 'view_date_automation-new-entities-button-hint';
+
+		if (CUserOptions::getOption($optionCategory, $optionName))
+		{
+			return false;
+		}
+
+		return true;
 	}
 }

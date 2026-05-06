@@ -2,13 +2,17 @@
 
 namespace Bitrix\Bizproc\Workflow;
 
+use Bitrix\Bizproc\Api\Service\WorkflowStateService;
+use Bitrix\Bizproc\Public\Service\Task\UnArchiveTaskService;
+use Bitrix\Bizproc\UI\Helpers\DurationFormatter;
 use Bitrix\Bizproc\Workflow\Entity\WorkflowInstanceTable;
 use Bitrix\Bizproc\Workflow\Entity\WorkflowMetadataTable;
 use Bitrix\Bizproc\Workflow\Entity\WorkflowStateTable;
+use Bitrix\Bizproc\Internal\Model\TaskArchive\TaskArchiveTable;
 use Bitrix\Bizproc\Workflow\Task\TimelineTask;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\SystemException;
-use Bitrix\Main\Type\DateTime;
+use Bitrix\Bizproc\Api\Request\WorkflowStateService\GetExecutionTimeRequest;
 
 class Timeline implements \JsonSerializable
 {
@@ -40,6 +44,7 @@ class Timeline implements \JsonSerializable
 				'TASKS.TASK_USERS.USER_ID',
 				'TASKS.TASK_USERS.STATUS',
 				'TASKS.TASK_USERS.DATE_UPDATE',
+				'TASKS_ARCHIVE.TASKS_DATA',
 			])
 			->setOrder(['TASKS.ID' => 'ASC'])
 			->setFilter(['=ID' => $workflowId])
@@ -69,19 +74,14 @@ class Timeline implements \JsonSerializable
 
 	public function getExecutionTime(): ?int
 	{
-		if ($this->workflow->getStarted() === null)
-		{
-			return null;
-		}
-
-		if ($this->isWorkflowRunning())
-		{
-			return (new DateTime())->getTimestamp() - $this->workflow->getStarted()->getTimestamp();
-		}
-		else
-		{
-			return $this->workflow->getModified()->getTimestamp() - $this->workflow->getStarted()->getTimestamp();
-		}
+		$workflowStateService = new WorkflowStateService();
+		return $workflowStateService->getExecutionTime(
+			new GetExecutionTimeRequest(
+				workflowId: $this->workflow->getId(),
+				workflowStarted: $this->workflow->getStarted(),
+				workflowModified: $this->workflow->getModified(),
+			)
+		)->getRoundedExecutionTime();
 	}
 
 	public function getTimeToStart(): ?int
@@ -94,7 +94,13 @@ class Timeline implements \JsonSerializable
 			->fetchObject()
 		;
 
-		return $metadata?->getStartDuration();
+		$startDuration = $metadata?->getStartDuration();
+		if ($startDuration)
+		{
+			return DurationFormatter::roundTimeInSeconds($startDuration, 2);
+		}
+
+		return null;
 	}
 
 	/**
@@ -102,7 +108,8 @@ class Timeline implements \JsonSerializable
 	 */
 	public function getTasks(): array
 	{
-		$tasks = $this->workflow->getTasks();
+		$archiveTasks = $this->getTasksFromArchive();
+		$tasks = $archiveTasks ?: $this->workflow->getTasks();
 
 		$timelineTasks = [];
 		foreach ($tasks as $task)
@@ -117,6 +124,30 @@ class Timeline implements \JsonSerializable
 		}
 
 		return $timelineTasks;
+	}
+
+	private function getTasksFromArchive(): array
+	{
+		$tasks = [];
+		$archives =
+			TaskArchiveTable::query()
+				->setSelect(['ID', 'TASKS_DATA'])
+				->where('WORKFLOW_ID', $this->workflow->getId())
+				->fetchAll()
+		;
+		$archives = array_column($archives, 'TASKS_DATA', 'ID');
+		if ($archives)
+		{
+			$unArchiveTaskService = new UnArchiveTaskService($archives);
+			$tasksData = $unArchiveTaskService->getTasks(sort: ['ID' => SORT_ASC]);
+
+			foreach ($tasksData as $task)
+			{
+				$tasks[] = Task::createFromArchive($task);
+			}
+		}
+
+		return $tasks;
 	}
 
 	public function jsonSerialize(): array

@@ -746,6 +746,7 @@ class CAllMailBox
 		$DB->query(sprintf('DELETE FROM b_mail_mailbox_dir WHERE MAILBOX_ID = %u', $ID));
 		$DB->query(sprintf('DELETE FROM b_mail_counter WHERE MAILBOX_ID = %u', $ID));
 		$DB->query(sprintf('DELETE FROM b_mail_entity_options WHERE MAILBOX_ID = %u', $ID));
+		$DB->query(sprintf('DELETE FROM b_mail_mailbox_list_search_index WHERE MAILBOX_ID = %u', $ID));
 
 		CMailbox::SMTPReload();
 
@@ -1708,6 +1709,7 @@ class CAllMailMessage
 		$arMessageParts = &$attachments;
 
 		$isStrippedTagsToBody = false;
+		// No visible text at save time. Does not guarantee the email is genuinely empty — download failure also results in true.
 		$isOriginalEmptyBody = empty(trim(strip_tags($message_body_html)));
 
 		if (self::isLongMessageBody($message_body))
@@ -1715,6 +1717,7 @@ class CAllMailMessage
 			[$message_body, $message_body_html] = self::prepareLongMessage($message_body, $message_body_html);
 		}
 
+		// HTML was downloaded (mb_strlen > 0) but has no text — cleared intentionally, resync won't help.
 		if (
 			(mb_strlen($message_body_html) > 0)
 			&& empty(trim(strip_tags($message_body_html)))
@@ -1949,6 +1952,7 @@ class CAllMailMessage
 				$arFields['IS_TRASH'] = !empty($params['trash']);
 				$arFields['IS_SPAM'] = !empty($params['spam']);
 				$arFields['IS_SEEN'] = !empty($params['seen']);
+				$arFields['IS_RECOVERED'] = !empty($params['recovered']);
 				$arFields['MSG_HASH'] = $params['hash'];
 
 				if (!empty($params['excerpt']) && is_array($params['excerpt']))

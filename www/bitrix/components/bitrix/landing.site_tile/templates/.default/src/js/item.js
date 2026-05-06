@@ -1,7 +1,7 @@
-import { Tag, Text, Event, Loc, Dom } from 'main.core';
-import { Menu } from 'main.popup';
-import { EventEmitter } from 'main.core.events';
-import { MessageBox } from 'ui.dialogs.messagebox';
+import {Tag, Text, Event, Loc, Dom, Type} from 'main.core';
+import {Menu} from 'main.popup';
+import {EventEmitter} from 'main.core.events';
+import {MessageBox} from 'ui.dialogs.messagebox';
 
 import EditableTitle from './editableTitle';
 import LeaderShip from './leadership';
@@ -43,6 +43,9 @@ export default class Item
 		this.popupStatus = null;
 		this.popupConfig = null;
 		this.loader = null;
+		this.copilotProcess = Type.isBoolean(options.copilotProcess) ? options.copilotProcess : null;
+		this.createByCopilotText = options.createByCopilotText ?? '';
+		this.copilotGeneratedText = options.copilotGeneratedText ?? '';
 
 		this.$container = null;
 		this.$containerWrapper = null;
@@ -268,6 +271,14 @@ export default class Item
 	{
 		if (!this.popupConfig)
 		{
+			const items = this.disableMenuItems(this.mergeMenuItems(this.menuItems));
+			items.forEach((item) => {
+				if (item.access === 'settings' && Type.isString(item.onclick))
+				{
+					item.onclick = item.onclick.replace('#ID#', this.id);
+				}
+			});
+
 			this.popupConfig = new Menu({
 				className: 'landing-sites__status-popup',
 				bindElement: this.getContainerSiteMore(),
@@ -278,7 +289,7 @@ export default class Item
 				angle: {
 					offset: 97,
 				},
-				items: this.disableMenuItems(this.mergeMenuItems(this.menuItems)),
+				items,
 				events: {
 					onPopupClose: () => {
 						this.getContainerSiteMore().classList.remove('--hover');
@@ -632,6 +643,17 @@ export default class Item
 			{
 				this.lazyLoadCloudPreview();
 			}
+
+			if (this.copilotProcess === false)
+			{
+				const copilotLabel = Tag.render`
+					<div class="landing-sites__preview-copilot-label">
+						<i class="ui-icon-set --copilot-ai"></i>
+						<div class="">${this.createByCopilotText}</div>
+					</i>
+				`;
+				this.$containerPreviewImage.appendChild(copilotLabel);
+			}
 		}
 
 		return this.$containerPreviewImage;
@@ -866,13 +888,29 @@ export default class Item
 	{
 		if (!this.$container)
 		{
-			this.$container = Tag.render`
-				<div class="landing-sites__grid-item ${this.deleted ? '--deleted' : ''}">
-					<div class="landing-sites__item" id="landing-sites__grid-item--${this.id}">
-						${this.getLeadership().getContainer()}
-						${this.getContainerWrapper()}
-						${this.getPopupHelper().getContainer()}
+			const containerClasses = [
+				'landing-sites__grid-item',
+				this.deleted ? '--deleted' : '',
+				this.copilotProcess === true ? '--generating' : '',
+			].join(' ').trim();
+
+			const copilotLabel = this.copilotProcess === true
+				? Tag.render`
+					<div class="landing-sites__preview-show copilot-label">
+					    <i class="ui-icon-set --copilot-ai"></i>
+					    ${this.copilotGeneratedText}
 					</div>
+				`
+				: '';
+
+			this.$container = Tag.render`
+				<div class="${containerClasses}">
+				    <div class="landing-sites__item" id="landing-sites__grid-item--${this.id}">
+				        ${this.getLeadership().getContainer()}
+				        ${this.getContainerWrapper()}
+				        ${this.getPopupHelper().getContainer()}
+				    </div>
+				    ${copilotLabel}
 				</div>
 			`;
 		}

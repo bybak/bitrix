@@ -1,18 +1,21 @@
-import { Core } from 'im.v2.application.core';
-import { Loc, Type } from 'main.core';
+import { Loc } from 'main.core';
+import { MenuItemDesign } from 'ui.system.menu';
 
-import { ChatService } from 'im.v2.provider.service';
+import { ChatService } from 'im.v2.provider.service.chat';
 import { Utils } from 'im.v2.lib.utils';
 import { RecentMenu } from 'im.v2.lib.menu';
 import { LayoutManager } from 'im.v2.lib.layout';
-import { ActionByRole, ActionByUserType, ChatType, Layout } from 'im.v2.const';
+import { ActionByRole, ActionByUserType, Layout } from 'im.v2.const';
 import { PermissionManager } from 'im.v2.lib.permission';
 import { Analytics } from 'im.v2.lib.analytics';
 import { showDeleteChatConfirm } from 'im.v2.lib.confirm';
+import { Notifier } from 'im.v2.lib.notifier';
+import { ChatManager } from 'im.v2.lib.chat';
+import { CopilotManager } from 'im.v2.lib.copilot';
+import { Feature, FeatureManager } from 'im.v2.lib.feature';
 
-import type { MenuItem } from 'im.v2.lib.menu';
-
-const NotEmptyCollabErrorCodes = new Set(['TASKS_NOT_EMPTY', 'DISK_NOT_EMPTY', 'CALENDAR_NOT_EMPTY']);
+import type { MenuItemOptions, MenuOptions } from 'ui.system.menu';
+import type { ApplicationContext } from 'im.v2.const';
 
 export class MainMenu extends RecentMenu
 {
@@ -22,14 +25,15 @@ export class MainMenu extends RecentMenu
 		onAddToChatShow: 'onAddToChatShow',
 	};
 
-	constructor()
+	constructor(applicationContext: ApplicationContext)
 	{
-		super();
+		super(applicationContext);
+
 		this.id = 'im-sidebar-context-menu';
 		this.permissionManager = PermissionManager.getInstance();
 	}
 
-	getMenuOptions(): Object
+	getMenuOptions(): MenuOptions
 	{
 		return {
 			...super.getMenuOptions(),
@@ -38,7 +42,7 @@ export class MainMenu extends RecentMenu
 		};
 	}
 
-	getMenuItems(): MenuItem[]
+	getMenuItems(): MenuItemOptions[]
 	{
 		return [
 			this.getPinMessageItem(),
@@ -47,13 +51,70 @@ export class MainMenu extends RecentMenu
 			this.getOpenProfileItem(),
 			this.getOpenUserCalendarItem(),
 			this.getChatsWithUserItem(),
+			this.getCopyInviteLinkItem(),
+			this.getCopyDialogIdItem(),
 			this.getHideItem(),
 			this.getLeaveItem(),
 			this.getDeleteItem(),
 		];
 	}
 
-	getEditItem(): ?MenuItem
+	getCopyDialogIdItem(): ?MenuItemOptions
+	{
+		if (!FeatureManager.isFeatureAvailable(Feature.chatSharedLinkAvailable))
+		{
+			return null;
+		}
+
+		return {
+			title: Loc.getMessage('IM_SIDEBAR_MENU_COPY_DIALOG_ID'),
+			onClick: async () => {
+				await Utils.text.copyToClipboard(this.context.dialogId);
+
+				Notifier.chat.onCopyIdComplete();
+			},
+		};
+	}
+
+	getCopyInviteLinkItem(): ?MenuItemOptions
+	{
+		if (FeatureManager.isFeatureAvailable(Feature.chatSharedLinkAvailable))
+		{
+			return null;
+		}
+
+		if (!BX.clipboard.isCopySupported())
+		{
+			return null;
+		}
+
+		if (this.isUser() || this.isCollabChat())
+		{
+			return null;
+		}
+
+		const isGroupCopilotChat = (new CopilotManager()).isGroupCopilotChat(this.context.dialogId);
+		const isCopilotChat = (new CopilotManager()).isCopilotChat(this.context.dialogId);
+		if (isCopilotChat && !isGroupCopilotChat)
+		{
+			return null;
+		}
+
+		return {
+			title: Loc.getMessage('IM_SIDEBAR_MENU_COPY_INVITE_LINK'),
+			onClick: () => {
+				const chatLink = ChatManager.buildChatLink(this.context.dialogId);
+				if (BX.clipboard.copy(chatLink))
+				{
+					Notifier.onCopyLinkComplete();
+				}
+
+				Analytics.getInstance().chatInviteLink.onCopyContextMenu(this.context.dialogId);
+			},
+		};
+	}
+
+	getEditItem(): ?MenuItemOptions
 	{
 		if (!this.permissionManager.canPerformActionByRole(ActionByRole.update, this.context.dialogId))
 		{
@@ -61,19 +122,19 @@ export class MainMenu extends RecentMenu
 		}
 
 		return {
-			text: Loc.getMessage('IM_SIDEBAR_MENU_UPDATE_CHAT'),
-			onclick: () => {
+			title: Loc.getMessage('IM_SIDEBAR_MENU_UPDATE_CHAT'),
+			onClick: () => {
 				Analytics.getInstance().chatEdit.onOpenForm(this.context.dialogId);
 
 				void LayoutManager.getInstance().setLayout({
-					name: Layout.updateChat.name,
+					name: Layout.updateChat,
 					entityId: this.context.dialogId,
 				});
 			},
 		};
 	}
 
-	getDeleteItem(): ?MenuItem
+	getDeleteItem(): ?MenuItemOptions
 	{
 		if (!this.permissionManager.canPerformActionByRole(ActionByRole.delete, this.context.dialogId))
 		{
@@ -81,9 +142,9 @@ export class MainMenu extends RecentMenu
 		}
 
 		return {
-			text: Loc.getMessage('IM_SIDEBAR_MENU_DELETE_CHAT'),
-			className: 'menu-popup-no-icon bx-im-sidebar__context-menu_delete',
-			onclick: async () => {
+			title: Loc.getMessage('IM_SIDEBAR_MENU_DELETE_CHAT'),
+			design: MenuItemDesign.Alert,
+			onClick: async () => {
 				Analytics.getInstance().chatDelete.onClick(this.context.dialogId);
 				if (await this.#isDeletionCancelled())
 				{
@@ -103,7 +164,7 @@ export class MainMenu extends RecentMenu
 		};
 	}
 
-	getOpenUserCalendarItem(): ?MenuItem
+	getOpenUserCalendarItem(): ?MenuItemOptions
 	{
 		if (!this.isUser())
 		{
@@ -118,28 +179,23 @@ export class MainMenu extends RecentMenu
 		const profileUri = Utils.user.getCalendarLink(this.context.dialogId);
 
 		return {
-			text: Loc.getMessage('IM_LIB_MENU_OPEN_CALENDAR_V2'),
-			onclick: () => {
+			title: Loc.getMessage('IM_LIB_MENU_OPEN_CALENDAR_V2'),
+			onClick: () => {
 				BX.SidePanel.Instance.open(profileUri);
 				this.menuInstance.close();
 			},
 		};
 	}
 
-	getAddMembersToChatItem(): MenuItem
+	getAddMembersToChatItem(): ?MenuItemOptions
 	{
-		if (this.isBot())
-		{
-			return null;
-		}
-
-		if (this.getCurrentUserId() === Number.parseInt(this.context.dialogId, 10))
+		if (this.isBot() || this.isChatWithCurrentUser())
 		{
 			return null;
 		}
 
 		const hasCreateChatAccess = this.permissionManager.canPerformActionByUserType(ActionByUserType.createChat);
-		if (this.#isPersonalChat() && !hasCreateChatAccess)
+		if (this.isUser() && !hasCreateChatAccess)
 		{
 			return null;
 		}
@@ -150,90 +206,44 @@ export class MainMenu extends RecentMenu
 			return null;
 		}
 
-		const text = this.isChannel()
+		const title = this.isChannel()
 			? Loc.getMessage('IM_SIDEBAR_MENU_INVITE_SUBSCRIBERS')
 			: Loc.getMessage('IM_SIDEBAR_MENU_INVITE_MEMBERS_V2');
 
 		return {
-			text,
-			onclick: () => {
-				Analytics.getInstance().userAdd.onChatSidebarClick(this.dialogId);
+			title,
+			onClick: () => {
+				Analytics.getInstance().userAdd.onChatSidebarClick(this.context.dialogId);
 				this.emit(MainMenu.events.onAddToChatShow);
 				this.menuInstance.close();
 			},
 		};
 	}
 
-	async #deleteChat(): ?MenuItem
+	async #deleteChat(): Promise<void>
 	{
-		try
-		{
-			await (new ChatService()).deleteChat(this.context.dialogId);
-			void LayoutManager.getInstance().clearCurrentLayoutEntityId();
-		}
-		catch
-		{
-			this.#showNotification(Loc.getMessage('IM_SIDEBAR_MENU_DELETE_CHAT_ERROR'));
-		}
+		await (new ChatService()).deleteChat(this.context.dialogId);
+		void LayoutManager.getInstance().clearCurrentLayoutEntityId();
 	}
 
-	async #deleteCollab(): ?MenuItem
+	async #deleteCollab(): Promise<void>
 	{
-		try
-		{
-			this.#showNotification(Loc.getMessage('IM_SIDEBAR_MENU_DELETE_COLLAB_NOTIFICATION'));
-			await (new ChatService()).deleteCollab(this.context.dialogId);
-			void LayoutManager.getInstance().clearCurrentLayoutEntityId();
-			void LayoutManager.getInstance().deleteLastOpenedElementById(this.context.dialogId);
-		}
-		catch (errors)
-		{
-			this.#handleDeleteCollabError(errors);
-		}
+		Notifier.collab.onBeforeDelete();
+		await (new ChatService()).deleteCollab(this.context.dialogId);
+		void LayoutManager.getInstance().clearCurrentLayoutEntityId();
+		void LayoutManager.getInstance().deleteLastOpenedElementById(this.context.dialogId);
 	}
 
 	async #isDeletionCancelled(): Promise<boolean>
 	{
-		const { dialogId } = this.context;
-
-		const confirmResult = await showDeleteChatConfirm(dialogId);
+		const confirmResult = await showDeleteChatConfirm(this.context.dialogId);
 		if (!confirmResult)
 		{
-			Analytics.getInstance().chatDelete.onCancel(dialogId);
+			Analytics.getInstance().chatDelete.onCancel(this.context.dialogId);
 
 			return true;
 		}
 
 		return false;
-	}
-
-	#handleDeleteCollabError(errors): void
-	{
-		if (!Type.isArrayFilled(errors))
-		{
-			return;
-		}
-
-		const [firstError] = errors;
-		if (NotEmptyCollabErrorCodes.has(firstError.code))
-		{
-			this.#showNotification(Loc.getMessage('IM_SIDEBAR_MENU_DELETE_COLLAB_WITH_ENTITIES_ERROR'));
-
-			return;
-		}
-
-		this.#showNotification(Loc.getMessage('IM_SIDEBAR_MENU_DELETE_COLLAB_ERROR'));
-	}
-
-	#showNotification(content: string): void
-	{
-		BX.UI.Notification.Center.notify({ content });
-	}
-
-	#isPersonalChat(): boolean
-	{
-		const chat = this.getChat(this.context.dialogId);
-
-		return chat.type === ChatType.user;
 	}
 }

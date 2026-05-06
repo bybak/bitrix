@@ -1,16 +1,22 @@
 import 'main.polyfill.intersectionobserver';
-import { EventEmitter } from 'main.core.events';
 
 import { EventType } from 'im.v2.const';
+
+import type { EventEmitter } from 'main.core.events';
+import type { ApplicationContext } from 'im.v2.const';
 
 export class ObserverManager
 {
 	#dialogId: string;
+	#emitter: EventEmitter;
 	#observer: IntersectionObserver;
 
-	constructor(dialogId: string): ObserverManager
+	constructor(payload: { dialogId: string, context: ApplicationContext }): ObserverManager
 	{
+		const { dialogId, context: { emitter } } = payload;
 		this.#dialogId = dialogId;
+		this.#emitter = emitter;
+
 		this.#initObserver();
 	}
 
@@ -35,10 +41,7 @@ export class ObserverManager
 				}
 
 				const messageIsFullyVisible = entry.isIntersecting && entry.intersectionRatio >= 0.99;
-				const messageTakesHalfOfViewport = entry.intersectionRect.height >= entry.rootBounds.height / 2.2;
-				// const messageIsBiggerThanViewport = entry.boundingClientRect.height + 20 > entry.rootBounds.height;
-				// const messageCountsAsVisible = messageIsBiggerThanViewport && messageTakesMostOfViewport;
-				if (messageIsFullyVisible || messageTakesHalfOfViewport)
+				if (messageIsFullyVisible || this.#isMessageBottomVisible(entry))
 				{
 					this.#sendVisibleEvent(messageId);
 				}
@@ -50,9 +53,23 @@ export class ObserverManager
 		}), { threshold: this.#getThreshold() });
 	}
 
+	#isMessageBottomVisible(entry: IntersectionObserverEntry): boolean
+	{
+		const wholeMessage = entry.boundingClientRect;
+		const visibleMessagePart = entry.intersectionRect;
+
+		if (visibleMessagePart.height === 0)
+		{
+			return false;
+		}
+
+		// +1 to offset browser floating point calculations
+		return wholeMessage.bottom <= visibleMessagePart.bottom + 1;
+	}
+
 	#sendVisibleEvent(messageId: number): void
 	{
-		EventEmitter.emit(EventType.dialog.onMessageIsVisible, {
+		this.#emitter.emit(EventType.dialog.onMessageIsVisible, {
 			messageId,
 			dialogId: this.#dialogId,
 		});
@@ -60,7 +77,7 @@ export class ObserverManager
 
 	#sendNotVisibleEvent(messageId: number): void
 	{
-		EventEmitter.emit(EventType.dialog.onMessageIsNotVisible, {
+		this.#emitter.emit(EventType.dialog.onMessageIsNotVisible, {
 			messageId,
 			dialogId: this.#dialogId,
 		});

@@ -22,7 +22,7 @@ class InnerHandler extends PaySystem\BaseServiceHandler implements PaySystem\IRe
 	 * @return PaySystem\ServiceResult
 	 * @throws \Bitrix\Main\ArgumentOutOfRangeException
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		$result = new PaySystem\ServiceResult();
 
@@ -109,8 +109,9 @@ class InnerHandler extends PaySystem\BaseServiceHandler implements PaySystem\IRe
 			return $result;
 		}
 
-		$paymentSum = PriceMaths::roundPrecision($payment->getSum());
-		$userBudget = PriceMaths::roundPrecision(UserBudgetPool::getUserBudgetByOrder($order));
+		$currency = $payment->getCurrency();
+		$paymentSum = PriceMaths::roundByFormatCurrency($payment->getSum(), $currency);
+		$userBudget = PriceMaths::roundByFormatCurrency(UserBudgetPool::getUserBudgetByOrder($order), $currency);
 
 		if($userBudget >= $paymentSum)
 			UserBudgetPool::addPoolItem($order, ( $paymentSum * -1 ), UserBudgetPool::BUDGET_TYPE_ORDER_PAY, $payment);

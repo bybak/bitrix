@@ -1,10 +1,8 @@
 import { ChatDialog, ScrollManager } from 'im.v2.component.dialog.chat';
 import { Layout, UserRole } from 'im.v2.const';
-import { CommentsService } from 'im.v2.provider.service';
+import { CommentsService } from 'im.v2.provider.service.comments';
 
 import { CommentsButton } from './comments-button';
-
-import { ChannelMessageList } from './message-list';
 
 import type { JsonObject } from 'main.core';
 import type { ImModelChat, ImModelLayout } from 'im.v2.model';
@@ -12,7 +10,7 @@ import type { ImModelChat, ImModelLayout } from 'im.v2.model';
 // @vue/component
 export const ChannelDialog = {
 	name: 'ChannelDialog',
-	components: { ChatDialog, ChannelMessageList, CommentsButton },
+	components: { ChatDialog, CommentsButton },
 	props:
 	{
 		dialogId: {
@@ -42,20 +40,15 @@ export const ChannelDialog = {
 		},
 		isChatLayout(): boolean
 		{
-			return this.layout.name === Layout.chat.name;
+			return this.layout.name === Layout.chat;
 		},
-		channelComments(): number[]
+		commentIdsWithCounter(): number[]
 		{
-			return this.$store.getters['counters/getChannelComments'](this.dialog.chatId);
+			return this.$store.getters['counters/getChildrenIdsWithCounter'](this.dialog.chatId);
 		},
 		totalChannelCommentsCounter(): number
 		{
-			let counter = 0;
-			Object.values(this.channelComments).forEach((commentCounter) => {
-				counter += commentCounter;
-			});
-
-			return counter;
+			return this.$store.getters['counters/getChildrenTotalCounter'](this.dialog.chatId);
 		},
 		showCommentsButton(): boolean
 		{
@@ -89,11 +82,7 @@ export const ChannelDialog = {
 		async goToMessageContextByCommentsChatId(chatId: string)
 		{
 			this.$refs.dialog.showLoadingBar();
-			const messageId = await this.$refs.dialog.getMessageService().loadContextByChatId(chatId)
-				.catch((error) => {
-					// eslint-disable-next-line no-console
-					console.error('ChannelDialog: goToMessageContextByCommentsChatId error', error);
-				});
+			const messageId = await this.$refs.dialog.getMessageService().loadContextByChatId(chatId);
 			this.$refs.dialog.hideLoadingBar();
 
 			if (!messageId)
@@ -111,7 +100,7 @@ export const ChannelDialog = {
 		},
 		getNextChatIdToJump(): number
 		{
-			const commentChatIds = this.getCommentsChatIds();
+			const commentChatIds = [...this.commentIdsWithCounter];
 			commentChatIds.sort((a, z) => a - z);
 			if (this.lastScrolledChatId === 0)
 			{
@@ -126,32 +115,20 @@ export const ChannelDialog = {
 
 			return filteredChatIds[0];
 		},
-		getCommentsChatIds(): number[]
-		{
-			return Object.keys(this.channelComments).map((chatId) => {
-				return Number(chatId);
-			});
-		},
 		readAllChannelComments()
 		{
-			CommentsService.readAllChannelComments(this.dialogId);
+			void CommentsService.readAllChannelComments(this.dialogId);
 		},
 	},
 	template: `
-		<ChatDialog ref="dialog" :dialogId="dialogId" :resetOnExit="isGuest">
-			<template #message-list>
-				<ChannelMessageList :dialogId="dialogId" />
-			</template>
+		<ChatDialog ref="dialog" :dialogId="dialogId" :clearOnExit="isGuest">
 			<template #additional-float-button>
-				<Transition name="float-button-transition">
-					<CommentsButton
-						v-if="showCommentsButton"
-						:dialogId="dialogId"
-						:counter="totalChannelCommentsCounter"
-						@click="onCommentsButtonClick"
-						key="comments"
-					/>
-				</Transition>
+				<CommentsButton
+					v-if="showCommentsButton"
+					:dialogId="dialogId"
+					:counter="totalChannelCommentsCounter"
+					@click="onCommentsButtonClick"
+				/>
 			</template>
 		</ChatDialog>
 	`,

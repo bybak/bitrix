@@ -1,0 +1,191 @@
+import { SnapshotHandler, RevertHandler } from './composables';
+
+export type Point = {
+	x: number,
+	y: number,
+}
+
+export type DiagramNewConnection = {
+	id: string,
+	sourceBlockId: DiagramBlockId,
+	sourcePortId: DiagramPortId,
+	sourcePortPosition: DiagramPortPosition;
+	targetBlockId: DiagramBlockId | null;
+	targetPortId: DiagramPortId | null;
+	start: Point,
+	end: Point,
+};
+
+export type DiagramBlockId = string;
+
+export type DigramBlockPosition = {
+	x: number;
+	y: number;
+}
+
+export type DiagramBlockDimensions = {
+	width: number;
+	height: number;
+}
+
+export type DiagramPortPosition = 'top' | 'bottom' | 'left' | 'right';
+
+export type DiagramPortId = string;
+
+export type DiagramPort = {
+	id: DiagramPortId;
+	position: DiagramPortPosition;
+	type: string;
+}
+
+export type DiagramPortRect = {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	position: DiagramPortPosition;
+};
+
+export type DiagramBlockPorts = {
+	input: Array<DiagramPort>;
+	output: Array<DiagramPort>;
+}
+
+export type DiagramBlock = {
+	id: DiagramBlockId;
+	position: DigramBlockPosition;
+	dimensions: DiagramBlockDimensions;
+	ports: DiagramBlockPorts;
+};
+
+export type ShortcutHandler = (event: KeyboardEvent, mousePos: Point) => void;
+
+export type PreparedShortcut = {
+	id: string,
+	mainKey: string,
+	requiredModifiers: {
+		ctrl: boolean,
+		meta: boolean,
+		shift: boolean,
+		alt: boolean,
+	},
+	handler: ShortcutHandler,
+};
+
+export type GroupedBlocks = { [string]: Array<DiagramBlock> };
+export type BlockGroupNames = Array<string>;
+
+export type DiagramConnectionId = string;
+
+export type DiagramConnection = {
+	id: DiagramConnectionId;
+	type?: string;
+	sourceBlockId: DiagramBlockId;
+	sourcePortId: DiagramPortId;
+	targetBlockId: DiagramBlockId;
+	targetPortId: DiagramPortId;
+};
+
+export type GroupedConnections = { [string]: Array<DiagramConnection> };
+export type ConnectionGroupNames = Array<string>;
+
+export type Transform = {
+	x: number,
+	y: number,
+	zoom: number,
+	viewportX: number,
+	viewportY: number,
+};
+
+export type Snapshot = {
+	snapshot: {...},
+	revertHandler: (snapshot: Snapshot) => void,
+	next: Snapshot | null,
+	prev: Snapshot | null,
+};
+
+export type AnimationItemTypes = 'block' | 'connection' | 'remove_block' | 'remove_connection';
+
+export type AnimationItem = {
+	type: AnimatedItemTypes;
+	item: DiagramBlock | DiagramConnection;
+};
+
+export type DragData = {
+	dragData: DiagramBlock,
+	dragImage: HTMLElement,
+};
+
+export type DiagramValidationPortRuleFn = (newConnection: DiagramNewConnection) => boolean;
+
+export type State = {
+	blockDiagramRef: HTMLElement | null;
+	blockDiagramTop: number;
+	blockDiagramLeft: number;
+
+	isDisabled: boolean;
+
+	blocks: Array<DiagramBlock>;
+	connections: Array<DiagramConnection>;
+
+	waitAllBlocksMounted: Promise<void>;
+	waitedBlockIds: Set<DiagramBlockId>;
+
+	waitAllPortsMounted: Promise<void>;
+	waitedBlockPortsIds: Set<string>;
+
+	connectionOffset: number;
+	connectionBendOffset: number;
+	connectionBorderRadius: number,
+
+	portsElMap: Map<DiagramBlockId, Map<DiagramPortId, HTMLElement>>;
+	portsRectMap: { [DiagramBlockId]: { [DiagramPortId]: DiagramPortRect } };
+
+	newConnection: DiagramNewConnection | null;
+	isValidNewConnection: boolean;
+
+	movingBlock: DiagramBlock | null;
+	movingConnections: Array<Connection>;
+
+	canvasRef: HTMLElement | null,
+	transformLayoutRef: HTMLElement | null,
+	canvasInstance: {...} | null,
+	canvasWidth: number,
+	canvasHeight: number,
+	transformX: number;
+	transformY: number;
+	viewportX: number;
+	viewportY: number;
+	zoom: number;
+	minZoom: number,
+	maxZoom: number,
+
+	contextMenuLayerRef: HTMLElement | null;
+	targetContainerRef: HTMLElement | null;
+	isOpenContextMenu: boolean;
+	contextMenuInstance: null;
+	positionContextMenu: {
+		top: number;
+		left: number;
+	};
+
+	headSnapshot: Snapshot | null;
+	tailSnapshot: Snapshot | null;
+	currentSnapshot: Snapshot | null;
+	maxCountSnapshots: number;
+	snapshotHandler: SnapshotHandler;
+	revertHandler: RevertHandler;
+
+	highlitedBlockIds: Array<DiagramBlockId>;
+	isSelectionActive: boolean;
+	selectionWorldRect: { x: number, y: number, width: number, height: number } | null;
+
+	animationQueue: Generator<AnimationItem | undefined> | null;
+	currentAnimationItem: AnimationItem | null;
+	isPauseAnimation: boolean;
+	isStopAnimation: boolean;
+
+	shortcuts: Array<PreparedShortcut>;
+	mousePosition: Point;
+	isKeyboardInitialized: boolean;
+};

@@ -5,7 +5,6 @@ namespace Bitrix\Im\V2\Chat;
 use Bitrix\Im\V2\Message\Send\SendResult;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
-use Bitrix\Im\Notify;
 use Bitrix\Im\User;
 use Bitrix\Im\Model\UserTable;
 use Bitrix\Im\Model\MessageTable;
@@ -16,10 +15,9 @@ use Bitrix\Im\V2\Result;
 use Bitrix\Im\V2\Service\Context;
 use Bitrix\Im\V2\Service\Locator;
 use Bitrix\Im\V2\Message\Send\SendingConfig;
-use Bitrix\Im\V2\Message\Send\SendingService;
 use Bitrix\Im\V2\Message\Send\PushService;
 use Bitrix\Im\V2\Message\Params;
-use Bitrix\Im\V2\Message\ReadService;
+use Bitrix\Im\V2\Chat\Add\AddResult;
 
 class NotifyChat extends Chat
 {
@@ -30,7 +28,14 @@ class NotifyChat extends Chat
 
 	protected function checkAccessInternal(int $userId): Result
 	{
-		return (new Result())->addError(new ChatError(ChatError::ACCESS_DENIED));
+		$result = new Result();
+
+		if ($this->authorId !== $userId)
+		{
+			$result->addError(new ChatError(ChatError::ACCESS_DENIED));
+		}
+
+		return $result;
 	}
 
 	/**
@@ -60,6 +65,12 @@ class NotifyChat extends Chat
 			}
 
 			$params['AUTHOR_ID'] = $params['TO_USER_ID'];
+		}
+
+		$params['AUTHOR_ID'] = (int)$params['AUTHOR_ID'];
+		if ($params['AUTHOR_ID'] < 0)
+		{
+			return $result->addError(new ChatError(ChatError::WRONG_RECIPIENT));
 		}
 
 		$result->setResult($params);
@@ -99,12 +110,11 @@ class NotifyChat extends Chat
 			return $result->addError(new ChatError(ChatError::WRONG_RECIPIENT));
 		}
 
-		$blockedExternalAuthId = \Bitrix\Im\Model\UserTable::filterExternalUserTypes(['replica']);
-		$res = \Bitrix\Im\Model\UserTable::getById($params['TO_USER_ID']);
+		$user = \Bitrix\Im\V2\Entity\User\User::getInstance($params['TO_USER_ID']);
 		if (
-			!($userData = $res->fetch())
-			|| $userData['ACTIVE'] == 'N'
-			|| in_array($userData['EXTERNAL_AUTH_ID'], $blockedExternalAuthId, true)
+			!$user->isExist()
+			|| !$user->isActive()
+			|| !$user->isInternalType(skipTypes: ['replica'])
 		)
 		{
 			return $result->addError(new ChatError(ChatError::WRONG_RECIPIENT));
@@ -127,13 +137,17 @@ class NotifyChat extends Chat
 				'ENTITY_ID' => $row['ENTITY_ID'],
 			]);
 		}
+		else
+		{
+			$result->addError(new ChatError(ChatError::NOT_FOUND));
+		}
 
 		return $result;
 	}
 
-	public function add(array $params, ?Context $context = null): Result
+	public function add(array $params, ?Context $context = null): AddResult
 	{
-		$result = new Result;
+		$result = new AddResult();
 
 		$paramsResult = $this->prepareParams($params);
 		if ($paramsResult->isSuccess())
@@ -145,12 +159,11 @@ class NotifyChat extends Chat
 			return $result->addErrors($paramsResult->getErrors());
 		}
 
-		$blockedExternalAuthId = \Bitrix\Im\Model\UserTable::filterExternalUserTypes(['replica']);
-		$res = \Bitrix\Im\Model\UserTable::getById($params['AUTHOR_ID']);
+		$user = \Bitrix\Im\V2\Entity\User\User::getInstance($params['AUTHOR_ID']);
 		if (
-			!($userData = $res->fetch())
-			|| $userData['ACTIVE'] == 'N'
-			|| in_array($userData['EXTERNAL_AUTH_ID'], $blockedExternalAuthId, true)
+			!$user->isExist()
+			|| !$user->isActive()
+			|| !$user->isInternalType(skipTypes: ['replica'])
 		)
 		{
 			return $result->addError(new ChatError(ChatError::WRONG_RECIPIENT));
@@ -172,10 +185,7 @@ class NotifyChat extends Chat
 
 		$chat->isFilledNonCachedData = false;
 
-		return $result->setResult([
-			'CHAT_ID' => $chat->getChatId(),
-			'CHAT' => $chat,
-		]);
+		return $result->setChat($chat);
 	}
 
 	/**
@@ -417,7 +427,7 @@ class NotifyChat extends Chat
 			return;
 		}
 
-		Message\MessageService::deleteByChatId($chatId, $this->getContext()->getUserId());
+		Message\MessageService::deleteNotificationsByChatId($chatId, $this->getContext()->getUserId());
 		$this->setMessageCount(0)->save();
 
 		$this->sendPushDropAll();

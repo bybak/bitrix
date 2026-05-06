@@ -11,12 +11,14 @@ namespace Bitrix\Rest\APAuth;
 use Bitrix\Main\Authentication\ApplicationManager;
 use Bitrix\Main\Authentication\ApplicationPasswordTable;
 use Bitrix\Main\Context;
+use Bitrix\Main\DI\ServiceLocator;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Type\DateTime;
 use Bitrix\Main\UserTable;
 use Bitrix\Rest\Engine\Access;
 use Bitrix\Rest\Engine\Access\HoldEntity;
-use Bitrix\Rest\Service\PasswordService;
+use Bitrix\Rest\Internal\Entity\SystemUser\ResourceType;
+use Bitrix\Rest\Internal\Repository\SystemUser\SystemUserRepository;
 
 class Auth
 {
@@ -63,7 +65,7 @@ class Auth
 					'error' => 'OVERLOAD_LIMIT',
 					'error_description' => 'REST API is blocked due to overload.'
 				];
-					$error = true;
+				$error = true;
 			}
 
 			if (
@@ -100,7 +102,7 @@ class Auth
 						$error = true;
 					}
 				}
-				elseif (!\CRestUtil::makeAuth($tokenInfo))
+				elseif (!\CRestUtil::makeAuth($tokenInfo, self::AUTH_TYPE, $tokenInfo['password_id'] ?? 0))
 				{
 					$tokenInfo = array('error' => 'authorization_error', 'error_description' => 'Unable to authorize user');
 					$error = true;
@@ -129,55 +131,75 @@ class Auth
 
 	protected static function check($auth, $scope)
 	{
-		$result = array('error' => 'INVALID_CREDENTIALS', 'error_description' => 'Invalid request credentials');
+		$result = [
+			'error' => 'INVALID_CREDENTIALS',
+			'error_description' => 'Invalid request credentials',
+		];
+
+		if (empty($auth[static::$authQueryParams['UID']]))
+		{
+			return $result;
+		}
 
 		$uid = $auth[static::$authQueryParams['UID']];
-
-		if(strval(intval($uid)) === $uid)
+		if (strval(intval($uid)) === $uid)
 		{
-			$userInfo = array('ID' => intval($uid));
+			$userInfo = ['ID' => intval($uid)];
 		}
 		else
 		{
-			$dbRes = UserTable::getList(array(
-				'filter' => array(
+			$userInfo = UserTable::getList([
+				'filter' => [
 					'=LOGIN' => $uid,
 					'=ACTIVE' => 'Y',
-				),
-				'select' => array('ID'),
-			));
-			$userInfo = $dbRes->fetch();
+				],
+				'select' => ['ID'],
+			])->fetch();
 		}
 
-		if($userInfo)
+		if (!empty($userInfo))
 		{
-			$dbRes = PasswordTable::getList(array(
-				'filter' => array(
+			$passwordInfo = PasswordTable::getList([
+				'filter' => [
 					'=USER_ID' => $userInfo['ID'],
 					'=PASSWORD' => $auth[static::$authQueryParams['PASSWORD']],
 					'=ACTIVE' => PasswordTable::ACTIVE,
-				),
-				'select' => array('ID')
-			));
-			$passwordInfo = $dbRes->fetch();
-
-			if(!$passwordInfo)
+				],
+				'select' => ['ID'],
+				'cache' => ['ttl' => 86400],
+			])->fetch();
+			if (!$passwordInfo)
 			{
 				$passwordInfo = static::checkOldPassword($userInfo['ID'], $auth[static::$authQueryParams['PASSWORD']]);
 			}
 
-			if($passwordInfo)
+			if (!$passwordInfo)
 			{
-				if(static::checkPermission($passwordInfo["ID"], $scope) === true)
+				/** @var SystemUserRepository $systemUserRepository */
+				$systemUserRepository = ServiceLocator::getInstance()->get(SystemUserRepository::class);
+				$replaceUser = $systemUserRepository->getByResourceIdAndResourceType((int)$userInfo['ID'], ResourceType::WEBHOOK);
+				if ($replaceUser !== null)
 				{
-					$result = array(
-						'user_id' => $userInfo["ID"],
-						'password_id' => $passwordInfo["ID"],
-					);
+					$auth[static::$authQueryParams['UID']] = (string)$replaceUser->getUserId();
+					return self::check($auth, $scope);
+				}
+			}
+
+			if ($passwordInfo)
+			{
+				if (static::checkPermission($passwordInfo['ID'], $scope) === true)
+				{
+					$result = [
+						'user_id' => $userInfo['ID'],
+						'password_id' => $passwordInfo['ID'],
+					];
 				}
 				else
 				{
-					$result = array('error' => 'insufficient_scope', 'error_description' => 'The request requires higher privileges than provided by the webhook token');
+					$result = [
+						'error' => 'insufficient_scope',
+						'error_description' => 'The request requires higher privileges than provided by the webhook token'
+					];
 				}
 			}
 		}

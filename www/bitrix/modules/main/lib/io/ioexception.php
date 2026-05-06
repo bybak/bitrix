@@ -1,4 +1,5 @@
 <?php
+
 namespace Bitrix\Main\IO;
 
 /**
@@ -15,7 +16,7 @@ class IoException extends \Bitrix\Main\SystemException
 	 * @param string $path Path that generated exception.
 	 * @param \Throwable | null $previous
 	 */
-	public function __construct($message = "", $path = "", \Throwable $previous = null)
+	public function __construct($message = "", $path = "", ?\Throwable $previous = null)
 	{
 		parent::__construct($message, 120, '', 0, $previous);
 		$this->path = $path;
@@ -29,50 +30,5 @@ class IoException extends \Bitrix\Main\SystemException
 	public function getPath()
 	{
 		return $this->path;
-	}
-}
-
-class InvalidPathException extends IoException
-{
-	public function __construct($path, \Throwable $previous = null)
-	{
-		$message = "Path is invalid.";
-		parent::__construct($message, $path, $previous);
-	}
-}
-
-class FileNotFoundException extends IoException
-{
-	public function __construct($path, \Throwable $previous = null)
-	{
-		$message = "Path was not found.";
-		parent::__construct($message, $path, $previous);
-	}
-}
-
-class FileDeleteException extends IoException
-{
-	public function __construct($path, \Throwable $previous = null)
-	{
-		$message = "Error occurred during deleting the file.";
-		parent::__construct($message, $path, $previous);
-	}
-}
-
-class FileOpenException extends IoException
-{
-	public function __construct($path, \Throwable $previous = null)
-	{
-		$message = "Cannot open the file.";
-		parent::__construct($message, $path, $previous);
-	}
-}
-
-class FileNotOpenedException extends IoException
-{
-	public function __construct($path, \Throwable $previous = null)
-	{
-		$message = "The file was not opened.";
-		parent::__construct($message, $path, $previous);
 	}
 }

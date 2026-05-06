@@ -1,12 +1,12 @@
-import { Button as ButtonComponent, ButtonSize } from 'im.v2.component.elements';
+import { ChatButton, ButtonSize, type CustomColorScheme } from 'im.v2.component.elements.button';
 import { SupervisorBaseMessage } from 'im.v2.component.message.supervisor.base';
 
-import { metaData } from './const/tools';
+import { getMetaData } from './const/tools';
+
 import './css/enable-feature.css';
 
 import type { SupervisorComponentParams } from '../../base/src/const/features';
 import type { ImModelMessage } from 'im.v2.model';
-import type { CustomColorScheme } from 'im.v2.component.elements';
 
 const TOOL_ID_PARAMS_KEY = 'toolId';
 const BUTTON_COLOR = '#52c1e7';
@@ -14,7 +14,7 @@ const BUTTON_COLOR = '#52c1e7';
 // @vue/component
 export const SupervisorEnableFeatureMessage = {
 	name: 'SupervisorEnableFeatureMessage',
-	components: { ButtonComponent, SupervisorBaseMessage },
+	components: { ChatButton, SupervisorBaseMessage },
 	props: {
 		item: {
 			type: Object,
@@ -48,7 +48,7 @@ export const SupervisorEnableFeatureMessage = {
 		},
 		toolData(): SupervisorComponentParams
 		{
-			return metaData[this.toolId];
+			return getMetaData()[this.toolId];
 		},
 		modifierImageClass(): string
 		{
@@ -66,13 +66,13 @@ export const SupervisorEnableFeatureMessage = {
 				<div :class="['bx-im-message-enable-feature__image', modifierImageClass]" />
 			</template>
 			<template #actions>
-				<ButtonComponent
+				<ChatButton
 					:size="ButtonSize.L"
 					:isRounded="true"
 					:text="toolData.detailButton.text"
 					@click="toolData.detailButton.callback"
 				/>
-				<ButtonComponent
+				<ChatButton
 					:size="ButtonSize.L"
 					:customColorScheme="buttonColorScheme"
 					:isRounded="true"

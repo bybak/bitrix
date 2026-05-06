@@ -1,11 +1,9 @@
-import 'ui.notification';
-import { EventEmitter } from 'main.core.events';
 import { MenuManager } from 'main.popup';
 
 import { Messenger } from 'im.public';
 import { Analytics } from 'im.v2.lib.analytics';
-import { ChatService } from 'im.v2.provider.service';
-import { EmptyAvatarType } from 'im.v2.component.elements';
+import { ChatService } from 'im.v2.provider.service.chat';
+import { EmptyAvatarType } from 'im.v2.component.elements.avatar';
 import { UserRole, PopupType, ChatType, EventType, SidebarDetailBlock } from 'im.v2.const';
 import { showExitUpdateChatConfirm } from 'im.v2.lib.confirm';
 import {
@@ -15,7 +13,6 @@ import {
 	ButtonPanel,
 	TextareaInput,
 	CreateChatHeading,
-	SettingsSection,
 	RightsSection,
 	AppearanceSection,
 	PrivacySection,
@@ -24,8 +21,9 @@ import {
 import { ChatMemberDiffManager } from '../../classes/chat-member-diff-manager';
 import { getCollapsedUsersElement, type TagSelectorElement } from '../../helpers/get-collapsed-users-element';
 
-import type { ImModelChat } from 'im.v2.model';
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
+import type { ImModelChat } from 'im.v2.model';
 
 type UserRoleItem = $Keys<typeof UserRole>;
 
@@ -36,7 +34,6 @@ export const ChannelUpdating = {
 		TitleInput,
 		ChatAvatar,
 		ChatMembersSelector,
-		SettingsSection,
 		RightsSection,
 		AppearanceSection,
 		PrivacySection,
@@ -86,6 +83,10 @@ export const ChannelUpdating = {
 		chatId(): number
 		{
 			return this.dialog.chatId;
+		},
+		chatType(): $Values<typeof ChatType>
+		{
+			return this.dialog.type;
 		},
 		collapsedUsers(): TagSelectorElement[]
 		{
@@ -181,9 +182,6 @@ export const ChannelUpdating = {
 				manageMessages: this.rights.manageMessages,
 			}).catch(() => {
 				this.isUpdating = false;
-				BX.UI.Notification.Center.notify({
-					content: this.loc('IM_UPDATE_CHAT_ERROR'),
-				});
 			});
 
 			this.isUpdating = false;
@@ -248,10 +246,6 @@ export const ChannelUpdating = {
 
 			return memberEntities;
 		},
-		loc(phraseCode: string, replacements: {[string]: string} = {}): string
-		{
-			return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
-		},
 		async onCollapsedUsersClick()
 		{
 			const confirmResult = await showExitUpdateChatConfirm(this.dialogId);
@@ -262,64 +256,75 @@ export const ChannelUpdating = {
 
 			await this.onUpdateClick();
 
-			EventEmitter.emit(EventType.sidebar.open, {
+			this.getEmitter().emit(EventType.sidebar.open, {
 				panel: SidebarDetailBlock.members,
 				dialogId: this.dialogId,
 			});
 		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
+		},
+		loc(phraseCode: string, replacements: {[string]: string} = {}): string
+		{
+			return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+		},
 	},
 	template: `
-		<div v-if="isLoading" class="bx-im-content-chat-forms__skeleton"></div>
-		<div v-else class="bx-im-content-chat-forms__content --channel" @scroll="onScroll">
-			<div class="bx-im-content-chat-forms__header">
-				<ChatAvatar
-					:avatarFile="avatarFile"
-					:chatTitle="chatTitle"
-					:existingAvatarUrl="avatarUrl"
-					:type="EmptyAvatarType.squared"
-					@avatarChange="onAvatarChange"
+		<div class="bx-im-content-chat-forms__content --channel" @scroll="onScroll">
+			<div v-if="isLoading" class="bx-im-content-chat-forms__skeleton"></div>
+			<template v-else>
+				<div class="bx-im-content-chat-forms__header">
+					<ChatAvatar
+						:avatarFile="avatarFile"
+						:chatTitle="chatTitle"
+						:existingAvatarUrl="avatarUrl"
+						:type="EmptyAvatarType.squared"
+						@avatarChange="onAvatarChange"
+					/>
+					<TitleInput v-model="chatTitle" :placeholder="loc('IM_CREATE_CHANNEL_TITLE_PLACEHOLDER_V2')" />
+				</div>
+				<CreateChatHeading :text="loc('IM_CREATE_CHANNEL_DESCRIPTION_TITLE')" />
+				<div class="bx-im-content-chat-forms__description_container">
+					<TextareaInput
+						:value="settings.description"
+						:placeholder="loc('IM_CREATE_CHANNEL_DESCRIPTION_PLACEHOLDER_V3')"
+						:border="false"
+						@input="onDescriptionChange"
+					/>
+				</div>
+				<PrivacySection
+					:isAvailableInSearch="settings.isAvailableInSearch"
+					@chatTypeChange="onChatTypeChange"
 				/>
-				<TitleInput v-model="chatTitle" :placeholder="loc('IM_CREATE_CHANNEL_TITLE_PLACEHOLDER_V2')" />
-			</div>
-			<CreateChatHeading :text="loc('IM_CREATE_CHANNEL_DESCRIPTION_TITLE')" />
-			<div class="bx-im-content-chat-forms__description_container">
-				<TextareaInput
-					:value="settings.description"
-					:placeholder="loc('IM_CREATE_CHANNEL_DESCRIPTION_PLACEHOLDER_V3')"
-					:border="false"
-					@input="onDescriptionChange"
+				<CreateChatHeading
+					:text="loc('IM_CREATE_CHANNEL_MEMBERS_TITLE')"
+					:hintText="loc('IM_CREATE_CHANNEL_MEMBERS_HINT')"
 				/>
-			</div>
-			<PrivacySection
-				:isAvailableInSearch="settings.isAvailableInSearch"
-				@chatTypeChange="onChatTypeChange"
-			/>
-			<CreateChatHeading
-				:text="loc('IM_CREATE_CHANNEL_MEMBERS_TITLE')"
-				:hintText="loc('IM_CREATE_CHANNEL_MEMBERS_HINT')"
-			/>
-			<div class="bx-im-content-chat-forms__members_container">
-				<ChatMembersSelector
-					:customElements="collapsedUsers"
-					:chatMembers="chatMembers" 
-					@membersChange="onMembersChange" 
+				<div class="bx-im-content-chat-forms__members_container">
+					<ChatMembersSelector
+						:customElements="collapsedUsers"
+						:chatMembers="chatMembers"
+						:allowTeamsSelect="true"
+						@membersChange="onMembersChange"
+					/>
+				</div>
+				<RightsSection
+					:chatType="ChatType.channel"
+					:ownerId="rights.ownerId"
+					:managerIds="rights.managerIds"
+					:manageUsersAdd="rights.manageUsersAdd"
+					:manageUsersDelete="rights.manageUsersDelete"
+					:manageUi="rights.manageUi"
+					:manageMessages="rights.manageMessages"
+					@ownerChange="onOwnerChange"
+					@managersChange="onManagersChange"
+					@manageUsersAddChange="onManageUsersAddChange"
+					@manageUsersDeleteChange="onManageUsersDeleteChange"
+					@manageUiChange="onManageUiChange"
+					@manageMessagesChange="onManageMessagesChange"
 				/>
-			</div>
-			<RightsSection
-				:chatType="ChatType.channel"
-				:ownerId="rights.ownerId"
-				:managerIds="rights.managerIds"
-				:manageUsersAdd="rights.manageUsersAdd"
-				:manageUsersDelete="rights.manageUsersDelete"
-				:manageUi="rights.manageUi"
-				:manageMessages="rights.manageMessages"
-				@ownerChange="onOwnerChange"
-				@managersChange="onManagersChange"
-				@manageUsersAddChange="onManageUsersAddChange"
-				@manageUsersDeleteChange="onManageUsersDeleteChange"
-				@manageUiChange="onManageUiChange"
-				@manageMessagesChange="onManageMessagesChange"
-			/>
+			</template>
 		</div>
 		<ButtonPanel
 			:isCreating="isLoading || isUpdating"

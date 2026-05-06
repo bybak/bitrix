@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS["BBD_PATH_TO_BLOG_CATEGORY"] = "Шаблон пути к странице блога c фильтром по тегу";
 $MESS["BBD_PATH_TO_POST_EDIT"] = "Шаблон пути к странице редактирования сообщения блога";
 $MESS["BBD_PATH_TO_SMILE"] = "Путь к папке со смайликами относительно корня сайта";
@@ -11,4 +11,3 @@ $MESS["B_VARIABLE_ALIASES"] = "Имена переменных";
 $MESS["BC_DATE_TIME_FORMAT"] = "Формат показа даты и времени";
 $MESS["BPC_IMAGE_MAX_WIDTH"] = "Максимальная ширина изображения";
 $MESS["BPC_IMAGE_MAX_HEIGHT"] = "Максимальная высота изображения";
-?>

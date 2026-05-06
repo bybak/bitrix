@@ -1,0 +1,2 @@
+<?
+$MESS['REST_V3_EXCEPTION_METHODNOTFOUNDEXCEPTION'] = 'Метод `#METHOD#` не найден';

@@ -45,12 +45,13 @@ export type TimelineData = {
 	userStatuses: Map<UserId, TaskStatus>,
 	stats: TimelineStatsData,
 	biMenu?: Array<BiMenuItem>,
+	isBiBuilderDisabled: boolean,
 };
 
 type BiMenuItem = {
 	ID: string,
 	TEXT: string,
-	URL: string,
+	ON_CLICK: string,
 }
 
 export class DurationFormatter
@@ -158,6 +159,7 @@ export class Timeline
 	#biPopup: HTMLDivElement;
 	#dateFormat: string;
 	#dateFormatShort: string;
+	#efficiencyPopup: Popup;
 
 	constructor(
 		options: { workflowId: string, taskId?: number, },
@@ -199,6 +201,7 @@ export class Timeline
 						allowChangeHistory: false,
 						cacheable: false,
 						loader: '/bitrix/js/bizproc/workflow/timeline/img/skeleton.svg',
+						printable: true,
 					},
 				);
 			})
@@ -252,6 +255,7 @@ export class Timeline
 						efficiency: getString(response.data.stats.efficiency),
 					},
 					biMenu: getArray(response.data.biMenu, null),
+					isBiBuilderDisabled: getBool(response.data.isBiBuilderDisabled, false),
 				};
 
 				for (const user of getArray(response.data.users))
@@ -675,7 +679,7 @@ export class Timeline
 
 	#createEfficiencyPopup(): Popup
 	{
-		return new Popup({
+		this.#efficiencyPopup = new Popup({
 			width: 403,
 			minHeight: 345,
 			closeIcon: true,
@@ -709,9 +713,11 @@ export class Timeline
 				},
 			},
 		});
+
+		return this.#efficiencyPopup;
 	}
 
-	#getEfficiencyData()
+	#getEfficiencyData(): Popup
 	{
 		let logoClass = '--first';
 		let notice = Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_NO_STATS');
@@ -719,19 +725,8 @@ export class Timeline
 		switch (this.#data.stats.efficiency)
 		{
 			case 'fast':
-				if (
-					DurationFormatter.formatTimeInterval(this.#data.stats.averageDuration)
-					=== DurationFormatter.formatTimeInterval(this.#data.executionTime)
-				)
-				{
-					logoClass = '--slow';
-					notice = Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_PERFORMED_SLOWLY');
-				}
-				else
-				{
-					logoClass = '--fast';
-					notice = Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_PERFORMED_QUICKLY');
-				}
+				logoClass = '--fast';
+				notice = Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_PERFORMED_QUICKLY');
 				break;
 			case 'slow':
 				logoClass = '--slow';
@@ -863,7 +858,7 @@ export class Timeline
 		if (menu.length === 1)
 		{
 			const linkBtn = Tag.render`
-				<a class="ui-btn ui-btn-light-border ui-btn-themes" href="${Text.encode(menu[0].URL)}" target="_blank">
+				<a class="ui-btn ui-btn-light-border ui-btn-themes" onclick="${Text.encode(menu[0].ON_CLICK)}" target="_blank">
 					${Text.encode(Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_BUTTON'))}
 				</a>
 			`;
@@ -892,7 +887,7 @@ export class Timeline
 			content: this.#renderBiPopupContent(menu),
 			bindElement: {
 				left: 555,
-				top: 502,
+				top: this.#getBiMenuTopOffset(),
 			},
 			padding: 17,
 			borderRadius: '18px',
@@ -902,6 +897,18 @@ export class Timeline
 		return this.#biPopup;
 	}
 
+	#getBiMenuTopOffset(): number
+	{
+		const containerHeight = this.#efficiencyPopup?.getPopupContainer()?.offsetHeight;
+		const topOffset = this.#efficiencyPopup?.bindElementPos?.top;
+		if (containerHeight && topOffset)
+		{
+			return containerHeight + topOffset + 20;
+		}
+
+		return 522;
+	}
+
 	#showBiMenu(menu: Array<BiMenuItem>, event: Event): void
 	{
 		(new Menu({
@@ -909,8 +916,7 @@ export class Timeline
 			items: menu.map((item: BiMenuItem) => {
 				return {
 					text: item.TEXT,
-					href: item.URL,
-					target: '_blank',
+					onclick: item.ON_CLICK,
 				};
 			}),
 		})).show();
@@ -918,11 +924,37 @@ export class Timeline
 
 	#renderBiPopupContent(menu: Array<BiMenuItem>): Element
 	{
+		const btn = this.#getBiPopupButton(menu);
+
+		return Tag.render`
+			<div class="bizproc-timeline-popup">
+				<div class="bizproc-timeline-popup-title">${Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TITLE')}</div>
+				<p class="bizproc-timeline-popup-info">${Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TIP')}</p>
+				${btn}
+			</div>
+		`;
+	}
+
+	#getBiPopupButton(menu: Array<BiMenuItem>): Element
+	{
 		let btn = null;
+
+		if (this.#data.isBiBuilderDisabled)
+		{
+			const clickHandler = () => top.BX.UI.InfoHelper.show('limit_crm_BI_constructor');
+			btn = Tag.render`
+				<a class="ui-btn ui-btn-light-border ui-btn-round ui-btn-xs ui-btn-icon-lock ui-icon-set__scope --with-left-icon" onclick="${clickHandler}">
+					<span class="ui-btn-text">${Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_LINK')}</span>
+				</a>
+			`;
+
+			return btn;
+		}
+
 		if (menu.length === 1)
 		{
 			btn = Tag.render`
-				<a class="ui-btn ui-btn-light-border ui-btn-round ui-btn-xs" href="${Text.encode(menu[0].URL)}" target="_blank">
+				<a class="ui-btn ui-btn-light-border ui-btn-round ui-btn-xs" onclick="${Text.encode(menu[0].ON_CLICK)}" target="_blank">
 					<span class="ui-btn-text">${Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_LINK')}</span>
 				</a>
 			`;
@@ -940,13 +972,7 @@ export class Timeline
 			`;
 		}
 
-		return Tag.render`
-			<div class="bizproc-timeline-popup">
-				<div class="bizproc-timeline-popup-title">${Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TITLE')}</div>
-				<p class="bizproc-timeline-popup-info">${Loc.getMessage('BIZPROC_WORKFLOW_TIMELINE_SLIDER_BI_ANALYTICS_TIP')}</p>
-				${btn}
-			</div>
-		`;
+		return btn;
 	}
 
 	#renderLoadingStub(): HTMLElement

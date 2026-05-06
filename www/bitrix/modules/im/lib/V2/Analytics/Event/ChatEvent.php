@@ -3,10 +3,13 @@
 namespace Bitrix\Im\V2\Analytics\Event;
 
 use Bitrix\Im\V2\Analytics\ChatAnalytics;
+use Bitrix\Im\V2\Chat\Ai\AiAssistantPrivateChat;
 use Bitrix\Im\V2\Chat\ChannelChat;
 use Bitrix\Im\V2\Chat\CollabChat;
 use Bitrix\Im\V2\Chat\CommentChat;
 use Bitrix\Im\V2\Chat\CopilotChat;
+use Bitrix\Im\V2\Chat\ExternalChat;
+use Bitrix\Im\V2\Chat\FavoriteChat;
 use Bitrix\Im\V2\Chat\GeneralChannel;
 use Bitrix\Im\V2\Chat\GeneralChat;
 use Bitrix\Im\V2\Chat\GroupChat;
@@ -16,6 +19,8 @@ use Bitrix\Im\V2\Chat\PrivateChat;
 use Bitrix\Im\V2\Chat\VideoConfChat;
 use Bitrix\Im\V2\Entity\User\UserCollaber;
 use Bitrix\Im\V2\Entity\User\UserExternal;
+use Bitrix\Im\V2\Integration\AI\EngineManager;
+use Bitrix\Im\V2\Integration\AI\RoleManager;
 
 class ChatEvent extends Event
 {
@@ -44,6 +49,8 @@ class ChatEvent extends Event
 		'videoconf' => ['instanceof' => VideoConfChat::class],
 		'copilot' => ['instanceof' => CopilotChat::class],
 		'chat' => ['instanceof' => GroupChat::class],
+
+		'aiAssistant' => ['instanceof' => AiAssistantPrivateChat::class],
 		'user' => ['instanceof' => PrivateChat::class],
 	];
 	protected const CHAT_P1_CONDITIONS = [
@@ -67,6 +74,8 @@ class ChatEvent extends Event
 		'chatType_copilot' => ['instanceof' => CopilotChat::class],
 		'chatType_chat' => ['instanceof' => GroupChat::class],
 
+		'chatType_notes' => ['instanceof' => FavoriteChat::class],
+		'chatType_aiAssistant' => ['instanceof' => AiAssistantPrivateChat::class],
 		'chatType_user' => ['instanceof' => PrivateChat::class],
 	];
 
@@ -84,7 +93,15 @@ class ChatEvent extends Event
 
 	public function setChatType(): self
 	{
+		if ($this->chat instanceof ExternalChat)
+		{
+			$this->type = $this->chat->getExtendedType();
+
+			return $this;
+		}
+
 		$entityType = $this->chat->getEntityType();
+
 		foreach (self::CHAT_TYPE_CONDITIONS as $typeName => $conditions)
 		{
 			if (array_key_exists('entity', $conditions) && $conditions['entity'] === $entityType)
@@ -120,6 +137,13 @@ class ChatEvent extends Event
 
 	protected function setChatP1(): self
 	{
+		if ($this->chat instanceof ExternalChat)
+		{
+			$this->p1 = 'chatType_' . $this->chat->getExtendedType();
+
+			return $this;
+		}
+
 		$entityType = $this->chat->getEntityType();
 
 		foreach (self::CHAT_P1_CONDITIONS as $typeName => $conditions)
@@ -146,6 +170,16 @@ class ChatEvent extends Event
 
 	protected function setChatP2(): self
 	{
+		if ($this->chat instanceof CopilotChat)
+		{
+			$engineCode = $this->chat->getEngineCode();
+			$engineName = (new EngineManager())->getEngineNameByCode($engineCode) ?? '';
+
+			$this->p2 = 'provider_' . Event::convertUnderscore($engineName);
+
+			return $this;
+		}
+
 		$currentUser = $this->chat->getContext()->getUser();
 
 		$this->p2 = match (true)
@@ -163,6 +197,14 @@ class ChatEvent extends Event
 		if ($this->chat instanceof CollabChat)
 		{
 			$this->p4 = 'collabId_' . ($this->chat->getEntityId() ?? 0);
+
+			return $this;
+		}
+
+		if ($this->chat instanceof CopilotChat)
+		{
+			$role = (new RoleManager())->getMainRole($this->chat->getChatId()) ?? '';
+			$this->p4 = 'role_' . self::convertUnderscore($role);
 
 			return $this;
 		}

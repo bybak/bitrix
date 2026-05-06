@@ -2,7 +2,7 @@
 this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
-(function (exports,im_v2_const,im_v2_application_core) {
+(function (exports,im_v2_const,im_v2_application_core,im_v2_lib_feature) {
 	'use strict';
 
 	class CopilotManager {
@@ -22,7 +22,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    if (!roles) {
 	      return Promise.resolve();
 	    }
-	    return Promise.all([this.store.dispatch('copilot/chats/add', chats), this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/setRecommendedRoles', recommendedRoles), this.store.dispatch('copilot/messages/add', messages)]);
+	    return Promise.all([this.store.dispatch('copilot/chats/set', chats), this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/setRecommendedRoles', recommendedRoles), this.store.dispatch('copilot/messages/add', messages)]);
 	  }
 	  async handleChatLoadResponse(copilotData) {
 	    if (!copilotData) {
@@ -37,7 +37,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    if (!roles) {
 	      return Promise.resolve();
 	    }
-	    return Promise.all([this.store.dispatch('copilot/setProvider', aiProvider), this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/chats/add', chats), this.store.dispatch('copilot/messages/add', messages)]);
+	    return Promise.all([this.store.dispatch('copilot/setProvider', aiProvider), this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/chats/set', chats), this.store.dispatch('copilot/messages/add', messages)]);
 	  }
 	  async handleRoleUpdate(copilotData) {
 	    const {
@@ -47,7 +47,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    if (!roles) {
 	      return Promise.resolve();
 	    }
-	    return Promise.all([this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/chats/add', chats)]);
+	    return Promise.all([this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/chats/set', chats)]);
 	  }
 	  async handleMessageAdd(copilotData) {
 	    const {
@@ -58,16 +58,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    if (!roles) {
 	      return Promise.resolve();
 	    }
-	    return Promise.all([this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/chats/add', chats), this.store.dispatch('copilot/messages/add', messages)]);
+	    return Promise.all([this.store.dispatch('copilot/roles/add', roles), this.store.dispatch('copilot/chats/set', chats), this.store.dispatch('copilot/messages/add', messages)]);
 	  }
-	  getRoleAvatarUrl({
-	    avatarDialogId,
-	    contextDialogId
-	  }) {
+	  getRoleAvatarUrl(payload) {
+	    const {
+	      avatarDialogId,
+	      contextDialogId
+	    } = payload;
 	    if (!this.isCopilotChatOrBot(avatarDialogId)) {
 	      return '';
 	    }
 	    return this.store.getters['copilot/chats/getRoleAvatar'](contextDialogId);
+	  }
+	  getDefaultAvatarUrl() {
+	    return this.store.getters['copilot/roles/getDefaultAvatar']();
 	  }
 	  isCopilotBot(userId) {
 	    return this.store.getters['users/bots/isCopilot'](userId);
@@ -79,17 +83,11 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  isCopilotChatOrBot(dialogId) {
 	    return this.isCopilotChat(dialogId) || this.isCopilotBot(dialogId);
 	  }
-	  getMessageRoleAvatar(messageId) {
-	    var _this$store$getters$c2, _this$store$getters$c3;
-	    return (_this$store$getters$c2 = this.store.getters['copilot/messages/getRole'](messageId)) == null ? void 0 : (_this$store$getters$c3 = _this$store$getters$c2.avatar) == null ? void 0 : _this$store$getters$c3.medium;
-	  }
-	  getNameWithRole({
-	    dialogId,
-	    messageId
-	  }) {
-	    const user = this.store.getters['users/get'](dialogId);
-	    const roleName = this.store.getters['copilot/messages/getRole'](messageId).name;
-	    return `${user.name} (${roleName})`;
+	  isGroupCopilotChat(dialogId) {
+	    const {
+	      userCounter
+	    } = this.store.getters['chats/get'](dialogId);
+	    return this.isCopilotChat(dialogId) && userCounter > 2;
 	  }
 	  isCopilotMessage(messageId) {
 	    const message = this.store.getters['messages/getById'](messageId);
@@ -101,9 +99,35 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    }
 	    return message.componentId === im_v2_const.MessageComponent.copilotCreation;
 	  }
+	  getMessageRoleAvatar(messageId) {
+	    var _this$store$getters$c2, _this$store$getters$c3;
+	    return (_this$store$getters$c2 = this.store.getters['copilot/messages/getRole'](messageId)) == null ? void 0 : (_this$store$getters$c3 = _this$store$getters$c2.avatar) == null ? void 0 : _this$store$getters$c3.medium;
+	  }
+	  getNameWithRole(messageId) {
+	    const copilotName = this.getName();
+	    const {
+	      default: isDefaultRole,
+	      name: roleName
+	    } = this.store.getters['copilot/messages/getRole'](messageId);
+	    if (isDefaultRole) {
+	      return copilotName;
+	    }
+	    return `${copilotName} (${roleName})`;
+	  }
+	  getName() {
+	    return this.store.getters['copilot/getName'];
+	  }
+	  getAIModelName(dialogId) {
+	    const isAIModelChangeAllowed = im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.isAIModelChangeAllowed);
+	    if (isAIModelChangeAllowed) {
+	      const currentAIModel = im_v2_application_core.Core.getStore().getters['copilot/chats/getAIModel'](dialogId);
+	      return currentAIModel.name;
+	    }
+	    return im_v2_application_core.Core.getStore().getters['copilot/getProvider'];
+	  }
 	}
 
 	exports.CopilotManager = CopilotManager;
 
-}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX.Messenger.v2.Const,BX.Messenger.v2.Application));
+}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX.Messenger.v2.Const,BX.Messenger.v2.Application,BX.Messenger.v2.Lib));
 //# sourceMappingURL=copilot.bundle.js.map

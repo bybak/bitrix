@@ -157,7 +157,7 @@ trait AnnotationTrait
 		//$code[] = "\t * for parent class, @see \\".EntityObject::class;
 		// xTODO we can put path to the original file here
 		$code[] = "\t */"; // end class annotations
-		$code[] = "\tclass {$objectDefaultClassName} {";
+		$code[] = "\tclass {$objectDefaultClassName} extends \Bitrix\Main\ORM\Objectify\EntityObject {";
 		$code[] = "\t\t/* @var {$dataClass} */";
 		$code[] = "\t\tstatic public \$dataClass = '{$dataClass}';";
 		$code[] = "\t\t/**";
@@ -218,11 +218,13 @@ trait AnnotationTrait
 			$code[] = "\t * @method {$collectionClass} merge(?{$collectionClass} \$collection)";
 			$code[] = "\t * @method bool isEmpty()";
 			$code[] = "\t * @method array collectValues(int \$valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int \$fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool \$recursive = false)";
+			$code[] = "\t * @method {$objectClass}|null find(callable \$callback)";
+			$code[] = "\t * @method {$collectionClass} filter(callable \$callback)";
 		}
 
 		// xTODO we can put path to the original file here
 		$code[] = "\t */";
-		$code[] = "\tclass {$collectionDefaultClassName} implements \ArrayAccess, \Iterator, \Countable {";
+		$code[] = "\tclass {$collectionDefaultClassName} extends \Bitrix\Main\ORM\Objectify\Collection implements \ArrayAccess, \Iterator, \Countable {";
 		$code[] = "\t\t/* @var {$dataClass} */";
 		$code[] = "\t\tstatic public \$dataClass = '{$dataClass}';";
 		$code[] = "\t}"; // end class

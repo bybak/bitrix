@@ -135,6 +135,22 @@
 	transition: .3s;
 }
 
+.mail-set-textarea-show--disabled {
+	opacity: 0.8;
+	cursor: not-allowed;
+	pointer-events: none;
+	color: var(--ui-color-base-70);
+	border-bottom: 1px dashed var(--ui-color-base-40);
+}
+
+.mail-set-textarea-show--disabled:hover {
+	background-color: transparent;
+}
+
+.mail-set-textarea-show--disabled:after {
+	display: none;
+}
+
 .mail-set-textarea-show-open:after {
 	-webkit-transform: rotate(0);
 	-moz-transform: rotate(0);
@@ -351,18 +367,6 @@
 	font: 13px/16px var(--ui-font-family-primary, var(--ui-font-family-helvetica));
 }
 
-.mail-connect-notice-more {
-	color: #3f85c2;
-	cursor: pointer;
-	padding-bottom: 2px;
-	border-bottom: 1px dashed transparent;
-	transition: border-bottom .3s ease;
-}
-
-.mail-connect-notice-more:hover {
-	border-color: #88b4e1;
-}
-
 .mail-connect-access-user-block {
 	border: 1px solid #c6cdd3;
 	border-radius: 2px;
@@ -470,6 +474,14 @@
 
 .mail-connect-access-delete-button:after {
 	transform: rotate(45deg);
+}
+
+#mail-owner-selector-container .ui-tag-selector-add-button-caption::before {
+	display: none;
+}
+
+#mail-owner-selector-container .ui-tag-selector-add-button-caption {
+	margin-left: 7px;
 }
 
 .mail-connect-footer {
@@ -910,12 +922,6 @@
 	font-weight: var(--ui-font-weight-bold);
 	margin: 0 28px 0 0;
 }
-.mail-connect-last-sync-success {
-	color: #6f950d;
-}
-.mail-connect-last-sync-error {
-	color: #d04749;
-}
 .mail-connect-last-sync-wrapper {
 	margin: 8px 0 0 0;
 }
@@ -940,10 +946,11 @@
 .mail-provider-showcase-title {
 	font-family: var(--ui-font-family-secondary, var(--ui-font-family-open-sans));
 	font-size: var(--ui-font-size-5xl);
-	color: var(--ui-color-on-primary-alt);
+	color: var(--ui-color-base-1);
 	font-weight: var(--ui-font-weight-regular, 400);
 	line-height: var(--ui-font-line-height-md);
 	margin-bottom: 45px;
+	margin-top: 0;
 	text-align: center;
 }
 
@@ -958,5 +965,31 @@
 
 .mail-provider-showcase-container-wide .mail-provider-item {
 	width: 100%;
+}
+
+/* mail-connect-access-denied */
+
+.mail-client-config-connect-access-denied-slider-wrapper {
+	margin-top: 160px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 26px;
+}
+
+.mail-client-config-connect-access-denied-slider-icon {
+	width: 269px;
+	height: 195px;
+	background-image: url(images/access_denied.png);
+	background-size: cover;
+}
+
+.mail-client-config-connect-access-denied-slider-text {
+	color: var(--ui-color-palette-black-base, #333);
+	text-align: center;
+	font-family: var(--ui-font-family-secondary, var(--ui-font-family-open-sans));
+	font-size: var(--ui-size-md, 16px);
+	font-weight: var(--ui-font-weight-medium);
+	line-height: var(--ui-font-line-height-md, 23px);
 }
 

@@ -1,20 +1,24 @@
-import { FileType } from 'im.v2.const';
-import { UnsupportedMessage } from 'im.v2.component.message.unsupported';
-import { Utils } from 'im.v2.lib.utils';
+import { Type } from 'main.core';
+import { UploaderFile } from 'ui.uploader.core';
 
-import { MediaMessage } from './components/media-message';
-import { BaseFileMessage } from './components/base-file-message';
+import { UnsupportedMessage } from 'im.v2.component.message.unsupported';
+import { FileType } from 'im.v2.const';
+import { type ImModelMessage, type ImModelFile, type ImModelChat } from 'im.v2.model';
+import { UploadingService } from 'im.v2.provider.service.uploading';
+
 import { AudioMessage } from './components/audio-message';
+import { BaseFileMessage } from './components/base-file-message';
 import { FileCollectionMessage } from './components/file-collection-message';
 import { MediaContent } from './components/media-content';
-
-import type { ImModelMessage, ImModelFile } from 'im.v2.model';
+import { MediaMessage } from './components/media-message';
+import { VideoNoteMessage } from './components/video-note-message';
 
 const FileMessageType = Object.freeze({
 	media: 'MediaMessage',
 	audio: 'AudioMessage',
 	base: 'BaseFileMessage',
 	collection: 'FileCollectionMessage',
+	videoNote: 'VideoNoteMessage',
 });
 
 // @vue/component
@@ -26,6 +30,7 @@ export const FileMessage = {
 		AudioMessage,
 		UnsupportedMessage,
 		FileCollectionMessage,
+		VideoNoteMessage,
 	},
 	props: {
 		item: {
@@ -40,9 +45,9 @@ export const FileMessage = {
 			type: Boolean,
 			default: true,
 		},
-		menuIsActiveForId: {
-			type: [String, Number],
-			default: 0,
+		containerHeight: {
+			type: [Number, null],
+			default: null,
 		},
 	},
 	computed:
@@ -50,7 +55,7 @@ export const FileMessage = {
 		FileType: () => FileType,
 		message(): ImModelMessage
 		{
-			return this.item;
+			return this.$store.getters['messages/getById'](this.item.id);
 		},
 		messageFiles(): ImModelFile[]
 		{
@@ -90,6 +95,11 @@ export const FileMessage = {
 			const file = this.messageFiles[0];
 			const hasPreview = Boolean(file.image);
 
+			if (file.isVideoNote)
+			{
+				return FileMessageType.videoNote;
+			}
+
 			if (file.type === FileType.image && hasPreview)
 			{
 				return FileMessageType.media;
@@ -100,9 +110,7 @@ export const FileMessage = {
 				return FileMessageType.audio;
 			}
 
-			// file.type value is empty for mkv files
-			const isVideo = file.type === FileType.video || Utils.file.getFileExtension(file.name) === 'mkv';
-			if (isVideo && hasPreview)
+			if (file.type === FileType.video && hasPreview)
 			{
 				return FileMessageType.media;
 			}
@@ -114,15 +122,64 @@ export const FileMessage = {
 			return this.$store.getters['messages/isRealMessage'](this.message.id);
 		},
 	},
+	methods: {
+		onCancel(event: { file: ImModelFile })
+		{
+			const canceledFileId: string = event.file.id;
+			const uploadingService: UploadingService = UploadingService.getInstance();
+			const uploaderId: string = uploadingService.getUploaderIdByFileId(canceledFileId);
+
+			uploadingService.removeFileFromUploader({
+				uploaderId,
+				filesIds: [canceledFileId],
+				restartUploading: true,
+			});
+
+			const uploaderFiles: Array<UploaderFile> = uploadingService.getFiles(uploaderId);
+			if (Type.isArrayFilled(uploaderFiles))
+			{
+				const actualMessageFiles: Array<string> = uploaderFiles.map((file: UploaderFile) => {
+					return file.getId();
+				});
+
+				void this.$store.dispatch('messages/update', {
+					id: this.message.id,
+					fields: {
+						files: actualMessageFiles,
+					},
+				});
+			}
+			else
+			{
+				const chatId: number = this.message.chatId;
+				void this.$store.dispatch('messages/delete', { id: this.message.id });
+
+				const chat: ImModelChat = this.$store.getters['chats/getByChatId'](chatId);
+				const lastMessageId: string | number | null = this.$store.getters['messages/findLastChatMessageId'](chatId);
+
+				if (Type.isString(lastMessageId) || Type.isNumber(lastMessageId))
+				{
+					void this.$store.dispatch('recent/update', {
+						dialogId: chat.dialogId,
+						fields: { messageId: lastMessageId },
+					});
+				}
+				else
+				{
+					void this.$store.dispatch('recent/hide', { dialogId: chat.dialogId });
+				}
+			}
+		},
+	},
 	template: `
 		<component 
 			:is="componentName" 
 			:item="message" 
 			:dialogId="dialogId"
 			:withTitle="withTitle" 
-			:menuIsActiveForId="menuIsActiveForId"
-			:withRetryButton="false"
+			:containerHeight="containerHeight"
 			:withContextMenu="isRealMessage"
+			@cancelClick="onCancel"
 		/>
 	`,
 };

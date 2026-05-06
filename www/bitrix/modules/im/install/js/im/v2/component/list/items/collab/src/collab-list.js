@@ -1,15 +1,18 @@
-import { Utils } from 'im.v2.lib.utils';
-import { ListLoadingState as LoadingState } from 'im.v2.component.elements';
-import { RecentItem } from 'im.v2.component.list.items.recent';
+import { type JsonObject } from 'main.core';
+import { type EventEmitter } from 'main.core.events';
 
-import { EmptyState } from './components/empty-state';
+import { ListLoadingState as LoadingState } from 'im.v2.component.elements.list-loading-state';
+import { RecentItem } from 'im.v2.component.list.items.recent';
+import { RecentType } from 'im.v2.const';
+import { DraftManager } from 'im.v2.lib.draft';
+import { Utils } from 'im.v2.lib.utils';
+import { type ImModelRecentItem } from 'im.v2.model';
+
 import { CollabService } from './classes/collab-service';
 import { CollabRecentMenu } from './classes/context-menu-manager';
+import { EmptyState } from './components/empty-state';
 
 import './css/collab-list.css';
-
-import type { JsonObject } from 'main.core';
-import type { ImModelRecentItem, ImModelMessage } from 'im.v2.model';
 
 // @vue/component
 export const CollabList = {
@@ -26,39 +29,27 @@ export const CollabList = {
 	},
 	computed:
 	{
-		collection(): ImModelRecentItem[]
-		{
-			return this.$store.getters['recent/getCollabCollection'];
-		},
 		preparedItems(): ImModelRecentItem[]
 		{
-			return [...this.collection].sort((a, b) => {
-				const firstMessage: ImModelMessage = this.$store.getters['messages/getById'](a.messageId);
-				const secondMessage: ImModelMessage = this.$store.getters['messages/getById'](b.messageId);
-
-				return secondMessage.date - firstMessage.date;
-			});
+			return this.$store.getters['recent/getSortedCollection']({ type: RecentType.collab });
 		},
 		pinnedItems(): ImModelRecentItem[]
 		{
-			return this.preparedItems.filter((item) => {
-				return item.pinned === true;
-			});
+			return this.preparedItems.filter((item) => item.pinned === true);
 		},
 		generalItems(): ImModelRecentItem[]
 		{
-			return this.preparedItems.filter((item) => {
-				return item.pinned === false;
-			});
+			return this.preparedItems.filter((item) => item.pinned === false);
 		},
 		isEmptyCollection(): boolean
 		{
-			return this.collection.length === 0;
+			return this.preparedItems.length === 0;
 		},
 	},
 	created()
 	{
-		this.contextMenuManager = new CollabRecentMenu();
+		this.contextMenuManager = new CollabRecentMenu({ emitter: this.getEmitter() });
+		void DraftManager.getInstance().initDraftHistory();
 	},
 	beforeUnmount()
 	{
@@ -76,7 +67,7 @@ export const CollabList = {
 		async onScroll(event: Event)
 		{
 			this.contextMenuManager.close();
-			if (!Utils.dom.isOneScreenRemaining(event.target) || !this.getRecentService().hasMoreItemsToLoad)
+			if (!Utils.dom.isOneScreenRemaining(event.target) || !this.getRecentService().hasMoreItemsToLoad())
 			{
 				return;
 			}
@@ -92,7 +83,12 @@ export const CollabList = {
 		onRightClick(item: ImModelRecentItem, event: PointerEvent)
 		{
 			event.preventDefault();
-			this.contextMenuManager.openMenu(item, event.currentTarget);
+
+			const context = {
+				dialogId: item.dialogId,
+				recentItem: item,
+			};
+			this.contextMenuManager.openMenu(context, event.currentTarget);
 		},
 		getRecentService(): CollabService
 		{
@@ -102,6 +98,10 @@ export const CollabList = {
 			}
 
 			return this.service;
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 		loc(phraseCode: string): string
 		{

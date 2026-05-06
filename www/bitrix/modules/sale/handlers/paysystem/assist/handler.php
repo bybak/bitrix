@@ -21,7 +21,7 @@ class AssistHandler extends PaySystem\ServiceHandler implements PaySystem\IRefun
 	 * @param Request|null $request
 	 * @return PaySystem\ServiceResult
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		$extraParams = array(
 			'URL' => $this->getUrl($payment, 'pay'),
@@ -118,8 +118,9 @@ class AssistHandler extends PaySystem\ServiceHandler implements PaySystem\IRefun
 	{
 		$sum = $request->get('orderamount');
 		$paymentSum = $this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY');
+		$currency = $payment->getField('CURRENCY');
 
-		return PriceMaths::roundPrecision($paymentSum) === PriceMaths::roundPrecision($sum);
+		return PriceMaths::roundByFormatCurrency($paymentSum, $currency) === PriceMaths::roundByFormatCurrency($sum, $currency);
 	}
 
 	/**
@@ -221,7 +222,7 @@ class AssistHandler extends PaySystem\ServiceHandler implements PaySystem\IRefun
 	 * @param Payment $payment
 	 * @return bool
 	 */
-	protected function isTestMode(Payment $payment = null)
+	protected function isTestMode(?Payment $payment = null)
 	{
 		return ($this->getBusinessValue($payment, 'PS_IS_TEST') == 'Y');
 	}
@@ -244,7 +245,7 @@ class AssistHandler extends PaySystem\ServiceHandler implements PaySystem\IRefun
 	 * @param string $action
 	 * @return string
 	 */
-	protected function getUrl(Payment $payment = null, $action)
+	protected function getUrl(?Payment $payment = null, $action)
 	{
 		$url = parent::getUrl($payment, $action);
 		if ($this->isTestMode($payment))

@@ -1,9 +1,11 @@
+import { FloatButton, FloatButtonColor, FloatButtonIcon } from './float-button';
+
 import type { ImModelChat } from 'im.v2.model';
-import type { JsonObject } from 'main.core';
 
 // @vue/component
 export const ScrollButton = {
 	name: 'ScrollButton',
+	components: { FloatButton },
 	props:
 	{
 		dialogId: {
@@ -11,36 +13,26 @@ export const ScrollButton = {
 			required: true,
 		},
 	},
-	data(): JsonObject
-	{
-		return {};
-	},
 	computed:
 	{
 		dialog(): ImModelChat
 		{
 			return this.$store.getters['chats/get'](this.dialogId, true);
 		},
-		formattedCounter(): string
+		chatCounter(): number
 		{
-			if (this.dialog.counter === 0)
-			{
-				return '';
-			}
-
-			if (this.dialog.counter > 99)
-			{
-				return '99+';
-			}
-
-			return String(this.dialog.counter);
+			return this.$store.getters['counters/getCounterByChatId'](this.dialog.chatId);
+		},
+		floatButtonProps(): { color: string, icon: string, counter: number }
+		{
+			return {
+				color: FloatButtonColor.accent,
+				icon: FloatButtonIcon.chevronDown,
+				counter: this.chatCounter,
+			};
 		},
 	},
 	template: `
-		<div class="bx-im-dialog-chat__scroll-button">
-			<div v-if="dialog.counter" class="bx-im-dialog-chat__scroll-button_counter">
-				{{ formattedCounter }}
-			</div>
-		</div>
+		<FloatButton v-bind="floatButtonProps" />
 	`,
 };

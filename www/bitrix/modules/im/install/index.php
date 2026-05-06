@@ -6,6 +6,7 @@ if (class_exists("im"))
 }
 
 use Bitrix\Main\Localization\Loc;
+use Bitrix\Main\ModuleManager;
 
 class im extends \CModule
 {
@@ -85,7 +86,6 @@ class im extends \CModule
 		\CAgent::AddAgent('Bitrix\Im\Notify::cleanNotifyAgent();', "im", "N", 7200); /** @see \Bitrix\Im\Notify::cleanNotifyAgent */
 		\CAgent::AddAgent('Bitrix\Im\Bot::deleteExpiredTokenAgent();', "im", "N", 86400); /** @see \Bitrix\Im\Bot::deleteExpiredTokenAgent */
 		\CAgent::AddAgent('Bitrix\Im\Disk\NoRelationPermission::cleaningAgent();', "im", "N", 3600); /** @see \Bitrix\Im\Disk\NoRelationPermission::cleaningAgent */
-		\CAgent::AddAgent('Bitrix\Im\Call\Conference::removeTemporaryAliases();', "im", "N", 86400); /** @see \Bitrix\Im\Call\Conference::removeTemporaryAliases */
 		\CAgent::AddAgent('Bitrix\Im\Message\Uuid::cleanOldRecords();', 'im', 'N', 86400); /** @see \Bitrix\Im\Message\Uuid::cleanOldRecords */
 		\CAgent::AddAgent('Bitrix\Im\V2\Link\Reminder\ReminderService::remindAgent();', 'im', 'N', 60); /** @see \Bitrix\Im\V2\Link\Reminder\ReminderService::remindAgent */
 		\CAgent::AddAgent('Bitrix\Im\V2\Link\File\TemporaryFileService::cleanAgent();', 'im', 'N', 3600); /** @see \Bitrix\Im\V2\Link\File\TemporaryFileService::cleanAgent */
@@ -93,23 +93,25 @@ class im extends \CModule
 		\CAgent::AddAgent('\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService::syncRelationAgent();', 'im', 'N', 300); /** @see \Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService::syncRelationAgent() */
 		\CAgent::AddAgent('\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService::syncMemberAgent();', 'im', 'N', 300); /** @see \Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService::syncMemberAgent() */
 		\CAgent::AddAgent('\Bitrix\Im\V2\Recent\Initializer::executeAgent();', 'im', 'N', 300); /** @see \Bitrix\Im\V2\Recent\Initializer::executeAgent() */
+		\CAgent::AddAgent('Bitrix\Im\V2\Message\CounterService\CounterServiceAgent::cleanGhostCountersAgent();', 'im', 'N', 300); /** @see \Bitrix\Im\V2\Message\CounterService\CounterServiceAgent::cleanGhostCountersAgent() */
+		\CAgent::AddAgent('Bitrix\Im\V2\EventLog\EventService::cleanAgent();', 'im', 'N', 3600); /** @see \Bitrix\Im\V2\EventLog\EventService::cleanAgent() */
 
 		$eventManager->registerEventHandler('pull', 'onGetMobileCounter', 'im', '\Bitrix\Im\Counter', 'onGetMobileCounter');
 		$eventManager->registerEventHandler('pull', 'onGetMobileCounterTypes', 'im', '\Bitrix\Im\Counter', 'onGetMobileCounterTypes');
-		$eventManager->registerEventHandler('voximplant', 'onConferenceFinished', 'im', '\Bitrix\Im\Call\Call', 'onVoximplantConferenceFinished');
-
-		$eventManager->registerEventHandler('rest', 'onRestCheckAuth', 'im', '\Bitrix\Im\Call\Auth', 'onRestCheckAuth');
-
 		$eventManager->registerEventHandler('calendar', 'OnAfterCalendarEntryUpdate', 'im', '\Bitrix\Im\V2\Service\Messenger', 'updateCalendar');
 		$eventManager->registerEventHandler('calendar', 'OnAfterCalendarEventDelete', 'im', '\Bitrix\Im\V2\Service\Messenger', 'unregisterCalendar');
 		$eventManager->registerEventHandler('im', 'OnAfterMessagesAdd', 'im', '\Bitrix\Im\V2\Message\Delete\DisappearService', 'checkDisappearing');
 		$eventManager->registerEventHandler('ai', 'onTuningLoad', 'im', '\Bitrix\Im\V2\Integration\AI\Restriction', 'onTuningLoad');
-		$eventManager->registerEventHandler('humanresources', 'RELATION_ADDED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationAdded');
-		$eventManager->registerEventHandler('humanresources', 'RELATION_DELETED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationDeleted');
-		$eventManager->registerEventHandler('humanresources', 'MEMBER_ADDED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberAdded');
-		$eventManager->registerEventHandler('humanresources', 'MEMBER_DELETED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberDeleted');
+		$eventManager->registerEventHandler('humanresources', 'OnRelationAdded', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationAdded');
+		$eventManager->registerEventHandler('humanresources', 'OnRelationDeleted', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationDeleted');
+		$eventManager->registerEventHandler('humanresources', 'OnRelationPartDeleted', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationPartDeleted');
+		$eventManager->registerEventHandler('humanresources', 'OnMemberAdded', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberAdded');
+		$eventManager->registerEventHandler('humanresources', 'OnMemberDeleted', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberDeleted');
 		$eventManager->registerEventHandler('intranet', 'onLicenseHasChanged', 'im', '\Bitrix\Im\V2\TariffLimit\Limit', 'onLicenseHasChanged');
-		$eventManager->registerEventHandler('humanresources', 'MEMBER_UPDATED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberUpdated');
+		$eventManager->registerEventHandler('humanresources', 'OnMemberUpdated', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberUpdated');
+		$eventManager->registerEventHandler('main', 'OnAfterSetOption_isAutoDeleteMessagesEnabled', 'im', '\Bitrix\Im\V2\Message\Delete\DisappearService', 'onAutoDeleteOptionChanged');
+		$eventManager->registerEventHandler('ai', 'onQueueJobExecute', 'im', '\Bitrix\Im\V2\Integration\AI\QueueManager', 'onQueueJobExecute');
+		$eventManager->registerEventHandler('ai', 'onQueueJobFail', 'im', '\Bitrix\Im\V2\Integration\AI\QueueManager', 'onQueueJobFail');
 
 		//marketplace
 		$eventManager->registerEventHandler('rest', 'OnRestServiceBuildDescription', 'im','\Bitrix\Im\V2\Marketplace\Placement', 'onRestServiceBuildDescription');
@@ -121,11 +123,6 @@ class im extends \CModule
 		}
 
 		\Bitrix\Main\Loader::includeModule("im");
-
-		if(\Bitrix\Main\Entity\CryptoField::cryptoAvailable())
-		{
-			\Bitrix\Im\Model\ConferenceTable::enableCrypto("PASSWORD");
-		}
 
 		\Bitrix\Im\Integration\Intranet\User::registerEventHandler();
 
@@ -154,8 +151,8 @@ class im extends \CModule
 		\Bitrix\Main\Config\Option::set('im', 'im_link_url_migration', 'Y'); /** @see \Bitrix\Im\V2\Link\Url\UrlItem::$migrationOptionName */
 		\Bitrix\Main\Config\Option::set('im', 'im_link_file_migration', 'Y'); /** @see \Bitrix\Im\V2\Link\File\FileItem::$migrationOptionName */
 
-		\CAgent::AddAgent("CIMChat::InstallGeneralChat(true);", "im", "N", 900, "", "Y", ConvertTimeStamp(time()+CTimeZone::GetOffset()+900, "FULL"));
-		\CAgent::AddAgent('\Bitrix\Im\V2\Chat\GeneralChannel::installAgent();', "im", "N", 3600, "", "Y", ConvertTimeStamp(time()+CTimeZone::GetOffset()+600, "FULL"));
+		\CAgent::AddAgent("CIMChat::InstallGeneralChat(true);", "im", "N", 120, "", "Y", ConvertTimeStamp(time()+CTimeZone::GetOffset()+120, "FULL"));
+		\CAgent::AddAgent('\Bitrix\Im\V2\Chat\GeneralChannel::installAgent();', "im", "N", 120, "", "Y", ConvertTimeStamp(time()+CTimeZone::GetOffset()+120, "FULL"));
 
 		return true;
 	}
@@ -170,17 +167,13 @@ class im extends \CModule
 		\CopyDirFiles($_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/im/install/admin', $_SERVER['DOCUMENT_ROOT'].'/bitrix/admin', true, true);
 		\CopyDirFiles($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/im/install/templates", $_SERVER["DOCUMENT_ROOT"]."/bitrix/templates", true, true);
 		\CopyDirFiles($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/im/install/public", $_SERVER["DOCUMENT_ROOT"]."/", true, true);
+		\CopyDirFiles($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/im/install/images",  $_SERVER["DOCUMENT_ROOT"]."/bitrix/images/im", true, true);
 
 		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('bitrix24'))
 		{
 			$siteId = \CSite::GetDefSite();
 			if ($siteId)
 			{
-				\Bitrix\Main\UrlRewriter::add($siteId, [
-					"CONDITION" => "#^/video([\.\-0-9a-zA-Z]+)(/?)([^/]*)#",
-					"RULE" => "alias=\$1&videoconf",
-					"PATH" => "/desktop_app/router.php",
-				]);
 				\Bitrix\Main\UrlRewriter::add($siteId, [
 					"CONDITION" => "#^/online/([\.\-0-9a-zA-Z]+)(/?)([^/]*)#",
 					"RULE" => "alias=\$1",
@@ -196,7 +189,6 @@ class im extends \CModule
 
 		$APPLICATION->setFileAccessPermission('/desktop_app/', ["*" => "R"]);
 		$APPLICATION->setFileAccessPermission('/online/', ["*" => "R"]);
-		$APPLICATION->setFileAccessPermission('/video/', ["*" => "R"]);
 
 		return true;
 	}
@@ -234,34 +226,6 @@ class im extends \CModule
 		$default_site_id = \CSite::GetDefSite();
 		if ($default_site_id)
 		{
-			$desktopAppFound = false;
-			$arAppTempalate = [
-				"SORT" => 1,
-				"CONDITION" => "CSite::InDir('/desktop_app/')",
-				"TEMPLATE" => "desktop_app"
-			];
-
-			$callAppFound = false;
-			$arCallTempalate = [
-				"SORT" => 50,
-				"CONDITION" => 'preg_match("#^/video/([\.\-0-9a-zA-Z]+)(/?)([^/]*)#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))',
-				"TEMPLATE" => "call_app"
-			];
-
-			$callExtranetAppFound = false;
-			$arCallExtranetTempalate = [
-				"SORT" => 55,
-				"CONDITION" => 'preg_match("#^/extranet/video/([\.\-0-9a-zA-Z]+)(/?)([^/]*)#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))',
-				"TEMPLATE" => "call_app"
-			];
-
-			$callDesktopAppFound = false;
-			$arCallTempalateForDesktop = [
-				"SORT" => 60,
-				"CONDITION" => 'preg_match("#^/desktop_app/router.php\?alias=([\.\-0-9a-zA-Z]+)&videoconf#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))',
-				"TEMPLATE" => "call_app"
-			];
-
 			$pubAppFound = false;
 			$arPubTempalate = [
 				"SORT" => 100,
@@ -273,27 +237,7 @@ class im extends \CModule
 			$dbTemplates = \CSite::GetTemplateList($default_site_id);
 			while ($template = $dbTemplates->Fetch())
 			{
-				if ($template["CONDITION"] == "CSite::InDir('/desktop_app/')")
-				{
-					$desktopAppFound = true;
-					$template = $arAppTempalate;
-				}
-				elseif ($template["CONDITION"] == 'preg_match("#^/video/([\.\-0-9a-zA-Z]+)(/?)([^/]*)#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))')
-				{
-					$callAppFound = true;
-					$template = $arCallTempalate;
-				}
-				elseif ($template["CONDITION"] == 'preg_match("#^/extranet/video/([\.\-0-9a-zA-Z]+)(/?)([^/]*)#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))')
-				{
-					$callExtranetAppFound = true;
-					$template = $arCallExtranetTempalate;
-				}
-				elseif ($template["CONDITION"] == 'preg_match("#^/desktop_app/router.php\?alias=([\.\-0-9a-zA-Z]+)&videoconf#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))')
-				{
-					$callDesktopAppFound = true;
-					$template = $arCallTempalateForDesktop;
-				}
-				elseif ($template["CONDITION"] == 'preg_match("#^/online/([\.\-0-9a-zA-Z]+)(/?)([^/]*)#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))')
+				if ($template["CONDITION"] == 'preg_match("#^/online/([\.\-0-9a-zA-Z]+)(/?)([^/]*)#", $GLOBALS[\'APPLICATION\']->GetCurPage(0))')
 				{
 					$pubAppFound = true;
 					$template = $arPubTempalate;
@@ -304,25 +248,9 @@ class im extends \CModule
 					"TEMPLATE" => $template['TEMPLATE'],
 				];
 			}
-			if (!$desktopAppFound)
-			{
-				$arFields["TEMPLATE"][] = $arAppTempalate;
-			}
 			if (!$pubAppFound)
 			{
 				$arFields["TEMPLATE"][] = $arPubTempalate;
-			}
-			if (!$callDesktopAppFound)
-			{
-				$arFields["TEMPLATE"][] = $arCallTempalateForDesktop;
-			}
-			if (!$callAppFound)
-			{
-				$arFields["TEMPLATE"][] = $arCallTempalate;
-			}
-			if (!$callExtranetAppFound)
-			{
-				$arFields["TEMPLATE"][] = $arCallExtranetTempalate;
 			}
 
 			$obSite = new \CSite;
@@ -380,7 +308,7 @@ class im extends \CModule
 		$usersQuery =
 			\Bitrix\Main\UserTable::query()
 				->addSelect('ID')
-				->where('IS_REAL_USER', 'Y')
+				->where('REAL_USER', 'expr', true)
 		;
 
 		$userBindings = [];
@@ -400,14 +328,25 @@ class im extends \CModule
 		return $defaultGroupId;
 	}
 
-	function DoUninstall()
+	public function DoUninstall(): void
 	{
 		global $APPLICATION;
 
 		$step = (int)($_REQUEST['step'] ?? 1);
+
+		$dependencyErrors = $this->checkUninstallDependencies();
+		if (!empty($dependencyErrors))
+		{
+			$APPLICATION->ThrowException(Loc::getMessage('IM_MODULE_UNINSTALL_ERROR_UNINSTALL_DEPENDENCIES', [
+				'#MODULES#' => implode(', ', $dependencyErrors),
+			]));
+
+			$this->showUninstallUnstep(1);
+		}
+
 		if ($step < 2)
 		{
-			$APPLICATION->IncludeAdminFile(Loc::getMessage("IM_UNINSTALL_TITLE"), $_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/im/install/unstep1.php");
+			$this->showUninstallUnstep(1);
 		}
 		elseif ($step == 2)
 		{
@@ -420,7 +359,7 @@ class im extends \CModule
 
 			$this->UnInstallFiles();
 
-			$APPLICATION->IncludeAdminFile(Loc::getMessage("IM_UNINSTALL_TITLE"), $_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/im/install/unstep2.php");
+			$this->showUninstallUnstep(2);
 		}
 	}
 
@@ -463,7 +402,6 @@ class im extends \CModule
 		\CAgent::RemoveAgent('Bitrix\Im\Notify::cleanNotifyAgent();', "im");
 		\CAgent::RemoveAgent('Bitrix\Im\Bot::deleteExpiredTokenAgent();', "im");
 		\CAgent::RemoveAgent('Bitrix\Im\Disk\NoRelationPermission::cleaningAgent();', "im");
-		\CAgent::RemoveAgent('Bitrix\Im\Call\Conference::removeTemporaryAliases();', "im");
 		\CAgent::RemoveAgent('Bitrix\Im\Message\Uuid::cleanOldRecords();', "im");
 		\CAgent::RemoveAgent('Bitrix\Im\V2\Link\Reminder\ReminderService::remindAgent();', 'im');
 		\CAgent::RemoveAgent('Bitrix\Im\V2\Link\File\TemporaryFileService::cleanAgent();', 'im');
@@ -471,6 +409,8 @@ class im extends \CModule
 		\CAgent::RemoveAgent('\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService::syncRelationAgent();', 'im');
 		\CAgent::RemoveAgent('\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService::syncMemberAgent();', 'im');
 		\CAgent::RemoveAgent('\Bitrix\Im\V2\Recent\Initializer::executeAgent();', 'im');
+		\CAgent::RemoveAgent('Bitrix\Im\V2\Message\CounterService\CounterServiceAgent::cleanGhostCountersAgent();', 'im');
+		\CAgent::RemoveAgent('Bitrix\Im\V2\EventLog\EventService::cleanAgent();', 'im');
 
 		$eventManager = \Bitrix\Main\EventManager::getInstance();
 
@@ -499,19 +439,22 @@ class im extends \CModule
 
 		$eventManager->unRegisterEventHandler('pull', 'onGetMobileCounter', 'im', '\Bitrix\Im\Counter', 'onGetMobileCounter');
 		$eventManager->unRegisterEventHandler('pull', 'onGetMobileCounterTypes', 'im', '\Bitrix\Im\Counter', 'onGetMobileCounterTypes');
-		$eventManager->unRegisterEventHandler('voximplant', 'onConferenceFinished', 'im', '\Bitrix\Im\Call\Call', 'onVoximplantConferenceFinished');
 
 		$eventManager->unregisterEventHandler('calendar', 'OnAfterCalendarEntryUpdate', 'im', '\Bitrix\Im\V2\Service\Messenger', 'updateCalendar');
 		$eventManager->unregisterEventHandler('calendar', 'OnAfterCalendarEventDelete', 'im', '\Bitrix\Im\V2\Service\Messenger', 'unregisterCalendar');
 		$eventManager->unregisterEventHandler('rest', 'OnRestServiceBuildDescription', 'im','\Bitrix\Im\V2\Marketplace\Placement', 'onRestServiceBuildDescription');
 		$eventManager->unregisterEventHandler('im', 'OnAfterMessagesAdd', 'im', '\Bitrix\Im\V2\Message\Delete\DisappearService', 'checkDisappearing');
 		$eventManager->unRegisterEventHandler('ai', 'onTuningLoad', 'im', '\Bitrix\Im\V2\Integration\AI\Restriction', 'onTuningLoad');
-		$eventManager->unRegisterEventHandler('humanresources', 'RELATION_ADDED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationAdded');
-		$eventManager->unRegisterEventHandler('humanresources', 'RELATION_DELETED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationDeleted');
-		$eventManager->unRegisterEventHandler('humanresources', 'MEMBER_ADDED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberAdded');
-		$eventManager->unRegisterEventHandler('humanresources', 'MEMBER_DELETED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberDeleted');
+		$eventManager->unRegisterEventHandler('humanresources', 'OnRelationAdded', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationAdded');
+		$eventManager->unRegisterEventHandler('humanresources', 'OnRelationDeleted', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationDeleted');
+		$eventManager->unRegisterEventHandler('humanresources', 'OnRelationPartDeleted', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onRelationPartDeleted');
+		$eventManager->unRegisterEventHandler('humanresources', 'OnMemberAdded', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberAdded');
+		$eventManager->unRegisterEventHandler('humanresources', 'OnMemberDeleted', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberDeleted');
 		$eventManager->unRegisterEventHandler('intranet', 'onLicenseHasChanged', 'im', '\Bitrix\Im\V2\TariffLimit\Limit', 'onLicenseHasChanged');
-		$eventManager->unRegisterEventHandler('humanresources', 'MEMBER_UPDATED', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberUpdated');
+		$eventManager->unRegisterEventHandler('humanresources', 'OnMemberUpdated', 'im', '\Bitrix\Im\V2\Integration\HumanResources\Sync\SyncService', 'onMemberUpdated');
+		$eventManager->unRegisterEventHandler('main', 'OnAfterSetOption_isAutoDeleteMessagesEnabled', 'im', '\Bitrix\Im\V2\Message\Delete\DisappearService', 'onAutoDeleteOptionChanged');
+		$eventManager->unRegisterEventHandler('ai', 'onQueueJobExecute', 'im', '\Bitrix\Im\V2\Integration\AI\QueueManager', 'onQueueJobExecute');
+		$eventManager->unRegisterEventHandler('ai', 'onQueueJobFail', 'im', '\Bitrix\Im\V2\Integration\AI\QueueManager', 'onQueueJobFail');
 
 		$this->UnInstallUserFields($arParams);
 
@@ -526,7 +469,7 @@ class im extends \CModule
 
 		\DeleteDirFilesEx('/desktop_app/');
 		\DeleteDirFilesEx('/bitrix/templates/desktop_app/');
-		\DeleteDirFilesEx('/bitrix/templates/call_app/');
+		\DeleteDirFilesEx('/bitrix/images/im/');
 
 		$APPLICATION->SetFileAccessPermission('/desktop_app/', array("*" => "D"));
 
@@ -615,5 +558,25 @@ class im extends \CModule
 				),
 			),
 		);
+	}
+
+	private function showUninstallUnstep(int $unstep): void
+	{
+		global $APPLICATION;
+
+		$APPLICATION->IncludeAdminFile(
+			Loc::getMessage("IM_UNINSTALL_TITLE"),
+			$_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/' . $this->MODULE_ID . "/install/unstep{$unstep}.php"
+		);
+	}
+
+	private function checkUninstallDependencies(): array
+	{
+		if (ModuleManager::isModuleInstalled('tasks'))
+		{
+			return ['tasks'];
+		}
+
+		return [];
 	}
 }

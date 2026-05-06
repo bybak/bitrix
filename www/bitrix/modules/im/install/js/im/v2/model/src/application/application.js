@@ -3,19 +3,15 @@ import { EventEmitter } from 'main.core.events';
 import { BuilderModel } from 'ui.vue3.vuex';
 
 import { Layout, EventType } from 'im.v2.const';
+import { LayoutManager } from 'im.v2.lib.layout';
 
 import { SettingsModel } from './nested-modules/settings/settings';
 import { TariffRestrictionsModel } from './nested-modules/tariff-restrictions/tariff-restrictions';
 
 import type { ActionTree, GetterTree, MutationTree } from 'ui.vue3.vuex';
+import type { Layout as ImModelLayout } from '../type/layout';
 
-type ApplicationState = {
-	layout: {
-		name: string,
-		entityId: string,
-		contextId: number,
-	},
-};
+type ApplicationState = { layout: ImModelLayout };
 
 export class ApplicationModel extends BuilderModel
 {
@@ -37,7 +33,7 @@ export class ApplicationModel extends BuilderModel
 		return {
 			layout:
 			{
-				name: Layout.chat.name,
+				name: Layout.chat,
 				entityId: '',
 				contextId: 0,
 			},
@@ -48,13 +44,12 @@ export class ApplicationModel extends BuilderModel
 	{
 		return {
 			/** @function application/getLayout */
-			getLayout: (state) => {
+			getLayout: (state): ImModelLayout => {
 				return state.layout;
 			},
 			/** @function application/isChatOpen */
 			isChatOpen: (state) => (dialogId: string): boolean => {
-				const allowedLayouts = [Layout.chat.name, Layout.copilot.name, Layout.channel.name, Layout.collab.name];
-				if (!allowedLayouts.includes(state.layout.name))
+				if (!LayoutManager.getInstance().isChatLayout(state.layout.name))
 				{
 					return false;
 				}
@@ -62,7 +57,7 @@ export class ApplicationModel extends BuilderModel
 				return state.layout.entityId === dialogId.toString();
 			},
 			isLinesChatOpen: (state) => (dialogId: string): boolean => {
-				if (state.layout.name !== Layout.openlines.name && state.layout.name !== Layout.openlinesV2.name)
+				if (state.layout.name !== Layout.openlines && state.layout.name !== Layout.openlinesV2)
 				{
 					return false;
 				}
@@ -71,7 +66,7 @@ export class ApplicationModel extends BuilderModel
 			},
 			/** @function application/areNotificationsOpen */
 			areNotificationsOpen: (state) => {
-				return state.layout.name === Layout.notification.name;
+				return state.layout.name === Layout.notification;
 			},
 		};
 	}
@@ -93,6 +88,12 @@ export class ApplicationModel extends BuilderModel
 					entityId: this.validateLayoutEntityId(name, entityId),
 					contextId,
 				};
+
+				EventEmitter.emit(EventType.layout.onLayoutChange, {
+					from: previousLayout,
+					to: newLayout,
+				});
+
 				if (previousLayout.name === newLayout.name && previousLayout.entityId === newLayout.entityId)
 				{
 					return;
@@ -100,11 +101,6 @@ export class ApplicationModel extends BuilderModel
 
 				store.commit('updateLayout', {
 					layout: newLayout,
-				});
-
-				EventEmitter.emit(EventType.layout.onLayoutChange, {
-					from: previousLayout,
-					to: newLayout,
 				});
 			},
 		};
@@ -122,9 +118,9 @@ export class ApplicationModel extends BuilderModel
 
 	validateLayout(name: string): string
 	{
-		if (!Layout[name])
+		if (!LayoutManager.getInstance().isValidLayout(name))
 		{
-			return Layout.chat.name;
+			return Layout.chat;
 		}
 
 		return name;
@@ -132,7 +128,7 @@ export class ApplicationModel extends BuilderModel
 
 	validateLayoutEntityId(name: string, entityId: string): string
 	{
-		if (!Layout[name])
+		if (!LayoutManager.getInstance().isValidLayout(name))
 		{
 			return '';
 		}

@@ -1,6 +1,9 @@
-import { BotCode, BotType, RawBotType } from 'im.v2.const';
 import { BuilderModel, type GetterTree, type ActionTree, type MutationTree } from 'ui.vue3.vuex';
 
+import { BotCode, BotType, RawBotType } from 'im.v2.const';
+import { formatFieldsWithConfig } from 'im.v2.model';
+
+import { botFieldsConfig } from '../format/field-config';
 import { convertObjectKeysToCamelCase } from '../../utils/format';
 
 import type { JsonObject } from 'main.core';
@@ -33,6 +36,8 @@ export class BotsModel extends BuilderModel
 			isHidden: false,
 			isSupportOpenline: false,
 			isHuman: false,
+			backgroundId: '',
+			reactionsEnabled: false,
 		};
 	}
 
@@ -51,13 +56,17 @@ export class BotsModel extends BuilderModel
 			isSupport: (state: BotsState) => (userId: string | number): boolean => {
 				return state.collection[userId]?.type === BotType.support24;
 			},
-			/** @function users/bots/getCopilotUserId */
-			getCopilotUserId: (state: BotsState): ?number => {
+			/** @function users/bots/isAiAssistant */
+			isAiAssistant: (state: BotsState) => (userId: string | number): boolean => {
+				return state.collection[userId]?.code === BotCode.aiAssistant;
+			},
+			/** @function users/bots/getCopilotBotDialogId */
+			getCopilotBotDialogId: (state: BotsState): ?string => {
 				for (const [userId, bot] of Object.entries(state.collection))
 				{
 					if (bot.code === BotCode.copilot)
 					{
-						return Number.parseInt(userId, 10);
+						return userId;
 					}
 				}
 
@@ -65,9 +74,18 @@ export class BotsModel extends BuilderModel
 			},
 			/** @function users/bots/isCopilot */
 			isCopilot: (state: BotsState, getters) => (userId: number | string): boolean => {
-				const copilotUserId = getters.getCopilotUserId;
+				const copilotUserId = Number(getters.getCopilotBotDialogId);
 
 				return copilotUserId === Number.parseInt(userId, 10);
+			},
+			/** @function users/bots/getBackgroundId */
+			getBackgroundId: (state: BotsState) => (dialogId: number | string): string => {
+				if (!state.collection[dialogId])
+				{
+					return '';
+				}
+
+				return state.collection[dialogId].backgroundId;
 			},
 		};
 	}
@@ -110,12 +128,12 @@ export class BotsModel extends BuilderModel
 			result.isHuman = true;
 		}
 
-		const TYPES_MAPPED_TO_DEFAULT_BOT = [RawBotType.openline, RawBotType.supervisor];
+		const TYPES_MAPPED_TO_DEFAULT_BOT = [RawBotType.openline, RawBotType.supervisor, RawBotType.personal];
 		if (TYPES_MAPPED_TO_DEFAULT_BOT.includes(result.type))
 		{
 			result.type = BotType.bot;
 		}
 
-		return result;
+		return formatFieldsWithConfig(result, botFieldsConfig);
 	}
 }

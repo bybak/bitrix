@@ -6,6 +6,7 @@ use Bitrix\Main\Application;
 use Bitrix\Main\Component\ParameterSigner;
 use Bitrix\Main\Config\Configuration;
 use Bitrix\Main\Diag\ExceptionHandlerFormatter;
+use Bitrix\Main\Engine\ActionFilter\FilterType;
 use Bitrix\Main\Engine\AutoWire\BinderArgumentException;
 use Bitrix\Main\Engine\AutoWire\Parameter;
 use Bitrix\Main\Engine\Contract\Controllerable;
@@ -16,6 +17,10 @@ use Bitrix\Main\Errorable;
 use Bitrix\Main\ArgumentNullException;
 use Bitrix\Main\ArgumentTypeException;
 use Bitrix\Main\Context;
+use Bitrix\Main\Engine\Response\Render\Component;
+use Bitrix\Main\Engine\Response\Render\Extension;
+use Bitrix\Main\Engine\Response\Render\View;
+use Bitrix\Main\Engine\View\ViewPathResolver;
 use Bitrix\Main\Event;
 use Bitrix\Main\EventManager;
 use Bitrix\Main\EventResult;
@@ -24,6 +29,7 @@ use Bitrix\Main\Request;
 use Bitrix\Main\Response;
 use Bitrix\Main\Security\Sign\BadSignatureException;
 use Bitrix\Main\SystemException;
+use Bitrix\Main\Validation\ValidationException;
 use Bitrix\Main\Web\Uri;
 
 class Controller implements Errorable, Controllerable
@@ -79,7 +85,7 @@ class Controller implements Errorable, Controllerable
 	 * Constructor Controller.
 	 * @param Request|null $request
 	 */
-	public function __construct(Request $request = null)
+	public function __construct(?Request $request = null)
 	{
 		$this->scope = self::SCOPE_AJAX;
 		$this->errorCollection = new ErrorCollection;
@@ -98,7 +104,7 @@ class Controller implements Errorable, Controllerable
 	 * @return HttpResponse|mixed
 	 * @throws SystemException
 	 */
-	public function forward($controller, string $actionName, array $parameters = null)
+	public function forward($controller, string $actionName, ?array $parameters = null)
 	{
 		if (is_string($controller))
 		{
@@ -106,7 +112,7 @@ class Controller implements Errorable, Controllerable
 		}
 
 		/** @see \Bitrix\Main\Engine\ControllerBuilder::build */
-		//propbably should refactor with ControllerBuilder::build
+		//probably should refactor with ControllerBuilder::build
 
 		// override parameters
 		$controller->request = $this->getRequest();
@@ -157,8 +163,13 @@ class Controller implements Errorable, Controllerable
 		return getModuleId($this->getFilePath());
 	}
 
-	private function getCurrentAction(): Action
+	final public function getCurrentAction(): Action
 	{
+		if (!isset($this->currentAction))
+		{
+			throw new SystemException('Could not get current action for ' . static::class);
+		}
+
 		return $this->currentAction;
 	}
 
@@ -418,11 +429,12 @@ class Controller implements Errorable, Controllerable
 
 			$this->attachFilters($action);
 
+
 			if ($this->prepareParams() &&
 				$this->processBeforeAction($action) === true &&
 				$this->triggerOnBeforeAction($action) === true)
 			{
-				$result = $action->runWithSourceParametersList();
+				$result = $this->getActionResponse($action);
 
 				if ($action instanceof Errorable)
 				{
@@ -455,13 +467,18 @@ class Controller implements Errorable, Controllerable
 		return $result;
 	}
 
-	protected function writeToLogException(\Throwable $e)
+	protected function getActionResponse(Action $action)
+	{
+		return $action->runWithSourceParametersList();
+	}
+
+	protected function writeToLogException(\Throwable $e): void
 	{
 		$exceptionHandler = Application::getInstance()->getExceptionHandler();
 		$exceptionHandler->writeToLog($e);
 	}
 
-	private function processExceptionInDebug(\Throwable $e)
+	private function processExceptionInDebug(\Throwable $e): void
 	{
 		if ($this->shouldWriteToLogException($e))
 		{
@@ -625,6 +642,7 @@ class Controller implements Errorable, Controllerable
 	protected function create($actionName)
 	{
 		$config = $this->getActionConfig($actionName);
+
 		$methodName = $this->generateActionMethodName($actionName);
 
 		if (method_exists($this, $methodName))
@@ -644,7 +662,7 @@ class Controller implements Errorable, Controllerable
 			if (!$config)
 			{
 				throw new SystemException(
-					"Could not find description of {$actionName} in {$this::className()}",
+					"Could not find description of $actionName in {$this::className()}",
 					self::EXCEPTION_UNKNOWN_ACTION
 				);
 			}
@@ -731,28 +749,28 @@ class Controller implements Errorable, Controllerable
 	 *
 	 * @return array|null
 	 */
-	final protected function buildFilters(array $config = null): array
+	final protected function buildFilters(?array $config = null): array
 	{
 		if ($config === null)
 		{
 			$config = [];
 		}
 
-		if (!isset($config['prefilters']))
+		if (!isset($config[FilterType::Prefilter->value]))
 		{
-			$config['prefilters'] = $this->configurator->wrapFiltersClosure(
+			$config[FilterType::Prefilter->value] = $this->configurator->wrapFiltersClosure(
 				$this->getDefaultPreFilters()
 			);
 		}
-		if (!isset($config['postfilters']))
+		if (!isset($config[FilterType::Postfilter->value]))
 		{
-			$config['postfilters'] = $this->configurator->wrapFiltersClosure(
+			$config[FilterType::Postfilter->value] = $this->configurator->wrapFiltersClosure(
 				$this->getDefaultPostFilters()
 			);
 		}
 
 		$hasPostMethod = $hasCsrfCheck = false;
-		foreach ($config['prefilters'] as $filter)
+		foreach ($config[FilterType::Prefilter->value] as $filter)
 		{
 			if ($filter instanceof ActionFilter\HttpMethod && $filter->containsPostMethod())
 			{
@@ -766,27 +784,31 @@ class Controller implements Errorable, Controllerable
 
 		if ($hasPostMethod && !$hasCsrfCheck && $this->request->isPost())
 		{
-			$config['prefilters'][] = new ActionFilter\Csrf;
+			$config[FilterType::Prefilter->value][] = new ActionFilter\Csrf;
 		}
 
-		if (!empty($config['-prefilters']))
+		if (!empty($config[FilterType::DisablePrefilter->value]))
 		{
-			$config['prefilters'] = $this->removeFilters($config['prefilters'], $config['-prefilters']);
+			$config[FilterType::Prefilter->value] =
+				$this->removeFilters($config[FilterType::Prefilter->value], $config[FilterType::DisablePrefilter->value]);
 		}
 
-		if (!empty($config['-postfilters']))
+		if (!empty($config[FilterType::DisablePostfilter->value]))
 		{
-			$config['postfilters'] = $this->removeFilters($config['postfilters'], $config['-postfilters']);
+			$config[FilterType::Postfilter->value] =
+				$this->removeFilters($config[FilterType::Postfilter->value], $config[FilterType::DisablePostfilter->value]);
 		}
 
-		if (!empty($config['+prefilters']))
+		if (!empty($config[FilterType::EnablePrefilter->value]))
 		{
-			$config['prefilters'] = $this->appendFilters($config['prefilters'], $config['+prefilters']);
+			$config[FilterType::Prefilter->value] =
+				$this->appendFilters($config[FilterType::Prefilter->value], $config[FilterType::EnablePrefilter->value]);
 		}
 
-		if (!empty($config['+postfilters']))
+		if (!empty($config[FilterType::EnablePostfilter->value]))
 		{
-			$config['postfilters'] = $this->appendFilters($config['postfilters'], $config['+postfilters']);
+			$config[FilterType::Postfilter->value] =
+				$this->appendFilters($config[FilterType::Postfilter->value], $config[FilterType::EnablePostfilter->value]);
 		}
 
 		return $config;
@@ -828,7 +850,7 @@ class Controller implements Errorable, Controllerable
 		);
 
 		$eventManager = EventManager::getInstance();
-		foreach ($modifiedConfig['prefilters'] as $filter)
+		foreach ($modifiedConfig[FilterType::Prefilter->value] as $filter)
 		{
 			/** @var $filter ActionFilter\Base */
 			if (!in_array($this->getScope(), $filter->listAllowedScopes(), true))
@@ -838,14 +860,14 @@ class Controller implements Errorable, Controllerable
 
 			$filter->bindAction($action);
 
-			$this->eventHandlersIds['prefilters'][] = $eventManager->addEventHandler(
+			$this->eventHandlersIds[FilterType::Prefilter->value][] = $eventManager->addEventHandler(
 				'main',
 				static::getFullEventName(static::EVENT_ON_BEFORE_ACTION),
 				[$filter, 'onBeforeAction']
 			);
 		}
 
-		foreach ($modifiedConfig['postfilters'] as $filter)
+		foreach ($modifiedConfig[FilterType::Postfilter->value] as $filter)
 		{
 			/** @var $filter ActionFilter\Base */
 			if (!in_array($this->getScope(), $filter->listAllowedScopes(), true))
@@ -856,7 +878,7 @@ class Controller implements Errorable, Controllerable
 			/** @var $filter ActionFilter\Base */
 			$filter->bindAction($action);
 
-			$this->eventHandlersIds['postfilters'][] = $eventManager->addEventHandler(
+			$this->eventHandlersIds[FilterType::Postfilter->value][] = $eventManager->addEventHandler(
 				'main',
 				static::getFullEventName(static::EVENT_ON_AFTER_ACTION),
 				[$filter, 'onAfterAction']
@@ -873,7 +895,7 @@ class Controller implements Errorable, Controllerable
 	final protected function detachPreFilters(Action $action): void
 	{
 		$eventManager = EventManager::getInstance();
-		foreach ($this->eventHandlersIds['prefilters'] as $handlerId)
+		foreach ($this->eventHandlersIds[FilterType::Prefilter->value] as $handlerId)
 		{
 			$eventManager->removeEventHandler(
 				'main',
@@ -882,13 +904,13 @@ class Controller implements Errorable, Controllerable
 			);
 		}
 
-		$this->eventHandlersIds['prefilters'] = [];
+		$this->eventHandlersIds[FilterType::Prefilter->value] = [];
 	}
 
 	final protected function detachPostFilters(Action $action): void
 	{
 		$eventManager = EventManager::getInstance();
-		foreach ($this->eventHandlersIds['postfilters'] as $handlerId)
+		foreach ($this->eventHandlersIds[FilterType::Postfilter->value] as $handlerId)
 		{
 			$eventManager->removeEventHandler(
 				'main',
@@ -897,7 +919,7 @@ class Controller implements Errorable, Controllerable
 			);
 		}
 
-		$this->eventHandlersIds['postfilters'] = [];
+		$this->eventHandlersIds[FilterType::Postfilter->value] = [];
 	}
 
 	final protected function getActionConfig($actionName): ?array
@@ -913,7 +935,7 @@ class Controller implements Errorable, Controllerable
 		return $listOfActions[$actionName];
 	}
 
-	final protected function setActionConfig($actionName, array $config = null): self
+	final protected function setActionConfig($actionName, ?array $config = null): self
 	{
 		$this->configurationOfActions[$actionName] = $config;
 
@@ -925,6 +947,10 @@ class Controller implements Errorable, Controllerable
 		if ($throwable instanceof BinderArgumentException)
 		{
 			$this->runProcessingBinderThrowable($throwable);
+		}
+		elseif ($throwable instanceof ValidationException)
+		{
+			$this->runProcessingValidationException($throwable);
 		}
 		elseif ($throwable instanceof \Exception)
 		{
@@ -972,6 +998,22 @@ class Controller implements Errorable, Controllerable
 		else
 		{
 			$this->runProcessingException($e);
+		}
+	}
+
+	protected function runProcessingValidationException(ValidationException $e): void
+	{
+		$validationErrors = $e->getValidationErrors();
+		if (empty($validationErrors))
+		{
+			$this->runProcessingException($e);
+
+			return;
+		}
+
+		foreach ($validationErrors as $validationError)
+		{
+			$this->addError($validationError);
 		}
 	}
 
@@ -1059,6 +1101,11 @@ class Controller implements Errorable, Controllerable
 		return $this->errorCollection->toArray();
 	}
 
+	public function hasErrors(): bool
+	{
+		return !$this->errorCollection->isEmpty();
+	}
+
 	/**
 	 * Getting once error with the necessary code.
 	 * @param string $code Code of error.
@@ -1067,5 +1114,155 @@ class Controller implements Errorable, Controllerable
 	final public function getErrorByCode($code)
 	{
 		return $this->errorCollection->getErrorByCode($code);
+	}
+
+	/**
+	 * Returns response with component content inside site template.
+	 *
+	 * Example:
+	 * ```php
+		public function fooAction()
+		{
+			return $this->renderComponent('bitrix:component.name', 'template-name', [
+				'param' => 'value',
+			]);
+		}
+	 * ```
+	 *
+	 * @see \Bitrix\Main\Engine\Response\Render\Component
+	 *
+	 * @param string $name
+	 * @param string $template
+	 * @param array $params
+	 * @param bool $withSiteTemplate
+	 * @param string|null $siteTemplateId
+	 *
+	 * @return Component
+	 */
+	final protected function renderComponent(
+		string $name,
+		string $template = '',
+		array $params = [],
+		bool $withSiteTemplate = true,
+		?string $siteTemplateId = null,
+	): Component
+	{
+		return new Component(
+			$name,
+			$template,
+			$params,
+			$withSiteTemplate,
+			$siteTemplateId,
+		);
+	}
+
+	/**
+	 * Returns response with component content for AJAX rendering.
+	 *
+	 * @see \Bitrix\Main\Engine\Response\Component
+	 * @see self::renderComponent for classic rendering.
+	 *
+	 * @param  string                                 $name
+	 * @param  string                                 $template
+	 * @param  array                                  $params
+	 * @param  array                                  $additionalResponseParams
+	 * @param  array                                  $dataKeys
+	 *
+	 * @return \Bitrix\Main\Engine\Response\Component
+	 */
+	final protected function renderComponentAjax(
+		string $name,
+		string $template = '',
+		array $params = [],
+		array $additionalResponseParams = [],
+		array $dataKeys = [],
+	): \Bitrix\Main\Engine\Response\Component
+	{
+		return new \Bitrix\Main\Engine\Response\Component(
+			$name,
+			$template,
+			$params,
+			$additionalResponseParams,
+			$dataKeys,
+		);
+	}
+
+	/**
+	 * Render file content.
+	 *
+	 * Example:
+	 * ```php
+		public function fooAction()
+		{
+			return $this->renderView('testfile');
+		}
+	 * ```
+	 *
+	 * Equivalent to:
+	 * ```php
+		public function fooAction()
+		{
+			return $this->renderView('/local/modules/my.module/views/testfile.php');
+		}
+	 * ```
+	 *
+	 * Example with params:
+	 * ```php
+		public function fooAction()
+		{
+			return $this->renderView('testfile', [
+				'id' => 123,
+			]);
+		}
+	 * ```
+	 *
+	 * Render only file content, without site template:
+	 * ```php
+		public function fooAction()
+		{
+			return $this->renderView('/local/modules/my.module/views/testfile.php', withSiteTemplate: false);
+		}
+	 * ```
+	 *
+	 * @see \Bitrix\Main\Engine\Response\Render\View
+	 *
+	 * @param string $viewPath
+	 * @param array $params
+	 * @param bool $withSiteTemplate
+	 *
+	 * @return View
+	 */
+	final protected function renderView(string $viewPath, array $params = [], bool $withSiteTemplate = true): View
+	{
+		$resolver = new ViewPathResolver(
+			$viewPath,
+			'renderView',
+		);
+
+		return new View(
+			$resolver->resolve(),
+			$params,
+			$withSiteTemplate
+		);
+	}
+
+	/**
+	 * Render extension. It's not SSR!
+	 *
+	 * @see \Bitrix\Main\Engine\Response\Render\Extension
+	 *
+	 * @param  string    $extension
+	 * @param  array     $params
+	 * @param  bool      $withSiteTemplate
+	 *
+	 * @return Extension
+	 */
+	final protected function renderExtension(string $extension, array $params = [], bool $withSiteTemplate = true): Extension
+	{
+		return new Extension(
+			$extension,
+			$params,
+			$withSiteTemplate,
+		);
 	}
 }

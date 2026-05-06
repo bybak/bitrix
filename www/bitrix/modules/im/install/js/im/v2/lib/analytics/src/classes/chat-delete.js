@@ -15,7 +15,7 @@ import type { ImModelChat } from 'im.v2.model';
 
 export class ChatDelete
 {
-	onClick(dialogId: string)
+	onClick(dialogId: string): void
 	{
 		const chat: ImModelChat = Core.getStore().getters['chats/get'](dialogId);
 
@@ -27,11 +27,10 @@ export class ChatDelete
 			c_section: AnalyticsSection.sidebar,
 			c_sub_section: AnalyticsSubSection.contextMenu,
 			p1: `chatType_${chat.type}`,
-			p5: `chatId_${chat.chatId}`,
 		});
 	}
 
-	onCancel(dialogId: string)
+	onCancel(dialogId: string): void
 	{
 		const chat: ImModelChat = Core.getStore().getters['chats/get'](dialogId);
 
@@ -42,11 +41,10 @@ export class ChatDelete
 			type: getChatType(chat),
 			c_section: AnalyticsSection.popup,
 			p1: `chatType_${chat.type}`,
-			p5: `chatId_${chat.chatId}`,
 		});
 	}
 
-	onConfirm(dialogId: string)
+	onConfirm(dialogId: string): void
 	{
 		const chat: ImModelChat = Core.getStore().getters['chats/get'](dialogId);
 
@@ -61,7 +59,7 @@ export class ChatDelete
 		});
 	}
 
-	onChatDeletedNotification(dialogId: string)
+	onChatDeletedNotification(dialogId: string): void
 	{
 		const chat: ImModelChat = Core.getStore().getters['chats/get'](dialogId);
 		const category = getCategoryByChatType(chat);
@@ -73,7 +71,6 @@ export class ChatDelete
 			type: `deleted_${category}`,
 			c_section: AnalyticsSection.activeChat,
 			p1: `chatType_${chat.type}`,
-			p5: `chatId_${chat.chatId}`,
 		});
 	}
 }

@@ -1,5 +1,7 @@
-import { SidebarDetailBlock, SidebarFileTypes } from 'im.v2.const';
-import { Loader } from 'im.v2.component.elements';
+import { Extension } from 'main.core';
+
+import { SidebarDetailBlock, SidebarFileGroups } from 'im.v2.const';
+import { Loader } from 'im.v2.component.elements.loader';
 
 import { File } from '../../../../classes/panels/file';
 import { FileSearch } from '../../../../classes/panels/search/file-search';
@@ -9,11 +11,11 @@ import { DetailEmptyState as StartState, DetailEmptyState } from '../../../eleme
 import { DetailEmptySearchState } from '../../../elements/detail-empty-search-state/detail-empty-search-state';
 import { FileMenu } from '../../../../classes/context-menu/file/file-menu';
 import { SidebarCollectionFormatter } from '../../../../classes/sidebar-collection-formatter';
-import { Extension } from 'main.core';
 
 import '../css/audio-tab.css';
 
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelChat, ImModelSidebarFileItem } from 'im.v2.model';
 
 const DEFAULT_MIN_TOKEN_SIZE = 3;
@@ -60,10 +62,10 @@ export const AudioTab = {
 		{
 			if (this.isSearch)
 			{
-				return this.$store.getters['sidebar/files/getSearchResultCollection'](this.chatId, SidebarFileTypes.audio);
+				return this.$store.getters['sidebar/files/getSearchResultCollection'](this.chatId, SidebarFileGroups.audio);
 			}
 
-			return this.$store.getters['sidebar/files/get'](this.chatId, SidebarFileTypes.audio);
+			return this.$store.getters['sidebar/files/get'](this.chatId, SidebarFileGroups.audio);
 		},
 		formattedCollection(): Array
 		{
@@ -92,7 +94,7 @@ export const AudioTab = {
 		this.service = new File({ dialogId: this.dialogId });
 		this.serviceSearch = new FileSearch({ dialogId: this.dialogId });
 		this.collectionFormatter = new SidebarCollectionFormatter();
-		this.contextMenu = new FileMenu();
+		this.contextMenu = new FileMenu({ emitter: this.getEmitter() });
 	},
 	beforeUnmount()
 	{
@@ -120,7 +122,7 @@ export const AudioTab = {
 			const target = event.target;
 			const isAtThreshold = target.scrollTop + target.clientHeight >= target.scrollHeight - target.clientHeight;
 			const nameGetter = this.searchQuery.length > 0 ? 'sidebar/files/hasNextPageSearch' : 'sidebar/files/hasNextPage';
-			const hasNextPage = this.$store.getters[nameGetter](this.chatId, SidebarFileTypes.audio);
+			const hasNextPage = this.$store.getters[nameGetter](this.chatId, SidebarFileGroups.audio);
 
 			return isAtThreshold && hasNextPage;
 		},
@@ -136,17 +138,21 @@ export const AudioTab = {
 			this.isLoading = true;
 			if (this.isSearchQueryMinimumSize)
 			{
-				await this.service.loadNextPage(SidebarFileTypes.audio);
+				await this.service.loadNextPage(SidebarFileGroups.audio);
 			}
 			else
 			{
-				await this.serviceSearch.loadNextPage(SidebarFileTypes.audio, this.searchQuery);
+				await this.serviceSearch.loadNextPage(SidebarFileGroups.audio, this.searchQuery);
 			}
 			this.isLoading = false;
 		},
-		loc(phraseCode: string, replacements: {[p: string]: string} = {}): string
+		getEmitter(): EventEmitter
 		{
-			return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+			return this.$Bitrix.eventEmitter;
+		},
+		loc(phraseCode: string): string
+		{
+			return this.$Bitrix.Loc.getMessage(phraseCode);
 		},
 	},
 	template: `
@@ -175,7 +181,7 @@ export const AudioTab = {
 				</template>
 				<DetailEmptyState
 					v-else-if="isEmptyState"
-					:title="loc('IM_SIDEBAR_FILES_EMPTY')"
+					:title="loc('IM_SIDEBAR_AUDIO_EMPTY')"
 					:iconType="SidebarDetailBlock.audio"
 				/>
 			</template>

@@ -1,4 +1,4 @@
-import { BaseEvent, EventEmitter } from 'main.core.events';
+import { BaseEvent } from 'main.core.events';
 
 import { ChatType, EventType, MessageComponent, ActionByRole } from 'im.v2.const';
 import { Utils } from 'im.v2.lib.utils';
@@ -6,33 +6,39 @@ import { PermissionManager } from 'im.v2.lib.permission';
 import { Quote } from 'im.v2.lib.quote';
 import { FadeAnimation } from 'im.v2.component.animation';
 import { FeatureManager } from 'im.v2.lib.feature';
-import { MessageComponentManager } from 'im.v2.lib.message-component-manager';
+import { MessageComponentManager } from 'im.v2.lib.message-component';
+import { MessageMenuManager } from 'im.v2.lib.menu';
 
-import { DialogStatus } from 'im.v2.component.elements';
+import { DialogStatus } from './components/dialog-status/dialog-status';
 import { DialogLoader } from './components/dialog-loader';
-import { AvatarMenu } from './classes/avatar-menu';
-import { MessageMenu } from './classes/message-menu';
-import { ObserverManager } from './classes/observer-manager';
-
 import { DateGroup } from './components/block/date-group';
 import { AuthorGroup } from './components/block/author-group';
 import { NewMessagesBlock } from './components/block/new-messages';
 import { MarkedMessagesBlock } from './components/block/marked-messages';
 import { EmptyState } from './components/empty-state';
 import { HistoryLimitBanner } from './components/history-limit-banner';
+import { AvatarMenu } from './classes/avatar-menu';
+import { ObserverManager } from './classes/observer-manager';
 import { CollectionManager, type DateGroupItem } from './classes/collection-manager/collection-manager';
 import { MessageComponents } from './utils/message-components';
 
 import './css/message-list.css';
 
-export { AvatarMenu } from './classes/avatar-menu';
-export { MessageMenu } from './classes/message-menu';
-
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelChat, ImModelMessage, ImModelUser } from 'im.v2.model';
+
+export { AvatarMenu } from './classes/avatar-menu';
 export { AuthorGroup } from './components/block/author-group';
 export { MessageComponents } from './utils/message-components';
 export { CollectionManager } from './classes/collection-manager/collection-manager';
+
+type ContextMenuEvent = BaseEvent<{
+	message: ImModelMessage,
+	dialogId: string,
+	event: PointerEvent,
+	bindElement?: HTMLElement
+}>
 
 // @vue/component
 export const MessageList = {
@@ -69,16 +75,15 @@ export const MessageList = {
 			type: String,
 			required: true,
 		},
-		messageMenuClass: {
-			type: Function,
-			default: MessageMenu,
+		containerHeight: {
+			type: [Number, null],
+			default: null,
 		},
 	},
 	data(): JsonObject
 	{
 		return {
 			windowFocused: false,
-			messageMenuIsActiveForId: 0,
 		};
 	},
 	computed:
@@ -133,7 +138,6 @@ export const MessageList = {
 	},
 	created()
 	{
-		this.initContextMenu();
 		this.initCollectionManager();
 		this.initObserverManager();
 	},
@@ -149,16 +153,16 @@ export const MessageList = {
 	{
 		subscribeToEvents(): void
 		{
-			EventEmitter.subscribe(EventType.dialog.onClickMessageContextMenu, this.onMessageContextMenuClick);
+			this.getEmitter().subscribe(EventType.dialog.onClickMessageContextMenu, this.onMessageContextMenuClick);
 		},
 		unsubscribeFromEvents(): void
 		{
-			EventEmitter.unsubscribe(EventType.dialog.onClickMessageContextMenu, this.onMessageContextMenuClick);
+			this.getEmitter().unsubscribe(EventType.dialog.onClickMessageContextMenu, this.onMessageContextMenuClick);
 		},
 		insertTextQuote(message: ImModelMessage): void
 		{
-			EventEmitter.emit(EventType.textarea.insertText, {
-				text: Quote.prepareQuoteText(message),
+			this.getEmitter().emit(EventType.textarea.insertText, {
+				text: Quote.prepareInlineMessageQuote(message),
 				withNewLine: true,
 				replace: false,
 				dialogId: this.dialogId,
@@ -166,7 +170,7 @@ export const MessageList = {
 		},
 		insertMention(user: ImModelUser): void
 		{
-			EventEmitter.emit(EventType.textarea.insertMention, {
+			this.getEmitter().emit(EventType.textarea.insertMention, {
 				mentionText: user.name,
 				mentionReplacement: Utils.text.getMentionBbCode(user.id, user.name),
 				dialogId: this.dialogId,
@@ -174,7 +178,7 @@ export const MessageList = {
 		},
 		openReplyPanel(messageId: number): void
 		{
-			EventEmitter.emit(EventType.textarea.replyMessage, {
+			this.getEmitter().emit(EventType.textarea.replyMessage, {
 				messageId,
 				dialogId: this.dialogId,
 			});
@@ -190,18 +194,19 @@ export const MessageList = {
 				return;
 			}
 
-			this.avatarMenu.openMenu({ user, dialog: this.dialog }, event.currentTarget);
+			const avatarMenu = new AvatarMenu({ emitter: this.getEmitter() });
+			avatarMenu.openMenu({ user, dialog: this.dialog }, event.currentTarget);
 		},
-		onMessageContextMenuClick(eventData: BaseEvent<{ message: ImModelMessage, dialogId: string, event: PointerEvent }>)
+		onMessageContextMenuClick(eventData: ContextMenuEvent)
 		{
-			const permissionManager = PermissionManager.getInstance();
-			if (!permissionManager.canPerformActionByRole(ActionByRole.openMessageMenu, this.dialogId))
+			const { message, event, dialogId, bindElement } = eventData.getData();
+			if (dialogId !== this.dialogId)
 			{
 				return;
 			}
 
-			const { message, event, dialogId } = eventData.getData();
-			if (dialogId !== this.dialogId)
+			const permissionManager = PermissionManager.getInstance();
+			if (!permissionManager.canPerformActionByRole(ActionByRole.openMessageMenu, this.dialogId))
 			{
 				return;
 			}
@@ -221,36 +226,31 @@ export const MessageList = {
 			}
 
 			const context = { dialogId: this.dialogId, ...message };
-			this.messageMenu.openMenu(context, event.currentTarget);
-			this.messageMenuIsActiveForId = message.id;
-		},
-		async onMessageMouseUp(message: ImModelMessage, event: MouseEvent)
-		{
-			await Utils.browser.waitForSelectionToUpdate();
-			const selection = window.getSelection().toString().trim();
-			if (selection.length === 0)
+
+			const messageMenuManager = MessageMenuManager.getInstance();
+
+			let target = {
+				left: event.pageX,
+				top: event.pageY,
+			};
+
+			if (bindElement)
 			{
-				return;
+				target = bindElement;
 			}
 
-			EventEmitter.emit(EventType.dialog.showQuoteButton, {
-				message,
-				event,
+			messageMenuManager.openMenu({
+				messageContext: context,
+				applicationContext: { emitter: this.getEmitter() },
+				target,
 			});
 		},
 		initObserverManager()
 		{
-			this.observer = new ObserverManager(this.dialogId);
-		},
-		initContextMenu()
-		{
-			const MessageMenuClass = this.messageMenuClass;
-			this.messageMenu = new MessageMenuClass();
-			this.messageMenu.subscribe(MessageMenu.events.onCloseMenu, () => {
-				this.messageMenuIsActiveForId = 0;
+			this.observer = new ObserverManager({
+				dialogId: this.dialogId,
+				context: { emitter: this.getEmitter() },
 			});
-
-			this.avatarMenu = new AvatarMenu();
 		},
 		getMessageComponentName(message: ImModelMessage): $Values<typeof MessageComponent>
 		{
@@ -263,6 +263,10 @@ export const MessageList = {
 		getCollectionManager(): CollectionManager
 		{
 			return this.collectionManager;
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 	},
 	template: `
@@ -294,9 +298,8 @@ export const MessageList = {
 									:item="message"
 									:dialogId="dialogId"
 									:key="message.id"
-									:menuIsActiveForId="messageMenuIsActiveForId"
 									:data-viewed="message.viewed"
-									@mouseup="onMessageMouseUp(message, $event)"
+									:containerHeight="containerHeight"
 								>
 								</component>
 							</template>

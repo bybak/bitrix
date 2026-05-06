@@ -17,10 +17,10 @@ class ExecuteException extends SystemException
 	protected $errCode;
 	protected $method;
 	protected $needLink = false;
-	const API_DESC_PAGE = 'https://new.vk.com/dev/errors';
+	const API_DESC_PAGE = 'https://new.vk.ru/dev/errors';
 
 
-	public function __construct($message = "", $errCode = "", $method = "", \Exception $previous = NULL)
+	public function __construct($message = "", $errCode = "", $method = "", ?\Exception $previous = null)
 	{
 		parent::__construct($message, 0, '', 0, $previous);
 		$this->errCode = $errCode;

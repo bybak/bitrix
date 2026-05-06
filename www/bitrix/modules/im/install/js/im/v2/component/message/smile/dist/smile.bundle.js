@@ -22,10 +22,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    dialogId: {
 	      type: String,
 	      required: true
-	    },
-	    menuIsActiveForId: {
-	      type: [String, Number],
-	      default: 0
 	    }
 	  },
 	  computed: {
@@ -59,11 +55,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 			</div>
 			<template #after-message>
 				<div class="bx-im-message-smile__reactions-container">
-					<ReactionList 
-						:messageId="message.id"
-						:contextDialogId="dialogId"
-						class="bx-im-message-smile__reactions"
-					/>
+					<ReactionList :messageId="message.id" class="bx-im-message-smile__reactions" />
 				</div>
 			</template>
 		</BaseMessage>

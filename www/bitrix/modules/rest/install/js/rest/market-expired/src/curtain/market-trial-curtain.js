@@ -1,0 +1,55 @@
+import { MarketExpiredCurtain } from './market-expired-curtain';
+import { Button } from 'ui.buttons';
+import { Loc } from 'main.core';
+import PopupType from '../type/popup-type';
+
+export class MarketTrialCurtain extends MarketExpiredCurtain
+{
+	getRightButtons(): []
+	{
+		return [
+			new Button({
+				text: Loc.getMessage('REST_MARKET_EXPIRED_POPUP_BUTTON_SUBSCRIBE'),
+				size: Button.Size.EXTRA_SMALL,
+				color: Button.Color.CURTAIN_WARNING,
+				tag: Button.Tag.LINK,
+				noCaps: true,
+				round: true,
+				props: {
+					href: this.options.marketSubscriptionUrl,
+				},
+				onclick: () => super.onRightButtonClick.bind(this),
+			}),
+		];
+	}
+
+	getContent(): string
+	{
+		if (this.options.type === PopupType.FINAL)
+		{
+			return this.options.isRenamedMarket
+				? Loc.getMessage('REST_MARKET_EXPIRED_CURTAIN_TRIAL_FINAL_TEXT_BITRIX_GPT')
+				: Loc.getMessage('REST_MARKET_EXPIRED_CURTAIN_TRIAL_FINAL_TEXT_MARKET_PLUS');
+		}
+
+		return this.options.isRenamedMarket
+			? Loc.getMessage('REST_MARKET_EXPIRED_CURTAIN_TRIAL_WARNING_TEXT_BITRIX_GPT', {
+				'#DAYS#': this.options.expireDays,
+			})
+			: Loc.getMessage('REST_MARKET_EXPIRED_CURTAIN_TRIAL_WARNING_TEXT_MARKET_PLUS', {
+				'#DAYS#': this.options.expireDays,
+			});
+	}
+
+	onHide()
+	{
+		if (this.options.type === PopupType.FINAL)
+		{
+			BX.userOptions.save('rest', `marketSubscriptionCurtain${this.options.curtainPage}Dismiss`, null, 'Y');
+		}
+		else
+		{
+			BX.userOptions.save('rest', `marketSubscriptionCurtain${this.options.curtainPage}Ts`, null, Math.floor(Date.now() / 1000));
+		}
+	}
+}

@@ -6078,7 +6078,7 @@
 							BX.create("span", { props : { className : "bx-messenger-content-item-arrow"}}),
 							BX.create("span", { props : { className : "bx-messenger-content-item-avatar-block"}, children: [
 								BX.create('span', { props : { className : "bx-messenger-content-item-avatar-img"+(BX.MessengerCommon.isBlankAvatar(messageUser.avatar)? " bx-messenger-content-item-avatar-img-default": "") }, attrs : {style: (this.isBlankAvatar(messageUser.avatar)? 'background-color: '+messageUser.color: 'background: url(\''+this.formatUrl(messageUser.avatar)+'\'); background-size: cover;')}}),
-								this.BXIM.messenger.openChatFlag? BX.create("span", { props : { className : "bx-messenger-content-item-avatar-name"}, attrs : { title: BX.util.htmlspecialcharsback(messageUser.name)}, html: messageUser.first_name? messageUser.first_name: messageUser.name.split(" ")[0]}): null
+								this.BXIM.messenger.openChatFlag? BX.create("span", { props : { className : "bx-messenger-content-item-avatar-name"}, attrs : { title: BX.util.htmlspecialcharsback(messageUser.name)}, text: messageUser.first_name? messageUser.first_name: messageUser.name.split(" ")[0]}): null
 							]})
 						]}),
 						BX.create("span", { props : { className : "bx-messenger-content-item-status"}, children: []}),
@@ -6120,7 +6120,7 @@
 							BX.create("span", { props : { className : "bx-messenger-content-item-arrow"}}),
 							BX.create("span", { props : { className : "bx-messenger-content-item-avatar-block"}, children: [
 								BX.create('span', { props : { className : "bx-messenger-content-item-avatar-img"+(BX.MessengerCommon.isBlankAvatar(messageUser.avatar)? " bx-messenger-content-item-avatar-img-default": "") }, attrs : {style: (this.isBlankAvatar(messageUser.avatar)? 'background-color: '+messageUser.color: 'background: url(\''+this.formatUrl(messageUser.avatar)+'\'); background-size: cover;')}}),
-								this.BXIM.messenger.openChatFlag? BX.create("span", { props : { className : "bx-messenger-content-item-avatar-name"}, attrs : { title: BX.util.htmlspecialcharsback(messageUser.name)}, html: messageUser.first_name? messageUser.first_name: messageUser.name.split(" ")[0]}): null
+								this.BXIM.messenger.openChatFlag? BX.create("span", { props : { className : "bx-messenger-content-item-avatar-name"}, attrs : { title: BX.util.htmlspecialcharsback(messageUser.name)}, text: messageUser.first_name? messageUser.first_name: messageUser.name.split(" ")[0]}): null
 							]})
 						]}),
 						retry? (
@@ -6173,7 +6173,7 @@
 							BX.create("span", { props : { className : "bx-messenger-content-item-arrow"}}),
 							BX.create("span", { props : { className : "bx-messenger-content-item-avatar-block"}, children: [
 								BX.create('span', { props : { className : "bx-messenger-content-item-avatar-img"+(BX.MessengerCommon.isBlankAvatar(messageUser.avatar)? " bx-messenger-content-item-avatar-img-default": "") }, attrs : {style: (this.isBlankAvatar(messageUser.avatar)? 'background-color: '+messageUser.color: 'background: url(\''+this.formatUrl(messageUser.avatar)+'\'); background-size: cover;')}}),
-								this.BXIM.messenger.openChatFlag || messageUser.bot? BX.create("span", { props : { className : "bx-messenger-content-item-avatar-name"}, attrs : { title: BX.util.htmlspecialcharsback(messageUser.name)}, html: messageUser.first_name? messageUser.first_name: messageUser.name.split(" ")[0]}): null
+								this.BXIM.messenger.openChatFlag || messageUser.bot? BX.create("span", { props : { className : "bx-messenger-content-item-avatar-name"}, attrs : { title: BX.util.htmlspecialcharsback(messageUser.name)}, text: messageUser.first_name? messageUser.first_name: messageUser.name.split(" ")[0]}): null
 							]})
 						]}),
 						BX.create("span", { props : { className : "bx-messenger-content-item-status"}, children:[]}),
@@ -7666,6 +7666,8 @@
 					}
 				}
 
+				const textOriginal = params.message.textOriginal ?? params.message.text;
+
 				if (params.message.senderId == this.BXIM.userId)
 				{
 					if (this.isMobile())
@@ -7709,7 +7711,7 @@
 							date: params.message.date,
 							author_id: params.message.senderId,
 							status: 'received',
-							text: BX.util.htmlspecialchars(params.message.textOriginal),
+							text: BX.util.htmlspecialchars(textOriginal),
 							attach: params.message.params && params.message.params.ATTACH? params.message.params.ATTACH.length > 0: false,
 							file: params.message.params && params.message.params.FILE_ID? params.message.params.FILE_ID.length > 0: false,
 						},
@@ -7793,7 +7795,7 @@
 							date: params.message.date,
 							author_id: params.message.senderId,
 							status: 'delivered',
-							text: BX.util.htmlspecialchars(params.message.textOriginal),
+							text: BX.util.htmlspecialchars(textOriginal),
 							attach: params.message.params && params.message.params.ATTACH? params.message.params.ATTACH.length > 0: false,
 							file: params.message.params && params.message.params.FILE_ID? params.message.params.FILE_ID.length > 0: false,
 						},
@@ -15208,7 +15210,7 @@
 		return BX.Loc.getMessagePlural(messageId, parseInt(number));
 	}
 
-	MessengerCommon.prototype.openStore = function(additionalParams)
+	MessengerCommon.prototype.openStore = function()
 	{
 		if (!BX.MessengerCommon.isSliderSupport())
 		{
@@ -15226,7 +15228,7 @@
 		{
 			var dialogId = this.getDialogId();
 			var session = this.linesGetSession(this.BXIM.messenger.chat[dialogId.substr(4)]);
-			var params = {
+			var salescenterUrl = BX.util.add_url_param('/saleshub/app/', {
 				dialogId: dialogId,
 				sessionId: session.id,
 				ownerId: session.crmDeal,
@@ -15239,24 +15241,9 @@
 					c_sub_section: 'web',
 					type: 'delivery_payment',
 				}
-			};
-			Object.assign(params, additionalParams);
-			var salescenterUrl = BX.util.add_url_param('/saleshub/app/', params);
-			if (params['compilationId'])
-			{
-				BX.SidePanel.Instance.destroy(salescenterUrl);
-			}
+			});
 			BX.SidePanel.Instance.open(salescenterUrl, {allowChangeHistory: false, width: 1140});
 		}
-	}
-
-	MessengerCommon.prototype.sendCompilationByChat = function(compilationId)
-	{
-		BX.ajax.runAction('salescenter.compilation.sendCompilationByChat', {
-			data: {
-				compilationId
-			},
-		})
 	}
 
 	MessengerCommon.prototype.openRenamePortal = function(button)

@@ -3,15 +3,17 @@ namespace Bitrix\Landing\PublicAction;
 
 use Bitrix\Landing\Block\BlockRepo;
 use Bitrix\Landing\History;
-use \Bitrix\Landing\Manager;
-use \Bitrix\Landing\File;
-use \Bitrix\Landing\Landing;
-use \Bitrix\Landing\Hook;
-use \Bitrix\Landing\Assets;
-use \Bitrix\Landing\Restriction;
-use \Bitrix\Landing\Block as BlockCore;
-use \Bitrix\Main\Localization\Loc;
-use \Bitrix\Landing\PublicActionResult;
+use Bitrix\Landing\Manager;
+use Bitrix\Landing\File;
+use Bitrix\Landing\Landing;
+use Bitrix\Landing\Hook;
+use Bitrix\Landing\Assets;
+use Bitrix\Landing\Restriction;
+use Bitrix\Landing\Block as BlockCore;
+use Bitrix\Landing\Metrika;
+use Bitrix\Landing\Sanitizer;
+use Bitrix\Main\Localization\Loc;
+use Bitrix\Landing\PublicActionResult;
 
 Loc::loadMessages(__FILE__);
 
@@ -50,16 +52,14 @@ class Block
 					$position = -1;
 				}
 				if (
-					mb_strtolower($action) == 'clonecard' &&
 					isset($params['content'])
+					&& mb_strtolower($action) === 'clonecard'
 				)
 				{
 					$res = $blocks[$block]->$action(
 						$selector,
 						$position,
-						Manager::sanitize(
-							$params['content'], $bad
-						)
+						(new Sanitizer())->sanitizeText($params['content'])
 					);
 				}
 				else
@@ -200,7 +200,7 @@ class Block
 	 * @param bool $preventHistory True if no need save history
 	 * @return \Bitrix\Landing\PublicActionResult
 	 */
-	public static function changeNodeName($lid, $block, array $data, bool $preventHistory = false)
+	public static function changeNodeName($lid, $block, array $data, bool $preventHistory = false): PublicActionResult
 	{
 		$error = new \Bitrix\Landing\Error;
 		$result = new PublicActionResult();
@@ -326,20 +326,20 @@ class Block
 	 * @param bool $preventHistory True if no need save history
 	 * @return \Bitrix\Landing\PublicActionResult
 	 */
-	public static function updateNodes($lid, $block, array $data, array $additional = array(), bool $preventHistory = false)
+	public static function updateNodes(int $lid, int $block, array $data, array $additional = array(), bool $preventHistory = false)
 	{
 		$error = new \Bitrix\Landing\Error;
 		$result = new PublicActionResult();
 
-		$attributes = array();
-		$components = array();
-		$content = array();
-		$data = (array) $data;
+		$attributes = [];
+		$components = [];
+		$content = [];
 		$dynamicParamsExists = false;
-		$block = intval($block);
 
 		Landing::setEditMode();
 		$preventHistory ? History::deactivate() : History::activate();
+
+		$additional['sanitize'] = true;
 
 		// save dynamic cards settings
 		if (isset($data['dynamicState']) || isset($data['dynamicBlock']))//@tmp refactor
@@ -721,7 +721,7 @@ class Block
 			if (isset($blocks[$block]))
 			{
 				// remove extra files
-				$newContent = Manager::sanitize($content, $bad);
+				$newContent = (new Sanitizer())->sanitizeText($content);
 				$filesBeforeSave = File::getFilesFromBlockContent(
 					$block,
 					$blocks[$block]->getContent()
@@ -802,7 +802,12 @@ class Block
 			$landing = Landing::createInstance($lid);
 			if ($landing->exist())
 			{
-				$result->setResult($landing->publication($block));
+				$metrikaParams = new Metrika\FieldsDto(
+					type: Metrika\Types::template,
+					subSection: 'from_editor',
+					element: 'auto',
+				);
+				$result->setResult($landing->publication($block, $metrikaParams));
 			}
 			$result->setError($landing->getError());
 		}
@@ -836,7 +841,7 @@ class Block
 		$data = array();
 		foreach ($lids as $lid)
 		{
-			$lid = intval($lid);
+			$lid = (int)$lid;
 			$landing = Landing::createInstance($lid, array(
 				'deleted' => isset($params['deleted']) && $params['deleted']
 			));
@@ -1105,35 +1110,6 @@ class Block
 				'NAME' => $file['NAME']
 			]);
 		}
-
-		return $result;
-	}
-
-	/**
-	 * Get extensions configs, load relations, load lang phrases
-	 *
-	 * @param array $extCodes - array of extensions codes
-	 * @param array $tplCodes - array of site templates
-	 * @return PublicActionResult - array of assets by type
-	 */
-	public static function getAssetsConfig(array $extCodes, array $tplCodes = []): PublicActionResult
-	{
-		$result = new PublicActionResult();
-
-		$assetsManager = (new Assets\Manager())
-			->enableSandbox()
-			->addAsset($extCodes)
-		;
-
-		foreach ($tplCodes as $tpl)
-		{
-			$siteTemplatePath =
-				(defined('SITE_TEMPLATE_PATH') ? SITE_TEMPLATE_PATH : '/bitrix/templates/.default');
-			$style = $siteTemplatePath . "/template_styles.css";
-			$assetsManager->addAsset($style);
-		}
-
-		$result->setResult($assetsManager->getOutput());
 
 		return $result;
 	}

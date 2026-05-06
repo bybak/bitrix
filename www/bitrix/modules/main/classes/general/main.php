@@ -18,7 +18,7 @@ use Bitrix\Main\Authentication\Internal\ModuleGroupTable;
 
 IncludeModuleLangFile(__FILE__);
 
-abstract class CAllMain
+class CMain
 {
 	var $ma;
 	var $sDocPath2, $sDirPath;
@@ -981,6 +981,10 @@ abstract class CAllMain
 
 		$this->oAsset = $this->oAsset->setAjax();
 
+		// Reset the list of extensions loaded before calling ShowAjaxHead,
+		// so they can be reloaded and included in the AJAX-response.
+		CJSCore::resetLoadedExtensionsList();
+
 		if ($showCSS === true)
 		{
 			$this->ShowCSS(true, $bXhtmlStyle);
@@ -1751,8 +1755,6 @@ abstract class CAllMain
 		$this->AddBufferContent([&$this, "GetNavChain"], $path, $iNumFrom, $sNavChainPath, true);
 	}
 
-	/*****************************************************/
-
 	public function SetFileAccessPermission($path, $arPermissions, $bOverWrite = true)
 	{
 		global $CACHE_MANAGER;
@@ -1786,12 +1788,10 @@ abstract class CAllMain
 		$io = CBXVirtualIo::GetInstance();
 		if ($io->FileExists($DOC_ROOT . $path_dir . "/.access.php"))
 		{
-			$fTmp = $io->GetFile($DOC_ROOT . $path_dir . "/.access.php");
-			//include replaced with eval in order to honor of ZendServer
-			eval("?>" . $fTmp->GetContents());
+			include $io->GetPhysicalName($DOC_ROOT . $path_dir . "/.access.php");
 		}
 
-		$FILE_PERM = $PERM[$path_file];
+		$FILE_PERM = $PERM[$path_file] ?? null;
 		if (!is_array($FILE_PERM))
 		{
 			$FILE_PERM = [];
@@ -1815,7 +1815,7 @@ abstract class CAllMain
 			if (!$bDiff)
 			{
 				//compatibility with group id
-				$curr_perm = $FILE_PERM[$group];
+				$curr_perm = $FILE_PERM[$group] ?? null;
 				if (!isset($curr_perm) && preg_match('/^G[0-9]+$/', $group))
 				{
 					$curr_perm = $FILE_PERM[mb_substr($group, 1)];
@@ -1847,7 +1847,7 @@ abstract class CAllMain
 				$new_perm = $arPermissions[$group];
 				if (!isset($new_perm) && preg_match('/^G[0-9]+$/', $group))
 				{
-					$new_perm = $arPermissions[mb_substr($group, 1)];
+					$new_perm = $arPermissions[substr($group, 1)];
 				}
 
 				if ($new_perm != $perm)
@@ -1874,7 +1874,7 @@ abstract class CAllMain
 
 			if (COption::GetOptionString("main", "event_log_file_access", "N") === "Y")
 			{
-				CEventLog::Log("SECURITY", "FILE_PERMISSION_CHANGED", "main", "[" . $site . "] " . $path, print_r($FILE_PERM, true) . " => " . print_r($arPermissions, true));
+				CEventLog::Log(CEventLog::SEVERITY_SECURITY, "FILE_PERMISSION_CHANGED", "main", "[" . $site . "] " . $path, ['before' => $FILE_PERM, 'after' => array_filter($arPermissions)]);
 			}
 		}
 		return true;
@@ -2057,12 +2057,7 @@ abstract class CAllMain
 			return (!$task_mode ? 'X' : [CTask::GetIdByLetter('X', 'main', 'file')]);
 		}
 
-		if (str_ends_with($path, "/.access.php"))
-		{
-			return (!$task_mode ? 'D' : [CTask::GetIdByLetter('D', 'main', 'file')]);
-		}
-
-		if (str_ends_with($path, "/.htaccess"))
+		if (IsFileUnsafe($path) || IsConfigFile($path))
 		{
 			return (!$task_mode ? 'D' : [CTask::GetIdByLetter('D', 'main', 'file')]);
 		}
@@ -2701,7 +2696,8 @@ abstract class CAllMain
 			}
 			if ($sOldRight <> $right)
 			{
-				CEventLog::Log("SECURITY", "MODULE_RIGHTS_CHANGED", "main", $group_id, $module_id . ($site_id ? "/" . $site_id : "") . ": (" . $sOldRight . ") => (" . $right . ")");
+				$key = $module_id . ($site_id ? "/" . $site_id : "");
+				CEventLog::Log(CEventLog::SEVERITY_SECURITY, "MODULE_RIGHTS_CHANGED", "main", $group_id, ['before' => [$key => $sOldRight], 'after' => [$key => $right]]);
 			}
 		}
 
@@ -2755,7 +2751,7 @@ abstract class CAllMain
 					$rsRight = $DB->Query("SELECT GROUP_ID, G_ACCESS FROM b_module_group WHERE MODULE_ID='" . $DB->ForSql($module_id, 50) . "' AND GROUP_ID IN (" . $sGroups . ") AND SITE_ID " . ($site_id ? "= '" . $DB->ForSql($site_id) . "'" : "IS NULL"));
 					while ($arRight = $rsRight->Fetch())
 					{
-						CEventLog::Log("SECURITY", "MODULE_RIGHTS_CHANGED", "main", $arRight["GROUP_ID"], $module_id . ($site_id ? "/" . $site_id : "") . ": (" . $arRight["G_ACCESS"] . ") => ()");
+						CEventLog::Log(CEventLog::SEVERITY_SECURITY, "MODULE_RIGHTS_CHANGED", "main", $arRight["GROUP_ID"], ['before' => [$module_id . ($site_id ? "/" . $site_id : "") => $arRight["G_ACCESS"]], 'after' => []]);
 					}
 				}
 				$strSql = "DELETE FROM b_module_group WHERE MODULE_ID='" . $DB->ForSql($module_id, 50) . "' and GROUP_ID in (" . $sGroups . ") AND SITE_ID " . ($site_id ? "= '" . $DB->ForSql($site_id) . "'" : "IS NULL");
@@ -3008,8 +3004,10 @@ abstract class CAllMain
 							$cookie->getHttpOnly() . chr(2);
 					}
 				}
-				$salt = $_SERVER["REMOTE_ADDR"] . "|" . @filemtime($_SERVER["DOCUMENT_ROOT"] . "/bitrix/modules/main/classes/general/version.php") . "|" . $application->getLicense()->getKey();
-				$params = "s=" . urlencode(base64_encode($params)) . "&k=" . urlencode(md5($params . $salt));
+				$params = rtrim(base64_encode($params), '=');
+
+				$signer = new Main\Security\Sign\TimeSigner();
+				$params = "s=" . rawurlencode($signer->sign($params, '+60 second', 'spread-' . md5($_SERVER['REMOTE_ADDR'])));
 
 				$arrDomain = [];
 				$arrDomain[] = $request->getHttpHost();
@@ -3189,7 +3187,12 @@ abstract class CAllMain
 
 	public static function PrintHKGlobalUrlVar()
 	{
-		return CHotKeys::GetInstance()->PrintGlobalUrlVar();
+		if ($GLOBALS["APPLICATION"]->PanelShowed)
+		{
+			return CHotKeys::GetInstance()->PrintGlobalUrlVar();
+		}
+
+		return "";
 	}
 
 	/**
@@ -3742,38 +3745,4 @@ abstract class CAllMain
 			ExecuteModuleEventEx($event);
 		}
 	}
-
-	/**
-	 * @deprecated Will be removed soon
-	 */
-	public static function EpilogActions()
-	{
-	}
-
-	/**
-	 * @param string|bool $func
-	 * @param array $args
-	 * @return bool|null
-	 * @deprecated Use \Bitrix\Main\Application::addBackgroundJob()
-	 */
-	public static function ForkActions($func = false, $args = [])
-	{
-		if ($func !== false)
-		{
-			Application::getInstance()->addBackgroundJob($func, $args);
-		}
-		return true;
-	}
-
-	/** @deprecated */
-	public static function __GetConditionFName()
-	{
-		$connection = Application::getConnection();
-		$helper = $connection->getSqlHelper();
-		return $helper->quote('CONDITION');
-	}
-}
-
-class CMain extends CAllMain
-{
 }

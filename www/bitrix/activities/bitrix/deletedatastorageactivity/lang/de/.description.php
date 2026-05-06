@@ -1,0 +1,4 @@
+<?php
+$MESS["BIZPROC_DELETE_DATA_ACTIVITY_DESCRIPTION"] = "Daten aus dem Speicher löschen.";
+$MESS["BIZPROC_DELETE_DATA_ACTIVITY_NAME"] = "Daten löschen";
+$MESS["BIZPROC_DELETE_DATA_STORAGE_CATEGORY"] = "Speicher";

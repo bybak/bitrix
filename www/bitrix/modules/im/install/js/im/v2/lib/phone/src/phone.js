@@ -172,7 +172,7 @@ export class PhoneManager
 			phoneEnabled: phoneSettings.phoneEnabled,
 
 			userId: Core.getUserId(),
-			isAdmin: this.#getCurrentUser().isAdmin,
+			isAdmin: this.#isCurrentUserAdmin(),
 
 			restApps: phoneSettings.restApps,
 			canInterceptCall: phoneSettings.canInterceptCall,
@@ -255,11 +255,9 @@ export class PhoneManager
 		DesktopApi.activateWindow(target);
 	}
 
-	#getCurrentUser(): ImModelUser
+	#isCurrentUserAdmin(): boolean
 	{
-		const userId = Core.getUserId();
-
-		return Core.getStore().getters['users/get'](userId);
+		return Core.getStore().getters['users/isCurrentUserAdmin'];
 	}
 
 	#getUserAvatar(userId: number): string

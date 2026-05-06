@@ -1,8 +1,9 @@
-import { EventEmitter } from 'main.core.events';
-
 import { EventType, SidebarDetailBlock } from 'im.v2.const';
+import { CounterManager } from 'im.v2.lib.counter';
 
 import '../css/multidialog.css';
+
+import type { EventEmitter } from 'main.core.events';
 
 // @vue/component
 export const MultidialogPreview = {
@@ -30,22 +31,26 @@ export const MultidialogPreview = {
 		{
 			const counter = this.$store.getters['sidebar/multidialog/getTotalChatCounter'];
 
-			return counter > 99 ? '99+' : counter;
+			return CounterManager.formatCounter(counter);
 		},
 	},
 	methods:
 	{
-		loc(phraseCode: string): string
-		{
-			return this.$Bitrix.Loc.getMessage(phraseCode);
-		},
 		onOpenDetail()
 		{
-			EventEmitter.emit(EventType.sidebar.open, {
+			this.getEmitter().emit(EventType.sidebar.open, {
 				panel: SidebarDetailBlock.multidialog,
 				dialogId: this.dialogId,
 				standalone: true,
 			});
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
+		},
+		loc(phraseCode: string): string
+		{
+			return this.$Bitrix.Loc.getMessage(phraseCode);
 		},
 	},
 	template: `

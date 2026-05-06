@@ -2036,7 +2036,7 @@ class CSaleExport
 		return $ec_bufer;
 	}
 
-	public static function OutputXmlDocumentsByType($typeDocument, $xmlResult, $arOrder, $documents, \Bitrix\Sale\Order $order=null, $agentParams, $arProp, $locationStreetPropertyValue)
+	public static function OutputXmlDocumentsByType($typeDocument, $xmlResult, $arOrder, $documents, ?\Bitrix\Sale\Order $order=null, $agentParams, $arProp, $locationStreetPropertyValue)
 	{
 		if(is_array($documents) && count($documents)>0)
 		{
@@ -2178,15 +2178,8 @@ class CSaleExport
 		{
 			case 'Order':
 		?>
-		<?
-		$mfExportOrderNumber = htmlspecialcharsbx($document["ACCOUNT_NUMBER"]);
-		if (function_exists('mf_order_account_number_for_display'))
-		{
-			$mfExportOrderNumber = htmlspecialcharsbx(mf_order_account_number_for_display((int)($document["USER_ID"] ?? 0), (string)($document["ACCOUNT_NUMBER"] ?? '')));
-		}
-		?>
 		<<?=CSaleExport::getTagName("SALE_EXPORT_ID")?>><?=$document["ID"]?></<?=CSaleExport::getTagName("SALE_EXPORT_ID")?>>
-		<<?=CSaleExport::getTagName("SALE_EXPORT_NUMBER")?>><?=self::getAccountNumberShopPrefix();?><?=$mfExportOrderNumber?></<?=CSaleExport::getTagName("SALE_EXPORT_NUMBER")?>>
+		<<?=CSaleExport::getTagName("SALE_EXPORT_NUMBER")?>><?=self::getAccountNumberShopPrefix();?><?=$document["ACCOUNT_NUMBER"]?></<?=CSaleExport::getTagName("SALE_EXPORT_NUMBER")?>>
 		<<?=CSaleExport::getTagName("SALE_EXPORT_DATE")?>><?=$DB->FormatDate($document["DATE_INSERT_FORMAT"], CSite::GetDateFormat("FULL"), "YYYY-MM-DD")?></<?=CSaleExport::getTagName("SALE_EXPORT_DATE")?>>
 		<<?=CSaleExport::getTagName("SALE_EXPORT_HOZ_OPERATION")?>><?=CSaleExport::getTagName("SALE_EXPORT_ITEM_ORDER")?></<?=CSaleExport::getTagName("SALE_EXPORT_HOZ_OPERATION")?>>
 		<<?=CSaleExport::getTagName("SALE_EXPORT_ROLE")?>><?=CSaleExport::getTagName("SALE_EXPORT_SELLER")?></<?=CSaleExport::getTagName("SALE_EXPORT_ROLE")?>>
@@ -3271,7 +3264,7 @@ class CSaleExport
 	}
 
 	/** @deprecated */
-	private static function logError($itemId, $message, Bitrix\Main\Result $result = null)
+	private static function logError($itemId, $message, ?Bitrix\Main\Result $result = null)
 	{
 		if ($result)
 			$message .= "\n".implode("\n", $result->getErrorMessages());

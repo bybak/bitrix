@@ -47,8 +47,13 @@ class StartWriting extends BaseChatEvent
 		return [$this->getContext()->getUserId()];
 	}
 
-	protected function getBaseDialogId(): string
+	protected function getRecipients(): array
 	{
-		return 'chat' . $this->chat->getId();
+		return $this->chat->getRelations()->filterActive()->getUserIds();
+	}
+
+	public function shouldSendToOnlySpecificRecipients(): bool
+	{
+		return false;
 	}
 }

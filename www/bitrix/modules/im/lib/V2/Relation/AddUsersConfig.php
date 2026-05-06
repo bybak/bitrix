@@ -2,20 +2,44 @@
 
 namespace Bitrix\Im\V2\Relation;
 
-class AddUsersConfig
+use Bitrix\Im\V2\SharingLink\ChatLink;
+
+final class AddUsersConfig
 {
-	protected array $managerIds = [];
+	public readonly array $managerIds;
+	public readonly ?bool $hideHistory;
+	public readonly bool $withMessage;
+	public readonly bool $skipRecent;
+	public readonly bool $isFakeAdd;
+	public readonly Reason $reason;
+	public readonly bool $skipAnalytics;
+	public readonly array $hiddenUserIds;
+	public readonly bool $byAutoJoin;
+	public readonly ?ChatLink $sharingLink;
 
 	public function __construct(
 		array $managerIds = [],
-		protected ?bool $hideHistory = null,
-		protected bool $withMessage = true,
-		protected bool $skipRecent = false,
-		protected bool $isFakeAdd = false,
-		protected Reason $reason = Reason::DEFAULT,
+		?bool $hideHistory = null,
+		bool $withMessage = true,
+		bool $skipRecent = false,
+		bool $isFakeAdd = false,
+		Reason $reason = Reason::DEFAULT,
+		array $hiddenUserIds = [],
+		bool $skipAnalytics = true,
+		bool $byAutoJoin = false,
+		?ChatLink $sharingLink = null
 	)
 	{
-		$this->setManagerIds($managerIds);
+		$this->managerIds = $this->normalizeIds($managerIds);
+		$this->hideHistory = $hideHistory;
+		$this->withMessage = $withMessage;
+		$this->skipRecent = $skipRecent;
+		$this->isFakeAdd = $isFakeAdd;
+		$this->reason = $reason;
+		$this->hiddenUserIds = $this->normalizeIds($hiddenUserIds);
+		$this->skipAnalytics = $skipAnalytics;
+		$this->byAutoJoin = $byAutoJoin;
+		$this->sharingLink = $sharingLink;
 	}
 
 	public function isManager(int $userId): bool
@@ -23,50 +47,69 @@ class AddUsersConfig
 		return isset($this->managerIds[$userId]);
 	}
 
-	public function setManagerIds(array $managerIds): AddUsersConfig
+	/**
+	 * @param int[] $ids
+	 * @return self
+	 */
+	public function addHiddenUserIds(array $ids): self
 	{
-		foreach ($managerIds as $managerId)
+		$hiddenUserIds = $this->hiddenUserIds;
+		$hiddenUserIds += $this->normalizeIds($ids);
+
+		return $this->with(['hiddenUserIds' => $hiddenUserIds]);
+	}
+
+	/**
+	 * @param int[] $managerIds
+	 * @return self
+	 */
+	public function setManagerIds(array $managerIds): self
+	{
+		return $this->with(['managerIds' => $managerIds]);
+	}
+
+	public function setHideHistory(?bool $hideHistory): self
+	{
+		return $this->with(['hideHistory' => $hideHistory]);
+	}
+
+	public function setWithMessage(bool $withMessage): self
+	{
+		return $this->with(['withMessage' => $withMessage]);
+	}
+
+	public function isHidden(int $userId): bool
+	{
+		return isset($this->hiddenUserIds[$userId]);
+	}
+
+	public function bySharingLink(): bool
+	{
+		return isset($this->sharingLink);
+	}
+
+	private function normalizeIds(array $ids): array
+	{
+		$intIds = array_map('intval', $ids);
+
+		return array_combine($intIds, $intIds);
+	}
+
+	private function with(array $changes): self
+	{
+		$newFields = array_merge($this->toArray(), $changes);
+
+		return new self(...$newFields);
+	}
+
+	private function toArray(): array
+	{
+		$array = [];
+		foreach ($this as $fieldName => $field)
 		{
-			$this->managerIds[$managerId] = $managerId;
+			$array[$fieldName] = $field;
 		}
 
-		return $this;
-	}
-
-	public function isHideHistory(): ?bool
-	{
-		return $this->hideHistory;
-	}
-
-	public function setHideHistory(?bool $hideHistory): AddUsersConfig
-	{
-		$this->hideHistory = $hideHistory;
-		return $this;
-	}
-
-	public function withMessage(): bool
-	{
-		return $this->withMessage;
-	}
-
-	public function skipRecent(): bool
-	{
-		return $this->skipRecent;
-	}
-
-	public function isFakeAdd(): bool
-	{
-		return $this->isFakeAdd;
-	}
-
-	public function getReason(): Reason
-	{
-		return $this->reason;
-	}
-
-	public function setReason(Reason $reason): AddUsersConfig
-	{
-		$this->reason = $reason;
-		return $this;
+		return $array;
 	}
 }

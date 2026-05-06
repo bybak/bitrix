@@ -2,20 +2,26 @@
 
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Mail\Helper;
+use Bitrix\UI\Toolbar\Facade\Toolbar;
 
 if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 {
 	die();
 }
 
+/** @var array $arParams */
+/** @var array $arResult */
+/** @global \CMain $APPLICATION */
+
 \Bitrix\Main\UI\Extension::load([
 	'ui.design-tokens',
 	'ui.fonts.opensans',
 	'ui.icons.b24',
 	'ui.alerts',
-	'ui.sidepanel.page-swapper'
+	'ui.sidepanel.page-swapper',
+	'mail.message-body',
 ]);
-
+\Bitrix\UI\Toolbar\Facade\Toolbar::deleteFavoriteStar();
 $bodyClass = $APPLICATION->getPageProperty('BodyClass', false);
 $APPLICATION->setPageProperty('BodyClass', trim(sprintf('%s %s', $bodyClass, 'pagetitle-toolbar-field-view pagetitle-mail-view')));
 
@@ -23,26 +29,29 @@ $emailsLimitToSendMessage = Helper\LicenseManager::getEmailsLimitToSendMessage()
 
 $message = $arResult['MESSAGE'];
 
-$this->setViewTarget('pagetitle_icon');
-
-?>
-
-<span class="mail-msg-title-icon mail-msg-title-icon-<?=($message['__is_outcome'] ? 'outcome' : 'income') ?>"></span>
-
-<?
-
-$this->endViewTarget();
-
-if (SITE_TEMPLATE_ID == 'bitrix24' || $_REQUEST['IFRAME'] == 'Y' && $_REQUEST['IFRAME_TYPE'] == 'SIDE_SLIDER')
+$source = $_REQUEST['source'];
+$openedSource = null;
+if ($source)
 {
-	$this->setViewTarget('inside_pagetitle');
+	$openedSource = Helper\AnalyticsHelper::getAnalyticsSourceByType($source) ?? $source;
 }
 
+$urlParams = [
+	'IFRAME' => $_REQUEST['IFRAME'],
+	'IFRAME_TYPE' => $_REQUEST['IFRAME_TYPE'],
+];
+
+if ($openedSource)
+{
+	$urlParams['source'] = $openedSource;
+}
+
+ob_start();
 ?>
 
 <div class="pagetitle-container mail-pagetitle-flexible-space"></div>
 <div class="mail-msg-header-group">
-	<? if (!empty($message['BIND_LINKS']) && !empty(@call_user_func_array('array_merge', array_values((array) $message['BIND_LINKS'])))): ?>
+	<? if (!empty($message['BIND_LINKS']) && !empty(@array_merge(...array_values((array)$message['BIND_LINKS'])))): ?>
 		<div class="mail-msg-header-control-item mail-msg-header-control-select" id="mail-msg-additional-switch">
 			<div class="mail-msg-header-control-text"><?=Loc::getMessage('MAIL_MESSAGE_EXT_BLOCK_LINK') ?></div>
 			<div class="mail-msg-header-control-triangle"></div>
@@ -59,17 +68,9 @@ if (SITE_TEMPLATE_ID == 'bitrix24' || $_REQUEST['IFRAME'] == 'Y' && $_REQUEST['I
 	); ?>
 </div>
 
-<?
-
-if (SITE_TEMPLATE_ID == 'bitrix24' || $_REQUEST['IFRAME'] == 'Y' && $_REQUEST['IFRAME_TYPE'] == 'SIDE_SLIDER')
-{
-	$this->endViewTarget();
-}
-
-?>
+<?php Toolbar::addRightCustomHtml(ob_get_clean()); ?>
 
 <script>
-
 BX.ready(function ()
 {
 	BXMailMessageController.init({
@@ -81,10 +82,7 @@ BX.ready(function ()
 		<? endif ?>
 		pathNew: '<?=\CUtil::jsEscape(\CHTTP::urlAddParams(
 			$arParams['~PATH_TO_MAIL_MSG_NEW'],
-			array(
-				'IFRAME' => $_REQUEST['IFRAME'],
-				'IFRAME_TYPE' => $_REQUEST['IFRAME_TYPE'],
-			)
+			$urlParams,
 		)) ?>',
 		pathList: '<?=\CUtil::jsEscape(\CComponentEngine::makePathFromTemplate(
 			$arParams['~PATH_TO_MAIL_MSG_LIST'],
@@ -127,11 +125,9 @@ BX.ready(function ()
 		}
 	);
 });
-
 </script>
 
 <?
-
 $renderBindLink = function ($item)
 {
 	return sprintf(
@@ -223,6 +219,33 @@ $renderBindLink = function ($item)
 </div>
 
 <script>
+
+	<?php if (!empty($arResult['ANALYTICS'])): ?>
+	(() => {
+		const analyticsData = {
+			tool: 'mail',
+			category: 'mail_operations',
+			event: 'mail_view',
+			type: 'mail',
+			c_section: '<?= \CUtil::JSEscape($arResult['ANALYTICS']['SOURCE']) ?>',
+		}
+
+		if (analyticsData.c_section === 'mail')
+		{
+			const slider = BX.SidePanel.Instance.getTopSlider();
+			if (slider)
+			{
+				const c_sub_section = slider.getData().get('analytics')?.source_dir || null;
+				if (c_sub_section)
+				{
+					analyticsData.c_sub_section = c_sub_section.toLowerCase();
+				}
+			}
+		}
+
+		BX.UI.Analytics.sendData(analyticsData);
+	})();
+	<?php endif;?>
 
 BX.message({
 	EMAILS_LIMIT_TO_SEND_MESSAGE: '<?=$emailsLimitToSendMessage?>',

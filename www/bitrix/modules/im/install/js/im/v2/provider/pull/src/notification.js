@@ -53,7 +53,10 @@ export class NotificationPullHandler
 			this.store.dispatch('notifications/read', {ids: [id], read: true});
 		});
 
-		this.updateCounterDebounced(params.counter);
+		if (params.counter < this.store.getters['notifications/getCounter'])
+		{
+			this.updateCounterDebounced(params.counter);
+		}
 	}
 
 	handleNotifyUnread(params)
@@ -62,12 +65,18 @@ export class NotificationPullHandler
 			this.store.dispatch('notifications/read', {ids: [id], read: false});
 		});
 
-		this.updateCounterDebounced(params.counter);
+		if (params.counter > this.store.getters['notifications/getCounter'])
+		{
+			this.updateCounterDebounced(params.counter);
+		}
 	}
 
-	handleNotifyReadAll()
+	handleNotifyReadAll(params)
 	{
-		void this.store.dispatch('notifications/readAll');
+		const excludeIds = params.excludeIds || [];
+		void this.store.dispatch('notifications/readAllSimple', { excludeIds });
+
+		this.updateCounterDebounced(params.newCounter);
 	}
 
 	handleNotifyDelete(params)

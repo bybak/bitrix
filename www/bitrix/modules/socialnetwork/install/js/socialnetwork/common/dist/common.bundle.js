@@ -1,7 +1,7 @@
 /* eslint-disable */
 this.BX = this.BX || {};
 this.BX.Socialnetwork = this.BX.Socialnetwork || {};
-(function (exports,im_public,main_popup,ui_buttons,ui_popupcomponentsmaker,main_core) {
+(function (exports,main_core_events,im_public,main_popup,ui_buttons,ui_popupcomponentsmaker,main_core) {
 	'use strict';
 
 	var Waiter = /*#__PURE__*/function () {
@@ -348,7 +348,10 @@ this.BX.Socialnetwork = this.BX.Socialnetwork || {};
 	          menu.push({
 	            text: itemTitle,
 	            title: itemTitle,
-	            href: params.urls.requestUser
+	            href: params.urls.requestUser,
+	            onclick: function onclick(event, menuItem) {
+	              return menuItem.getMenuWindow().close();
+	            }
 	          });
 	        }
 	        if (params.perms.canModify) {
@@ -361,12 +364,18 @@ this.BX.Socialnetwork = this.BX.Socialnetwork || {};
 	          menu.push({
 	            text: itemTitle,
 	            title: itemTitle,
-	            href: params.urls.edit
+	            href: params.urls.edit,
+	            onclick: function onclick(event, menuItem) {
+	              return menuItem.getMenuWindow().close();
+	            }
 	          });
 	          if (!params.hideArchiveLinks) {
 	            var featuresItem = {
 	              text: main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_FEAT'),
-	              title: main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_FEAT')
+	              title: main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_FEAT'),
+	              onclick: function onclick(event, menuItem) {
+	                return menuItem.getMenuWindow().close();
+	              }
 	            };
 	            if (params.editFeaturesAllowed) {
 	              featuresItem.href = params.urls.features;
@@ -383,6 +392,25 @@ this.BX.Socialnetwork = this.BX.Socialnetwork || {};
 	            }
 	            menu.push(featuresItem);
 	          }
+	          var isCollabConverterEnabled = main_core.Extension.getSettings('socialnetwork.common').isCollabConverterEnabled;
+	          if (isCollabConverterEnabled && params.userRole === main_core.Loc.getMessage('USER_TO_GROUP_ROLE_OWNER') && !params.isProject && !params.isScrumProject) {
+	            menu.push({
+	              text: main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_CONVERT_TO_COLLAB'),
+	              title: main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_CONVERT_TO_COLLAB'),
+	              onclick: function onclick(event, menuItem) {
+	                menuItem.getMenuWindow().close();
+	                main_core.Runtime.loadExtension('socialnetwork.collab.converter').then(function (exports) {
+	                  var ConverterClass = exports.Converter;
+	                  var id = parseInt(main_core.Type.isUndefined(params.groupId) ? 0 : params.groupId, 10);
+	                  new ConverterClass({
+	                    redirectAfterSuccess: true
+	                  }).convertToCollab(id);
+	                })["catch"](function (error) {
+	                  console.error(error);
+	                });
+	              }
+	            });
+	          }
 	          itemTitle = main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_DELETE');
 	          if (!!params.isScrumProject) {
 	            itemTitle = main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_DELETE_SCRUM');
@@ -398,14 +426,20 @@ this.BX.Socialnetwork = this.BX.Socialnetwork || {};
 	        menu.push({
 	          text: params.perms.canModerate ? main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_EDIT') : main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_VIEW'),
 	          title: params.perms.canModerate ? main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_EDIT') : main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_MEMBERS_VIEW'),
-	          href: params.urls.members
+	          href: params.urls.members,
+	          onclick: function onclick(event, menuItem) {
+	            return menuItem.getMenuWindow().close();
+	          }
 	        });
 	        if (params.perms.canInitiate) {
 	          if (params.perms.canProcessRequestsIn) {
 	            menu.push({
 	              text: main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_REQ_IN'),
 	              title: main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_REQ_IN'),
-	              href: params.urls.requests
+	              href: params.urls.requests,
+	              onclick: function onclick(event, menuItem) {
+	                return menuItem.getMenuWindow().close();
+	              }
 	            });
 	          }
 	          itemTitle = main_core.Loc.getMessage('SONET_EXT_COMMON_GROUP_MENU_REQ_OUT');
@@ -429,7 +463,10 @@ this.BX.Socialnetwork = this.BX.Socialnetwork || {};
 	          }
 	          var copyGroupItem = {
 	            text: itemTitle,
-	            title: itemTitle
+	            title: itemTitle,
+	            onclick: function onclick(event, menuItem) {
+	              return menuItem.getMenuWindow().close();
+	            }
 	          };
 	          if (params.copyFeatureAllowed) {
 	            copyGroupItem.href = params.urls.copy;
@@ -659,19 +696,6 @@ this.BX.Socialnetwork = this.BX.Socialnetwork || {};
 	          }, 0);
 	        }
 	      });
-	    }
-	  }, {
-	    key: "closeGroupCardMenu",
-	    value: function closeGroupCardMenu(node) {
-	      if (!node) {
-	        return;
-	      }
-	      var doc = node.ownerDocument;
-	      var win = doc.defaultView || doc.parentWindow;
-	      if (!win || main_core.Type.isUndefined(win.BX.Socialnetwork.UIGroupMenu) || !win.BX.Socialnetwork.UIGroupMenu.getInstance().menuPopup) {
-	        return;
-	      }
-	      win.BX.Socialnetwork.UIGroupMenu.getInstance().menuPopup.close();
 	    }
 	  }, {
 	    key: "openMessenger",
@@ -916,5 +940,5 @@ this.BX.Socialnetwork = this.BX.Socialnetwork || {};
 	exports.WorkgroupWidget = WorkgroupWidget;
 	exports.RecallJoinRequest = RecallJoinRequest;
 
-}((this.BX.Socialnetwork.UI = this.BX.Socialnetwork.UI || {}),BX.Messenger.v2.Lib,BX.Main,BX.UI,BX.UI,BX));
+}((this.BX.Socialnetwork.UI = this.BX.Socialnetwork.UI || {}),BX.Event,BX.Messenger.v2.Lib,BX.Main,BX.UI,BX.UI,BX));
 //# sourceMappingURL=common.bundle.js.map

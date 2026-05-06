@@ -134,7 +134,7 @@ abstract class EntityProperty
 	 * @throws Main\ObjectPropertyException
 	 * @throws Main\SystemException
 	 */
-	public function __construct(array $property, array $relation = null)
+	public function __construct(array $property, ?array $relation = null)
 	{
 		if (isset($property['SETTINGS']) && is_array($property['SETTINGS']))
 		{
@@ -254,7 +254,8 @@ abstract class EntityProperty
 		$dbRes = Internals\OrderPropsVariantTable::getList([
 			'select' => ['VALUE', 'NAME'],
 			'filter' => ['ORDER_PROPS_ID' => $this->getId()],
-			'order' => ['SORT' => 'ASC']
+			'order' => ['SORT' => 'ASC'],
+			'cache' => ['ttl' => 86400],
 		]);
 
 		while ($data = $dbRes->fetch())
@@ -459,7 +460,9 @@ abstract class EntityProperty
 				{
 					if (Input\File::isUploadedSingle($file))
 					{
-						$fileId = \CFile::SaveFile(array('MODULE_ID' => 'sale') + $file, 'sale/order/properties');
+						$fileId = \CFile::SaveFile(
+							['MODULE_ID' => 'sale'] + $file, 'sale/order/properties',
+						);
 						if (is_numeric($fileId))
 						{
 							$file = $fileId;

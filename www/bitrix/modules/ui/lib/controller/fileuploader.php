@@ -11,6 +11,8 @@ use Bitrix\Main\Engine\Response;
 use Bitrix\Main\Error;
 use Bitrix\Main\Web\Json;
 use Bitrix\UI\FileUploader\Chunk;
+use Bitrix\UI\FileUploader\Configuration;
+use Bitrix\UI\FileUploader\ChunkFactory;
 use Bitrix\UI\FileUploader\ControllerResolver;
 use Bitrix\UI\FileUploader\Uploader;
 use Bitrix\UI\FileUploader\UploaderController;
@@ -120,7 +122,7 @@ class FileUploader extends Controller
 			new Parameter(
 				Chunk::class,
 				function ($className) use ($request) {
-					$result = Chunk::createFromRequest($request);
+					$result = ChunkFactory::createFromRequest($request);
 					if ($result->isSuccess())
 					{
 						return $result->getData()['chunk'];
@@ -255,5 +257,34 @@ class FileUploader extends Controller
 		return [
 			'files' => $removeResult,
 		];
+	}
+
+	public function getConfigurationAction(UploaderController $controller): array
+	{
+		return [
+			'configuration' => $controller->getConfiguration(),
+			'chunkMinSize' => Configuration::getChunkMinSize(),
+			'chunkMaxSize' => Configuration::getChunkMaxSize(),
+			'defaultChunkSize' => Configuration::getDefaultChunkSize(),
+			'imageExtensions' => Configuration::getImageExtensions(withDot: false),
+			'videoExtensions' => Configuration::getVideoExtensions(withDot: false),
+		];
+	}
+
+	public function getStatusAction(UploaderController $controller, string $token): array
+	{
+		$uploader = new Uploader($controller);
+		$statusResult = $uploader->getStatus($token);
+
+		if ($statusResult->isSuccess())
+		{
+			return $statusResult->jsonSerialize();
+		}
+		else
+		{
+			$this->addErrors($statusResult->getErrors());
+		}
+
+		return [];
 	}
 }

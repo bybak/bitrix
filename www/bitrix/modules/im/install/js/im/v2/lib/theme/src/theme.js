@@ -1,10 +1,26 @@
+import { Type } from 'main.core';
+
 import { Core } from 'im.v2.application.core';
-import { Settings } from 'im.v2.const';
-import { SelectableBackground, SpecialBackground, SpecialBackgroundId, ThemeType } from './color-scheme';
+import { ChatType, Settings } from 'im.v2.const';
+
+import {
+	SelectableBackground,
+	SelectableBackgroundId,
+	SpecialBackground,
+	SpecialBackgroundId,
+	ThemeType,
+	ImageFileByBackgroundId,
+} from './color-scheme';
 
 import type { BackgroundItem } from './color-scheme';
 
-export { SelectableBackground, SpecialBackgroundId as SpecialBackground, ThemeType, ThemeManager };
+export {
+	SelectableBackground,
+	SelectableBackgroundId,
+	SpecialBackgroundId as SpecialBackground,
+	ThemeType,
+	ThemeManager,
+};
 
 const IMAGE_FOLDER_PATH = '/bitrix/js/im/images/chat-v2-background';
 
@@ -23,28 +39,28 @@ const BackgroundPatternColor = Object.freeze({
 const ThemeManager = {
 	isLightTheme(): boolean
 	{
-		const selectedBackgroundId = Core.getStore().getters['application/settings/get'](Settings.appearance.background);
-		const selectedColorScheme: BackgroundItem = SelectableBackground[selectedBackgroundId];
+		const backgroundId = Core.getStore().getters['application/settings/get'](Settings.appearance.background);
+		const selectedColorScheme: BackgroundItem = SelectableBackground[backgroundId];
 
 		return selectedColorScheme?.type === ThemeType.light;
 	},
 
 	isDarkTheme(): boolean
 	{
-		const selectedBackgroundId = Core.getStore().getters['application/settings/get'](Settings.appearance.background);
-		const selectedColorScheme: BackgroundItem = SelectableBackground[selectedBackgroundId];
+		const backgroundId = Core.getStore().getters['application/settings/get'](Settings.appearance.background);
+		const selectedColorScheme: BackgroundItem = SelectableBackground[backgroundId];
 
 		return selectedColorScheme?.type === ThemeType.dark;
 	},
 
-	getCurrentBackgroundStyle(): BackgroundStyle
+	getCurrentBackgroundStyle(dialogId?: string): BackgroundStyle
 	{
-		const selectedBackgroundId = Core.getStore().getters['application/settings/get'](Settings.appearance.background);
+		const backgroundId = resolveBackgroundId(dialogId);
 
-		return this.getBackgroundStyleById(selectedBackgroundId);
+		return this.getBackgroundStyleById(backgroundId);
 	},
 
-	getBackgroundStyleById(backgroundId: string | number): BackgroundStyle
+	getBackgroundStyleById(backgroundId: string): BackgroundStyle
 	{
 		const backgroundsList = { ...SelectableBackground, ...SpecialBackground };
 		const colorScheme: BackgroundItem = backgroundsList[backgroundId];
@@ -57,8 +73,11 @@ const ThemeManager = {
 			? BackgroundPatternColor.gray
 			: BackgroundPatternColor.white
 		;
-		const patternImage = `url('${IMAGE_FOLDER_PATH}/pattern-${patternColor}.svg')`;
-		const highlightImage = `url('${IMAGE_FOLDER_PATH}/${backgroundId}.png')`;
+		const patternType = colorScheme.pattern;
+
+		const fileName = ImageFileByBackgroundId[backgroundId] ?? backgroundId;
+		const patternImage = `url('${IMAGE_FOLDER_PATH}/pattern-${patternColor}-${patternType}.svg')`;
+		const highlightImage = `url('${IMAGE_FOLDER_PATH}/${fileName}.png')`;
 
 		return {
 			backgroundColor: colorScheme.color,
@@ -68,4 +87,50 @@ const ThemeManager = {
 			backgroundSize: 'auto, cover',
 		};
 	},
+};
+
+/** Background selection priority:
+ * 1. If there is no dialog context: user selected background (from user settings)
+ * 2. Background by chat type (collab/copilot/aiAssistant)
+ * 3. Chat background (from chat fields)
+ * 4. Bot background (from bot fields)
+ * 5. User selected background (from user settings)
+ */
+const resolveBackgroundId = (dialogId?: string): string => {
+	const userBackground = Core.getStore().getters['application/settings/get'](Settings.appearance.background);
+	if (!Type.isStringFilled(dialogId))
+	{
+		return userBackground;
+	}
+
+	const chatType = Core.getStore().getters['chats/get'](dialogId, true).type;
+	if (chatType === ChatType.collab)
+	{
+		return SpecialBackgroundId.collab;
+	}
+
+	if (chatType === ChatType.copilot)
+	{
+		return SpecialBackgroundId.copilot;
+	}
+
+	const isAiAssistant = Core.getStore().getters['users/bots/isAiAssistant'](dialogId);
+	if (isAiAssistant)
+	{
+		return SpecialBackgroundId.martaAI;
+	}
+
+	const chatBackground = Core.getStore().getters['chats/getBackgroundId'](dialogId);
+	if (Type.isStringFilled(chatBackground))
+	{
+		return chatBackground;
+	}
+
+	const botBackground = Core.getStore().getters['users/bots/getBackgroundId'](dialogId);
+	if (Type.isStringFilled(botBackground))
+	{
+		return botBackground;
+	}
+
+	return userBackground;
 };

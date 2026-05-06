@@ -1,26 +1,29 @@
+import { Extension } from 'main.core';
 import { EventEmitter, BaseEvent } from 'main.core.events';
 
 import { Core } from 'im.v2.application.core';
 import { Analytics } from 'im.v2.lib.analytics';
 import { LocalStorageManager } from 'im.v2.lib.local-storage';
-import { ChatType, EventType, Layout, LocalStorageKey } from 'im.v2.const';
+import { ChatType, EventType, Layout, LocalStorageKey, ErrorCode } from 'im.v2.const';
 import { Logger } from 'im.v2.lib.logger';
 import { ChannelManager } from 'im.v2.lib.channel';
-import { AccessErrorCode, AccessManager } from 'im.v2.lib.access';
+import { AccessManager } from 'im.v2.lib.access';
 import { FeatureManager } from 'im.v2.lib.feature';
 import { BulkActionsManager } from 'im.v2.lib.bulk-actions';
 
+import type { SettingsCollection } from 'main.core.collections';
 import type { ImModelLayout, ImModelChat } from 'im.v2.model';
+import type { ApplicationContext } from 'im.v2.const';
 
 type EntityId = string;
 
 const TypesWithoutContext: Set<string> = new Set([ChatType.comment]);
-const LayoutsWithoutLastOpenedElement: Set<string> = new Set([Layout.channel.name, Layout.market.name]);
+const LayoutsWithoutLastOpenedElement: Set<string> = new Set([Layout.channel, Layout.market, Layout.taskComments]);
 
 export class LayoutManager
 {
 	static #instance: LayoutManager;
-
+	#emitter: EventEmitter;
 	#lastOpenedElement: { [layoutName: string]: EntityId } = {};
 
 	static getInstance(): LayoutManager
@@ -33,14 +36,12 @@ export class LayoutManager
 		return this.#instance;
 	}
 
-	static init(): void
+	bindEvents(context: ApplicationContext)
 	{
-		LayoutManager.getInstance();
-	}
+		const { emitter } = context;
+		this.#emitter = emitter;
 
-	constructor()
-	{
-		EventEmitter.subscribe(EventType.dialog.goToMessageContext, this.#onGoToMessageContext.bind(this));
+		this.#emitter.subscribe(EventType.dialog.goToMessageContext, this.#onGoToMessageContext.bind(this));
 		EventEmitter.subscribe(EventType.desktop.onReload, this.#onDesktopReload.bind(this));
 	}
 
@@ -89,12 +90,12 @@ export class LayoutManager
 		});
 	}
 
-	restoreLastLayout(): Promise
+	prepareInitialLayout(): Promise
 	{
 		const layoutConfig = LocalStorageManager.getInstance().get(LocalStorageKey.layoutConfig);
 		if (!layoutConfig)
 		{
-			return Promise.resolve();
+			return this.setLayout({ name: Layout.chat });
 		}
 
 		Logger.warn('LayoutManager: last layout was restored', layoutConfig);
@@ -140,7 +141,7 @@ export class LayoutManager
 
 	destroy(): void
 	{
-		EventEmitter.unsubscribe(EventType.dialog.goToMessageContext, this.#onGoToMessageContext);
+		this.#emitter.unsubscribe(EventType.dialog.goToMessageContext, this.#onGoToMessageContext);
 		EventEmitter.unsubscribe(EventType.desktop.onReload, this.#onDesktopReload.bind(this));
 	}
 
@@ -164,6 +165,38 @@ export class LayoutManager
 		});
 	}
 
+	isEmbeddedMode(): boolean
+	{
+		return this.isQuickAccessHidden();
+	}
+
+	isQuickAccessHidden(): boolean
+	{
+		const settings: SettingsCollection = Extension.getSettings('im.v2.lib.layout');
+
+		return settings.get('isQuickAccessHidden', false);
+	}
+
+	isValidLayout(layoutName: string): boolean
+	{
+		return Object.values(Layout).includes(layoutName);
+	}
+
+	isChatLayout(layoutName: string): boolean
+	{
+		const chatLayouts = [
+			Layout.chat,
+			Layout.channel,
+			Layout.copilot,
+			Layout.openlines,
+			Layout.openlinesV2,
+			Layout.collab,
+			Layout.taskComments,
+		];
+
+		return chatLayouts.includes(layoutName);
+	}
+
 	async #onGoToMessageContext(event: BaseEvent<{dialogId: string, messageId: number}>): void
 	{
 		const { dialogId, messageId } = event.getData();
@@ -178,10 +211,8 @@ export class LayoutManager
 			return;
 		}
 
-		const isCopilotLayout = type === ChatType.copilot;
-
 		void this.setLayout({
-			name: isCopilotLayout ? Layout.copilot.name : Layout.chat.name,
+			name: Layout.chat,
 			entityId: dialogId,
 			contextId: messageId,
 		});
@@ -200,7 +231,7 @@ export class LayoutManager
 			return;
 		}
 
-		if (config.name === Layout.copilot.name)
+		if (config.name === Layout.copilot)
 		{
 			Analytics.getInstance().copilot.onOpenTab();
 		}
@@ -226,16 +257,7 @@ export class LayoutManager
 	#handleChatChange()
 	{
 		const { name, entityId } = this.getLayout();
-		const CHAT_LAYOUTS = new Set([
-			ChatType.chat,
-			ChatType.channel,
-			ChatType.copilot,
-			ChatType.lines,
-			ChatType.openlinesV2,
-			ChatType.collab,
-		]);
-
-		if (CHAT_LAYOUTS.has(name) && entityId)
+		if (this.isChatLayout(name) && entityId)
 		{
 			this.#clearBulkActionsCollection();
 		}
@@ -249,7 +271,7 @@ export class LayoutManager
 
 		if (contextId)
 		{
-			EventEmitter.emit(EventType.dialog.goToMessageContext, {
+			this.#emitter.emit(EventType.dialog.goToMessageContext, {
 				messageId: contextId,
 				dialogId,
 			});
@@ -267,7 +289,7 @@ export class LayoutManager
 		const isChannelOpened = ChannelManager.isChannel(dialogId);
 		if (isChannelOpened)
 		{
-			EventEmitter.emit(EventType.dialog.closeComments);
+			this.#emitter.emit(EventType.dialog.closeComments);
 		}
 	}
 
@@ -280,7 +302,7 @@ export class LayoutManager
 		}
 
 		const { hasAccess, errorCode } = await AccessManager.checkMessageAccess(messageId);
-		if (!hasAccess && errorCode === AccessErrorCode.messageAccessDeniedByTariff)
+		if (!hasAccess && errorCode === ErrorCode.message.accessDeniedByTariff)
 		{
 			Analytics.getInstance().historyLimit.onGoToContextLimitExceeded({ dialogId });
 			FeatureManager.chatHistory.openFeatureSlider();

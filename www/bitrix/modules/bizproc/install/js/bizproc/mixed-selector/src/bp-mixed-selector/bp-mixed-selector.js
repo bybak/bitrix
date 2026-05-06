@@ -342,7 +342,6 @@ export class BpMixedSelector extends EventEmitter
 								text: Text.encode(`${item.text} (${item.description})`),
 								object: item.object,
 								field: item.field,
-								property: item,
 								onclick: me.#onChooseFieldClick.bind(me),
 							});
 						}
@@ -439,42 +438,35 @@ export class BpMixedSelector extends EventEmitter
 
 			const returnActivityData = activityData.RETURN;
 			const additionalResult = activityData.ADDITIONAL_RESULT;
+			const activityResult = [];
 
 			if (returnActivityData)
 			{
 				const keys = Object.keys(returnActivityData);
-				const activityResult = [];
-
 				for (const j in keys)
 				{
 					activityResult.push({
-						text: returnActivityData[keys[j]].NAME,
+						text: returnActivityData[keys[j]].NAME || returnActivityData[keys[j]].Name,
 						description: template[i].Properties.Title || activityData.NAME,
 						activity: activityType,
 						value: `{=${template[i].Name}:${keys[j]}}`,
 						object: template[i].Name,
 						field: keys[j],
 						property: {
-							Name: returnActivityData[keys[j]].NAME,
-							Type: returnActivityData[keys[j]].TYPE,
+							Name: returnActivityData[keys[j]].NAME || returnActivityData[keys[j]].Name,
+							Type: returnActivityData[keys[j]].TYPE || returnActivityData[keys[j]].Type,
 						},
 					});
 				}
-
-				if (activityResult.length > 0)
-				{
-					result.push(activityResult);
-				}
 			}
-			else if (Type.isArray(additionalResult))
+
+			if (Type.isArray(additionalResult))
 			{
 				const properties = template[i].Properties;
 				additionalResult.forEach((addProp) => {
 					if (properties[addProp])
 					{
 						const keys = Object.keys(properties[addProp]);
-						const activityResult = [];
-
 						for (const j in keys)
 						{
 							const field = properties[addProp][keys[j]];
@@ -487,13 +479,13 @@ export class BpMixedSelector extends EventEmitter
 								property: field,
 							});
 						}
-
-						if (activityResult.length > 0)
-						{
-							result.push(activityResult);
-						}
 					}
 				});
+			}
+
+			if (activityResult.length > 0)
+			{
+				result.push(activityResult);
 			}
 
 			if (template[i].Children && template[i].Children.length > 0)
@@ -549,6 +541,40 @@ export class BpMixedSelector extends EventEmitter
 
 	#onChooseTargetClick(event)
 	{
+		const listenersResult = EventEmitter.emit(
+			this.getTargetNode(),
+			'Bizproc.NodeSettings:askShowValueSelector',
+			{
+				showOnlyRealProperties: true,
+				onSelect: (value, property) => {
+					const { object, field } = this.parseExpression(value);
+
+					if (!object || !field)
+					{
+						return;
+					}
+
+					this.setSelectedObjectAndField(object, field);
+					EventEmitter.emit(
+						this,
+						'onSelect',
+						{
+							item: {
+								object: object,
+								field: field,
+								property,
+							}
+						},
+					);
+				}
+			}
+		);
+
+		if (listenersResult.length > 0)
+		{
+			return;
+		}
+
 		const menu = this.getMenu();
 		menu.show();
 
@@ -563,6 +589,15 @@ export class BpMixedSelector extends EventEmitter
 		}
 
 		return null;
+	}
+
+	parseExpression(expression: string): { object: ?string, field: ?string }
+	{
+		const re = /^\{=\s*(?<object>[a-z0-9_]+)\s*:\s*(?<field>[a-z0-9_.]+)(?:\s*>\s*(?<mod1>[a-z0-9_:]+)(?:\s*,\s*(?<mod2>[a-z0-9_]+))?)?\s*\}$/i;
+		const match = expression.match(re);
+		const { object = null, field = null, mod1 = null, mod2 = null } = match?.groups ?? {};
+
+		return { object, field };
 	}
 
 	getSelectedFieldValue(): string | null
@@ -580,7 +615,11 @@ export class BpMixedSelector extends EventEmitter
 		const target = this.getMenuTargetNode();
 		const tabsLocMessage = BpMixedSelector.getAvailableTabsLocMessages();
 
-		if (BpMixedSelector.getAvailableTabsName().includes(object))
+		if (!fieldTitle)
+		{
+			target.innerText = `${object}:${field}`;
+		}
+		else if (BpMixedSelector.getAvailableTabsName().includes(object))
 		{
 			target.innerText = `${tabsLocMessage[object]}: ${fieldTitle}`;
 		}

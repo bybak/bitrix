@@ -1,11 +1,13 @@
-import {BuilderModel} from 'ui.vue3.vuex';
-import {Type, Text} from 'main.core';
+import { BuilderModel } from 'ui.vue3.vuex';
+import { Type, Text } from 'main.core';
 
-import {Core} from 'im.v2.application.core';
-import {Utils} from 'im.v2.lib.utils';
-import {NotificationTypesCodes} from 'im.v2.const';
+import { Core } from 'im.v2.application.core';
+import { Utils } from 'im.v2.lib.utils';
+import { NotificationTypesCodes } from 'im.v2.const';
 
 import { convertObjectKeysToCamelCase } from '../utils/format';
+
+import type { ImModelNotification } from '../registry';
 
 export class NotificationsModel extends BuilderModel
 {
@@ -37,6 +39,7 @@ export class NotificationsModel extends BuilderModel
 			sectionCode: NotificationTypesCodes.simple,
 			read: false,
 			settingName: 'im|default',
+			moduleId: '',
 		};
 	}
 
@@ -71,6 +74,19 @@ export class NotificationsModel extends BuilderModel
 				}
 
 				return existingItem;
+			},
+			getSearchItemById: (state) => (notificationId: number | string): ?ImModelNotification => {
+				if (Type.isString(notificationId))
+				{
+					const id = Number.parseInt(notificationId, 10);
+					const existingItem = state.searchCollection.get(id);
+
+					return existingItem ?? null;
+				}
+
+				const existingItem = state.searchCollection.get(notificationId);
+
+				return existingItem ?? null;
 			},
 			getCounter: (state): number =>
 			{
@@ -148,9 +164,6 @@ export class NotificationsModel extends BuilderModel
 				if (itemsToAdd.length > 0)
 				{
 					store.commit('add', itemsToAdd);
-					itemsToAdd.forEach(() => {
-						store.commit('increaseCounter');
-					});
 				}
 				if (itemsToUpdate.length > 0)
 				{
@@ -218,10 +231,23 @@ export class NotificationsModel extends BuilderModel
 					});
 				});
 			},
-			readAll: (store) =>
+			readAllSimple: (store, payload = {}) =>
 			{
-				store.commit('readAll');
-				store.commit('setCounter', 0);
+				const excludeIds = payload.excludeIds || [];
+				const excludeIdsSet = new Set(excludeIds);
+
+				const idsToMarkAsRead = [];
+				store.state.collection.forEach((item) => {
+					if (!item.read && item.sectionCode === NotificationTypesCodes.simple && !excludeIdsSet.has(item.id))
+					{
+						idsToMarkAsRead.push(item.id);
+					}
+				});
+
+				if (idsToMarkAsRead.length > 0)
+				{
+					store.commit('markAsRead', idsToMarkAsRead);
+				}
 			},
 			delete: (store, payload) =>
 			{
@@ -312,6 +338,22 @@ export class NotificationsModel extends BuilderModel
 					if (!item.read)
 					{
 						item.read = true;
+					}
+				});
+			},
+			markAsRead: (state, payload) =>
+			{
+				payload.forEach((id) => {
+					const item = state.collection.get(id);
+					if (item)
+					{
+						item.read = true;
+
+						const searchItem = state.searchCollection.get(id);
+						if (searchItem)
+						{
+							searchItem.read = true;
+						}
 					}
 				});
 			},
@@ -428,6 +470,11 @@ export class NotificationsModel extends BuilderModel
 		else if (Type.isString(fields.settingName))
 		{
 			result.settingName = fields.settingName;
+		}
+
+		if (Type.isString(fields.notify_module))
+		{
+			result.moduleId = fields.notify_module;
 		}
 
 		return result;

@@ -339,7 +339,6 @@ class ProductSelector extends JsonController
 			'TAX_RATE_FORMATTED' => $this->formatTaxRate($formFields['taxRate']),
 			'TAX_INCLUDED' => $formFields['taxIncluded'],
 			'TAX_INCLUDED_FORMATTED' => $this->formatTaxIncluded($formFields['taxIncluded']),
-			'BRANDS' => $this->getProductBrand($sku),
 			'WEIGHT' => $formFields['weight'],
 			'DIMENSIONS' => $formFields['dimensions'],
 			'PRODUCT_PROPERTIES' => $productProps,
@@ -417,40 +416,6 @@ class ProductSelector extends JsonController
 		return null;
 	}
 
-	private function getProductBrand($sku): ?array
-	{
-		$product = $sku->getParent();
-		if (!$product)
-		{
-			return null;
-		}
-
-		$brand = $product->getPropertyCollection()->findByCodeLazy('BRAND_FOR_FACEBOOK');
-		if (!$brand)
-		{
-			return null;
-		}
-
-		$userType = \CIBlockProperty::GetUserType($brand->getUserType());
-		$userTypeMethod = $userType['GetUIEntityEditorProperty'];
-		$propertySettings = $brand->getSettings();
-		$propertyValues = $brand->getPropertyValueCollection()->getValues();
-		$description = $userTypeMethod($propertySettings, $propertyValues);
-		$propertyBrandItems = $description['data']['items'];
-
-		$selectedBrandItems = [];
-
-		foreach ($propertyBrandItems as $propertyBrandItem)
-		{
-			if (in_array($propertyBrandItem['VALUE'], $propertyValues, true))
-			{
-				$selectedBrandItems[] = $propertyBrandItem;
-			}
-		}
-
-		return $selectedBrandItems;
-	}
-
 	private function getProductProperties(BaseSku $sku): array
 	{
 		$emptyProps = [];
@@ -504,6 +469,8 @@ class ProductSelector extends JsonController
 
 			return null;
 		}
+
+		unset($fields['PREVIEW_PICTURE'], $fields['DETAIL_PICTURE']);
 
 		$skuRepository = ServiceContainer::getSkuRepository($iblockId);
 		$type = $skuRepository ? ProductTable::TYPE_SKU : ProductTable::TYPE_PRODUCT;
@@ -656,6 +623,8 @@ class ProductSelector extends JsonController
 		{
 			return null;
 		}
+
+		unset($updateFields['PREVIEW_PICTURE'], $updateFields['DETAIL_PICTURE']);
 
 		$repositoryFacade = ServiceContainer::getRepositoryFacade();
 		if (!$repositoryFacade)
@@ -1043,11 +1012,6 @@ class ProductSelector extends JsonController
 
 		/** @var BaseProduct $parentProduct */
 		$parentProduct = $sku->getParent();
-
-		if (isset($fields['BRANDS']) && is_array($fields['BRANDS']))
-		{
-			$parentProduct->getPropertyCollection()->setValues(['BRAND_FOR_FACEBOOK' => $fields['BRANDS']]);
-		}
 
 		if (isset($sectionId))
 		{

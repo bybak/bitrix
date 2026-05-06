@@ -2,13 +2,22 @@
 
 namespace Bitrix\Bizproc\Controller\Workflow;
 
-use Bitrix\Bizproc\Api\Request\WorkflowService\PrepareParametersRequest;
-use Bitrix\Bizproc\Api\Request\WorkflowService\PrepareStartParametersRequest;
-use Bitrix\Bizproc\Api\Request\WorkflowService\SetConstantsRequest;
-use Bitrix\Bizproc\Api\Request\WorkflowService\StartWorkflowRequest;
-use Bitrix\Bizproc\Api\Service\WorkflowService;
+use Bitrix\Bizproc\Api\Request\WorkflowAccessService\CheckStartWorkflowRequest;
+use Bitrix\Bizproc\Api\Request\WorkflowTemplateService\PrepareParametersRequest;
+use Bitrix\Bizproc\Api\Request\WorkflowTemplateService\PrepareStartParametersRequest;
+use Bitrix\Bizproc\Api\Request\WorkflowTemplateService\SetConstantsRequest;
+use Bitrix\Bizproc\Api\Service\WorkflowAccessService;
+use Bitrix\Bizproc\Api\Service\WorkflowTemplateService;
 use Bitrix\Bizproc\Error;
+use Bitrix\Bizproc\Public\Entity\Document\Workflow;
+use Bitrix\Bizproc\Public\Service\Workflow\StarterService;
+use Bitrix\Bizproc\Starter\Dto\ContextDto;
+use Bitrix\Bizproc\Starter\Dto\DocumentDto;
+use Bitrix\Bizproc\Starter\Dto\EventDto;
+use Bitrix\Bizproc\Starter\Dto\MetaDataDto;
+use Bitrix\Bizproc\Starter\Enum\Face;
 use Bitrix\Main\Localization\Loc;
+use CBPDocumentEventType;
 
 class Starter extends \Bitrix\Bizproc\Controller\Base
 {
@@ -47,7 +56,11 @@ class Starter extends \Bitrix\Bizproc\Controller\Base
 		];
 	}
 
-	public function startWorkflowAction(int $templateId, ?int $startDuration = null): ?array
+	public function startWorkflowAction(
+		int $templateId,
+		?int $startDuration = null,
+		?string $triggerType = null,
+	): ?array
 	{
 		if (!$this->checkBizprocFeature())
 		{
@@ -71,16 +84,35 @@ class Starter extends \Bitrix\Bizproc\Controller\Base
 			return null;
 		}
 
-		$service = new WorkflowService();
-		$workflowParameters = $service->prepareStartParameters(
+		$userId = $this->getCurrentUserId();
+
+		$accessRequest = new CheckStartWorkflowRequest(
+			userId: $userId,
+			complexDocumentId: $complexDocumentId,
+			parameters: [
+				\CBPDocument::PARAM_TAGRET_USER => 'user_' . $userId,
+				'WorkflowTemplateId' => $templateId,
+			],
+		);
+
+		$accessResponse = (new WorkflowAccessService())->checkStartWorkflow($accessRequest);
+		if (!$accessResponse->isSuccess())
+		{
+			$this->addErrors($accessResponse->getErrors());
+
+			return null;
+		}
+
+		$templateService = new WorkflowTemplateService();
+		$workflowParameters = $templateService->prepareStartParameters(
 			new PrepareStartParametersRequest(
 				templateId: $templateId,
-				complexDocumentType: $complexDocumentType,
+				complexDocumentType: $triggerType ? Workflow::getComplexType() : $complexDocumentType,
 				requestParameters: array_merge(
 					$this->getRequest()->toArray(),
 					$this->getRequest()->getFileList()->toArray()
 				),
-				targetUserId: $this->getCurrentUserId(),
+				targetUserId: $userId,
 			)
 		);
 
@@ -91,25 +123,66 @@ class Starter extends \Bitrix\Bizproc\Controller\Base
 			return null;
 		}
 
-		$startWorkflow = $service->startWorkflow(
-			new StartWorkflowRequest(
-				userId: $this->getCurrentUserId(),
-				targetUserId: $this->getCurrentUserId(),
-				templateId: $templateId,
-				complexDocumentId: $complexDocumentId,
-				parameters: $workflowParameters->getParameters(),
-				startDuration: $startDuration >= 0 ? $startDuration : null,
-			)
-		);
+		$starter =
+			$this->getStarter($templateId, $workflowParameters->getParameters(), $triggerType, $startDuration)
+				->setValidateParameters(false)
+		;
 
-		if (!$startWorkflow->isSuccess())
+		$result = $starter->start();
+		if (!$result->isSuccess())
 		{
-			$this->addErrors($startWorkflow->getErrors());
+			$this->addErrors($result->getErrors());
 
 			return null;
 		}
 
-		return ['workflowId' => $startWorkflow->getWorkflowId()];
+		return ['workflowId' => current($result->getWorkflowIds())];
+	}
+
+	private function getStarter(
+		int $templateId,
+		array $workflowParameters,
+		?string $triggerType,
+		?int $startDuration
+	): \Bitrix\Bizproc\Starter\Starter
+	{
+		$currentUserId = $this->getCurrentUserId();
+
+		$context = new ContextDto('bizproc', Face::WEB);
+		$metaData = new MetaDataDto($startDuration >= 0 ? $startDuration : null);
+		$documentId = $this->getComplexDocumentId();
+		$documentType = $this->getComplexDocumentType();
+
+		if ($triggerType)
+		{
+			return (new StarterService())->getStarterForManualEventScenario(
+				templateIds: [$templateId],
+				context: $context,
+				events: [
+					new EventDto(
+						code: $triggerType,
+						documents: [new DocumentDto($documentId, $documentType)],
+						eventType: CBPDocumentEventType::Manual,
+						userId: $currentUserId,
+					),
+				],
+				userId: $currentUserId,
+				parameters: $workflowParameters,
+				metaData: $metaData,
+			);
+		}
+
+		return (new StarterService())->getStarterForManualDocumentScenario(
+			templateIds: [$templateId],
+			context: $context,
+			document: new DocumentDto(
+				complexDocumentId: $documentId,
+				complexDocumentType: $documentType,
+			),
+			userId: $currentUserId,
+			parameters: $workflowParameters,
+			metaData: $metaData,
+		);
 	}
 
 	public function checkParametersAction(int $autoExecuteType): ?array
@@ -204,7 +277,7 @@ class Starter extends \Bitrix\Bizproc\Controller\Base
 		$request = $this->getRequest();
 
 		$response =
-			(new WorkflowService())
+			(new WorkflowTemplateService())
 				->setConstants(
 					new SetConstantsRequest(
 						templateId: $templateId,
@@ -337,7 +410,7 @@ class Starter extends \Bitrix\Bizproc\Controller\Base
 			$requestParameters[$key] = $allRequestParameters[$searchKey] ?? null;
 		}
 
-		$parameters = (new WorkflowService())
+		$parameters = (new WorkflowTemplateService())
 			->prepareParameters(
 				new PrepareParametersRequest(
 					templateParameters: $templateParameters,

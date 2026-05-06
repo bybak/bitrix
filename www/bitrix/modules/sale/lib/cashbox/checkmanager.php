@@ -2,6 +2,7 @@
 
 namespace Bitrix\Sale\Cashbox;
 
+use Bitrix\Main\ArgumentException;
 use Bitrix\Main\Error;
 use Bitrix\Sale\Cashbox\Internals\CashboxCheckCorrectionTable;
 use Bitrix\Sale\Cashbox\Internals\CashboxCheckTable;
@@ -390,8 +391,40 @@ final class CheckManager
 		return false;
 	}
 
+	private static function checkCorrectionVats(array $correction): Result
+	{
+		$result = new Result();
+
+		if (empty($correction['CORRECTION_VAT']) || !is_array($correction['CORRECTION_VAT']))
+		{
+			return $result;
+		}
+
+		$vatTypes = array_column($correction['CORRECTION_VAT'], 'TYPE');
+
+		$hasType20 = in_array(20, $vatTypes, true);
+		$hasType22 = in_array(22, $vatTypes, true);
+
+		if ($hasType20 && $hasType22)
+		{
+			$result->addError(
+				new Error(
+					Loc::getMessage('SALE_CASHBOX_ERROR_CHECK_CORRECTION_VAT_20_AND_22')
+				)
+			);
+		}
+
+		return $result;
+	}
+
 	public static function addCorrection($type, $cashboxId, array $correction)
 	{
+		$checkCorrectionVatsResult = self::checkCorrectionVats($correction);
+		if (!$checkCorrectionVatsResult->isSuccess())
+		{
+			return $checkCorrectionVatsResult;
+		}
+
 		$result = new Result();
 
 		if (!self::isAvailableCorrection())
@@ -1679,13 +1712,42 @@ final class CheckManager
 
 	/**
 	 * @param $uuid
+	 * @param array $select
 	 * @return array|false
-	 * @throws Main\ArgumentException
+	 * @throws ArgumentException
 	 */
-	public static function getCheckInfoByExternalUuid($uuid)
+	public static function getCheckInfoByExternalUuid($uuid, array $select = ['*']): array|false
 	{
-		$dbRes = self::getList(array('filter' => array('=EXTERNAL_UUID' => $uuid)));
+		$dbRes = self::getList([
+			'select' => $select,
+			'filter' => ['=EXTERNAL_UUID' => $uuid],
+		]);
+
 		return $dbRes->fetch();
+	}
+
+	public static function applyCheckResultFromCallback(array $data): void
+	{
+		if (empty($data['uuid']))
+		{
+			return;
+		}
+
+		$checkInfo = self::getCheckInfoByExternalUuid(
+			$data['uuid'],
+			['CASHBOX_HANDLER' => 'CASHBOX.HANDLER'],
+		);
+		if (!$checkInfo)
+		{
+			return;
+		}
+
+		/** @var Cashbox $cashboxHandler */
+		$cashboxHandler = $checkInfo['CASHBOX_HANDLER'];
+		if (is_a($cashboxHandler, Cashbox::class, true))
+		{
+			$cashboxHandler::applyCheckResult($data);
+		}
 	}
 
 	/**

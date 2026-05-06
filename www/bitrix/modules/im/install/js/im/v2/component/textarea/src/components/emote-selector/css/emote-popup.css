@@ -1,0 +1,18 @@
+.bx-im-emote-popup__container {
+	border-radius: inherit;
+}
+
+.bx-im-emote-popup__buttons-container {
+	position: absolute;
+	bottom: 0;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	height: 48px;
+	border-bottom-left-radius: inherit;
+	border-bottom-right-radius: inherit;
+	border-top: 1px solid var(--ui-color-divider-vibrant-less);
+	background-color: var(--ui-color-bg-vibrant-accent);
+}

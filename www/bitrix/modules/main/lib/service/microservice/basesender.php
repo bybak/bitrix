@@ -2,11 +2,12 @@
 
 namespace Bitrix\Main\Service\MicroService;
 
-use Bitrix\Main\ArgumentException;
 use Bitrix\Main\Error;
 use Bitrix\Main\Result;
 use Bitrix\Main\Web\HttpClient;
 use Bitrix\Main\Web\Json;
+use Bitrix\Main\Config\Option;
+use Bitrix\Main\Application;
 
 /**
  * Class BaseSender
@@ -21,7 +22,6 @@ abstract class BaseSender
 	 * @param string $action
 	 * @param array $parameters
 	 * @return Result
-	 * @throws ArgumentException
 	 */
 	public function performRequest($action, array $parameters = []): Result
 	{
@@ -31,12 +31,28 @@ abstract class BaseSender
 
 		$request = [
 			"action" => $action,
-			"serializedParameters" => base64_encode(gzencode(Json::encode($parameters))),
+			"serializedParameters" => \base64_encode(\gzencode(Json::encode($parameters))),
 		];
 
 		$request["BX_TYPE"] = Client::getPortalType();
 		$request["BX_LICENCE"] = Client::getLicenseCode();
-		$request["SERVER_NAME"] = Client::getServerName();
+		$request["SERVER_NAME"] = $this->getClientServerName();
+
+		$region = Application::getInstance()->getLicense()->getRegion() ?? '';
+		if ($region)
+		{
+			$request["BX_REGION"] = $region;
+		}
+		if (Option::get('main', 'update_devsrv', '') === 'Y')
+		{
+			$request["BX_DEVSRV"] = 'Y';
+		}
+		$site = Application::getInstance()->getContext()->getSiteObject();
+		if ($site && $site->getLid() && !$site->getDef())
+		{
+			$request["BX_SITE"] = $site->getLid();
+		}
+
 		$request["BX_HASH"] = Client::signRequest($request);
 
 		$result = $httpClient->query(HttpClient::HTTP_POST, $url, $request);
@@ -63,7 +79,7 @@ abstract class BaseSender
 	{
 		$result = new Result();
 
-		if(!$queryResult)
+		if (!$queryResult)
 		{
 			foreach ($errors as $code => $message)
 			{
@@ -73,13 +89,13 @@ abstract class BaseSender
 			return $result;
 		}
 
-		if($status != 200)
+		if ($status != 200)
 		{
 			$result->addError(new Error("Server returned " . $status . " code", "WRONG_SERVER_RESPONSE"));
 			return $result;
 		}
 
-		if($response == "")
+		if ($response == "")
 		{
 			$result->addError(new Error("Empty server response", "EMPTY_SERVER_RESPONSE"));
 			return $result;
@@ -95,14 +111,14 @@ abstract class BaseSender
 			return $result;
 		}
 
-		if($parsedResponse["status"] === "error")
+		if ($parsedResponse["status"] === "error")
 		{
 			foreach ($parsedResponse["errors"] as $error)
 			{
 				$result->addError(new Error($error["message"], $error["code"], $error["customData"]));
 			}
 		}
-		else if(is_array($parsedResponse["data"]))
+		elseif (is_array($parsedResponse["data"]))
 		{
 			$result->setData($parsedResponse["data"]);
 		}
@@ -122,5 +138,13 @@ abstract class BaseSender
 		];
 	}
 
-	protected abstract function getServiceUrl(): string;
+	/**
+	 * @return string
+	 */
+	protected function getClientServerName(): string
+	{
+		return Client::getServerName();
+	}
+
+	abstract protected function getServiceUrl(): string;
 }

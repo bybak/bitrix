@@ -108,4 +108,14 @@ class UserBot extends User
 	{
 		return UserType::BOT;
 	}
+
+	public function isHidden(): bool
+	{
+		return $this->getBotData()->isHidden();
+	}
+
+	public function getBotCode(): string
+	{
+		return $this->getBotData()->getCode();
+	}
 }

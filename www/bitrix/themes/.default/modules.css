@@ -7605,8 +7605,17 @@ a.product-unavailable:hover {
 #security_menu_icon {background-image:url(icons/security/mnu_security.gif);}
 #security_page_icon {background-image:url(icons/security/title.gif);}
 
+.otp-popup .otp-description ol {
+    padding-left: 18px;
+    margin: 0;
+}
+
 .otp-popup .otp-description li {
     padding: 4px 0;
+}
+
+.otp-popup .otp-description {
+    margin-bottom: 16px;
 }
 
 .otp-popup .otp-connect .input-type {
@@ -7636,8 +7645,21 @@ a.product-unavailable:hover {
     margin-right: auto;
 }
 
-.otp-connect #connect-by-qr .input-wrapper {
+.otp-connect .connect-by-qr .input-wrapper {
     width: 220px;
+}
+
+.qr-code {
+    margin-top: 8px;
+    margin-left: 8px;
+}
+
+.otp-flex {
+    display: flex;
+}
+
+.otp-qr-column {
+    margin-right: 16px;
 }
 
 .otp-connect #connect-by-manual-input .input-wrapper {
@@ -7649,13 +7671,7 @@ a.product-unavailable:hover {
     line-height: 25px;
 }
 
-.otp-popup .error-wrapper {
-    text-align: center;
-    margin-bottom: 10px;
-    min-height: 20px;
-}
-
-.otp-popup .error-wrapper div {
+.otp-error-wrapper {
     color: red;
 }
 
@@ -7689,6 +7705,19 @@ a.product-unavailable:hover {
     cursor: pointer;
     text-decoration: underline;
 }
+
+.otp-loader {
+    margin-top: 24px;
+    display: flex;
+    align-items: center;
+}
+
+.otp-icon-loader {
+    width: 30px;
+    height: 30px;
+    margin-right: 8px;
+}
+
 .adm-workarea-sender {
     padding: 6px 20px 0 20px;
 }

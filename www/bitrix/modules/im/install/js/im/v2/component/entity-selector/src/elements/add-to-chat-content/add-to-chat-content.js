@@ -1,20 +1,16 @@
-import { EventEmitter } from 'main.core.events';
 import { TagSelector } from 'ui.entity-selector';
 
+import { Analytics } from 'im.v2.lib.analytics';
 import { ChatType, EventType, UserType } from 'im.v2.const';
-import { ChatSearch } from 'im.v2.component.search.chat-search';
-import { Button as MessengerButton, ButtonSize, ButtonColor } from 'im.v2.component.elements';
+import { AddToChatSearch } from 'im.v2.component.search';
+import { ChatButton, ButtonSize, ButtonColor } from 'im.v2.component.elements.button';
 import { ChannelManager } from 'im.v2.lib.channel';
 
 import './add-to-chat-content.css';
 
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelChat, ImModelUser } from 'im.v2.model';
-
-const searchConfig = Object.freeze({
-	chats: false,
-	users: true,
-});
 
 const SEARCH_ENTITY_ID = 'user';
 const DEFAULT_CONTAINER_HEIGHT = 600;
@@ -22,7 +18,7 @@ const DEFAULT_CONTAINER_HEIGHT = 600;
 // @vue/component
 export const AddToChatContent = {
 	name: 'AddToChatContent',
-	components: { ChatSearch, MessengerButton },
+	components: { AddToChatSearch, ChatButton },
 	props: {
 		dialogId: {
 			type: String,
@@ -37,7 +33,7 @@ export const AddToChatContent = {
 			default: DEFAULT_CONTAINER_HEIGHT,
 		},
 	},
-	emits: ['inviteMembers'],
+	emits: ['inviteMembers', 'close'],
 	data(): JsonObject
 	{
 		return {
@@ -50,7 +46,6 @@ export const AddToChatContent = {
 	{
 		ButtonSize: () => ButtonSize,
 		ButtonColor: () => ButtonColor,
-		searchConfig: () => searchConfig,
 		dialog(): ImModelChat
 		{
 			return this.$store.getters['chats/get'](this.dialogId, true);
@@ -91,6 +86,10 @@ export const AddToChatContent = {
 		this.membersSelector.renderTo(this.$refs['tag-selector']);
 		this.membersSelector.focusTextBox();
 	},
+	beforeUnmount()
+	{
+		Analytics.getInstance().userAdd.onClosePopup();
+	},
 	activated()
 	{
 		this.membersSelector.hideAddButton();
@@ -121,7 +120,7 @@ export const AddToChatContent = {
 					},
 					onKeyUp: (event) => {
 						const { event: keyboardEvent } = event.getData();
-						EventEmitter.emit(EventType.search.keyPressed, { keyboardEvent });
+						this.getEmitter().emit(EventType.search.keyPressed, { keyboardEvent });
 					},
 					onBeforeTagRemove: () => {
 						clearTimeout(timeoutId);
@@ -132,7 +131,8 @@ export const AddToChatContent = {
 						this.focusSelector();
 					},
 					onInput: () => {
-						this.searchQuery = this.membersSelector.getTextBoxValue();
+						Analytics.getInstance().userAdd.onStartSearch({ dialogId: this.dialogId });
+						this.searchQuery = this.membersSelector.getTextBoxValue().trim().toLowerCase();
 					},
 					onBlur: () => {
 						const inputText = this.membersSelector.getTextBoxValue();
@@ -201,6 +201,10 @@ export const AddToChatContent = {
 			const members = [...this.selectedItems];
 			this.$emit('inviteMembers', { members, showHistory: this.showHistory });
 		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
+		},
 		loc(key: string): string
 		{
 			return this.$Bitrix.Loc.getMessage(key);
@@ -216,18 +220,15 @@ export const AddToChatContent = {
 				</label>
 			</div>
 			<div class="bx-im-entity-selector-add-to-chat__search-result-container">
-				<ChatSearch
-					:searchMode="true"
-					:searchQuery="searchQuery"
-					:selectMode="true"
-					:searchConfig="searchConfig"
+				<AddToChatSearch
+					:query="searchQuery"
+					:dialogId="dialogId"
 					:selectedItems="[...selectedItems]"
-					:showMyNotes="false"
 					@clickItem="onSelectItem"
 				/>
 			</div>
 			<div class="bx-im-entity-selector-add-to-chat__buttons">
-				<MessengerButton
+				<ChatButton
 					:size="ButtonSize.L"
 					:color="ButtonColor.Primary"
 					:isRounded="true"
@@ -236,7 +237,7 @@ export const AddToChatContent = {
 					:isDisabled="selectedItems.size === 0"
 					@click="onInviteClick"
 				/>
-				<MessengerButton
+				<ChatButton
 					:size="ButtonSize.L"
 					:color="ButtonColor.LightBorder"
 					:isRounded="true"

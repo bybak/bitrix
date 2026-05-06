@@ -6,6 +6,7 @@ use Bitrix\Im\V2\Chat;
 use Bitrix\Im\V2\Chat\InputAction\Type;
 use Bitrix\Im\V2\Common\ContextCustomer;
 use Bitrix\Im\V2\Pull\EventType;
+use Bitrix\Main\ArgumentException;
 
 class InputActionNotify extends BaseChatEvent
 {
@@ -15,6 +16,10 @@ class InputActionNotify extends BaseChatEvent
 	protected ?string $customUserName = null;
 	protected Type $actionType;
 	protected int $expiry = 60;
+	protected ?string $statusMessageCode = null;
+	protected ?int $duration = null;
+	private const MIN_DURATION = 1;
+	private const MAX_DURATION = 600;
 
 	public function __construct(Chat $chat, Type $actionType)
 	{
@@ -37,6 +42,34 @@ class InputActionNotify extends BaseChatEvent
 		return $this;
 	}
 
+	public function setStatusMessageCode(?string $statusMessageCode): self
+	{
+		$this->statusMessageCode = $statusMessageCode;
+
+		return $this;
+	}
+
+	public function setDuration(?int $duration): self
+	{
+		if ($duration === null)
+		{
+			return $this;
+		}
+
+		if ($duration < self::MIN_DURATION)
+		{
+			$duration = self::MIN_DURATION;
+		}
+		elseif ($duration > self::MAX_DURATION)
+		{
+			$duration = self::MAX_DURATION;
+		}
+
+		$this->duration = $duration;
+
+		return $this;
+	}
+
 	protected function getBasePullParamsInternal(): array
 	{
 		return [
@@ -45,6 +78,8 @@ class InputActionNotify extends BaseChatEvent
 			'userName' => $this->customUserName ?? $this->getContext()->getUser()->getName(),
 			'userFirstName' => $this->customUserName ?? $this->getContext()->getUser()->getFirstName(),
 			'type' => $this->actionType->value,
+			'statusMessageCode' => $this->statusMessageCode,
+			'duration' => $this->getDurationInMilliseconds(),
 		];
 	}
 
@@ -53,8 +88,18 @@ class InputActionNotify extends BaseChatEvent
 		return [$this->getContext()->getUserId()];
 	}
 
-	protected function getBaseDialogId(): string
+	public function getDurationInMilliseconds(): ?int
 	{
-		return 'chat' . $this->chat->getId();
+		return $this->duration !== null ? $this->duration * 1000 : null;
+	}
+
+	protected function getRecipients(): array
+	{
+		return $this->chat->getRelations()->filterActive()->getUserIds();
+	}
+
+	public function shouldSendToOnlySpecificRecipients(): bool
+	{
+		return false;
 	}
 }

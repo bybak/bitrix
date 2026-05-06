@@ -460,6 +460,7 @@ this.BX.UI = this.BX.UI || {};
 	var _errors = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("errors");
 	var _progress = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("progress");
 	var _customData = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("customData");
+	var _viewerAttrs = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("viewerAttrs");
 	var _uploadController = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("uploadController");
 	var _loadController = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("loadController");
 	var _removeController = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("removeController");
@@ -563,6 +564,10 @@ this.BX.UI = this.BX.UI || {};
 	    Object.defineProperty(this, _customData, {
 	      writable: true,
 	      value: Object.create(null)
+	    });
+	    Object.defineProperty(this, _viewerAttrs, {
+	      writable: true,
+	      value: null
 	    });
 	    Object.defineProperty(this, _uploadController, {
 	      writable: true,
@@ -910,6 +915,9 @@ this.BX.UI = this.BX.UI || {};
 	  isUploadFailed() {
 	    return this.getStatus() === FileStatus.UPLOAD_FAILED;
 	  }
+	  isInProgress() {
+	    return [FileStatus.LOADING, FileStatus.PENDING, FileStatus.PREPARING, FileStatus.UPLOADING].includes(this.getStatus());
+	  }
 	  getBinary() {
 	    return babelHelpers.classPrivateFieldLooseBase(this, _file)[_file];
 	  }
@@ -933,6 +941,7 @@ this.BX.UI = this.BX.UI || {};
 	      this.setServerPreview(options.serverPreviewUrl, options.serverPreviewWidth, options.serverPreviewHeight);
 	      this.setDownloadUrl(options.downloadUrl);
 	      this.setCustomData(options.customData);
+	      this.setViewerAttrs(options.viewerAttrs);
 	      this.setLoadController(options.loadController);
 	      this.setUploadController(options.uploadController);
 	      this.setRemoveController(options.removeController);
@@ -1229,6 +1238,18 @@ this.BX.UI = this.BX.UI || {};
 	    }
 	    return undefined;
 	  }
+	  setViewerAttrs(viewerAttrs) {
+	    if (main_core.Type.isNull(viewerAttrs) || main_core.Type.isPlainObject(viewerAttrs)) {
+	      babelHelpers.classPrivateFieldLooseBase(this, _viewerAttrs)[_viewerAttrs] = viewerAttrs;
+	      this.emit(FileEvent.STATE_CHANGE, {
+	        property: 'viewerAttrs',
+	        value: viewerAttrs
+	      });
+	    }
+	  }
+	  getViewerAttrs() {
+	    return babelHelpers.classPrivateFieldLooseBase(this, _viewerAttrs)[_viewerAttrs];
+	  }
 	  toJSON() {
 	    return {
 	      id: this.getId(),
@@ -1261,7 +1282,8 @@ this.BX.UI = this.BX.UI || {};
 	      serverPreviewWidth: this.getServerPreviewWidth(),
 	      serverPreviewHeight: this.getServerPreviewHeight(),
 	      downloadUrl: this.getDownloadUrl(),
-	      customData: this.getCustomData()
+	      customData: this.getCustomData(),
+	      viewerAttrs: this.getViewerAttrs()
 	    };
 	  }
 	}
@@ -2954,8 +2976,8 @@ this.BX.UI = this.BX.UI || {};
 	// This function uses in a resize workers.
 	// You cannot import anything from other files and extensions.
 	const createImagePreviewCanvas = (imageSource, newWidth, newHeight) => {
-	  let width = Math.round(newWidth);
-	  let height = Math.round(newHeight);
+	  const width = Math.round(newWidth);
+	  const height = Math.round(newHeight);
 	  const isPageContext = typeof window !== 'undefined' && typeof document !== 'undefined' && typeof parent !== 'undefined';
 	  const createCanvas = (canvasWidth, canvasHeight) => {
 	    if (isPageContext) {
@@ -2972,11 +2994,6 @@ this.BX.UI = this.BX.UI || {};
 	    context.imageSmoothingQuality = 'high';
 	    context.drawImage(imageSource, 0, 0, width, height);
 	    return canvas;
-	  }
-	  if (imageSource.height > imageSource.width) {
-	    width = Math.floor(height * (imageSource.width / imageSource.height));
-	  } else {
-	    height = Math.floor(width * (imageSource.height / imageSource.width));
 	  }
 	  let currentImageWidth = Math.floor(imageSource.width);
 	  let currentImageHeight = Math.floor(imageSource.height);
@@ -3073,8 +3090,8 @@ this.BX.UI = this.BX.UI || {};
 	  */
 
 	  return {
-	    targetWidth: Math.round(width),
-	    targetHeight: Math.round(height),
+	    targetWidth: Math.floor(width),
+	    targetHeight: Math.floor(height),
 	    useOriginalSize: false
 	  };
 	};
@@ -3994,6 +4011,7 @@ this.BX.UI = this.BX.UI || {};
 	var _browsingNodes = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("browsingNodes");
 	var _dropNodes = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("dropNodes");
 	var _pastingNodes = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("pastingNodes");
+	var _destroying = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("destroying");
 	var _setLoadEvents = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("setLoadEvents");
 	var _setUploadEvents = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("setUploadEvents");
 	var _setRemoveEvents = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("setRemoveEvents");
@@ -4199,6 +4217,10 @@ this.BX.UI = this.BX.UI || {};
 	      writable: true,
 	      value: new Set()
 	    });
+	    Object.defineProperty(this, _destroying, {
+	      writable: true,
+	      value: false
+	    });
 	    this.setEventNamespace('BX.UI.Uploader');
 	    babelHelpers.classPrivateFieldLooseBase(this, _onBeforeUploadHandler)[_onBeforeUploadHandler] = babelHelpers.classPrivateFieldLooseBase(this, _handleBeforeUpload)[_handleBeforeUpload].bind(this);
 	    babelHelpers.classPrivateFieldLooseBase(this, _onFileStatusChangeHandler)[_onFileStatusChangeHandler] = babelHelpers.classPrivateFieldLooseBase(this, _handleFileStatusChange)[_handleFileStatusChange].bind(this);
@@ -4373,23 +4395,29 @@ this.BX.UI = this.BX.UI || {};
 	      babelHelpers.classPrivateFieldLooseBase(this, _uploadNext)[_uploadNext]();
 	    }
 	  }
+	  stop() {
+	    if (babelHelpers.classPrivateFieldLooseBase(this, _status$1)[_status$1] !== UploaderStatus.STOPPED) {
+	      babelHelpers.classPrivateFieldLooseBase(this, _status$1)[_status$1] = UploaderStatus.STOPPED;
 
-	  // stop(): void
-	  // {
-	  // 	this.#status = UploaderStatus.STOPPED;
-	  //
-	  // 	this.getFiles().forEach((file: UploaderFile) => {
-	  // 		if (file.isUploading())
-	  // 		{
-	  // 			file.abort();
-	  // 			file.setStatus(FileStatus.PENDING);
-	  // 		}
-	  // 	});
-	  //
-	  // 	this.emit('onStop');
-	  // }
+	      // this.getFiles().forEach((file: UploaderFile) => {
+	      // 	if (file.isUploading())
+	      // 	{
+	      // 		file.abort();
+	      // 		file.setStatus(FileStatus.PENDING);
+	      // 	}
+	      // });
 
+	      this.emit('onStop');
+	    }
+	  }
+	  isDestroyed() {
+	    return false;
+	  }
 	  destroy(options) {
+	    if (babelHelpers.classPrivateFieldLooseBase(this, _destroying)[_destroying]) {
+	      return;
+	    }
+	    babelHelpers.classPrivateFieldLooseBase(this, _destroying)[_destroying] = true;
 	    this.emit(UploaderEvent.DESTROY);
 	    this.unassignBrowseAll();
 	    this.unassignDropzoneAll();
@@ -4406,6 +4434,7 @@ this.BX.UI = this.BX.UI || {};
 	    babelHelpers.classPrivateFieldLooseBase(this, _ignoredFileNames)[_ignoredFileNames] = null;
 	    babelHelpers.classPrivateFieldLooseBase(this, _filters)[_filters] = null;
 	    Object.setPrototypeOf(this, null);
+	    this.isDestroyed = () => true;
 	  }
 	  removeFiles(options) {
 	    this.getFiles().forEach(file => {
@@ -4666,6 +4695,12 @@ this.BX.UI = this.BX.UI || {};
 	  }
 	  getPendingFileCount() {
 	    return babelHelpers.classPrivateFieldLooseBase(this, _files)[_files].filter(file => file.isReadyToUpload()).length;
+	  }
+	  isInProgress() {
+	    if (this.getStatus() === UploaderStatus.STARTED) {
+	      return true;
+	    }
+	    return babelHelpers.classPrivateFieldLooseBase(this, _files)[_files].some(file => file.isInProgress());
 	  }
 	  static getImageExtensions() {
 	    return this.getGlobalOption('imageExtensions', ['jpg', 'bmp', 'jpeg', 'jpe', 'gif', 'png', 'webp']);
@@ -5199,6 +5234,7 @@ this.BX.UI = this.BX.UI || {};
 	exports.AbstractLoadController = AbstractLoadController;
 	exports.AbstractUploadController = AbstractUploadController;
 	exports.AbstractRemoveController = AbstractRemoveController;
+	exports.Filter = Filter;
 	exports.formatFileSize = formatFileSize;
 	exports.getFileExtension = getFileExtension;
 	exports.getFilenameWithoutExtension = getFilenameWithoutExtension;

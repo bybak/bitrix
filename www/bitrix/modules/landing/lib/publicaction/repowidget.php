@@ -61,7 +61,7 @@ class RepoWidget extends Repo
 		// Can set only available fields to manifest. Security!
 		$manifest = [];
 
-		$manifest['block']['type'] = mb_strtolower(Landing\Site\Type::SCOPE_CODE_MAINPAGE);
+		$manifest['block']['type'] = mb_strtolower(Landing\Site\Type::SCOPE_CODE_VIBE);
 		$manifest['block']['subtype'] = self::SUBTYPE_WIDGET;
 		$manifest['block']['subtype_params'] = [
 			'rootNode' => $fields['WIDGET_PARAMS']['rootNode'] ?? null,
@@ -71,135 +71,7 @@ class RepoWidget extends Repo
 			'lang' => $fields['WIDGET_PARAMS']['lang'] ?? null,
 		];
 
-		$manifest = Scope\Mainpage::prepareBlockManifest($manifest);
-	}
-
-	// todo: move to non-rest namespace?
-	/**
-	 * @param int $blockId
-	 * @param array $params
-	 * @return PublicActionResult
-	 */
-	public static function fetchData(int $blockId, array $params = []): PublicActionResult
-	{
-		$result = new PublicActionResult();
-		$result->setResult(false);
-		$error = new Landing\Error;
-
-		$block = new Landing\Block($blockId);
-		if (!$block->getId())
-		{
-			$error->addError(
-				'BLOCK_NOT_FOUND',
-				Loc::getMessage('LANDING_WIDGET_BLOCK_NOT_FOUND')
-			);
-			$result->setError($error);
-
-			return $result;
-		}
-
-		if (!Loader::includeModule('rest'))
-		{
-			$error->addError(
-				'REST_NOT_FOUND',
-				Loc::getMessage('LANDING_WIDGET_REST_NOT_FOUND')
-			);
-			$result->setError($error);
-
-			return $result;
-		}
-
-		// check app
-		$repoId = $block->getRepoId();
-		$app = Landing\Repo::getAppInfo($repoId);
-		if (
-			!$repoId
-			|| empty($app)
-			|| !isset($app['CLIENT_ID'])
-		)
-		{
-			$error->addError(
-				'APP_NOT_FOUND',
-				Loc::getMessage('LANDING_WIDGET_APP_NOT_FOUND')
-			);
-			$result->setError($error);
-
-			return $result;
-		}
-
-		// check subtype
-		$manifest = $block->getManifest();
-		if (
-			!in_array(self::SUBTYPE_WIDGET, (array)$manifest['block']['subtype'], true)
-			|| !is_array($manifest['block']['subtype_params'])
-			|| !isset($manifest['block']['subtype_params']['handler'])
-		)
-		{
-			$error->addError(
-				'HANDLER_NOT_FOUND',
-				Loc::getMessage('LANDING_WIDGET_HANDLER_NOT_FOUND_2')
-			);
-			$result->setError($error);
-
-			return $result;
-		}
-
-		// get auth
-		$auth = Rest\Application::getAuthProvider()->get(
-			$app['CLIENT_ID'],
-			'landing',
-			[],
-			Manager::getUserId()
-		);
-		if (isset($auth['error']))
-		{
-			$error->addError(
-				'APP_AUTH_ERROR__' . $auth['error'],
-				$auth['error_description'] ?? ''
-			);
-			$result->setError($error);
-
-			return $result;
-		}
-		$params['auth'] = $auth;
-
-		// request
-		$url = (string)$manifest['block']['subtype_params']['handler'];
-		$http = new HttpClient();
-		$data = $http->post(
-			$url,
-			$params
-		);
-
-		if ($http->getStatus() !== 200)
-		{
-			$error->addError(
-				'HANDLER_NOT_ALLOW',
-				Loc::getMessage('LANDING_WIDGET_HANDLER_NOT_ALLOW')
-			);
-			$result->setError($error);
-
-			return $result;
-		}
-
-		$type = empty($params) ? 'fetch' : 'fetch_params';
-		UsageStatTable::logLandingWidget($app['CLIENT_ID'], $type);
-		UsageStatTable::finalize();
-
-		if (isset($data['error']))
-		{
-			$error->addError(
-				$data['error'],
-				$data['error_description'] ?? ''
-			);
-			$result->setError($error);
-
-			return $result;
-		}
-
-		$result->setResult($data);
-
-		return $result;
+		$manifest = Scope\Vibe::prepareBlockManifest($manifest);
 	}
 
 	/**
@@ -310,7 +182,7 @@ class RepoWidget extends Repo
 				$listAll = array_filter($listAll, function ($item) {
 					$isType = isset($item['MANIFEST']['block']['type'])
 						&& in_array(
-							mb_strtolower(Landing\Site\Type::SCOPE_CODE_MAINPAGE),
+							mb_strtolower(Landing\Site\Type::SCOPE_CODE_VIBE),
 							(array)$item['MANIFEST']['block']['type'],
 							true
 						)

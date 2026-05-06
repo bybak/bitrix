@@ -4,22 +4,26 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 	die();
 }
 
-use \Bitrix\Landing\Folder;
-use \Bitrix\Landing\Manager;
-use \Bitrix\Landing\Site;
-use \Bitrix\Landing\Landing;
-use \Bitrix\Landing\Site\Type;
-use \Bitrix\Landing\Syspage;
-use \Bitrix\Landing\Hook;
-use \Bitrix\Landing\Rights;
-use \Bitrix\Landing\TemplateRef;
-use \Bitrix\Main\Event;
-use \Bitrix\Main\EventManager;
+use Bitrix\Landing\Copilot;
+use Bitrix\Landing\Folder;
+use Bitrix\Landing\Manager;
+use Bitrix\Landing\Site;
+use Bitrix\Landing\Landing;
+use Bitrix\Landing\Site\Type;
+use Bitrix\Landing\Syspage;
+use Bitrix\Landing\Hook;
+use Bitrix\Landing\Rights;
+use Bitrix\Landing\TemplateRef;
+use Bitrix\Landing\Source\Selector;
+use Bitrix\Landing\PublicAction\Demos;
+use Bitrix\Landing\Metrika;
+use Bitrix\Landing\Vibe\Vibe;
+use Bitrix\Main\Event;
+use Bitrix\Main\EventManager;
 use Bitrix\Main\Loader;
-use \Bitrix\Main\ModuleManager;
-use \Bitrix\Landing\Source\Selector;
-use \Bitrix\Landing\PublicAction\Demos;
+use Bitrix\Main\ModuleManager;
 use Bitrix\Intranet;
+
 
 \CBitrixComponent::includeComponentClass('bitrix:landing.base');
 
@@ -220,7 +224,11 @@ class LandingViewComponent extends LandingBaseComponent
 			'helpCodes' => [
 				'form_general' => \Bitrix\Landing\Help::getHelpData('FORM_GENERAL', 'ru'),
 				'widget_general' => \Bitrix\Landing\Help::getHelpData('WIDGET_GENERAL', 'ru')
-			]
+			],
+			'feedback' => [
+				'forms' => (new Bitrix\UI\Form\FormProvider)->getPartnerFormList(),
+				'portalUri' => (new Bitrix\UI\Form\UrlProvider)->getPartnerPortalUrl()
+			],
 		];
 	}
 
@@ -301,7 +309,12 @@ class LandingViewComponent extends LandingBaseComponent
 				));
 				\localRedirect($uriSave->getUri(), true);
 			}
-			if ($landing->publication())
+			$metrikaParams = new Metrika\FieldsDto(
+				type: Metrika\Types::template,
+				subSection: 'from_editor',
+				element: 'manual',
+			);
+			if ($landing->publication(null, $metrikaParams))
 			{
 				$publicIds[$id] = true;
 				// current landing is not area
@@ -655,6 +668,7 @@ class LandingViewComponent extends LandingBaseComponent
 				$options['allow_svg'] = Manager::getOption('allow_svg_content') === 'Y';
 				$options['ai_text_available'] = $arResult['AI_TEXT_AVAILABLE'];
 				$options['copilot_available'] = $arResult['COPILOT_AVAILABLE'];
+				$options['copilot_name'] = Copilot\Services\NameService::getCopilotName();
 				$options['ai_text_active'] = $arResult['AI_TEXT_ACTIVE'];
 				$options['ai_image_available'] = $arResult['AI_IMAGE_AVAILABLE'];
 				$options['ai_image_active'] = $arResult['AI_IMAGE_ACTIVE'];
@@ -1055,6 +1069,18 @@ class LandingViewComponent extends LandingBaseComponent
 				'IFRAME' => 'Y'
 			]);
 		}
+		if (isset($_GET['site_generated']))
+		{
+			$urls['landingFrame']->addParams([
+				 'site_generated' => $_GET['site_generated']
+			]);
+		}
+		if (isset($_GET['newLanding']) && $_GET['newLanding'] === 'Y')
+		{
+			$urls['landingFrame']->addParams([
+				'newLanding' => 'Y'
+			]);
+		}
 
 		return $urls;
 	}
@@ -1151,6 +1177,7 @@ class LandingViewComponent extends LandingBaseComponent
 
 			// ai
 			$this->arResult['AI_TEXT_AVAILABLE'] = \Bitrix\Landing\Connector\Ai::isTextAvailable();
+			$this->arResult['AI_CHAT_ID'] = (new Copilot\Connector\Chat\Chat())->getChatForSite($this->arParams['SITE_ID']);
 			$this->arResult['COPILOT_AVAILABLE'] = \Bitrix\Landing\Connector\Ai::isCopilotAvailable();
 			$this->arResult['AI_TEXT_ACTIVE'] = \Bitrix\Landing\Connector\Ai::isTextActive();
 			$this->arResult['AI_IMAGE_AVAILABLE'] = \Bitrix\Landing\Connector\Ai::isImageAvailable();
@@ -1164,16 +1191,39 @@ class LandingViewComponent extends LandingBaseComponent
 			                                      || ($this->arParams['DRAFT_MODE'] === 'Y')
 			                                      || $landing->fakePublication();
 
+			if (Loader::includeModule('ai'))
+			{
+				// force chatbot registration
+				/**
+				 * @var Copilot\Connector\Chat\ChangeBlockChatBot $chatbot
+				 */
+				$chatbot = Copilot\Connector\Chat\Chat::getChangeBlockChatBot();
+				if (
+					$chatbot
+					&& isset($this->arResult['AI_CHAT_ID'])
+					&& $this->arResult['AI_CHAT_ID'] > 0
+				)
+				{
+					$chatbot->sendWelcomeMessage(
+						new Copilot\Connector\Chat\ChatBotMessageDto($this->arResult['AI_CHAT_ID'])
+					);
+					$chatbot->applyToChat($this->arResult['AI_CHAT_ID']);
+				}
+			}
+
 			if (
-				Loader::includeModule('intranet')
-				&& $this->arParams['TYPE'] === Site\Type::SCOPE_CODE_MAINPAGE
+				$this->arParams['TYPE'] === Site\Type::SCOPE_CODE_VIBE
+				&& Loader::includeModule('intranet')
 			)
 			{
-				$publisher = new Intranet\MainPage\Publisher();
-				$this->arResult['MAINPAGE_IS_PUBLIC'] =	$publisher->isPublished();
-				$this->arResult['AI_TEXT_AVAILABLE'] = false;
-				$this->arResult['COPILOT_AVAILABLE'] = false;
-				$this->arResult['AI_IMAGE_AVAILABLE'] = false;
+				$vibe = Vibe::createBySiteId((int)$this->arParams['SITE_ID']);
+				if ($vibe)
+				{
+					$this->arResult['VIBE'] = $vibe;
+					$this->arResult['AI_TEXT_AVAILABLE'] = false;
+					$this->arResult['COPILOT_AVAILABLE'] = false;
+					$this->arResult['AI_IMAGE_AVAILABLE'] = false;
+				}
 			}
 
 			if (
@@ -1298,24 +1348,49 @@ class LandingViewComponent extends LandingBaseComponent
 				);
 
 				// params for analytics
+				if ($this->arResult['SPECIAL_TYPE'] === Site\Type::PSEUDO_SCOPE_CODE_FORMS)
+				{
+					$tools =Metrika\Tools::CrmForms;
+					$category = Metrika\Categories::CrmForms;
+				}
+				else
+				{
+					$tools = Metrika\Tools::getBySiteType($this->arParams['TYPE']);
+					$category = Metrika\Categories::getBySiteType($this->arParams['TYPE']);
+				}
+				$metrika = new Metrika\Metrika(
+					$category,
+					Metrika\Events::openMarket,
+					$tools,
+				);
+				$metrikaStyle = clone $metrika;
+
 				$urlAddParams = [];
 				if ($this->arResult['SPECIAL_TYPE'])
 				{
 					$urlAddParams['specType'] = $this->arResult['SPECIAL_TYPE'];
 				}
-				$urlAddParams['context_section'] = 'page_view';
-				$urlAddParams['context_element'] = 'create_page_link';
-				$this->arParams['PAGE_URL_LANDING_ADD'] = $this->getUrlAdd(false, $urlAddParams);
+				$urlAddParamsStyle = $urlAddParams;
 
-				$urlAddParams['replaceLid'] = $this->arParams['LANDING_ID'];
-				$urlAddParams['context_section'] = 'block_style';
-				$urlAddParams['context_element'] = 'create_template_button';
-				$this->arParams['PAGE_URL_LANDING_REPLACE_FROM_STYLE'] = $this->getUrlAdd(
+				$this->arParams['PAGE_URL_LANDING_ADD'] =
+					$metrika
+						->setSection(Metrika\Sections::page)
+						->setSubSection('from_pages_navigator')
+						->parametrizeUri($this->getUrlAdd(false, $urlAddParams))
+				;
+
+				$urlAddParamsStyle['replaceLid'] = $this->arParams['LANDING_ID'];
+				$urlAddStyle = $this->getUrlAdd(
 					false,
-					$urlAddParams,
-					Manager::getMarketCollectionId('form_minisite')
+					$urlAddParamsStyle,
+					Manager::getMarketCollectionCode('form_minisite')
 				);
-
+				$this->arParams['PAGE_URL_LANDING_REPLACE_FROM_STYLE'] =
+					$metrikaStyle
+						->setSection(Metrika\Sections::blockStyle)
+						->setElement('create_template_button')
+						->parametrizeUri($urlAddStyle)
+				;
 
 				if (Loader::includeModule('bitrix24'))
 				{

@@ -14,10 +14,14 @@ use Bitrix\Mail\Internals;
 use Bitrix\Mail\Helper\MessageAccess as AccessHelper;
 use Bitrix\Main\Config\Option;
 use Bitrix\Main\Config\Ini;
+use Bitrix\Mail\Helper\Message\Parsers;
+use Bitrix\Main\Web\Uri;
 
 class Message
 {
 	// entity types with special access rules (group tokens)
+	public const ENTITY_TYPE_USER_MESSAGE = MessageAccessTable::ENTITY_TYPE_USER_MESSAGE;
+	public const ENTITY_TYPE_CHAT_MESSAGE = MessageAccessTable::ENTITY_TYPE_CHAT_MESSAGE;
 	public const ENTITY_TYPE_IM_CHAT = MessageAccessTable::ENTITY_TYPE_IM_CHAT;
 	public const ENTITY_TYPE_CALENDAR_EVENT = MessageAccessTable::ENTITY_TYPE_CALENDAR_EVENT;
 	private const MAX_FILE_SIZE_MAIL_ATTACHMENT = 20000000;
@@ -266,15 +270,16 @@ class Message
 						);
 					}
 
-					$inlineParams = array_merge(
-						array('__bxacid' => sprintf('n%u', $diskFile->getId())),
-						$urlParams
-					);
-					$message['BODY_HTML'] = preg_replace(
-						sprintf('/("|\')\s*aid:%u\s*\1/i', $item['ID']),
-						sprintf('\1%s\1', $urlManager->getUrlForShowFile($diskFile, $inlineParams)),
-						$message['BODY_HTML']
-					);
+					$fileInfo = $diskFile->getFile();
+
+					if (isset($fileInfo['SRC']))
+					{
+						$message['BODY_HTML'] = Parsers\ReplacingImagesLinks::parse(
+							(string)$message['BODY_HTML'],
+							$item['ID'],
+							(new Uri($fileInfo['SRC']))->toAbsolute()->getLocator(),
+						);
+					}
 				}
 				else
 				{
@@ -303,11 +308,14 @@ class Message
 							}
 						}
 
-						$message['BODY_HTML'] = preg_replace(
-							sprintf('/("|\')\s*aid:%u\s*\1/i', $item['ID']),
-							sprintf('\1%s\1', $file['SRC']),
-							$message['BODY_HTML']
-						);
+						if (isset($file['SRC']))
+						{
+							$message['BODY_HTML'] = Parsers\ReplacingImagesLinks::parse(
+								(string)$message['BODY_HTML'],
+								$item['ID'],
+								(new Uri($file['SRC']))->toAbsolute()->getLocator(),
+							);
+						}
 					}
 					else
 					{
@@ -619,13 +627,49 @@ class Message
 		$openingTag = $matches['openingTag'];
 		$closingTag = $matches['closingTag'];
 		$styles = $matches['styles'];
+
+		// neutralize viewport-dependent units to prevent infinite iframe resize loop
+		$styles = preg_replace('/(\d+(?:\.\d+)?)\s*(vh|vw|vmin|vmax|svh|svw|lvh|lvw|dvh|dvw)\b/i', '0px', $styles);
+
+		// remove all rules that do not start with a class selector
+		$styles = preg_replace('/(?:^|})\s*(?!(\.|@|\s*#mail-message-wrapper\s*\.))\s*[^@}{]+\s*\{[^}]*}/is', '', $styles);
+
 		$bodySelectorPattern = '#(.*?)(^|\s)(body)\s*((?:\{)(?:.*?)(?:\}))(.*)#msi';
-		$bodySelector = preg_replace($bodySelectorPattern, '$2'.$wrapper.'$4', $styles);
+		$bodySelector = preg_replace($bodySelectorPattern, '$2' . $wrapper . '$4', $styles);
 		//cut off body selector
 		$styles = preg_replace($bodySelectorPattern, '$1$5', $styles);
 		$styles = preg_replace('#(^|\s)(body)\s*({)#iU', '$1mail-msg-view-body$3', $styles);
 		$styles = preg_replace_callback('%(?:^|\s)(?<head>[@#\.]?[a-z].*?\{)(?<body>.*?)(?<closure>\})%msi', 'static::isolateSelector', $styles);
 		return  $openingTag.$bodySelector.$styles.$closingTag;
+	}
+
+	public static function isolateInlineStyles($matches): string
+	{
+		$styles = $matches['styles'];
+		$quote = $matches['quote'];
+
+		//remove position:fixed
+		$styles = preg_replace('/position\s*:\s*fixed\s*;?/i', '', $styles);
+
+		// neutralize viewport-dependent units to prevent infinite iframe resize loop
+		$styles = preg_replace('/(\d+(?:\.\d+)?)\s*(vh|vw|vmin|vmax|svh|svw|lvh|lvw|dvh|dvw)\b/i', '0px', $styles);
+
+		$styles = preg_replace_callback(
+			'/z-index\s*:\s*(?<value>\d+)\s*;?/i',
+			function ($matches)
+			{
+				//cap z-index at 1000
+				if ((int)$matches['value'] > 1000)
+				{
+					return 'z-index: 1000;';
+				}
+
+				return $matches[0];
+			},
+			$styles
+		);
+
+		return 'style=' . $quote . $styles . $quote;
 	}
 
 	public static function isolateStylesInTheBody($html)
@@ -662,6 +706,12 @@ class Message
 		$messageHtml = preg_replace('%@font-face\b[^{]*({(?>[^{}]++|(?1))*})%mi', '', $messageHtml);
 
 		$messageHtml = static::isolateStylesInTheBody($messageHtml);
+
+		$messageHtml = preg_replace_callback(
+			'/style\s*=\s*(?<quote>["\'])(?<styles>[^"\']*)\k<quote>/i',
+			'static::isolateInlineStyles',
+			$messageHtml
+		);
 
 		return preg_replace_callback('|(?<openingTag><style[^>]*>)(?<styles>.*)(?<closingTag><\/style>)|isU', 'static::isolateStylesInTheTag', $messageHtml);
 	}
@@ -753,6 +803,7 @@ class Message
 		switch ($entityType)
 		{
 			case Message::ENTITY_TYPE_IM_CHAT:
+			case Message::ENTITY_TYPE_CHAT_MESSAGE:
 				return sprintf('chat%u', $entityId);
 			case Message::ENTITY_TYPE_CALENDAR_EVENT:
 				return sprintf('event'.'%u', $entityId);
@@ -762,6 +813,18 @@ class Message
 		}
 	}
 
+	/**
+	 * @param int $mailboxId
+	 * @param int $userId
+	 *
+	 * @return bool
+	 *
+	 * @use MailboxAccess::isMailboxOwner and
+	 * @use MailboxAccess::isMailboxSharedWithUser
+	 * @deprecated
+	 *
+	 * checked if the user has access to the mailbox by using getTheOwnersMailboxes and getTheSharedMailboxes from MailboxTable
+	 */
 	public static function isMailboxOwner(int $mailboxId, int $userId): bool
 	{
 		return (bool)MailboxTable::getUserMailbox($mailboxId, $userId);
@@ -772,6 +835,7 @@ class Message
 		switch ($entityType)
 		{
 			case Message::ENTITY_TYPE_IM_CHAT:
+			case Message::ENTITY_TYPE_CHAT_MESSAGE:
 				return AccessHelper::checkAccessForChat($entityId, $userId);
 			case Message::ENTITY_TYPE_CALENDAR_EVENT:
 				return AccessHelper::checkAccessForCalendarEvent($entityId, $userId);
@@ -822,11 +886,15 @@ class Message
 	 */
 	public static function replaceBodyInlineImgContentId(string $body, string $contentId, int $attachmentId): string
 	{
-		return (string)preg_replace(
+		Ini::adjustPcreBacktrackLimit(strlen($body)*2);
+
+		$replacedBody = preg_replace(
 			sprintf('/<img([^>]+)src\s*=\s*(\'|\")?\s*((?:http:\/\/)?cid:%s)\s*\2([^>]*)>/is', preg_quote($contentId, '/')),
 			sprintf('<img\1src="aid:%u"\4>', $attachmentId),
 			$body
 		);
+
+		return $replacedBody ?? $body;
 	}
 
 	public static function isolateBase64Files(string $text): string
@@ -853,6 +921,5 @@ class Message
 		])->fetchAll();
 
 		return ICalMailManager::hasICalAttachments($attachments);
-
 	}
 }

@@ -5,11 +5,18 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 	die();
 }
 
-use Bitrix\Bizproc\Api\Request\WorkflowService\PrepareParametersRequest;
+use Bitrix\Bizproc\Api\Request\WorkflowTemplateService\PrepareParametersRequest;
 use Bitrix\Bizproc\Api\Request\WorkflowService\StartWorkflowRequest;
 use Bitrix\Bizproc\Api\Request\WorkflowStateService\GetAverageWorkflowDurationRequest;
 use Bitrix\Bizproc\Api\Service\WorkflowService;
+use Bitrix\Bizproc\Api\Service\WorkflowTemplateService;
 use Bitrix\Bizproc\Api\Service\WorkflowStateService;
+use Bitrix\Bizproc\Public\Service\Workflow\StarterService;
+use Bitrix\Bizproc\Starter\Dto\ContextDto;
+use Bitrix\Bizproc\Starter\Dto\DocumentDto;
+use Bitrix\Bizproc\Starter\Dto\EventDto;
+use Bitrix\Bizproc\Starter\Enum\Face;
+use Bitrix\Bizproc\Starter\Starter;
 use Bitrix\Main;
 use Bitrix\Main\Localization\Loc;
 
@@ -37,6 +44,8 @@ class BizprocWorkflowStart extends \CBitrixComponent
 				? (int)$arParams['AUTO_EXECUTE_TYPE']
 				: null
 		;
+
+		$arParams['ACTION'] = $arParams['ACTION'] ?? null;
 
 		$arParams['SET_TITLE'] = (($arParams['SET_TITLE'] ?? 'Y') === 'N' ? 'N' : 'Y');
 
@@ -86,7 +95,19 @@ class BizprocWorkflowStart extends \CBitrixComponent
 
 			if ($this->isSingleStart())
 			{
+				if ($this->arResult['isConstantsTuned'] && !$this->arResult['hasParameters'])
+				{
+					$result = $this->startWorkflow($this->arResult['template']['ID']);
+
+					$this->arResult['errors'] = $this->prepareErrorsForJs($result['errors']);
+					$this->arResult['workflowId'] = $result['workflowId'];
+				}
+
 				$this->includeComponentTemplate('single_start');
+			}
+			else if($this->isConstantAction())
+			{
+				$this->includeComponentTemplate('edit_constants');
 			}
 			else
 			{
@@ -178,7 +199,9 @@ class BizprocWorkflowStart extends \CBitrixComponent
 			}
 
 			$templateId = (int)$this->arParams['TEMPLATE_ID'];
-			$template = $this->getTemplateById($templateId);
+			$triggerType = $this->arParams['TRIGGER_TYPE'] ?? null;
+
+			$template = $this->getTemplateById($templateId, $triggerType);
 			if (!$template)
 			{
 				$this->arResult = ['errors' => [$this->getErrorByCode('template_not_found')]];
@@ -200,10 +223,12 @@ class BizprocWorkflowStart extends \CBitrixComponent
 			$this->arResult = [
 				'template' => $template,
 				'isConstantsTuned' => $isConstantsTuned,
+				'hasParameters' =>  is_array($template['PARAMETERS'] ?? null) && $template['PARAMETERS'],
 				'duration' => $averageDuration->isSuccess() ? $averageDuration->getRoundedAverageDuration() : null,
 				'documentType' => $this->getComplexDocumentType(),
 				'signedDocumentType' => CBPDocument::signDocumentType($this->getComplexDocumentType()),
 				'signedDocumentId' => CBPDocument::signDocumentType($this->getComplexDocumentId()),
+				'triggerType' => $triggerType,
 			];
 
 			return;
@@ -243,20 +268,62 @@ class BizprocWorkflowStart extends \CBitrixComponent
 			return;
 		}
 
+		if ($this->isConstantAction())
+		{
+			if (!$this->canUserCreateWorkflowOnDocumentType())
+			{
+				$this->arResult = ['errors' => [$this->getErrorByCode('edit_constants_access_denied')]];
+
+				return;
+			}
+
+			$templateId = (int)$this->arParams['TEMPLATE_ID'];
+			$triggerType = $this->arParams['TRIGGER_TYPE'] ?? null;
+
+			$template = $this->getTemplateById($templateId, $triggerType);
+			if (!$template)
+			{
+				$this->arResult = ['errors' => [$this->getErrorByCode('template_not_found')]];
+
+				return;
+			}
+
+			if (empty($template['CONSTANTS']))
+			{
+				$this->arResult = ['errors' => [$this->getErrorByCode('constants_not_found')]];
+
+				return;
+			}
+
+			$this->arResult = [
+				'template' => $template,
+				'documentType' => $this->getComplexDocumentType(),
+				'signedDocumentType' => CBPDocument::signDocumentType($this->getComplexDocumentType()),
+			];
+
+			return;
+		}
+
 		$this->arResult = ['errors' => [$this->getErrorByCode('access_denied')]];
 	}
 
-	private function getTemplateById(int $templateId): bool|array
+	private function getTemplateById(int $templateId, ?string $triggerType = null): bool|array
 	{
+		$filter = [
+			'ID' => $templateId,
+			'ACTIVE' => 'Y',
+			'IS_SYSTEM' => 'N',
+			'<AUTO_EXECUTE' => CBPDocumentEventType::Automation,
+		];
+
+		if (!$triggerType)
+		{
+			$filter['DOCUMENT_TYPE'] = $this->getComplexDocumentType();
+		}
+
 		return CBPWorkflowTemplateLoader::getList(
 			[],
-			[
-				'ID' => $templateId,
-				'DOCUMENT_TYPE' => $this->getComplexDocumentType(),
-				'ACTIVE' => 'Y',
-				'IS_SYSTEN' => 'N',
-				'<AUTO_EXECUTE' => CBPDocumentEventType::Automation,
-			],
+			$filter,
 			false,
 			false,
 			['ID', 'NAME', 'DESCRIPTION', 'PARAMETERS', 'CONSTANTS'],
@@ -323,7 +390,7 @@ class BizprocWorkflowStart extends \CBitrixComponent
 		$request = \Bitrix\Main\Application::getInstance()->getContext()->getRequest();
 
 		$response =
-			(new WorkflowService())
+			(new WorkflowTemplateService())
 				->prepareParameters(
 					new PrepareParametersRequest(
 						templateParameters: $templateParameters,
@@ -405,41 +472,63 @@ class BizprocWorkflowStart extends \CBitrixComponent
 		return $result;
 	}
 
-	private function startWorkflow(int $templateId, array $workflowParameters): array
+	private function startWorkflow(int $templateId, array $workflowParameters = []): array
 	{
-		$currentUserId = $this->getCurrentUserId();
-
-		$response =
-			(new WorkflowService())
-				->startWorkflow(
-					new StartWorkflowRequest(
-						userId: $currentUserId,
-						targetUserId: $currentUserId,
-						templateId: $templateId,
-						complexDocumentId: $this->getComplexDocumentId(),
-						parameters: array_merge(
-							$workflowParameters,
-							[
-								CBPDocument::PARAM_TAGRET_USER => 'user_' . $currentUserId,
-								CBPDocument::PARAM_DOCUMENT_EVENT_TYPE => CBPDocumentEventType::Manual,
-							],
-						),
-						startDuration: 0, // todo start duration
-						checkAccess: false, // checked earlier
-					)
-				)
-		;
-
+		$starter = $this->getStarter($templateId, $workflowParameters);
+		$starter->setValidateParameters(false);
+		$result = $starter->start();
 		$errors = [];
-		if (!$response->isSuccess())
+
+		if (!$result->isSuccess())
 		{
-			foreach ($response->getErrors() as $error)
+			foreach ($result->getErrors() as $error)
 			{
 				$errors[] = $this->createStartWorkflowError($error->jsonSerialize());
 			}
 		}
 
-		return ['errors' => $errors, 'workflowId' => $response->getWorkflowId()];
+		$workflowIds = $result->getWorkflowIds();
+
+		return ['errors' => $errors, 'workflowId' => $workflowIds[0] ?? null];
+	}
+
+	private function getStarter(int $templateId, array $workflowParameters): Starter
+	{
+		$currentUserId = $this->getCurrentUserId();
+		$triggerType = $this->arParams['TRIGGER_TYPE'] ?? null;
+
+		$context = new ContextDto('bizproc', Face::WEB);
+		$documentId = $this->getComplexDocumentId();
+		$documentType = $this->getComplexDocumentType();
+
+		if ($triggerType)
+		{
+			return (new StarterService())->getStarterForManualEventScenario(
+				templateIds: [$templateId],
+				context: $context,
+				events: [
+					new EventDto(
+						code: $triggerType,
+						documents: [new DocumentDto($documentId, $documentType)],
+						eventType: CBPDocumentEventType::Manual,
+						userId: $currentUserId,
+					),
+				],
+				userId: $currentUserId,
+				parameters: $workflowParameters,
+			);
+		}
+
+		return (new StarterService())->getStarterForManualDocumentScenario(
+			templateIds: [$templateId],
+			context: $context,
+			document: new DocumentDto(
+				complexDocumentId: $documentId,
+				complexDocumentType: $documentType,
+			),
+			userId: $currentUserId,
+			parameters: $workflowParameters,
+		);
 	}
 
 	private function restoreWorkflowStartParameters(array $templateParameters): array
@@ -472,7 +561,12 @@ class BizprocWorkflowStart extends \CBitrixComponent
 
 	private function isSingleStart(): bool
 	{
-		return $this->arParams['TEMPLATE_ID'] > 0;
+		return $this->arParams['TEMPLATE_ID'] > 0 && $this->arParams['ACTION'] === null;
+	}
+
+	private function isConstantAction(): bool
+	{
+		return $this->arParams['TEMPLATE_ID'] > 0 &&  $this->arParams['ACTION'] === 'CHANGE_CONSTANTS';
 	}
 
 	protected function autoStartParametersAction($execType)
@@ -577,7 +671,7 @@ class BizprocWorkflowStart extends \CBitrixComponent
 			$errors[] = $this->getErrorByCode('empty_document_type');
 		}
 
-		if (empty($this->arParams['DOCUMENT_ID']) && $this->arParams['AUTO_EXECUTE_TYPE'] === null)
+		if (empty($this->arParams['DOCUMENT_ID']) && ($this->arParams['AUTO_EXECUTE_TYPE'] === null && $this->arParams['ACTION'] === null))
 		{
 			$errors[] = $this->getErrorByCode('empty_document_id');
 		}
@@ -696,6 +790,8 @@ class BizprocWorkflowStart extends \CBitrixComponent
 			'required_constants' => Loc::getMessage('BPABS_REQUIRED_CONSTANTS'),
 			'empty_autostart_parameters' => Loc::getMessage('BPABS_NO_AUTOSTART_PARAMETERS'),
 			'template_not_found' => Loc::getMessage('BIZPROC_CMP_WORKFLOW_START_TEMPLATE_NOT_FOUND') ?? '',
+			'constants_not_found' => Loc::getMessage('BIZPROC_CMP_WORKFLOW_START_CONSTANTS_NOT_FOUND'),
+			'edit_constants_access_denied' => Loc::getMessage('BIZPROC_CMP_WORKFLOW_START_CONSTANTS_ACCESS_DENIED'),
 			default => '',
 		};
 
@@ -722,6 +818,19 @@ class BizprocWorkflowStart extends \CBitrixComponent
 	private function createError(string $code, string $message): array
 	{
 		return ['id' => $code, 'text' => $message];
+	}
+
+	private function prepareErrorsForJs(array $errors): array
+	{
+		$preparedErrors = [];
+		foreach ($errors as $error)
+		{
+			$preparedErrors[] = [
+				'message' => $error['text'],
+			];
+		}
+
+		return $preparedErrors;
 	}
 
 	private function getCurrentUserId(): int

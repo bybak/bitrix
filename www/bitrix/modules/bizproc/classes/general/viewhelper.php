@@ -1,16 +1,25 @@
 <?php
 
+use Bitrix\Bizproc\Public\Service\Task\UnArchiveTaskService;
+use Bitrix\Bizproc\Internal\Model\TaskArchive\TaskArchiveTable;
+use Bitrix\Bizproc\Integration\ScopeTokenService;
+use Bitrix\Disk\AttachedObject;
 use Bitrix\Main\ArgumentException;
 use Bitrix\Bizproc\Result\Entity\ResultTable;
 use Bitrix\Main\Type\DateTime;
 use Bitrix\Main\Localization\Loc;
+use Bitrix\Main\UI\Viewer\ItemAttributes;
 
 class CBPViewHelper
 {
 	private static $cachedTasks = array();
+	private const COMPLETED_STATUS = 'COMPLETED';
+	private const RUNNING_STATUS = 'RUNNING';
+	private static ScopeTokenService $scopeTokenService;
 
 	public const DESKTOP_CONTEXT = 'desktop';
 	public const MOBILE_CONTEXT = 'mobile';
+	public const TASK_LIMIT = 50;
 
 	public static function renderUserSearch($ID, $searchInputID, $dataInputID, $componentName, $siteID = '', $nameFormat = '', $delay = 0)
 	{
@@ -56,7 +65,7 @@ class CBPViewHelper
 				'SHOW_EXTRANET_USERS' => 'NONE',
 				'POPUP' => 'Y',
 				'SITE_ID' => $siteID,
-				'NAME_TEMPLATE' => $nameFormat
+				'NAME_TEMPLATE' => $nameFormat,
 			),
 			null,
 			array('HIDE_ICONS' => 'Y')
@@ -70,52 +79,153 @@ class CBPViewHelper
 
 		if (!$workflowId)
 		{
-			return ['COMPLETED' => [], 'RUNNING' => []];
+			return [self::COMPLETED_STATUS => [], self::RUNNING_STATUS => []];
 		}
 
 		if (!isset(self::$cachedTasks[$workflowId][$withUsers][$extendUserInfo]))
 		{
-			$tasks = array('COMPLETED' => array(), 'RUNNING' => array());
-			$ids = array();
-			$taskIterator = CBPTaskService::GetList(
-				['ID' => 'DESC'],
-				['WORKFLOW_ID' => $workflowId],
-				false,
-				['nTopCount' => 50],
-				[
-					'ID',
-					'MODIFIED',
-					'NAME',
-					'DESCRIPTION',
-					'PARAMETERS',
-					'STATUS',
-					'IS_INLINE',
-					'ACTIVITY',
-					'ACTIVITY_NAME',
-					'CREATED_DATE',
-					'DELEGATION_TYPE',
-					'OVERDUE_DATE',
-				],
-			);
-			while ($task = $taskIterator->getNext())
+			$tasks = [self::COMPLETED_STATUS => [], self::RUNNING_STATUS => []];
+			$taskData = self::getTasksData($workflowId);
+			foreach ($taskData as $task)
 			{
-				$key = $task['STATUS'] == CBPTaskStatus::Running ? 'RUNNING' : 'COMPLETED';
+				$key = (int)$task['STATUS'] === CBPTaskStatus::Running ? self::RUNNING_STATUS : self::COMPLETED_STATUS;
 				$tasks[$key][] = $task;
-				$ids[] = $task['ID'];
 			}
-			if ($withUsers && sizeof($ids))
+
+			if ($withUsers && $taskData)
 			{
-				$taskUsers = \CBPTaskService::getTaskUsers($ids);
-				self::joinUsersToTasks($tasks['COMPLETED'], $taskUsers, $extendUserInfo);
-				$tasks['RUNNING_ALL_USERS'] = self::joinUsersToTasks($tasks['RUNNING'], $taskUsers, $extendUserInfo);
+				$taskUsers = static::getTaskUsers($taskData);
+				self::joinUsersToTasks($tasks[self::COMPLETED_STATUS], $taskUsers, $extendUserInfo);
+				$tasks['RUNNING_ALL_USERS'] = self::joinUsersToTasks($tasks[self::RUNNING_STATUS], $taskUsers, $extendUserInfo);
 			}
-			$tasks['COMPLETED_CNT'] = sizeof($tasks['COMPLETED']);
-			$tasks['RUNNING_CNT'] = sizeof($tasks['RUNNING']);
+
+			$tasks['COMPLETED_CNT'] = count($tasks[self::COMPLETED_STATUS]);
+			$tasks['RUNNING_CNT'] = count($tasks[self::RUNNING_STATUS]);
 
 			self::$cachedTasks[$workflowId][$withUsers][$extendUserInfo] = $tasks;
 		}
 
 		return self::$cachedTasks[$workflowId][$withUsers][$extendUserInfo];
+	}
+
+	private static function getTasksData(string $workflowId)
+	{
+		$query =
+			TaskArchiveTable::query()
+				->setSelect(['ID', 'TASKS_DATA'])
+				->where('WORKFLOW_ID', $workflowId)
+				->setOrder(['TASKS.TASK_ID' => 'DESC'])
+				->setLimit(50)
+		;
+		$archives = $query->fetchAll();
+
+		if ($archives)
+		{
+			$archives = array_column($archives, 'TASKS_DATA', 'ID');
+
+			return (new UnArchiveTaskService($archives, true))->getTasks(self::TASK_LIMIT, ['ID' => SORT_DESC]);
+		}
+
+		$taskIterator = CBPTaskService::GetList(
+			['ID' => 'DESC'],
+			['WORKFLOW_ID' => $workflowId],
+			false,
+			['nTopCount' => self::TASK_LIMIT],
+			[
+				'ID',
+				'MODIFIED',
+				'NAME',
+				'DESCRIPTION',
+				'PARAMETERS',
+				'STATUS',
+				'IS_INLINE',
+				'ACTIVITY',
+				'ACTIVITY_NAME',
+				'CREATED_DATE',
+				'DELEGATION_TYPE',
+				'OVERDUE_DATE',
+			],
+		);
+
+		$taskData = [];
+		while ($task = $taskIterator->getNext())
+		{
+			$taskData[$task['ID']] = $task;
+		}
+
+		return $taskData;
+	}
+
+	private static function getTaskUsers(array $tasks): array
+	{
+		$taskUsers = [];
+		$toFillTasks = [];
+		$toGetTasksIds = [];
+		foreach ($tasks as $task)
+		{
+			if (!empty($task['USERS']))
+			{
+				foreach ($task['USERS'] as $taskUser)
+				{
+					$taskId = $task['ID'];
+					$toFillTasks[$taskId][] = [
+						'ID' => null,
+						'TASK_ID' => $taskId,
+						...$taskUser,
+					];
+				}
+
+			}
+			else
+			{
+				$toGetTasksIds[] = $task['ID'];
+			}
+		}
+
+		if ($toFillTasks)
+		{
+			$taskUsers = static::fillTaskUsers($toFillTasks);
+		}
+
+		if ($toGetTasksIds)
+		{
+			$taskUsers = CBPTaskService::getTaskUsers($toGetTasksIds) + $taskUsers;
+		}
+
+		return $taskUsers;
+	}
+
+	private static function fillTaskUsers(array $tasks)
+	{
+		$filledTaskUsers = [];
+		$userIds = array_merge(
+			...array_map(
+				static fn(array $task): array => array_column($task, 'USER_ID'),
+				$tasks
+			)
+		);
+
+		$users = \Bitrix\Main\UserTable::wakeUpCollection($userIds);
+		$users->fill([
+			'PERSONAL_PHOTO',
+			'NAME',
+			'LAST_NAME',
+			'SECOND_NAME',
+			'LOGIN',
+			'TITLE',
+		]);
+		foreach ($tasks as $task)
+		{
+			foreach ($task as $taskUser)
+			{
+				$user = $users->getByPrimary($taskUser['USER_ID']);
+				$userData = $user->collectValues();
+				$filledTaskUsers[$taskUser['TASK_ID']][] = array_merge($userData, $taskUser);
+			}
+
+		}
+
+		return $filledTaskUsers;
 	}
 
 	protected static function joinUsersToTasks(&$tasks, &$taskUsers, $extendUserInfo = false)
@@ -156,6 +266,20 @@ class CBPViewHelper
 			false
 		);
 		return $arFileTmp['src'];
+	}
+
+	public static function getUserFullNameById(int $userId): ?string
+	{
+		$user = \Bitrix\Main\UserTable::getRow([
+			'filter' => ['ID' => $userId],
+			'select' => ['ID', 'NAME', 'LAST_NAME', 'SECOND_NAME', 'LOGIN'],
+		]);
+		if ($user)
+		{
+			return self::getUserFullName($user);
+		}
+
+		return null;
 	}
 
 	public static function getUserFullName(array $user)
@@ -217,7 +341,7 @@ class CBPViewHelper
 					array('separator' => true, 'compact' => false, 'sort' => 290),
 					array('id' => 'Fullscreen',  'compact' => false, 'sort' => 310),
 					array('id' => 'BbCode',  'compact' => true, 'sort' => 340),
-					array('id' => 'More',  'compact' => true, 'sort' => 400)
+					array('id' => 'More',  'compact' => true, 'sort' => 400),
 				),
 
 				'name' => $fieldName.'[TEXT]',
@@ -274,19 +398,21 @@ class CBPViewHelper
 
 	private static function getFileLinksReplaceCallback()
 	{
-		return function($matches)
+		return static function($matches)
 		{
 			$matches[2] = htmlspecialcharsback($matches[2]);
 			parse_str($matches[2], $query);
-			if (isset($query['i']))
+			$fileId = (int)($query['i'] ?? null);
+			if ($fileId > 0)
 			{
 				try
 				{
-					$attributes = \Bitrix\Main\UI\Viewer\ItemAttributes::buildByFileId(
-						$query['i'],
-						$matches[1].$matches[2]
-					);
-					return "<a href=\"".$matches[1].$matches[2]."\" ".$attributes.">";
+					$url = $matches[1].$matches[2];
+					$url = self::getScopeTokenService()->tokenizeUrl($url, $fileId) ?? $url;
+
+					$attributes = ItemAttributes::buildByFileId($fileId, $url);
+
+					return "<a href=\"$url\" $attributes>";
 				}
 				catch (ArgumentException $e)
 				{
@@ -338,22 +464,24 @@ class CBPViewHelper
 
 	private static function getDiskLinksReplaceCallback()
 	{
-		return function($matches)
+		return static function($matches)
 		{
 			$matches[2] = htmlspecialcharsback($matches[2]);
 			parse_str($matches[2], $query);
-			if (isset($query['attachedId']))
+			$attachedId = (int)($query['attachedId'] ?? null);
+			if ($attachedId > 0)
 			{
-				$attach = \Bitrix\Disk\AttachedObject::loadById($query['attachedId']);
+				$attach = AttachedObject::loadById($attachedId);
 				if ($attach)
 				{
 					try
 					{
-						$attributes = \Bitrix\Main\UI\Viewer\ItemAttributes::buildByFileId(
-							$attach->getFileId(),
-							$matches[1].$matches[2]
-						);
-						return "<a href=\"".$matches[1].$matches[2]."\" ".$attributes.">".$matches[3];
+						$url = $matches[1].$matches[2];
+						$url = self::getScopeTokenService()->tokenizeUrl($url, $attach) ?? $url;
+
+						$attributes = ItemAttributes::buildByFileId($attach->getFileId(), $url);
+
+						return "<a href=\"$url\" $attributes>{$matches[3]}";
 					}
 					catch (ArgumentException $e)
 					{
@@ -388,24 +516,22 @@ class CBPViewHelper
 		string $workflowId,
 		int $userId,
 		string $context = self::DESKTOP_CONTEXT
-	): ?array
+	): array
 	{
 		static $cache = [];
 
-		$cacheKey = $workflowId . '|' . $userId . '|' . $context;
-
-		if (array_key_exists($cacheKey, $cache))
+		if (!isset($cache[$workflowId]))
 		{
-			return $cache[$cacheKey];
+			$cache[$workflowId] = ResultTable::getList([
+				'filter' => [
+					'=WORKFLOW_ID' => $workflowId,
+				],
+				'select' => ['ACTIVITY', 'RESULT'],
+			])->fetch();
 		}
 
-		$result = ResultTable::getList([
-			'filter' => [
-				'=WORKFLOW_ID' => $workflowId,
-			],
-			'select' => ['ACTIVITY', 'RESULT'],
-		])->fetch();
-
+		$result = $cache[$workflowId];
+		$renderedResult = null;
 		if ($result)
 		{
 			$renderedResult = \CBPActivity::callStaticMethod(
@@ -417,16 +543,15 @@ class CBPViewHelper
 					$userId,
 				],
 			);
-
-			if ($context === self::MOBILE_CONTEXT)
-			{
-				return $cache[$cacheKey] = (new \Bitrix\Bizproc\Result\MobileResultHandler())->handle($renderedResult);
-			}
-
-			return $cache[$cacheKey] = (new \Bitrix\Bizproc\Result\WebResultHandler())->handle($renderedResult);
 		}
 
-		return $cache[$cacheKey] = null;
+		$processedResult =
+			($context === self::MOBILE_CONTEXT)
+				? (new \Bitrix\Bizproc\Result\MobileResultHandler($workflowId))->handle($renderedResult)
+				: (new \Bitrix\Bizproc\Result\WebResultHandler($workflowId))->handle($renderedResult)
+		;
+
+		return $processedResult;
 	}
 
 	public static function formatDateTime(?DateTime $date): string
@@ -445,5 +570,46 @@ class CBPViewHelper
 		$tf = $culture?->getShortTimeFormat() ?? 'H:i';
 
 		return \FormatDate("$df, $tf", $date->toUserTime());
+	}
+
+	public static function renderDelayLimitsInfo(): string
+	{
+		$delayMinLimit = CBPSchedulerService::getDelayMinLimit();
+		$delayMaxDays = CBPSchedulerService::getDelayMaxDays();
+
+		if (empty($delayMinLimit) && empty($delayMaxDays))
+		{
+			return '';
+		}
+		$message = '';
+		if ($delayMinLimit > 0)
+		{
+			$message .= Loc::getMessage("BIZPROC_VIEW_HELPER_DELAY_MIN_TEXT", ["#VALUE#" => CBPHelper::FormatTimePeriod($delayMinLimit)]);
+		}
+
+		if ($delayMaxDays > 0)
+		{
+			if (!empty($message))
+			{
+				$message .= "<br/>";
+			}
+			$message .= Loc::getMessage("BIZPROC_VIEW_HELPER_DELAY_MAX_TEXT", ["#VALUE#" => CBPHelper::FormatTimePeriod($delayMaxDays * 24 * 60 * 60)]);
+		}
+
+		return <<<HTML
+			<p class="ui-alert ui-alert-primary ui-alert-icon-info ui-alert-xs" style="box-sizing: border-box;">
+				<span class="ui-alert-message">{$message}</span>
+			</p>
+		HTML;
+	}
+
+	private static function getScopeTokenService(): ScopeTokenService
+	{
+		if (!isset(self::$scopeTokenService))
+		{
+			self::$scopeTokenService = new ScopeTokenService();
+		}
+
+		return self::$scopeTokenService;
 	}
 }

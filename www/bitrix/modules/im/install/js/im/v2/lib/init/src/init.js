@@ -1,3 +1,5 @@
+import { SidePanel } from 'main.sidepanel';
+
 import { Core } from 'im.v2.application.core';
 import { CallManager } from 'im.v2.lib.call';
 import { PhoneManager } from 'im.v2.lib.phone';
@@ -5,56 +7,77 @@ import { SmileManager } from 'im.v2.lib.smile-manager';
 import { UserManager } from 'im.v2.lib.user';
 import { CounterManager } from 'im.v2.lib.counter';
 import { Logger } from 'im.v2.lib.logger';
-import { NotifierManager } from 'im.v2.lib.notifier';
+import { MessageNotifierManager } from 'im.v2.lib.message-notifier';
 import { MarketManager } from 'im.v2.lib.market';
 import { DesktopManager } from 'im.v2.lib.desktop';
 import { PromoManager } from 'im.v2.lib.promo';
 import { PermissionManager } from 'im.v2.lib.permission';
 import { UpdateStateManager } from 'im.v2.lib.update-state.manager';
+import { Router } from 'im.v2.lib.router';
+
+import { BindingsManager } from './classes/bindings';
+import { PreloadedEntity } from './const/const';
+import { BindingsCondition } from './const/bindings';
+
+import type { JsonObject } from 'main.core';
+
+type AnchorLink = {
+	anchor: HTMLElement,
+	matches: Array,
+	target: string,
+	url: string,
+};
 
 export class InitManager
 {
-	static #started: boolean = false;
+	static #instance: InitManager;
+	static #inited: boolean = false;
 
-	static start()
+	static getInstance(): InitManager
 	{
-		if (this.#started)
+		InitManager.#instance = InitManager.#instance ?? new InitManager();
+
+		return InitManager.#instance;
+	}
+
+	static init(): void
+	{
+		InitManager.getInstance();
+	}
+
+	constructor()
+	{
+		if (InitManager.#inited)
 		{
 			return;
 		}
 
 		this.#initLogger();
 		Logger.warn('InitManager: start');
-		this.#initCurrentUser();
 		this.#initSettings();
 		this.#initTariffRestrictions();
+		this.#initAnchors();
+		this.#initCallManager();
+		this.#initCopilot();
+		this.#initPreloadedEntities();
+		this.#initCurrentUserAdminStatus();
+		this.#initBindings();
 
 		CounterManager.init();
 		PermissionManager.init();
 		PromoManager.init();
 		MarketManager.init();
 		PhoneManager.init();
-		CallManager.init();
 		SmileManager.init();
-		NotifierManager.init();
+		MessageNotifierManager.init();
 		DesktopManager.init();
 		UpdateStateManager.init();
+		Router.handleGetParams();
 
-		this.#started = true;
+		InitManager.#inited = true;
 	}
 
-	static #initCurrentUser()
-	{
-		const { currentUser } = Core.getApplicationData();
-		if (!currentUser)
-		{
-			return;
-		}
-
-		void new UserManager().setUsersToModel([currentUser]);
-	}
-
-	static #initLogger()
+	#initLogger(): void
 	{
 		const { loggerConfig } = Core.getApplicationData();
 		if (!loggerConfig)
@@ -65,7 +88,7 @@ export class InitManager
 		Logger.setConfig(loggerConfig);
 	}
 
-	static #initSettings()
+	#initSettings(): void
 	{
 		const { settings } = Core.getApplicationData();
 		if (!settings)
@@ -77,7 +100,7 @@ export class InitManager
 		void Core.getStore().dispatch('application/settings/set', settings);
 	}
 
-	static #initTariffRestrictions()
+	#initTariffRestrictions(): void
 	{
 		const { tariffRestrictions } = Core.getApplicationData();
 		if (!tariffRestrictions)
@@ -87,5 +110,78 @@ export class InitManager
 
 		Logger.warn('InitManager: tariffRestrictions', tariffRestrictions);
 		void Core.getStore().dispatch('application/tariffRestrictions/set', tariffRestrictions);
+	}
+
+	#initCallManager(): void
+	{
+		const { activeCalls } = Core.getApplicationData();
+		CallManager.getInstance().updateRecentCallsList(activeCalls);
+	}
+
+	#initAnchors(): void
+	{
+		const { anchors } = Core.getApplicationData();
+		if (!anchors)
+		{
+			return;
+		}
+
+		void Core.getStore().dispatch('messages/anchors/setAnchors', { anchors });
+	}
+
+	#initCopilot(): void
+	{
+		const { copilot } = Core.getApplicationData();
+		void Core.getStore().dispatch('copilot/setName', copilot.botName);
+
+		if (!copilot.availableEngines)
+		{
+			return;
+		}
+
+		void Core.getStore().dispatch('copilot/setAvailableAIModels', copilot.availableEngines);
+	}
+
+	#initPreloadedEntities(): void
+	{
+		const { preloadedEntities } = Core.getApplicationData();
+		if (!preloadedEntities)
+		{
+			return;
+		}
+
+		const preloadedEntitiesHandler = {
+			[PreloadedEntity.users]: (users) => (new UserManager()).setUsersToModel(users),
+		};
+
+		Object.entries(preloadedEntities).forEach(([entityType: string, items: JsonObject[]]) => {
+			if (preloadedEntitiesHandler[entityType])
+			{
+				preloadedEntitiesHandler[entityType](items);
+			}
+		});
+	}
+
+	#initCurrentUserAdminStatus(): void
+	{
+		const { isCurrentUserAdmin } = Core.getApplicationData();
+		void Core.getStore().dispatch('users/setCurrentUserAdminStatus', isCurrentUserAdmin);
+	}
+
+	#initBindings(): void
+	{
+		SidePanel.Instance.bindAnchors({
+			rules: [
+				{
+					condition: Object.values(BindingsCondition),
+					handler(event: PointerEvent, link: AnchorLink)
+					{
+						(new BindingsManager()).routeLink(link.url);
+
+						event.preventDefault();
+					},
+				},
+			],
+		});
 	}
 }

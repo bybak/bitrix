@@ -1,13 +1,15 @@
-import { EventEmitter } from 'main.core.events';
 import { Text } from 'main.core';
+
 import { EventType } from 'im.v2.const';
 import { Parser } from 'im.v2.lib.parser';
-import { MessageAvatar, AvatarSize, MessageAuthorTitle } from 'im.v2.component.elements';
+import { highlightText } from 'im.v2.lib.text-highlighter';
+import { MessageAuthorTitle } from 'im.v2.component.elements.chat-title';
+import { MessageAvatar, AvatarSize } from 'im.v2.component.elements.avatar';
 
 import './css/favorite-item.css';
 
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelSidebarFavoriteItem, ImModelMessage } from 'im.v2.model';
-import { highlightText } from 'im.v2.lib.text-highlighter';
 
 // @vue/component
 export const FavoriteItem = {
@@ -82,10 +84,14 @@ export const FavoriteItem = {
 		},
 		onItemClick()
 		{
-			EventEmitter.emit(EventType.dialog.goToMessageContext, {
+			this.getEmitter().emit(EventType.dialog.goToMessageContext, {
 				messageId: this.favorite.messageId,
 				dialogId: this.dialogId,
 			});
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 	},
 	template: `

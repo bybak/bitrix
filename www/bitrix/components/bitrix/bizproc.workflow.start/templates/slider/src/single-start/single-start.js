@@ -43,6 +43,7 @@ export class SingleStart
 	#templateId: number;
 	#signedDocumentType: string;
 	#signedDocumentId: string;
+	#triggerType: ?string;
 
 	#startTime: number;
 
@@ -63,6 +64,11 @@ export class SingleStart
 		});
 
 		this.#errorNotifier = new ErrorNotifier({});
+		if (config.errors)
+		{
+			this.#errorNotifier.errors = config.errors;
+			this.#errorNotifier.show();
+		}
 
 		Object.entries(composedData)
 			.forEach(([key, data]) => {
@@ -74,18 +80,32 @@ export class SingleStart
 			})
 		;
 		this.#sequenceSteps = Object.keys(composedData);
-		this.#currentStepId = this.#sequenceSteps.at(0);
+		this.#currentStepId = config.workflowId ? this.#sequenceSteps.at(-1) : this.#sequenceSteps.at(0);
+
+		if (config.workflowId)
+		{
+			const slider = BX.SidePanel.Instance.getSliderByWindow(window);
+			if (slider)
+			{
+				const dictionary: BX.SidePanel.Dictionary = slider.getData();
+				dictionary.set('data', { workflowId: config.workflowId });
+			}
+
+			this.#canExit = true;
+		}
 
 		this.#buttons = new Buttons({
 			buttons: Object.fromEntries(
 				Object.entries(composedData).map(([key, data]) => [key, data.buttons]),
 			),
 			wrapper: document.getElementById(`${HTML_ELEMENT_ID}-buttons`).querySelector('.ui-button-panel'),
+			currentStepId: this.#currentStepId,
 		});
 
 		this.#signedDocumentType = config.signedDocumentType;
 		this.#signedDocumentId = config.signedDocumentId;
 		this.#templateId = Text.toInteger(config.id);
+		this.#triggerType = config.triggerType;
 
 		this.#subscribeOnSliderClose();
 	}
@@ -144,6 +164,11 @@ export class SingleStart
 		if (this.#steps.has('recommendation'))
 		{
 			this.#steps.get('recommendation').onAfterRender();
+		}
+
+		if (this.#currentStepId === 'start')
+		{
+			this.#steps.get('start').onAfterRender();
 		}
 
 		this.#buttons.show();
@@ -207,6 +232,7 @@ export class SingleStart
 				signedDocumentType: this.#signedDocumentType,
 				signedDocumentId: this.#signedDocumentId,
 				startDuration: Math.round(Date.now() / 1000) - this.#startTime,
+				triggerType: this.#triggerType,
 			};
 
 			startWorkflowAction(data)
@@ -330,6 +356,7 @@ export class SingleStart
 				documentType: config.documentType,
 				signedDocumentType: config.signedDocumentType,
 				signedDocumentId: config.signedDocumentId,
+				triggerType: config.triggerType,
 			}),
 			buttons: [
 				Buttons.createBackButton(this.#back.bind(this)),
@@ -357,6 +384,7 @@ export class SingleStart
 				documentType: config.documentType,
 				signedDocumentId: config.signedDocumentId,
 				signedDocumentType: config.signedDocumentType,
+				triggerType: config.triggerType,
 			}),
 			buttons: [
 				Buttons.createBackButton(this.#back.bind(this)),

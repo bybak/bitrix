@@ -2,6 +2,7 @@
 
 namespace Bitrix\Im\V2\Service;
 
+use Bitrix\Im\V2\Application;
 use Bitrix\Im\V2\Chat;
 use Bitrix\Im\V2\Chat\GroupChat;
 use Bitrix\Im\V2\Chat\PrivateChat;
@@ -13,6 +14,7 @@ use Bitrix\Im\V2\Link\Task\TaskService;
 use Bitrix\Im\V2\Entity\Task\TaskItem;
 use Bitrix\Im\V2\Chat\ChatFactory;
 use Bitrix\Im\V2\Common\ContextCustomer;
+use Bitrix\Im\V2\Link\Task\TaskType;
 use Bitrix\Im\V2\Message;
 use Bitrix\Im\V2\Message\Delete\DeleteService;
 use Bitrix\Im\V2\Message\Delete\DeletionMode;
@@ -28,6 +30,8 @@ class Messenger
 	use ContextCustomer;
 
 	private const INTRANET_MENU_ID = 'menu_im_messenger';
+
+	private Application $application;
 
 	/**
 	 * Returns current instance of the Messenger.
@@ -55,6 +59,13 @@ class Messenger
 		return $result;
 	}
 
+	public function getApplication(): Application
+	{
+		$this->application ??= new Application();
+
+		return $this->application;
+	}
+
 	//region Chats
 
 	/**
@@ -78,35 +89,9 @@ class Messenger
 		return $chat;
 	}
 
-	/**
-	 * @param string $entityType
-	 * @param int|string $entityId
-	 * @return EntityChat|GroupChat|NullChat
-	 */
 	public function getEntityChat(string $entityType, string $entityId): Chat
 	{
-		$chatFactory = ChatFactory::getInstance();
-		$chat = $chatFactory
-			->setContext($this->context)
-			->getEntityChat($entityType, $entityId)
-		;
-
-		if (!$chat)
-		{
-			return (new NullChat())
-				->setPreparedParams([
-					'TYPE' => Chat::IM_TYPE_CHAT,
-					'ENTITY_TYPE' => $entityType,
-					'ENTITY_ID' => $entityId,
-				]);
-		}
-
-		if (!$chat->checkAccess()->isSuccess())
-		{
-			return new NullChat();
-		}
-
-		return $chat;
+		return ChatFactory::getInstance()->getEntityChat($entityType, $entityId);
 	}
 
 	public function getGeneralChat(): Chat
@@ -121,6 +106,33 @@ class Messenger
 	public function getChat(int $chatId): Chat
 	{
 		return Chat\ChatFactory::getInstance()->getChatById($chatId);
+	}
+
+	/**
+	 * @param array<int> $chatIds
+	 * @param bool $checkAccess
+	 * @return array<Chat>
+	 */
+	public function getChats(array $chatIds, bool $checkAccess = false): array
+	{
+		$chats = [];
+		foreach ($chatIds as $chatId)
+		{
+			$chats[$chatId] = Chat::getInstance($chatId);
+		}
+
+		if (empty($chats) || !$checkAccess)
+		{
+			return $chats;
+		}
+
+		$currentUserId = $this->getContext()->getUserId();
+		if (!$currentUserId)
+		{
+			return [];
+		}
+
+		return array_filter($chats, static fn (Chat $chat) => $chat->checkAccess($currentUserId)->isSuccess());
 	}
 
 	//endregion
@@ -198,19 +210,37 @@ class Messenger
 
 	//region Task processing
 
-	public function registerTask(int $chatId, int $messageId, TaskObject $task): void
+	public function registerTask(
+		int $chatId,
+		int $messageId,
+		TaskObject $task,
+		TaskType $taskType = TaskType::Task,
+	): void
 	{
 		try
 		{
 			$taskService = new TaskService();
-			$chat = Chat::getInstance($chatId);
+			if ($messageId)
+			{
+				$message = new Message($messageId);
+				$chat = $message->getChat();
+			}
+			else
+			{
+				$message = null;
+				$chat = Chat::getInstance($chatId);
+			}
 
-			if (!$chat->checkAccess()->isSuccess() || !$chat->canDo(Action::CreateTask))
+			if (
+				!$chat->checkAccess()->isSuccess()
+				|| !$chat->canDo(Action::CreateTask)
+				|| ($message && !$message->checkAccess()->isSuccess())
+			)
 			{
 				return;
 			}
 
-			$taskService->registerTask($chatId, $messageId, TaskItem::initByTaskObject($task));
+			$taskService->registerTask($chat, $messageId, TaskItem::initByTaskObject($task), $taskType);
 		}
 		catch (\Bitrix\Main\SystemException $exception)
 		{
@@ -257,13 +287,21 @@ class Messenger
 		}
 	}
 
+	/**
+	 * @deprecated use self::updateTaskFromTaskItem
+	 */
 	public function updateTask(TaskObject $task): void
+	{
+		$this->updateTaskFromTaskItem(TaskItem::initByTaskObject($task));
+	}
+
+	public function updateTaskFromTaskItem(TaskItem $taskItem): void
 	{
 		try
 		{
 			$taskService = new TaskService();
 
-			$taskService->updateTask(TaskItem::initByTaskObject($task));
+			$taskService->updateTask($taskItem);
 		}
 		catch (\Bitrix\Main\SystemException $exception)
 		{

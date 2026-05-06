@@ -207,14 +207,6 @@ class catalog extends CModule
 		);
 
 		$eventManager->registerEventHandler(
-			'seo',
-			'OnCatalogWebhook',
-			'catalog',
-			'\Bitrix\Catalog\v2\Integration\Seo\Facebook\FacebookFacade',
-			'onCatalogWebhookHandler'
-		);
-
-		$eventManager->registerEventHandler(
 			'sale',
 			'OnSaleCheckPrepareData',
 			'catalog',
@@ -252,6 +244,22 @@ class catalog extends CModule
 			'catalog',
 			'\Bitrix\Catalog\Integration\AI\Settings',
 			'onTuningLoad',
+		);
+
+		$eventManager->registerEventHandler(
+			'crm',
+			'OnCrmDealRecoverFromRecycleBin',
+			'catalog',
+			'\Bitrix\Catalog\Integration\Crm\EventsHandler',
+			'OnCrmDealRecoverFromRecycleBin'
+		);
+
+		$eventManager->registerEventHandler(
+			'crm',
+			'OnCrmDealEraseFromRecycleBin',
+			'catalog',
+			'\Bitrix\Catalog\Integration\Crm\EventsHandler',
+			'OnCrmDealEraseFromRecycleBin'
 		);
 
 		if ($this->bitrix24mode)
@@ -510,19 +518,27 @@ class catalog extends CModule
 			'onTuningLoad',
 		);
 
+		$eventManager->unregisterEventHandler(
+			'crm',
+			'OnCrmDealRecoverFromRecycleBin',
+			'catalog',
+			'\Bitrix\Catalog\Integration\Crm\EventsHandler',
+			'OnCrmDealRecoverFromRecycleBin'
+		);
+
+		$eventManager->unregisterEventHandler(
+			'crm',
+			'OnCrmDealEraseFromRecycleBin',
+			'catalog',
+			'\Bitrix\Catalog\Integration\Crm\EventsHandler',
+			'OnCrmDealEraseFromRecycleBin'
+		);
+
 		$eventManager->unRegisterEventHandler('report', 'onAnalyticPageBatchCollect', 'catalog', '\Bitrix\Catalog\Integration\Report\EventHandler', 'onAnalyticPageBatchCollect');
 		$eventManager->unRegisterEventHandler('report', 'onAnalyticPageCollect', 'catalog', '\Bitrix\Catalog\Integration\Report\EventHandler', 'onAnalyticPageCollect');
 		$eventManager->unRegisterEventHandler('report', 'onDefaultBoardsCollect', 'catalog', '\Bitrix\Catalog\Integration\Report\EventHandler', 'onDefaultBoardsCollect');
 		$eventManager->unRegisterEventHandler('report', 'onReportsCollect', 'catalog', '\Bitrix\Catalog\Integration\Report\EventHandler', 'onReportHandlerCollect');
 		$eventManager->unRegisterEventHandler('report', 'onReportViewCollect', 'catalog', '\Bitrix\Catalog\Integration\Report\EventHandler', 'onViewsCollect');
-
-		$eventManager->unRegisterEventHandler(
-			'seo',
-			'OnCatalogWebhook',
-			'catalog',
-			'\Bitrix\Catalog\v2\Integration\Seo\Facebook\FacebookFacade',
-			'onCatalogWebhookHandler'
-		);
 
 		$eventManager->unRegisterEventHandler(
 			'sale',

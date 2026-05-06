@@ -1,4 +1,5 @@
 <?php
+
 IncludeModuleLangFile(__FILE__);
 
 if (!defined("T_BAD_CHARACTER")) define("T_BAD_CHARACTER", 401);
@@ -79,7 +80,6 @@ class CVuln
 
 class CVulnScanner
 {
-
 	public $vuln_count = 0;
 	public $arResult = array();
 
@@ -620,6 +620,10 @@ class CVulnScanner
 						{
 							$result = false;
 						}
+						elseif($token_value !== 'query' && $i > 0 && is_array($this->tokens[$i-1]) && in_array($this->tokens[$i-1][0], [T_PAAMAYIM_NEKUDOTAYIM, T_OBJECT_OPERATOR], true))
+						{
+							$result = false;
+						}
 						elseif($this->tokens[$i + 1] === '(')
 						{
 							$result = $this->getTokensInfo(array_slice($this->tokens, $i + 2, $this->getBraceEnd($this->tokens, $i + 2) - 1), false, $token_value);
@@ -967,6 +971,11 @@ class CVulnScanner
 	{
 		for ($i = 0, $max = count($tokens); $i < $max; $i++)
 		{
+			if (!isset($tokens[$i]))
+			{
+				continue;
+			}
+
 			if($tokens[$i] === '`')
 			{
 				$f = 1;
@@ -2383,6 +2392,3 @@ class CQAACheckListTests
 	}
 
 }
-
-
-?>

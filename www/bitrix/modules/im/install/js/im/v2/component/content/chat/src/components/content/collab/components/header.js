@@ -1,15 +1,14 @@
-import { EventEmitter } from 'main.core.events';
-
 import { ChatHeader } from 'im.v2.component.content.elements';
+import { PulseAnimation } from 'im.v2.component.elements.pulse-animation';
 import { EventType } from 'im.v2.const';
 import { AddToChat as AddToChatPopup } from 'im.v2.component.entity-selector';
 
 import { CollabTitle } from './collab-title';
 import { EntitiesPanel } from './entities-panel/entities-panel';
 import { AddToChatButton } from './add-to-chat-button';
-import { PulseAnimation } from './pulse-animation/pulse-animation';
 
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelChat } from 'im.v2.model';
 
 // @vue/component
@@ -54,11 +53,11 @@ export const CollabHeader = {
 	},
 	created()
 	{
-		EventEmitter.subscribe(EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
+		this.getEmitter().subscribe(EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
 	},
 	beforeUnmount()
 	{
-		EventEmitter.unsubscribe(EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
+		this.getEmitter().unsubscribe(EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
 	},
 	methods:
 	{
@@ -81,6 +80,10 @@ export const CollabHeader = {
 		{
 			this.compactMode = compactMode;
 		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
+		},
 	},
 	template: `
 		<ChatHeader :dialogId="dialogId" @compactModeChange="onCompactModeChange" class="bx-im-collab-header__container">
@@ -91,7 +94,7 @@ export const CollabHeader = {
 				<EntitiesPanel :dialogId="dialogId" :compactMode="compactMode" />
 			</template>
 			<template #add-to-chat-button>
-				<PulseAnimation :showPulse="showAddToChatPopupDelayed">
+				<PulseAnimation :showPulse="showAddToChatPopupDelayed" class="bx-im-collab-header__add-to-chat">
 					<AddToChatButton 
 						:withAnimation="showAddToChatPopupDelayed" 
 						:dialogId="dialogId" 

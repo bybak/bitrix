@@ -1,0 +1,7 @@
+<?php
+$MESS["LANDING_BLOCK_WIDGET_72_1_NAME"] = "Block mit einer Schaltfläche und einem Bild rechts";
+$MESS["LANDING_BLOCK_WIDGET_72_1_NODE_BUTTON"] = "Schaltfläche";
+$MESS["LANDING_BLOCK_WIDGET_72_1_NODE_CONTAINER"] = "Container";
+$MESS["LANDING_BLOCK_WIDGET_72_1_NODE_CONTAINERS"] = "Container";
+$MESS["LANDING_BLOCK_WIDGET_72_1_NODE_IMG"] = "Bild";
+$MESS["LANDING_BLOCK_WIDGET_72_1_NODE_TITLE"] = "Überschrift";

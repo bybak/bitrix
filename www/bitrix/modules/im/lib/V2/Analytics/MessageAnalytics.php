@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace Bitrix\Im\V2\Analytics;
 
 use Bitrix\Im\V2\Analytics\Event\MessageEvent;
+use Bitrix\Im\V2\Chat;
+use Bitrix\Im\V2\Chat\FavoriteChat;
 use Bitrix\Im\V2\Message;
+use Bitrix\Im\V2\Message\Reaction\ReactionService;
+use Bitrix\Im\V2\Message\Sticker\StickerItem;
 
 class MessageAnalytics extends ChatAnalytics
 {
 	protected const SEND_MESSAGE = 'send_message';
+	protected const SEND_STICKER = 'send_sticker';
 	protected const ADD_REACTION = 'add_reaction';
 	protected const SHARE_MESSAGE = 'share_message';
 	protected const DELETE_MESSAGE = 'delete_message';
-	protected const ATTACH_FILE = 'attach_file';
+	protected const MENTION_ALL = 'mention_all';
 
 	protected Message $message;
 
@@ -42,29 +47,45 @@ class MessageAnalytics extends ChatAnalytics
 				?->send()
 			;
 
-			$this->addAttachFilesEvent();
+			$this->addSendSticker($this->message->getSticker());
+			(new FileAnalytics($this->chat))->addAttachFilesEvent($this->message);
 		});
 	}
 
-	public function addAddReaction(string $reaction): void
+	public function addAddReaction(string $reaction, int $reactionAuthorId): void
 	{
-		$this->async(function () use ($reaction) {
+		$this->async(function () use ($reaction, $reactionAuthorId) {
+			$reactionCount =
+				(new ReactionService($this->message))
+					->withContextUser($reactionAuthorId)
+					->getReactionCount()
+			;
+
 			$this
 				->createMessageEvent(self::ADD_REACTION)
 				?->setType($reaction)
+				?->setReactionP3($reactionCount)
+				?->setReactionP4($this->message->getAuthorId())
 				?->send()
 			;
 		});
 	}
 
-	public function addShareMessage(): void
+	public function addShareMessage(Chat $targetChat): void
 	{
-		$this->async(function () {
-			$this
-				->createMessageEvent(self::SHARE_MESSAGE)
-				?->setType((new MessageContent($this->message))->getComponentName())
-				?->send()
+		$this->async(function () use ($targetChat) {
+			$event =
+				$this
+					->createMessageEvent(self::SHARE_MESSAGE)
+					?->setType((new MessageContent($this->message))->getComponentName())
 			;
+
+			if ($targetChat instanceof FavoriteChat)
+			{
+				$event?->setSection('notes');
+			}
+
+			$event?->send();
 		});
 	}
 
@@ -79,19 +100,37 @@ class MessageAnalytics extends ChatAnalytics
 		});
 	}
 
-	protected function addAttachFilesEvent(): void
+	public function addMentionAll(): void
 	{
-		$files = $this->message->getFiles();
-		$fileCount = $files->count();
-		if ($fileCount < 1)
+		$this->async(function () {
+			if ($this->message->getMessageId() === null)
+			{
+				return;
+			}
+
+			$this
+				->createMessageEvent(self::MENTION_ALL)
+				?->setType((new MessageContent($this->message))->getComponentName())
+				->setP4(null)
+				->setP5(null)
+				->send()
+			;
+		});
+	}
+
+	protected function addSendSticker(?StickerItem $sticker): void
+	{
+		if ($sticker === null)
 		{
 			return;
 		}
 
 		$this
-			->createMessageEvent(self::ATTACH_FILE)
-			?->setFilesType($files)
-			?->setFileP3($fileCount)
+			->createChatEvent(self::SEND_STICKER)
+			?->setType($sticker->packType->value)
+			?->setP2(null)
+			?->setP4(null)
+			?->setP5(null)
 			?->send()
 		;
 	}
@@ -105,6 +144,6 @@ class MessageAnalytics extends ChatAnalytics
 			return null;
 		}
 
-		return (new MessageEvent($eventName, $this->chat));
+		return (new MessageEvent($eventName, $this->chat, $this->getContext()->getUserId()));
 	}
 }

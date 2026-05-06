@@ -1,0 +1,1 @@
+{"version":3,"file":"massconnect-notification.bundle.map.js","names":["this","BX","i","t","B","X","Mail","UI","Main"],"sources":["massconnect-notification.bundle.js"],"mappings":"AAAAA,KAAKC,GAAGD,KAAKC,IAAI,CAAC,EAAE,SAASC,EAAEC,EAAEC,EAAEC,GAAG,YAAY,CAA9B,CAAgCL,KAAKC,GAAGK,KAAKN,KAAKC,GAAGK,MAAM,CAAC,EAAEL,GAAGA,GAAGM,GAAGN,GAAGO","ignoreList":[]}

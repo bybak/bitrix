@@ -6,12 +6,6 @@ $MESS['IM_LIST_RECENT_VACATION'] = "В отпуске до #VACATION_END_DATE#";
 $MESS['IM_LIST_RECENT_BIRTHDAY_DATE'] = "сегодня";
 $MESS['IM_LIST_RECENT_INVITATION_NOT_ACCEPTED_MSGVER_1'] = "Приглашение ещё не принято";
 $MESS['IM_LIST_RECENT_NEW_USER_POPUP_TEXT'] = "Я с вами в команде!";
-$MESS['IM_LIST_RECENT_ACTIVE_CALL_JOIN'] = "Присоединиться";
-$MESS['IM_LIST_RECENT_ACTIVE_CALL_RETURN'] = "Вернуться в звонок";
-$MESS['IM_LIST_RECENT_ACTIVE_CALL_HANGUP'] = "Отключиться";
-$MESS['IM_LIST_RECENT_ACTIVE_CALL_ANOTHER_DEVICE'] = "Звонок на другом устройстве";
-$MESS['IM_LIST_RECENT_ACTIVE_CALL_JOIN_VIDEO'] = "С видео";
-$MESS['IM_LIST_RECENT_ACTIVE_CALL_JOIN_AUDIO'] = "Без видео";
 $MESS["IM_LIST_RECENT_CONNECT_ERROR"] = "Мы не смогли подключиться к вашему Битрикс24, проверьте ваше интернет-соединение и попробуйте ещё раз.";
 $MESS['IM_LIST_RECENT_CHAT_TYPE_GROUP_V2'] = "Групповой чат";
 $MESS['IM_LIST_RECENT_CHAT_TYPE_OPEN_CHANNEL'] = "Открытый канал";
@@ -30,3 +24,7 @@ $MESS['IM_LIST_RECENT_CREATE_COLLAB_SUBTITLE'] = "Создание коллаб�
 $MESS['IM_LIST_RECENT_EMPTY_STATE_TITLE'] = "Чатов пока нет";
 $MESS['IM_LIST_RECENT_EMPTY_STATE_SUBTITLE'] = "Сотрудники, которых вы добавите в Битрикс24, появятся в списке чатов";
 $MESS['IM_LIST_RECENT_EMPTY_STATE_INVITE_USERS'] = "Пригласить коллег";
+
+$MESS['IM_LIST_UNREAD_RECENT_EMPTY_STATE_TITLE'] = "Непрочитанных нет";
+
+$MESS['IM_LIST_UNREAD_RECENT_SLIDER_TITLE'] = "Непрочитанные";

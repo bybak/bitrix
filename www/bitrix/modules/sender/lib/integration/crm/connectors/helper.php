@@ -149,6 +149,12 @@ class Helper
 			return [];
 		}
 
+		$fields = self::filterOnlyAllowedFields((string)$entityType, (array)$fields);
+		if (empty($fields))
+		{
+			return [];
+		}
+
 		return $documentClass::isFactoryBased($entityType)
 			? FactoryBased::getData($entityType, $entityIds, $fields)
 			: $documentClass::getData($entityType, $entityIds, $fields)
@@ -747,6 +753,40 @@ class Helper
 		}
 	}
 
+	protected static function getInactiveRecipientsFilter(
+		array $value,
+		array &$filter,
+		array $extraCallbackParams = [],
+	): void
+	{
+		$days = self::normalizeInactiveDays($value);
+		if ($days <= 0)
+		{
+			return;
+		}
+
+		$filter['INACTIVE_RECIPIENTS'] = $days;
+	}
+
+	protected static function normalizeInactiveDays(array $filterValue): int
+	{
+		$daysFrom = (int)($filterValue['CLIENT_INACTIVE_DAYS_from'] ?? 0);
+		$daysTo = (int)($filterValue['CLIENT_INACTIVE_DAYS_to'] ?? 0);
+		$days = $daysFrom > 0 ? $daysFrom : $daysTo;
+
+		if ($days < 1)
+		{
+			return 0;
+		}
+
+		if ($days > 730)
+		{
+			$days = 730;
+		}
+
+		return $days;
+	}
+
 	/**
 	 * Callback on draw of result view.
 	 *
@@ -869,5 +909,45 @@ class Helper
 	public static function isCrmSaleEnabled()
 	{
 		return Loader::includeModule("sale") && (Option::get("crm", "crm_shop_enabled", "N") != 'N');
+	}
+
+	/**
+	 * @param string $entityType
+	 * @param array<string> $fields
+	 *
+	 * @return array<string>
+	 */
+	private static function filterOnlyAllowedFields(string $entityType, array $fields): array
+	{
+		$allowedFields = self::getPersonalizeFieldsFromConnectors();
+
+		return array_filter($fields, static function (string $field) use ($allowedFields, $entityType): bool
+		{
+			if ($field === '*')
+			{
+				return true;
+			}
+
+			$entityField = "$entityType.$field";
+
+			foreach ($allowedFields as $allowedField)
+			{
+				if (($allowedField['CODE'] ?? null) !== $entityType)
+				{
+					continue;
+				}
+
+				$items = (array)($allowedField['ITEMS'] ?? []);
+				foreach ($items as $item)
+				{
+					if (($item['CODE'] ?? null) === $entityField)
+					{
+						return true;
+					}
+				}
+			}
+
+			return false;
+		});
 	}
 }

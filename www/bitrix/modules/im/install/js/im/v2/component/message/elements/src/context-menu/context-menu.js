@@ -1,10 +1,9 @@
-import { EventEmitter } from 'main.core.events';
-
 import { EventType } from 'im.v2.const';
 import { Utils } from 'im.v2.lib.utils';
 
 import './context-menu.css';
 
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelMessage } from 'im.v2.model';
 
 // @vue/component
@@ -19,10 +18,6 @@ export const ContextMenu = {
 		message: {
 			type: Object,
 			required: true,
-		},
-		menuIsActiveForId: {
-			type: [String, Number],
-			default: 0,
 		},
 		showContextMenu: {
 			type: Boolean,
@@ -59,11 +54,16 @@ export const ContextMenu = {
 	{
 		onMenuClick(event: PointerEvent)
 		{
-			EventEmitter.emit(EventType.dialog.onClickMessageContextMenu, {
+			this.getEmitter().emit(EventType.dialog.onClickMessageContextMenu, {
 				message: this.message,
 				dialogId: this.dialogId,
+				bindElement: event.currentTarget,
 				event,
 			});
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 	},
 	template: `
@@ -73,7 +73,6 @@ export const ContextMenu = {
 					:title="menuTitle"
 					@click="onMenuClick"
 					@contextmenu.prevent
-					:class="{'--active': menuIsActiveForId === message.id}"
 					class="bx-im-message-context-menu__button"
 				></button>
 			</div>

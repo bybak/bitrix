@@ -98,7 +98,7 @@ class MssqlConnection extends Connection
 	/**
 	 * @inheritDoc
 	 */
-	protected function queryInternal($sql, array $binds = null, \Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
+	protected function queryInternal($sql, ?array $binds = null, ?\Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
 	{
 		$this->connectInternal();
 
@@ -121,7 +121,7 @@ class MssqlConnection extends Connection
 	/**
 	 * @inheritDoc
 	 */
-	protected function createResult($result, \Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
+	protected function createResult($result, ?\Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
 	{
 		return new MssqlResult($result, $this, $trackerQuery);
 	}
@@ -269,6 +269,7 @@ class MssqlConnection extends Connection
 	public function renameTable($currentName, $newName)
 	{
 		$this->query('EXEC sp_rename ' . $this->getSqlHelper()->quote($currentName) . ', ' . $this->getSqlHelper()->quote($newName));
+		$this->clearCaches($currentName);
 	}
 
 	/**
@@ -277,6 +278,7 @@ class MssqlConnection extends Connection
 	public function dropTable($tableName)
 	{
 		$this->query('DROP TABLE ' . $this->getSqlHelper()->quote($tableName));
+		$this->clearCaches($tableName);
 	}
 
 	/*********************************************************

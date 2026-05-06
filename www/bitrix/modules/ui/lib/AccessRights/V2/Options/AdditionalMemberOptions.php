@@ -1,0 +1,118 @@
+<?php
+
+namespace Bitrix\UI\AccessRights\V2\Options;
+
+use Bitrix\Main\Type\Contract\Arrayable;
+use JsonSerializable;
+
+class AdditionalMemberOptions implements JsonSerializable, Arrayable
+{
+	private ?bool $addUserGroupsProviderTab = null;
+	private ?bool $addProjectsProviderTab = null;
+	private ?bool $addStructureTeamsProviderTab = null;
+	private ?bool $useStructureDepartmentsProviderTab = null;
+	private ?bool $addStructureRolesProviderTab = null;
+
+	public function getAddUserGroupsProviderTab(): ?bool
+	{
+		return $this->addUserGroupsProviderTab;
+	}
+
+	public function setAddUserGroupsProviderTab(?bool $addUserGroupsProviderTab): self
+	{
+		$this->addUserGroupsProviderTab = $addUserGroupsProviderTab;
+
+		return $this;
+	}
+
+	public function getAddProjectsProviderTab(): ?bool
+	{
+		return $this->addProjectsProviderTab;
+	}
+
+	public function setAddProjectsProviderTab(?bool $addProjectsProviderTab): self
+	{
+		$this->addProjectsProviderTab = $addProjectsProviderTab;
+
+		return $this;
+	}
+
+	public function getAddStructureTeamsProviderTab(): ?bool
+	{
+		return $this->addStructureTeamsProviderTab;
+	}
+
+	public function setAddStructureTeamsProviderTab(?bool $addStructureTeamsProviderTab): self
+	{
+		$this->addStructureTeamsProviderTab = $addStructureTeamsProviderTab;
+
+		return $this;
+	}
+
+	public function getAddStructureRolesProviderTab(): ?bool
+	{
+		return $this->addStructureRolesProviderTab;
+	}
+
+	public function setAddStructureRolesProviderTab(?bool $addStructureRolesProviderTab): self
+	{
+		$this->addStructureRolesProviderTab = $addStructureRolesProviderTab;
+
+		return $this;
+	}
+
+	public function getUseStructureDepartmentsProviderTab(): ?bool
+	{
+		return $this->useStructureDepartmentsProviderTab;
+	}
+
+	public function setUseStructureDepartmentsProviderTab(?bool $useStructureDepartmentsProviderTab): self
+	{
+		$this->useStructureDepartmentsProviderTab = $useStructureDepartmentsProviderTab;
+
+		return $this;
+	}
+
+	public function toArray(): array
+	{
+		return [
+			'addUserGroupsProviderTab' => $this->getAddUserGroupsProviderTab(),
+			'addProjectsProviderTab' => $this->getAddProjectsProviderTab(),
+			'addStructureTeamsProviderTab' => $this->getAddStructureTeamsProviderTab(),
+			'useStructureDepartmentsProviderTab' => $this->getUseStructureDepartmentsProviderTab(),
+			'addStructureRolesProviderTab' => $this->getAddStructureRolesProviderTab(),
+		];
+	}
+
+	public function jsonSerialize(): array
+	{
+		return $this->toArray();
+	}
+
+	public static function tryFromArray(array $data): ?self
+	{
+		$options = new self();
+
+		if (isset($data['addUserGroupsProviderTab']))
+		{
+			$options->setAddUserGroupsProviderTab((bool)$data['addUserGroupsProviderTab']);
+		}
+
+		if (isset($data['addProjectsProviderTab']))
+		{
+			$options->setAddProjectsProviderTab((bool)$data['addProjectsProviderTab']);
+		}
+
+		if (isset($data['addStructureTeamsProviderTab']))
+		{
+			$options->setAddStructureTeamsProviderTab((bool)$data['addStructureTeamsProviderTab']);
+		}
+
+		if (isset($data['useStructureDepartmentsProviderTab']))
+		{
+			$options->setUseStructureDepartmentsProviderTab((bool)$data['useStructureDepartmentsProviderTab']);
+		}
+
+		return $options;
+	}
+}

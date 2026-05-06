@@ -1,3 +1,7 @@
+import { Parser } from 'im.v2.lib.parser';
+import { Quote } from 'im.v2.lib.quote';
+import { Utils } from 'im.v2.lib.utils';
+
 export { ResizeManager } from './classes/resize-manager';
 
 type InsertTextConfig = {
@@ -17,6 +21,21 @@ const LETTER_CODE_PREFIX = 'Key';
 
 /* eslint-disable no-param-reassign */
 export const Textarea = {
+	prepareInlineQuote(textarea: HTMLTextAreaElement): string
+	{
+		const selectedText = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+		if (!selectedText)
+		{
+			return textarea.value;
+		}
+
+		const quoteText = Parser.prepareQuote({}, selectedText);
+
+		const textBefore = textarea.value.slice(0, textarea.selectionStart);
+		const textAfter = textarea.value.slice(textarea.selectionEnd);
+
+		return Quote.prepareInlineQuote(textBefore, textAfter, quoteText);
+	},
 	addTab(textarea: HTMLTextAreaElement): string
 	{
 		const newSelectionPosition = textarea.selectionStart + 1;
@@ -51,7 +70,7 @@ export const Textarea = {
 
 		return textWithoutTab;
 	},
-	handleDecorationTag(textarea: HTMLTextAreaElement, decorationKey: 'KeyB' | 'KeyI' | 'KeyU' | 'KeyS'): string
+	handleDecorationTag(textarea: HTMLTextAreaElement, decorationKey: 'KeyB' | 'KeyI' | 'KeyU' | 'KeyS' | 'code'): string
 	{
 		decorationKey = decorationKey.replace(LETTER_CODE_PREFIX, '').toLowerCase();
 		const LEFT_TAG = `[${decorationKey}]`;
@@ -76,27 +95,14 @@ export const Textarea = {
 			return this.addDecorationTag(textarea, decorationKey);
 		}
 	},
-	addDecorationTag(textarea: HTMLTextAreaElement, decorationKey: 'b' | 'i' | 'u' | 's'): string
+	addDecorationTag(textarea: HTMLTextAreaElement, decorationKey: 'b' | 'i' | 'u' | 's' | 'code'): string
 	{
 		const LEFT_TAG = `[${decorationKey}]`;
 		const RIGHT_TAG = `[/${decorationKey}]`;
 
-		const decorationTagLength = LEFT_TAG.length + RIGHT_TAG.length;
-		const newSelectionStart = textarea.selectionStart;
-		const newSelectionEnd = textarea.selectionEnd + decorationTagLength;
-
-		const textBefore = textarea.value.slice(0, textarea.selectionStart);
-		const selectedText = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
-		const textAfter = textarea.value.slice(textarea.selectionEnd);
-		const textWithTag = `${textBefore}${LEFT_TAG}${selectedText}${RIGHT_TAG}${textAfter}`;
-
-		textarea.value = textWithTag;
-		textarea.selectionStart = newSelectionStart;
-		textarea.selectionEnd = newSelectionEnd;
-
-		return textWithTag;
+		return this.applyWrapping(textarea, LEFT_TAG, RIGHT_TAG);
 	},
-	removeDecorationTag(textarea: HTMLTextAreaElement, decorationKey: 'b' | 'i' | 'u' | 's'): string
+	removeDecorationTag(textarea: HTMLTextAreaElement, decorationKey: 'b' | 'i' | 'u' | 's' | 'code'): string
 	{
 		const LEFT_TAG = `[${decorationKey}]`;
 		const RIGHT_TAG = `[/${decorationKey}]`;
@@ -194,5 +200,58 @@ export const Textarea = {
 		textarea.selectionEnd = newSelectionPosition;
 
 		return resultText;
+	},
+	addUrlTag(textarea: HTMLTextAreaElement, linkUrl: string): string
+	{
+		if (!this.shouldHandleUrl(textarea, linkUrl))
+		{
+			return textarea.value;
+		}
+
+		return this.applyUrlWrapping(textarea, linkUrl);
+	},
+	handlePasteUrl(textarea: HTMLTextAreaElement, event: ClipboardEvent): string
+	{
+		const pastedLinkUrl = event.clipboardData?.getData('text/plain');
+
+		if (!this.shouldHandleUrl(textarea, pastedLinkUrl))
+		{
+			return textarea.value;
+		}
+
+		event.preventDefault();
+
+		return this.applyUrlWrapping(textarea, pastedLinkUrl);
+	},
+	shouldHandleUrl(textarea: HTMLTextAreaElement, linkUrl: string): boolean
+	{
+		const selectedText = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+		const isUrl = Utils.text.checkUrl(linkUrl);
+
+		return isUrl && selectedText;
+	},
+	applyUrlWrapping(textarea: HTMLTextAreaElement, linkUrl: string): string
+	{
+		const LEFT_TAG = `[URL=${linkUrl}]`;
+		const RIGHT_TAG = '[/URL]';
+
+		return this.applyWrapping(textarea, LEFT_TAG, RIGHT_TAG);
+	},
+	applyWrapping(textarea: HTMLTextAreaElement, leftTag: string, rightTag: string): string
+	{
+		const selectedText = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+		const decorationTagLength = leftTag.length + rightTag.length;
+		const newSelectionStart = textarea.selectionStart;
+		const newSelectionEnd = textarea.selectionEnd + decorationTagLength;
+
+		const textBefore = textarea.value.slice(0, textarea.selectionStart);
+		const textAfter = textarea.value.slice(textarea.selectionEnd);
+		const textWithTag = `${textBefore}${leftTag}${selectedText}${rightTag}${textAfter}`;
+
+		textarea.value = textWithTag;
+		textarea.selectionStart = newSelectionStart;
+		textarea.selectionEnd = newSelectionEnd;
+
+		return textWithTag;
 	},
 };

@@ -1,45 +1,48 @@
-import {Core} from 'im.v2.application.core';
-import {RestMethod} from 'im.v2.const';
-import {UserManager} from 'im.v2.lib.user';
-import {Logger} from 'im.v2.lib.logger';
+import { RestMethod } from 'im.v2.const';
+import { BaseUserService } from 'im.v2.provider.service.user';
 
-import type {Store} from 'ui.vue3.vuex';
-import type {RestClient} from 'rest.client';
+type ReactionItem = {
+	id: number,
+	messageId: number,
+	userId: number,
+	reaction: string,
+	dateReaction: string,
+}
 
-export class UserService
+export class UserService extends BaseUserService<{ reactions: ReactionItem[] }>
 {
-	#store: Store;
-	#restClient: RestClient;
-	#userManager: UserManager;
+	#reaction: string;
 
-	constructor()
+	constructor(reaction: string)
 	{
-		this.#store = Core.getStore();
-		this.#restClient = Core.getRestClient();
-		this.#userManager = new UserManager();
+		super();
+		this.#reaction = reaction;
 	}
 
-	loadReactionUsers(messageId: number, reaction: string): Promise<number[]>
+	getRequestFilter(firstPage = false): Record
 	{
-		let users = [];
-		Logger.warn('Reactions: UserService: loadReactionUsers', messageId, reaction);
-		const queryParams = {
-			messageId,
-			filter: {
-				reaction
-			}
+		return {
+			...super.getRequestFilter(firstPage),
+			reaction: this.#reaction,
 		};
-		return this.#restClient.callMethod(RestMethod.imV2ChatMessageReactionTail, queryParams)
-			.then(response => {
-				users = response.data().users;
-				return this.#userManager.setUsersToModel(Object.values(users));
-			})
-			.then(() => {
-				return users.map(user => user.id);
-			})
-			.catch(error => {
-				console.error('Reactions: UserService: loadReactionUsers error', error);
-				throw new Error(error);
-			});
+	}
+
+	getRestMethodName(): string
+	{
+		return RestMethod.imV2ChatMessageReactionTail;
+	}
+
+	getLastId(result): number
+	{
+		const { reactions } = result;
+
+		if (!reactions || reactions.length === 0)
+		{
+			return 0;
+		}
+
+		const sortedReactions = [...reactions].sort((a, b) => b.id - a.id);
+
+		return sortedReactions[sortedReactions.length - 1].id;
 	}
 }

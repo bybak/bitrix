@@ -2,7 +2,7 @@
 this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
-(function (exports,main_core_events,im_v2_lib_user,im_v2_lib_userStatus,im_v2_lib_logger,im_v2_lib_channel,im_v2_lib_utils,im_v2_const,im_v2_application_core,ui_vue3_vuex,main_core,im_v2_model) {
+(function (exports,main_core_events,im_v2_lib_layout,im_v2_lib_user,im_v2_lib_userStatus,im_v2_lib_logger,im_v2_lib_recent,im_v2_lib_message,im_v2_lib_utils,im_v2_application_core,ui_vue3_vuex,im_v2_model,im_v2_const,main_core) {
 	'use strict';
 
 	const isNumberOrString = target => {
@@ -50,8 +50,60 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  });
 	};
 
+	const prepareDraft = draft => {
+	  if (!draft.text || draft.text === '') {
+	    return {
+	      text: '',
+	      date: null
+	    };
+	  }
+	  return {
+	    text: draft.text,
+	    date: new Date()
+	  };
+	};
+	const prepareInvitation = invited => {
+	  if (main_core.Type.isPlainObject(invited)) {
+	    return {
+	      isActive: true,
+	      originator: invited.originatorId,
+	      canResend: invited.canResend
+	    };
+	  }
+	  return {
+	    isActive: false,
+	    originator: 0,
+	    canResend: false
+	  };
+	};
+
 	const SortWeight = {
-	  im: 10
+	  tasks: 2600,
+	  calendar: 2500,
+	  im: 2400,
+	  blog: 2300,
+	  vote: 2200,
+	  main: 2100,
+	  socialnetwork: 2000,
+	  bizproc: 1900,
+	  rpa: 1800,
+	  lists: 1700,
+	  mail: 1600,
+	  crm: 1500,
+	  sender: 1400,
+	  booking: 1300,
+	  voximplant: 1200,
+	  imopenlines: 1100,
+	  timeman: 1000,
+	  disk: 900,
+	  bitrix24: 800,
+	  sign: 700,
+	  biconnector: 600,
+	  rest: 500,
+	  intranet: 400,
+	  photogallery: 300,
+	  wiki: 200,
+	  forum: 100
 	};
 	const prepareNotificationSettings = target => {
 	  const result = {};
@@ -114,8 +166,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	}, {
 	  fieldName: im_v2_const.Settings.appearance.background,
 	  targetFieldName: im_v2_const.Settings.appearance.background,
-	  checkFunction: isNumberOrString,
-	  formatFunction: convertToNumber
+	  checkFunction: main_core.Type.isString
 	}, {
 	  fieldName: im_v2_const.Settings.appearance.alignment,
 	  targetFieldName: im_v2_const.Settings.appearance.alignment,
@@ -224,7 +275,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	class SettingsModel extends ui_vue3_vuex.BuilderModel {
 	  getState() {
 	    return {
-	      [im_v2_const.Settings.appearance.background]: 1,
+	      [im_v2_const.Settings.appearance.background]: 'azure',
 	      [im_v2_const.Settings.appearance.alignment]: im_v2_const.DialogAlignment.left,
 	      [im_v2_const.Settings.notification.enableSound]: true,
 	      [im_v2_const.Settings.notification.enableAutoRead]: true,
@@ -352,7 +403,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getState() {
 	    return {
 	      layout: {
-	        name: im_v2_const.Layout.chat.name,
+	        name: im_v2_const.Layout.chat,
 	        entityId: '',
 	        contextId: 0
 	      }
@@ -366,21 +417,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      },
 	      /** @function application/isChatOpen */
 	      isChatOpen: state => dialogId => {
-	        const allowedLayouts = [im_v2_const.Layout.chat.name, im_v2_const.Layout.copilot.name, im_v2_const.Layout.channel.name, im_v2_const.Layout.collab.name];
-	        if (!allowedLayouts.includes(state.layout.name)) {
+	        if (!im_v2_lib_layout.LayoutManager.getInstance().isChatLayout(state.layout.name)) {
 	          return false;
 	        }
 	        return state.layout.entityId === dialogId.toString();
 	      },
 	      isLinesChatOpen: state => dialogId => {
-	        if (state.layout.name !== im_v2_const.Layout.openlines.name && state.layout.name !== im_v2_const.Layout.openlinesV2.name) {
+	        if (state.layout.name !== im_v2_const.Layout.openlines && state.layout.name !== im_v2_const.Layout.openlinesV2) {
 	          return false;
 	        }
 	        return state.layout.entityId === dialogId.toString();
 	      },
 	      /** @function application/areNotificationsOpen */
 	      areNotificationsOpen: state => {
-	        return state.layout.name === im_v2_const.Layout.notification.name;
+	        return state.layout.name === im_v2_const.Layout.notification;
 	      }
 	    };
 	  }
@@ -404,15 +454,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          entityId: this.validateLayoutEntityId(name, entityId),
 	          contextId
 	        };
+	        main_core_events.EventEmitter.emit(im_v2_const.EventType.layout.onLayoutChange, {
+	          from: previousLayout,
+	          to: newLayout
+	        });
 	        if (previousLayout.name === newLayout.name && previousLayout.entityId === newLayout.entityId) {
 	          return;
 	        }
 	        store.commit('updateLayout', {
 	          layout: newLayout
-	        });
-	        main_core_events.EventEmitter.emit(im_v2_const.EventType.layout.onLayoutChange, {
-	          from: previousLayout,
-	          to: newLayout
 	        });
 	      }
 	    };
@@ -430,13 +480,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    };
 	  }
 	  validateLayout(name) {
-	    if (!im_v2_const.Layout[name]) {
-	      return im_v2_const.Layout.chat.name;
+	    if (!im_v2_lib_layout.LayoutManager.getInstance().isValidLayout(name)) {
+	      return im_v2_const.Layout.chat;
 	    }
 	    return name;
 	  }
 	  validateLayoutEntityId(name, entityId) {
-	    if (!im_v2_const.Layout[name]) {
+	    if (!im_v2_lib_layout.LayoutManager.getInstance().isValidLayout(name)) {
 	      return '';
 	    }
 
@@ -477,7 +527,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	const messageFieldsConfig = [{
 	  fieldName: ['id', 'temporaryId'],
 	  targetFieldName: 'id',
-	  checkFunction: [main_core.Type.isNumber, im_v2_lib_utils.Utils.text.isTempMessage]
+	  checkFunction: [main_core.Type.isNumber, im_v2_lib_message.MessageManager.isTempMessage]
 	}, {
 	  fieldName: 'chatId',
 	  targetFieldName: 'chatId',
@@ -576,240 +626,170 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  checkFunction: main_core.Type.isPlainObject
 	}];
 
-	class PinModel extends ui_vue3_vuex.BuilderModel {
-	  getState() {
-	    return {
-	      collection: {}
-	    };
-	  }
-	  getGetters() {
-	    return {
-	      getPinned: state => chatId => {
-	        if (!state.collection[chatId]) {
-	          return [];
-	        }
-	        return [...state.collection[chatId]].map(pinnedMessageId => {
-	          return im_v2_application_core.Core.getStore().getters['messages/getById'](pinnedMessageId);
-	        });
-	      },
-	      isPinned: state => payload => {
-	        const {
-	          chatId,
-	          messageId
-	        } = payload;
-	        if (!state.collection[chatId]) {
-	          return false;
-	        }
-	        return state.collection[chatId].has(messageId);
-	      }
-	    };
-	  }
-	  getActions() {
-	    return {
-	      setPinned: (store, payload) => {
-	        const {
-	          chatId,
-	          pinnedMessages
-	        } = payload;
-	        if (pinnedMessages.length === 0) {
-	          return;
-	        }
-	        store.commit('setPinned', {
-	          chatId,
-	          pinnedMessageIds: pinnedMessages
-	        });
-	      },
-	      set: (store, payload) => {
-	        store.commit('set', payload);
-	      },
-	      add: (store, payload) => {
-	        store.commit('add', payload);
-	      },
-	      delete: (store, payload) => {
-	        store.commit('delete', payload);
-	      }
-	    };
-	  }
-	  getMutations() {
-	    return {
-	      setPinned: (state, payload) => {
-	        im_v2_lib_logger.Logger.warn('Messages/pin model: setPinned mutation', payload);
-	        const {
-	          chatId,
-	          pinnedMessageIds
-	        } = payload;
-	        state.collection[chatId] = new Set(pinnedMessageIds.reverse());
-	      },
-	      add: (state, payload) => {
-	        im_v2_lib_logger.Logger.warn('Messages/pin model: add pin mutation', payload);
-	        const {
-	          chatId,
-	          messageId
-	        } = payload;
-	        if (!state.collection[chatId]) {
-	          state.collection[chatId] = new Set();
-	        }
-	        state.collection[chatId].add(messageId);
-	      },
-	      delete: (state, payload) => {
-	        im_v2_lib_logger.Logger.warn('Messages/pin model: delete pin mutation', payload);
-	        const {
-	          chatId,
-	          messageId
-	        } = payload;
-	        if (!state.collection[chatId]) {
-	          return;
-	        }
-	        state.collection[chatId].delete(messageId);
-	      }
-	    };
-	  }
+	function isAnchorsEqual(anchor1, anchor2) {
+	  return anchor1.messageId === anchor2.messageId && anchor1.type === anchor2.type && anchor1.fromUserId === anchor2.fromUserId;
+	}
+	function isAnchorWithTypeFromCurrentChat(anchor, anchorType, chatId) {
+	  return anchor.chatId === chatId && anchor.type === anchorType;
 	}
 
-	const Reaction = Object.freeze({
-	  like: 'like',
-	  kiss: 'kiss',
-	  laugh: 'laugh',
-	  wonder: 'wonder',
-	  cry: 'cry',
-	  angry: 'angry',
-	  facepalm: 'facepalm'
-	});
-	const USERS_TO_SHOW = 5;
-	class ReactionsModel extends ui_vue3_vuex.BuilderModel {
+	class AnchorsModel extends ui_vue3_vuex.BuilderModel {
+	  getName() {
+	    return 'anchors';
+	  }
 	  getState() {
 	    return {
-	      collection: {}
+	      anchors: []
 	    };
 	  }
-	  getElementState() {
-	    return {
-	      reactionCounters: {},
-	      reactionUsers: {},
-	      ownReactions: new Set()
-	    };
-	  }
+
+	  // eslint-disable-next-line max-lines-per-function
 	  getGetters() {
 	    return {
-	      getByMessageId: state => messageId => {
-	        return state.collection[messageId];
+	      /** @function messages/anchors/getChatMessageIdsWithAnchors */
+	      getChatMessageIdsWithAnchors: state => chatId => {
+	        return [...state.anchors].filter(anchor => {
+	          return anchor.chatId === chatId;
+	        }).map(anchor => anchor.messageId);
+	      },
+	      /** @function messages/anchors/isMessageHasAnchors */
+	      isMessageHasAnchors: state => messageId => {
+	        return state.anchors.some(anchor => {
+	          return anchor.messageId === messageId;
+	        });
+	      },
+	      /** @function messages/anchors/isChatHasAnchors */
+	      isChatHasAnchors: state => chatId => {
+	        return state.anchors.some(anchor => {
+	          return anchor.chatId === chatId;
+	        });
+	      },
+	      /** @function messages/anchors/isChatHasAnchorsWithType */
+	      isChatHasAnchorsWithType: state => (chatId, anchorType) => {
+	        return state.anchors.some(anchor => {
+	          return isAnchorWithTypeFromCurrentChat(anchor, anchorType, chatId);
+	        });
+	      },
+	      /** @function messages/anchors/getCounterInChatByType */
+	      getCounterInChatByType: state => (chatId, anchorType) => {
+	        const chatAnchors = state.anchors.filter(anchor => {
+	          return isAnchorWithTypeFromCurrentChat(anchor, anchorType, chatId);
+	        });
+	        return new Set(chatAnchors.map(chatAnchor => chatAnchor.messageId)).size;
+	      },
+	      /** @function messages/anchors/getNextMessageIdWithAnchorType */
+	      getNextMessageIdWithAnchorType: state => (chatId, anchorType) => {
+	        var _anchors$at;
+	        const anchors = state.anchors.filter(anchor => {
+	          return isAnchorWithTypeFromCurrentChat(anchor, anchorType, chatId);
+	        }).sort((anchorOne, anchorTwo) => anchorOne.messageId - anchorTwo.messageId);
+	        return (_anchors$at = anchors.at(0)) == null ? void 0 : _anchors$at.messageId;
+	      },
+	      /** @function messages/anchors/getAnchorsByChatType */
+	      getAnchorsByChatType: state => chatType => {
+	        return state.anchors.filter(anchor => {
+	          const {
+	            type
+	          } = im_v2_application_core.Core.getStore().getters['chats/getByChatId'](anchor.chatId, true);
+	          return type === chatType;
+	        });
 	      }
 	    };
 	  }
 	  getActions() {
 	    return {
-	      set: (store, payload) => {
-	        store.commit('set', this.prepareSetPayload(payload));
-	      },
-	      setReaction: (store, payload) => {
-	        if (!Reaction[payload.reaction]) {
+	      /** @function messages/anchors/setAnchors */
+	      setAnchors: (store, payload) => {
+	        if (main_core.Type.isPlainObject(payload) === false) {
 	          return;
 	        }
-	        if (!store.state.collection[payload.messageId]) {
-	          store.state.collection[payload.messageId] = this.getElementState();
-	        }
-	        store.commit('setReaction', payload);
+	        store.commit('setAnchors', {
+	          anchors: payload.anchors
+	        });
 	      },
-	      removeReaction: (store, payload) => {
-	        if (!store.state.collection[payload.messageId] || !Reaction[payload.reaction]) {
+	      /** @function messages/anchors/addAnchor */
+	      addAnchor: (store, payload) => {
+	        if (main_core.Type.isPlainObject(payload) === false) {
 	          return;
 	        }
-	        store.commit('removeReaction', payload);
+	        const equalAnchor = store.state.anchors.find(anchor => {
+	          return isAnchorsEqual(anchor, payload.anchor);
+	        });
+	        if (!equalAnchor) {
+	          store.commit('addAnchor', payload);
+	        }
+	      },
+	      /** @function messages/anchors/removeAnchor */
+	      removeAnchor: (store, payload) => {
+	        if (main_core.Type.isPlainObject(payload) === false) {
+	          return;
+	        }
+	        store.commit('removeAnchor', payload);
+	      },
+	      /** @function messages/anchors/removeUserAnchorsFromMessage */
+	      removeUserAnchorsFromMessage: (store, messageId) => {
+	        store.state.anchors.forEach(anchor => {
+	          if (anchor.messageId === messageId) {
+	            store.commit('removeAnchor', {
+	              anchor
+	            });
+	          }
+	        });
+	      },
+	      /** @function messages/anchors/removeChatAnchors */
+	      removeChatAnchors: (store, chatId) => {
+	        store.commit('removeChatAnchors', chatId);
+	      },
+	      /** @function messages/anchors/removeAllAnchorsByChatType */
+	      removeAllAnchorsByChatType: (store, payload) => {
+	        store.commit('removeAllAnchorsByChatType', payload);
+	      },
+	      /** @function messages/anchors/removeAllAnchors */
+	      removeAllAnchors: store => {
+	        store.commit('removeAllAnchors');
 	      }
 	    };
 	  }
 	  getMutations() {
 	    return {
-	      set: (state, payload) => {
-	        payload.forEach(item => {
-	          const newItem = {
-	            reactionCounters: item.reactionCounters,
-	            reactionUsers: item.reactionUsers
-	          };
-	          const currentItem = state.collection[item.messageId];
-	          const newOwnReaction = !!item.ownReactions;
-	          if (newOwnReaction) {
-	            newItem.ownReactions = item.ownReactions;
-	          } else {
-	            newItem.ownReactions = currentItem ? currentItem.ownReactions : new Set();
-	          }
-	          state.collection[item.messageId] = newItem;
+	      setAnchors: (state, payload) => {
+	        // eslint-disable-next-line no-param-reassign
+	        state.anchors = [...payload.anchors];
+	      },
+	      addAnchor: (state, payload) => {
+	        state.anchors.push(payload.anchor);
+	      },
+	      removeAnchor: (state, payload) => {
+	        const removedAnchorIndex = state.anchors.findIndex(anchor => {
+	          return isAnchorsEqual(anchor, payload.anchor);
+	        });
+	        if (removedAnchorIndex > -1) {
+	          state.anchors.splice(removedAnchorIndex, 1);
+	        }
+	      },
+	      removeChatAnchors: (state, chatId) => {
+	        // eslint-disable-next-line no-param-reassign
+	        state.anchors = state.anchors.filter(anchor => {
+	          return anchor.chatId !== chatId;
 	        });
 	      },
-	      setReaction: (state, payload) => {
+	      removeAllAnchorsByChatType: (state, payload) => {
 	        const {
-	          messageId,
-	          userId,
-	          reaction
+	          type
 	        } = payload;
-	        const reactions = state.collection[messageId];
-	        if (im_v2_application_core.Core.getUserId() === userId) {
-	          this.removeAllCurrentUserReactions(reactions);
-	          reactions.ownReactions.add(reaction);
-	        }
-	        if (!reactions.reactionCounters[reaction]) {
-	          reactions.reactionCounters[reaction] = 0;
-	        }
-	        const currentCounter = reactions.reactionCounters[reaction];
-	        if (currentCounter + 1 <= USERS_TO_SHOW) {
-	          if (!reactions.reactionUsers[reaction]) {
-	            reactions.reactionUsers[reaction] = new Set();
-	          }
-	          reactions.reactionUsers[reaction].add(userId);
-	        }
-	        reactions.reactionCounters[reaction]++;
+	        const anchors = im_v2_application_core.Core.getStore().getters['messages/anchors/getAnchorsByChatType'](type);
+	        const chatIds = new Set(anchors.map(anchor => anchor.chatId));
+
+	        // eslint-disable-next-line no-param-reassign
+	        state.anchors = state.anchors.filter(anchor => {
+	          return !chatIds.has(anchor.chatId);
+	        });
 	      },
-	      removeReaction: (state, payload) => {
-	        var _reactions$reactionUs;
-	        const {
-	          messageId,
-	          userId,
-	          reaction
-	        } = payload;
-	        const reactions = state.collection[messageId];
-	        if (im_v2_application_core.Core.getUserId() === userId) {
-	          reactions.ownReactions.delete(reaction);
-	        }
-	        (_reactions$reactionUs = reactions.reactionUsers[reaction]) == null ? void 0 : _reactions$reactionUs.delete(userId);
-	        reactions.reactionCounters[reaction]--;
-	        if (reactions.reactionCounters[reaction] === 0) {
-	          delete reactions.reactionCounters[reaction];
-	        }
+	      removeAllAnchors: state => {
+	        // eslint-disable-next-line no-param-reassign
+	        state.anchors = [];
 	      }
 	    };
-	  }
-	  removeAllCurrentUserReactions(reactions) {
-	    reactions.ownReactions.forEach(reaction => {
-	      var _reactions$reactionUs2;
-	      (_reactions$reactionUs2 = reactions.reactionUsers[reaction]) == null ? void 0 : _reactions$reactionUs2.delete(im_v2_application_core.Core.getUserId());
-	      reactions.reactionCounters[reaction]--;
-	      if (reactions.reactionCounters[reaction] === 0) {
-	        delete reactions.reactionCounters[reaction];
-	      }
-	    });
-	    reactions.ownReactions = new Set();
-	  }
-	  prepareSetPayload(payload) {
-	    return payload.map(item => {
-	      var _item$ownReactions;
-	      const reactionUsers = {};
-	      Object.entries(item.reactionUsers).forEach(([reaction, users]) => {
-	        reactionUsers[reaction] = new Set(users);
-	      });
-	      const reactionCounters = {};
-	      Object.entries(item.reactionCounters).forEach(([reaction, counter]) => {
-	        reactionCounters[reaction] = counter;
-	      });
-	      const result = {
-	        messageId: item.messageId,
-	        reactionCounters: reactionCounters,
-	        reactionUsers: reactionUsers
-	      };
-	      if (((_item$ownReactions = item.ownReactions) == null ? void 0 : _item$ownReactions.length) > 0) {
-	        result.ownReactions = new Set(item.ownReactions);
-	      }
-	      return result;
-	    });
 	  }
 	}
 
@@ -1029,6 +1009,238 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  return (message == null ? void 0 : message.authorId) === im_v2_application_core.Core.getUserId();
 	}
 
+	class PinModel extends ui_vue3_vuex.BuilderModel {
+	  getState() {
+	    return {
+	      collection: {}
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      getPinned: state => chatId => {
+	        if (!state.collection[chatId]) {
+	          return [];
+	        }
+	        const result = [];
+	        [...state.collection[chatId]].forEach(pinnedMessageId => {
+	          const message = im_v2_application_core.Core.getStore().getters['messages/getById'](pinnedMessageId);
+	          if (message) {
+	            result.push(message);
+	          }
+	        });
+	        return result;
+	      },
+	      isPinned: state => payload => {
+	        const {
+	          chatId,
+	          messageId
+	        } = payload;
+	        if (!state.collection[chatId]) {
+	          return false;
+	        }
+	        return state.collection[chatId].has(messageId);
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      setPinned: (store, payload) => {
+	        const {
+	          chatId,
+	          pinnedMessages
+	        } = payload;
+	        if (pinnedMessages.length === 0) {
+	          return;
+	        }
+	        store.commit('setPinned', {
+	          chatId,
+	          pinnedMessageIds: pinnedMessages
+	        });
+	      },
+	      set: (store, payload) => {
+	        store.commit('set', payload);
+	      },
+	      add: (store, payload) => {
+	        store.commit('add', payload);
+	      },
+	      delete: (store, payload) => {
+	        store.commit('delete', payload);
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      setPinned: (state, payload) => {
+	        im_v2_lib_logger.Logger.warn('Messages/pin model: setPinned mutation', payload);
+	        const {
+	          chatId,
+	          pinnedMessageIds
+	        } = payload;
+	        state.collection[chatId] = new Set(pinnedMessageIds.reverse());
+	      },
+	      add: (state, payload) => {
+	        im_v2_lib_logger.Logger.warn('Messages/pin model: add pin mutation', payload);
+	        const {
+	          chatId,
+	          messageId
+	        } = payload;
+	        if (!state.collection[chatId]) {
+	          state.collection[chatId] = new Set();
+	        }
+	        state.collection[chatId].add(messageId);
+	      },
+	      delete: (state, payload) => {
+	        im_v2_lib_logger.Logger.warn('Messages/pin model: delete pin mutation', payload);
+	        const {
+	          chatId,
+	          messageId
+	        } = payload;
+	        if (!state.collection[chatId]) {
+	          return;
+	        }
+	        state.collection[chatId].delete(messageId);
+	      }
+	    };
+	  }
+	}
+
+	const USERS_TO_SHOW = 5;
+	class ReactionsModel extends ui_vue3_vuex.BuilderModel {
+	  getState() {
+	    return {
+	      collection: {}
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      reactionCounters: {},
+	      reactionUsers: {},
+	      ownReactions: new Set()
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function messages/reactions/getByMessageId */
+	      getByMessageId: state => messageId => {
+	        return state.collection[messageId];
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function messages/reactions/set */
+	      set: (store, payload) => {
+	        store.commit('set', this.prepareSetPayload(payload));
+	      },
+	      /** @function messages/reactions/setReaction */
+	      setReaction: (store, payload) => {
+	        store.commit('setReaction', payload);
+	      },
+	      /** @function messages/reactions/removeReaction */
+	      removeReaction: (store, payload) => {
+	        if (!store.state.collection[payload.messageId]) {
+	          return;
+	        }
+	        store.commit('removeReaction', payload);
+	      },
+	      /** @function messages/reactions/clearCollection */
+	      clearCollection: store => {
+	        store.commit('clearCollection');
+	      }
+	    };
+	  }
+
+	  /* eslint-disable no-param-reassign */
+	  getMutations() {
+	    return {
+	      set: (state, payload) => {
+	        payload.forEach(item => {
+	          var _item$ownReactions;
+	          const currentItem = state.collection[item.messageId];
+	          const currentOwnReactions = currentItem ? currentItem.ownReactions : [];
+	          const newOwnReactions = (_item$ownReactions = item.ownReactions) != null ? _item$ownReactions : [];
+	          const preparedOwnReactions = new Set([...newOwnReactions, ...currentOwnReactions]);
+	          if (item.ownReactionsToRemove) {
+	            item.ownReactionsToRemove.forEach(reactionToRemove => {
+	              preparedOwnReactions.delete(reactionToRemove);
+	            });
+	          }
+	          state.collection[item.messageId] = {
+	            reactionCounters: item.reactionCounters,
+	            reactionUsers: item.reactionUsers,
+	            ownReactions: preparedOwnReactions
+	          };
+	        });
+	      },
+	      setReaction: (state, payload) => {
+	        const {
+	          messageId,
+	          userId,
+	          reaction
+	        } = payload;
+	        if (!state.collection[messageId]) {
+	          state.collection[messageId] = this.getElementState();
+	        }
+	        const reactions = state.collection[messageId];
+	        if (im_v2_application_core.Core.getUserId() === userId) {
+	          reactions.ownReactions.add(reaction);
+	        }
+	        if (!reactions.reactionCounters[reaction]) {
+	          reactions.reactionCounters[reaction] = 0;
+	        }
+	        const currentReactionCounter = reactions.reactionCounters[reaction];
+	        const newReactionCounter = currentReactionCounter + 1;
+	        if (newReactionCounter <= USERS_TO_SHOW) {
+	          this.addUserToReaction(reactions, payload);
+	        }
+	        reactions.reactionCounters[reaction] = newReactionCounter;
+	      },
+	      removeReaction: (state, payload) => {
+	        var _reactions$reactionUs;
+	        const {
+	          messageId,
+	          userId,
+	          reaction
+	        } = payload;
+	        const reactions = state.collection[messageId];
+	        if (im_v2_application_core.Core.getUserId() === userId) {
+	          reactions.ownReactions.delete(reaction);
+	        }
+	        (_reactions$reactionUs = reactions.reactionUsers[reaction]) == null ? void 0 : _reactions$reactionUs.delete(userId);
+	        reactions.reactionCounters[reaction]--;
+	        if (reactions.reactionCounters[reaction] === 0) {
+	          delete reactions.reactionCounters[reaction];
+	        }
+	      },
+	      clearCollection: state => {
+	        state.collection = {};
+	      }
+	    };
+	  }
+	  addUserToReaction(reactions, payload) {
+	    const {
+	      userId,
+	      reaction
+	    } = payload;
+	    if (!reactions.reactionUsers[reaction]) {
+	      reactions.reactionUsers[reaction] = new Set();
+	    }
+	    reactions.reactionUsers[reaction].add(userId);
+	  }
+	  prepareSetPayload(payload) {
+	    return payload.map(item => {
+	      const reactionUsers = {};
+	      Object.entries(item.reactionUsers).forEach(([reaction, users]) => {
+	        reactionUsers[reaction] = new Set(users);
+	      });
+	      return {
+	        ...item,
+	        reactionUsers
+	      };
+	    });
+	  }
+	}
+
 	class SelectModel extends ui_vue3_vuex.BuilderModel {
 	  getState() {
 	    return {
@@ -1204,7 +1416,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      pin: PinModel,
 	      reactions: ReactionsModel,
 	      comments: CommentsModel,
-	      select: SelectModel
+	      select: SelectModel,
+	      anchors: AnchorsModel
 	    };
 	  }
 	  getState() {
@@ -1291,6 +1504,14 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return false;
 	        }
 	        return main_core.Type.isStringFilled(message.forward.id);
+	      },
+	      /** @function messages/isVideoNote */
+	      isVideoNote: (state, getters) => id => {
+	        const message = state.collection[id];
+	        if (!message) {
+	          return false;
+	        }
+	        return getters.getMessageFiles(id).some(file => file.isVideoNote);
 	      },
 	      /** @function messages/isExists */
 	      isExists: state => id => {
@@ -1395,6 +1616,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        return state.collection[desiredMessageId];
 	      },
+	      /** @function messages/findPreviousMessageId */
 	      findPreviousMessageId: (state, getters) => payload => {
 	        const chatCollection = getters.getByChatId(payload.chatId);
 	        const currentMessageIndex = chatCollection.findIndex(message => {
@@ -1405,20 +1627,24 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        return -1;
 	      },
+	      /** @function messages/findLastChatMessageId */
 	      findLastChatMessageId: (state, getters) => chatId => {
 	        const lastMessage = getters.getByChatId(chatId).pop();
 	        if (lastMessage) {
 	          return lastMessage.id;
 	        }
-	        return -1;
+	        return null;
 	      },
+	      /** @function messages/hasLoadingMessageByPreviousSiblingId */
 	      hasLoadingMessageByPreviousSiblingId: state => messageId => {
 	        return Boolean(state.loadingMessages[messageId]);
 	      },
+	      /** @function messages/getLoadingMessageByPreviousSiblingId */
 	      getLoadingMessageByPreviousSiblingId: state => messageId => {
 	        var _state$loadingMessage;
 	        return (_state$loadingMessage = state.loadingMessages[messageId]) != null ? _state$loadingMessage : null;
 	      },
+	      /** @function messages/getLoadingMessageByMessageId */
 	      getLoadingMessageByMessageId: state => messageId => {
 	        const message = Object.values(state.loadingMessages).find(currentMessage => {
 	          return currentMessage.id === messageId;
@@ -1428,11 +1654,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        return null;
 	      },
+	      /** @function messages/hasLoadingMessageByMessageId */
 	      hasLoadingMessageByMessageId: (state, getters) => messageId => {
 	        return getters.getLoadingMessageByMessageId(messageId) !== null;
 	      },
+	      /** @function messages/isRealMessage */
 	      isRealMessage: () => messageId => {
-	        return !im_v2_lib_utils.Utils.text.isTempMessage(messageId);
+	        return !im_v2_lib_message.MessageManager.isTempMessage(messageId);
 	      }
 	    };
 	  }
@@ -1658,7 +1886,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        const previousSiblingId = (() => {
 	          const id = store.getters.findLastChatMessageId(message.chatId);
-	          if (id === -1) {
+	          if (main_core.Type.isNull(id)) {
 	            return babelHelpers.classPrivateFieldLooseBase(this, _makeFakePreviousSiblingId)[_makeFakePreviousSiblingId](message.chatId);
 	          }
 	          return id;
@@ -1875,7 +2103,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    if (!firstId) {
 	      firstId = element.id;
 	    }
-	    if (im_v2_lib_utils.Utils.text.isTempMessage(element.id)) {
+	    if (im_v2_lib_message.MessageManager.isTempMessage(element.id)) {
 	      continue;
 	    }
 	    if (element.id < firstId) {
@@ -1889,7 +2117,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  const messages = [...state.chatCollection[chatId]];
 	  for (const messageId of messages) {
 	    const element = state.collection[messageId];
-	    if (im_v2_lib_utils.Utils.text.isTempMessage(element.id)) {
+	    if (im_v2_lib_message.MessageManager.isTempMessage(element.id)) {
 	      continue;
 	    }
 	    if (element.id > lastId) {
@@ -1903,7 +2131,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  const messages = [...state.chatCollection[chatId]].sort((a, z) => z - a);
 	  for (const messageId of messages) {
 	    const element = state.collection[messageId];
-	    if (im_v2_lib_utils.Utils.text.isTempMessage(element.id)) {
+	    if (im_v2_lib_message.MessageManager.isTempMessage(element.id)) {
 	      continue;
 	    }
 	    if (element.authorId === im_v2_application_core.Core.getUserId()) {
@@ -1967,32 +2195,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	  return result;
 	};
-	const prepareMuteList = muteList => {
-	  const result = [];
+	const prepareMuteStatus = muteList => {
 	  if (main_core.Type.isArray(muteList)) {
-	    muteList.forEach(rawUserId => {
-	      const userId = Number.parseInt(rawUserId, 10);
-	      if (userId > 0) {
-	        result.push(userId);
-	      }
-	    });
-	  } else if (main_core.Type.isPlainObject(muteList)) {
-	    Object.entries(muteList).forEach(([key, value]) => {
-	      if (!value) {
-	        return;
-	      }
-	      const userId = Number.parseInt(key, 10);
-	      if (userId > 0) {
-	        result.push(userId);
-	      }
-	    });
+	    return muteList.includes(im_v2_application_core.Core.getUserId());
 	  }
-	  return result;
+	  if (main_core.Type.isPlainObject(muteList)) {
+	    const currentUserEntry = muteList[im_v2_application_core.Core.getUserId()];
+	    return currentUserEntry === true;
+	  }
+	  return false;
 	};
 	const prepareLastMessageViews = rawLastMessageViews => {
 	  const {
 	    countOfViewers,
-	    firstViewers: rawFirstViewers,
+	    firstViewers: rawFirstViewers = [],
 	    messageId
 	  } = rawLastMessageViews;
 	  let firstViewer = null;
@@ -2035,11 +2251,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  fieldName: 'quoteId',
 	  targetFieldName: 'quoteId',
 	  checkFunction: main_core.Type.isNumber
-	}, {
-	  fieldName: 'counter',
-	  targetFieldName: 'counter',
-	  checkFunction: isNumberOrString,
-	  formatFunction: convertToNumber
 	}, {
 	  fieldName: 'userCounter',
 	  targetFieldName: 'userCounter',
@@ -2099,6 +2310,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  targetFieldName: 'extranet',
 	  checkFunction: main_core.Type.isBoolean
 	}, {
+	  fieldName: 'containsCollaber',
+	  targetFieldName: 'containsCollaber',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
 	  fieldName: 'entityLink',
 	  targetFieldName: 'entityLink',
 	  checkFunction: main_core.Type.isPlainObject,
@@ -2124,9 +2339,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  formatFunction: prepareManagerList
 	}, {
 	  fieldName: 'muteList',
-	  targetFieldName: 'muteList',
+	  targetFieldName: 'isMuted',
 	  checkFunction: [main_core.Type.isArray, main_core.Type.isPlainObject],
-	  formatFunction: prepareMuteList
+	  formatFunction: prepareMuteStatus
+	}, {
+	  fieldName: 'isMuted',
+	  targetFieldName: 'isMuted',
+	  checkFunction: main_core.Type.isBoolean
 	}, {
 	  fieldName: 'inited',
 	  targetFieldName: 'inited',
@@ -2160,8 +2379,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  fieldName: 'parentChatId',
 	  targetFieldName: 'parentChatId',
 	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'backgroundId',
+	  targetFieldName: 'backgroundId',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'textFieldEnabled',
+	  targetFieldName: 'isTextareaEnabled',
+	  checkFunction: main_core.Type.isBoolean
 	}];
 	const chatEntityFieldsConfig = [{
+	  fieldName: 'id',
+	  targetFieldName: 'id',
+	  checkFunction: main_core.Type.isString
+	}, {
 	  fieldName: 'type',
 	  targetFieldName: 'type',
 	  checkFunction: main_core.Type.isString
@@ -2170,6 +2401,89 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  targetFieldName: 'url',
 	  checkFunction: main_core.Type.isString
 	}];
+
+	const autoDeleteFieldsConfig = [{
+	  fieldName: 'delay',
+	  targetFieldName: 'delay',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'chatId',
+	  targetFieldName: 'chatId',
+	  checkFunction: main_core.Type.isNumber
+	}];
+
+	var _formatFields$2 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	class AutoDeleteModel extends ui_vue3_vuex.BuilderModel {
+	  constructor(...args) {
+	    super(...args);
+	    Object.defineProperty(this, _formatFields$2, {
+	      value: _formatFields2$2
+	    });
+	  }
+	  getState() {
+	    return {
+	      collection: new Map()
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function chats/autoDelete/isEnabled */
+	      isEnabled: state => chatId => {
+	        var _state$collection$has;
+	        return (_state$collection$has = state.collection.has(chatId)) != null ? _state$collection$has : false;
+	      },
+	      /** @function chats/autoDelete/getDelay */
+	      getDelay: state => chatId => {
+	        var _state$collection$get;
+	        return (_state$collection$get = state.collection.get(chatId)) != null ? _state$collection$get : im_v2_const.AutoDeleteDelay.Off;
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function chats/autoDelete/set */
+	      set: (store, rawPayload) => {
+	        let payload = rawPayload;
+	        if (!Array.isArray(payload) && main_core.Type.isPlainObject(payload)) {
+	          payload = [payload];
+	        }
+	        payload.forEach(element => {
+	          const formattedElement = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$2)[_formatFields$2](element);
+	          const {
+	            delay
+	          } = formattedElement;
+	          if (delay === im_v2_const.AutoDeleteDelay.Off) {
+	            store.commit('delete', formattedElement);
+	            return;
+	          }
+	          store.commit('set', formattedElement);
+	        });
+	      }
+	    };
+	  }
+
+	  /* eslint-disable no-param-reassign */
+	  getMutations() {
+	    return {
+	      set: (state, payload) => {
+	        const {
+	          chatId,
+	          delay
+	        } = payload;
+	        state.collection.set(chatId, delay);
+	      },
+	      delete: (state, payload) => {
+	        const {
+	          chatId
+	        } = payload;
+	        state.collection.delete(chatId);
+	      }
+	    };
+	  }
+	}
+	function _formatFields2$2(fields) {
+	  return im_v2_model.formatFieldsWithConfig(fields, autoDeleteFieldsConfig);
+	}
 
 	const collabFieldsConfig = [{
 	  fieldName: 'collabId',
@@ -2211,12 +2525,12 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  checkFunction: main_core.Type.isStringFilled
 	}];
 
-	var _formatFields$2 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	var _formatFields$3 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
 	class CollabsModel extends ui_vue3_vuex.BuilderModel {
 	  constructor(...args) {
 	    super(...args);
-	    Object.defineProperty(this, _formatFields$2, {
-	      value: _formatFields2$2
+	    Object.defineProperty(this, _formatFields$3, {
+	      value: _formatFields2$3
 	    });
 	  }
 	  getState() {
@@ -2266,7 +2580,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        store.commit('set', {
 	          chatId,
-	          collabInfo: babelHelpers.classPrivateFieldLooseBase(this, _formatFields$2)[_formatFields$2](collabInfo)
+	          collabInfo: babelHelpers.classPrivateFieldLooseBase(this, _formatFields$3)[_formatFields$3](collabInfo)
 	        });
 	      },
 	      /** @function chats/collabs/setCounter */
@@ -2336,7 +2650,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    };
 	  }
 	}
-	function _formatFields2$2(fields) {
+	function _formatFields2$3(fields) {
 	  return im_v2_model.formatFieldsWithConfig(fields, collabFieldsConfig);
 	}
 
@@ -2369,14 +2683,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      isActionActive: state => payload => {
 	        const {
 	          dialogId,
-	          type,
 	          userId
 	        } = payload;
 	        if (!state.collection[dialogId]) {
 	          return false;
 	        }
 	        const chatActionList = state.collection[dialogId];
-	        return this.isAlreadyActive(chatActionList, type, userId);
+	        return this.isAlreadyActive(chatActionList, userId);
 	      }
 	    };
 	  }
@@ -2386,14 +2699,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      start: (store, payload) => {
 	        const {
 	          dialogId,
-	          type,
 	          userId
 	        } = payload;
 	        if (!store.state.collection[dialogId]) {
 	          store.commit('initCollection', dialogId);
 	        }
 	        const chatActionList = store.state.collection[dialogId];
-	        const isAlreadyActive = this.isAlreadyActive(chatActionList, type, userId);
+	        const isAlreadyActive = this.isAlreadyActive(chatActionList, userId);
 	        if (isAlreadyActive) {
 	          return;
 	        }
@@ -2403,29 +2715,17 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      stop: (store, payload) => {
 	        const {
 	          dialogId,
-	          type,
 	          userId
 	        } = payload;
 	        const chatActionList = store.state.collection[dialogId];
 	        if (!chatActionList) {
 	          return;
 	        }
-	        const isAlreadyActive = this.isAlreadyActive(chatActionList, type, userId);
+	        const isAlreadyActive = this.isAlreadyActive(chatActionList, userId);
 	        if (!isAlreadyActive) {
 	          return;
 	        }
 	        store.commit('stop', payload);
-	      },
-	      /** @function chats/inputActions/stopUserActionsInChat */
-	      stopUserActionsInChat: (store, payload) => {
-	        const {
-	          dialogId
-	        } = payload;
-	        const chatActionList = store.state.collection[dialogId];
-	        if (!chatActionList) {
-	          return;
-	        }
-	        store.commit('stopUserActionsInChat', payload);
 	      }
 	    };
 	  }
@@ -2436,27 +2736,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          dialogId,
 	          type,
 	          userId,
-	          userName
+	          userName,
+	          duration,
+	          statusMessageCode
 	        } = payload;
 	        const chatActionList = state.collection[dialogId];
 	        chatActionList.push({
 	          type,
 	          userId,
-	          userName
+	          userName,
+	          duration,
+	          statusMessageCode
 	        });
 	      },
 	      stop: (state, payload) => {
-	        const {
-	          dialogId,
-	          type,
-	          userId
-	        } = payload;
-	        const chatActionList = state.collection[dialogId];
-	        state.collection[dialogId] = chatActionList.filter(userRecord => {
-	          return userRecord.userId !== userId || userRecord.type !== type;
-	        });
-	      },
-	      stopUserActionsInChat: (state, payload) => {
 	        const {
 	          dialogId,
 	          userId
@@ -2471,10 +2764,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      }
 	    };
 	  }
-	  isAlreadyActive(list, type, userId) {
-	    return list.some(userRecord => {
-	      return userRecord.userId === userId && userRecord.type === type;
-	    });
+	  isAlreadyActive(list, userId) {
+	    return list.some(userRecord => userRecord.userId === userId);
 	  }
 	}
 
@@ -2486,7 +2777,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getNestedModules() {
 	    return {
 	      collabs: CollabsModel,
-	      inputActions: InputActionsModel
+	      inputActions: InputActionsModel,
+	      autoDelete: AutoDeleteModel
 	    };
 	  }
 	  getState() {
@@ -2504,7 +2796,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      avatar: '',
 	      color: im_v2_const.Color.base,
 	      extranet: false,
-	      counter: 0,
+	      containsCollaber: false,
 	      userCounter: 0,
 	      lastReadId: 0,
 	      markedId: 0,
@@ -2517,7 +2809,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      savedPositionMessageId: 0,
 	      managerList: [],
 	      inputActionList: {},
-	      muteList: [],
+	      isMuted: false,
 	      quoteId: 0,
 	      ownerId: 0,
 	      entityLink: {},
@@ -2531,18 +2823,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      hasPrevPage: false,
 	      hasNextPage: false,
 	      diskFolderId: 0,
-	      role: im_v2_const.UserRole.guest,
+	      role: im_v2_const.UserRole.member,
 	      permissions: {
 	        manageUi: im_v2_const.UserRole.none,
 	        manageSettings: im_v2_const.UserRole.none,
 	        manageUsersAdd: im_v2_const.UserRole.none,
 	        manageUsersDelete: im_v2_const.UserRole.none,
-	        manageMessages: im_v2_const.UserRole.none
+	        manageMessages: im_v2_const.UserRole.member
 	      },
 	      tariffRestrictions: {
 	        isHistoryLimitExceeded: false
 	      },
-	      parentChatId: 0
+	      parentChatId: 0,
+	      backgroundId: '',
+	      isTextareaEnabled: true
 	    };
 	  }
 
@@ -2618,6 +2912,23 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return false;
 	        }
 	        return state.collection[dialogId].type === im_v2_const.ChatType.support24Question;
+	      },
+	      /** @function chats/isSelfChat */
+	      isSelfChat: () => dialogId => {
+	        return im_v2_application_core.Core.getUserId().toString() === dialogId;
+	      },
+	      /** @function chats/getBackgroundId */
+	      getBackgroundId: state => dialogId => {
+	        if (!state.collection[dialogId]) {
+	          return '';
+	        }
+	        return state.collection[dialogId].backgroundId;
+	      },
+	      /** @function chats/getCollectionByChatType */
+	      getCollectionByChatType: state => type => {
+	        return Object.values(state.collection).filter(item => {
+	          return item.type === type;
+	        });
 	      }
 	    };
 	  }
@@ -2693,9 +3004,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          dialogId: payload.dialogId
 	        });
 	      },
-	      /** @function chats/clearCounters */
-	      clearCounters: store => {
-	        store.commit('clearCounters');
+	      /** @function chats/clearMarkedChatsByType */
+	      clearMarkedChatsByType: (store, payload) => {
+	        store.commit('clearMarkedChatsByType', payload);
+	      },
+	      /** @function chats/clearMarkedChats */
+	      clearMarkedChats: store => {
+	        store.commit('clearMarkedChats');
 	      },
 	      /** @function chats/mute */
 	      mute: (store, payload) => {
@@ -2703,16 +3018,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        if (!existingItem) {
 	          return;
 	        }
-	        const currentUserId = im_v2_application_core.Core.getUserId();
-	        if (existingItem.muteList.includes(currentUserId)) {
-	          return;
-	        }
-	        const muteList = [...existingItem.muteList, currentUserId];
+	        this.store.dispatch('counters/setMuteStatus', {
+	          chatId: existingItem.chatId,
+	          status: true
+	        });
 	        store.commit('update', {
 	          actionName: 'mute',
 	          dialogId: payload.dialogId,
 	          fields: this.formatFields({
-	            muteList
+	            isMuted: true
 	          })
 	        });
 	      },
@@ -2722,13 +3036,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        if (!existingItem) {
 	          return;
 	        }
-	        const currentUserId = im_v2_application_core.Core.getUserId();
-	        const muteList = existingItem.muteList.filter(item => item !== currentUserId);
+	        this.store.dispatch('counters/setMuteStatus', {
+	          chatId: existingItem.chatId,
+	          status: false
+	        });
 	        store.commit('update', {
 	          actionName: 'unmute',
 	          dialogId: payload.dialogId,
 	          fields: this.formatFields({
-	            muteList
+	            isMuted: false
 	          })
 	        });
 	      },
@@ -2815,111 +3131,27 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      delete: (state, payload) => {
 	        delete state.collection[payload.dialogId];
 	      },
-	      clearCounters: state => {
-	        Object.keys(state.collection).forEach(key => {
-	          state.collection[key].counter = 0;
-	          state.collection[key].markedId = 0;
+	      clearMarkedChatsByType: (state, payload) => {
+	        const {
+	          type
+	        } = payload;
+	        const items = this.store.getters['chats/getCollectionByChatType'](type);
+	        items.forEach(item => {
+	          state.collection[item.dialogId].markedId = 0;
+	        });
+	      },
+	      clearMarkedChats: state => {
+	        Object.values(state.collection).forEach(chat => {
+	          const {
+	            dialogId
+	          } = chat;
+	          state.collection[dialogId].markedId = 0;
 	        });
 	      }
 	    };
 	  }
-	  formatFields(fields) {
-	    return im_v2_model.formatFieldsWithConfig(fields, chatFieldsConfig);
-	  }
-	}
-
-	class BotsModel extends ui_vue3_vuex.BuilderModel {
-	  getState() {
-	    return {
-	      collection: {}
-	    };
-	  }
-	  getElementState() {
-	    return {
-	      code: '',
-	      type: im_v2_const.BotType.bot,
-	      appId: '',
-	      isHidden: false,
-	      isSupportOpenline: false,
-	      isHuman: false
-	    };
-	  }
-	  getGetters() {
-	    return {
-	      /** @function users/bots/getByUserId */
-	      getByUserId: state => userId => {
-	        return state.collection[userId];
-	      },
-	      /** @function users/bots/isNetwork */
-	      isNetwork: state => userId => {
-	        var _state$collection$use;
-	        return ((_state$collection$use = state.collection[userId]) == null ? void 0 : _state$collection$use.type) === im_v2_const.BotType.network;
-	      },
-	      /** @function users/bots/isSupport */
-	      isSupport: state => userId => {
-	        var _state$collection$use2;
-	        return ((_state$collection$use2 = state.collection[userId]) == null ? void 0 : _state$collection$use2.type) === im_v2_const.BotType.support24;
-	      },
-	      /** @function users/bots/getCopilotUserId */
-	      getCopilotUserId: state => {
-	        for (const [userId, bot] of Object.entries(state.collection)) {
-	          if (bot.code === im_v2_const.BotCode.copilot) {
-	            return Number.parseInt(userId, 10);
-	          }
-	        }
-	        return null;
-	      },
-	      /** @function users/bots/isCopilot */
-	      isCopilot: (state, getters) => userId => {
-	        const copilotUserId = getters.getCopilotUserId;
-	        return copilotUserId === Number.parseInt(userId, 10);
-	      }
-	    };
-	  }
-	  getActions() {
-	    return {
-	      /** @function users/bots/set */
-	      set: (store, payload) => {
-	        const {
-	          userId,
-	          botData
-	        } = payload;
-	        if (!botData) {
-	          return;
-	        }
-	        store.commit('set', {
-	          userId,
-	          botData: {
-	            ...this.getElementState(),
-	            ...this.formatFields(botData)
-	          }
-	        });
-	      }
-	    };
-	  }
-	  getMutations() {
-	    return {
-	      set: (state, payload) => {
-	        const {
-	          userId,
-	          botData
-	        } = payload;
-	        // eslint-disable-next-line no-param-reassign
-	        state.collection[userId] = botData;
-	      }
-	    };
-	  }
-	  formatFields(fields) {
-	    const result = convertObjectKeysToCamelCase(fields);
-	    if (result.type === im_v2_const.RawBotType.human) {
-	      result.type = im_v2_const.BotType.bot;
-	      result.isHuman = true;
-	    }
-	    const TYPES_MAPPED_TO_DEFAULT_BOT = [im_v2_const.RawBotType.openline, im_v2_const.RawBotType.supervisor];
-	    if (TYPES_MAPPED_TO_DEFAULT_BOT.includes(result.type)) {
-	      result.type = im_v2_const.BotType.bot;
-	    }
-	    return result;
+	  formatFields(rawFields) {
+	    return im_v2_model.formatFieldsWithConfig(rawFields, chatFieldsConfig);
 	  }
 	}
 
@@ -3015,10 +3247,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  targetFieldName: 'isBirthday',
 	  checkFunction: main_core.Type.isBoolean
 	}, {
-	  fieldName: 'isAdmin',
-	  targetFieldName: 'isAdmin',
-	  checkFunction: main_core.Type.isBoolean
-	}, {
 	  fieldName: 'type',
 	  targetFieldName: 'type',
 	  checkFunction: main_core.Type.isString
@@ -3068,7 +3296,157 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  targetFieldName: 'phones',
 	  checkFunction: main_core.Type.isPlainObject,
 	  formatFunction: preparePhones
+	}, {
+	  fieldName: 'email',
+	  targetFieldName: 'email',
+	  checkFunction: main_core.Type.isStringFilled
+	}, {
+	  fieldName: 'website',
+	  targetFieldName: 'website',
+	  checkFunction: main_core.Type.isStringFilled
 	}];
+	const botFieldsConfig = [{
+	  fieldName: 'appId',
+	  targetFieldName: 'appId',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'type',
+	  targetFieldName: 'type',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'code',
+	  targetFieldName: 'code',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'isHidden',
+	  targetFieldName: 'isHidden',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'isSupportOpenline',
+	  targetFieldName: 'isHidden',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'isHuman',
+	  targetFieldName: 'isHidden',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'backgroundId',
+	  targetFieldName: 'backgroundId',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'reactionsEnabled',
+	  targetFieldName: 'reactionsEnabled',
+	  checkFunction: main_core.Type.isBoolean
+	}];
+
+	class BotsModel extends ui_vue3_vuex.BuilderModel {
+	  getState() {
+	    return {
+	      collection: {}
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      code: '',
+	      type: im_v2_const.BotType.bot,
+	      appId: '',
+	      isHidden: false,
+	      isSupportOpenline: false,
+	      isHuman: false,
+	      backgroundId: '',
+	      reactionsEnabled: false
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function users/bots/getByUserId */
+	      getByUserId: state => userId => {
+	        return state.collection[userId];
+	      },
+	      /** @function users/bots/isNetwork */
+	      isNetwork: state => userId => {
+	        var _state$collection$use;
+	        return ((_state$collection$use = state.collection[userId]) == null ? void 0 : _state$collection$use.type) === im_v2_const.BotType.network;
+	      },
+	      /** @function users/bots/isSupport */
+	      isSupport: state => userId => {
+	        var _state$collection$use2;
+	        return ((_state$collection$use2 = state.collection[userId]) == null ? void 0 : _state$collection$use2.type) === im_v2_const.BotType.support24;
+	      },
+	      /** @function users/bots/isAiAssistant */
+	      isAiAssistant: state => userId => {
+	        var _state$collection$use3;
+	        return ((_state$collection$use3 = state.collection[userId]) == null ? void 0 : _state$collection$use3.code) === im_v2_const.BotCode.aiAssistant;
+	      },
+	      /** @function users/bots/getCopilotBotDialogId */
+	      getCopilotBotDialogId: state => {
+	        for (const [userId, bot] of Object.entries(state.collection)) {
+	          if (bot.code === im_v2_const.BotCode.copilot) {
+	            return userId;
+	          }
+	        }
+	        return null;
+	      },
+	      /** @function users/bots/isCopilot */
+	      isCopilot: (state, getters) => userId => {
+	        const copilotUserId = Number(getters.getCopilotBotDialogId);
+	        return copilotUserId === Number.parseInt(userId, 10);
+	      },
+	      /** @function users/bots/getBackgroundId */
+	      getBackgroundId: state => dialogId => {
+	        if (!state.collection[dialogId]) {
+	          return '';
+	        }
+	        return state.collection[dialogId].backgroundId;
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function users/bots/set */
+	      set: (store, payload) => {
+	        const {
+	          userId,
+	          botData
+	        } = payload;
+	        if (!botData) {
+	          return;
+	        }
+	        store.commit('set', {
+	          userId,
+	          botData: {
+	            ...this.getElementState(),
+	            ...this.formatFields(botData)
+	          }
+	        });
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      set: (state, payload) => {
+	        const {
+	          userId,
+	          botData
+	        } = payload;
+	        // eslint-disable-next-line no-param-reassign
+	        state.collection[userId] = botData;
+	      }
+	    };
+	  }
+	  formatFields(fields) {
+	    const result = convertObjectKeysToCamelCase(fields);
+	    if (result.type === im_v2_const.RawBotType.human) {
+	      result.type = im_v2_const.BotType.bot;
+	      result.isHuman = true;
+	    }
+	    const TYPES_MAPPED_TO_DEFAULT_BOT = [im_v2_const.RawBotType.openline, im_v2_const.RawBotType.supervisor, im_v2_const.RawBotType.personal];
+	    if (TYPES_MAPPED_TO_DEFAULT_BOT.includes(result.type)) {
+	      result.type = im_v2_const.BotType.bot;
+	    }
+	    return im_v2_model.formatFieldsWithConfig(result, botFieldsConfig);
+	  }
+	}
 
 	const UserPositionByType = {
 	  [im_v2_const.UserType.bot]: main_core.Loc.getMessage('IM_MODEL_USERS_CHAT_BOT'),
@@ -3088,7 +3466,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return {
 	      collection: {},
 	      absentList: [],
-	      absentCheckInterval: null
+	      absentCheckInterval: null,
+	      isCurrentUserAdmin: false
 	    };
 	  }
 	  getElementState(params = {}) {
@@ -3104,7 +3483,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      color: im_v2_const.Color.base,
 	      workPosition: '',
 	      gender: 'M',
-	      isAdmin: false,
 	      type: im_v2_const.UserType.user,
 	      network: false,
 	      connector: false,
@@ -3123,7 +3501,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        personalMobile: '',
 	        personalPhone: '',
 	        innerPhone: ''
-	      }
+	      },
+	      email: '',
+	      website: ''
 	    };
 	  }
 
@@ -3204,6 +3584,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return user.workPosition;
 	        }
 	        return (_UserPositionByType$u = UserPositionByType[user.type]) != null ? _UserPositionByType$u : UserPositionByType.default;
+	      },
+	      /** @function users/isCurrentUserAdmin */
+	      isCurrentUserAdmin: state => {
+	        return state.isCurrentUserAdmin;
 	      }
 	    };
 	  }
@@ -3283,6 +3667,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          id: im_v2_application_core.Core.getUserId(),
 	          fields: this.formatFields(payload)
 	        });
+	      },
+	      /** @function users/setCurrentUserAdminStatus */
+	      setCurrentUserAdminStatus: (store, isAdmin) => {
+	        store.commit('setCurrentUserAdminStatus', isAdmin);
 	      }
 	    };
 	  }
@@ -3304,6 +3692,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      delete: (state, payload) => {
 	        // eslint-disable-next-line no-param-reassign
 	        delete state.collection[payload.id];
+	      },
+	      setCurrentUserAdminStatus: (state, isAdmin) => {
+	        // eslint-disable-next-line no-param-reassign
+	        state.isCurrentUserAdmin = isAdmin;
 	      }
 	    };
 	  }
@@ -3351,6 +3743,131 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	}
 
+	const prepareIconType = file => {
+	  const extension = file.extension.toString();
+	  if (file.type === 'image') {
+	    return 'img';
+	  }
+	  if (file.type === 'video') {
+	    return 'mov';
+	  }
+	  return im_v2_lib_utils.Utils.file.getIconTypeByExtension(extension);
+	};
+	const prepareImage = image => {
+	  let result = {
+	    width: 0,
+	    height: 0
+	  };
+	  if (main_core.Type.isString(image.width) || main_core.Type.isNumber(image.width)) {
+	    result.width = Number.parseInt(image.width, 10);
+	  }
+	  if (main_core.Type.isString(image.height) || main_core.Type.isNumber(image.height)) {
+	    result.height = Number.parseInt(image.height, 10);
+	  }
+	  if (result.width <= 0 || result.height <= 0) {
+	    result = false;
+	  }
+	  return result;
+	};
+	const prepareUrl = url => {
+	  if (!url || url.startsWith('http') || url.startsWith('bx') || url.startsWith('file') || url.startsWith('blob')) {
+	    return url;
+	  }
+	  return im_v2_application_core.Core.getHost() + url;
+	};
+
+	const fileFieldsConfig = [{
+	  fieldName: 'id',
+	  targetFieldName: 'id',
+	  checkFunction: isNumberOrString
+	}, {
+	  fieldName: 'chatId',
+	  targetFieldName: 'chatId',
+	  checkFunction: isNumberOrString,
+	  formatFunction: convertToNumber
+	}, {
+	  fieldName: 'date',
+	  targetFieldName: 'date',
+	  formatFunction: im_v2_lib_utils.Utils.date.cast
+	}, {
+	  fieldName: 'type',
+	  targetFieldName: 'type',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'extension',
+	  targetFieldName: 'icon',
+	  checkFunction: main_core.Type.isString,
+	  formatFunction: (target, currentResult, rawFields) => {
+	    return prepareIconType(rawFields);
+	  }
+	}, {
+	  fieldName: 'name',
+	  targetFieldName: 'name',
+	  checkFunction: isNumberOrString,
+	  formatFunction: convertToString
+	}, {
+	  fieldName: 'size',
+	  targetFieldName: 'size',
+	  checkFunction: isNumberOrString,
+	  formatFunction: convertToNumber
+	}, {
+	  fieldName: 'image',
+	  targetFieldName: 'image',
+	  checkFunction: [main_core.Type.isPlainObject, main_core.Type.isBoolean],
+	  formatFunction: target => {
+	    if (main_core.Type.isBoolean(target)) {
+	      return target;
+	    }
+	    return prepareImage(target);
+	  }
+	}, {
+	  fieldName: 'status',
+	  targetFieldName: 'status',
+	  checkFunction: [main_core.Type.isString, file => !main_core.Type.isUndefined(im_v2_const.FileStatus[file.status])]
+	}, {
+	  fieldName: 'progress',
+	  targetFieldName: 'progress',
+	  checkFunction: isNumberOrString,
+	  formatFunction: convertToNumber
+	}, {
+	  fieldName: 'isVideoNote',
+	  targetFieldName: 'isVideoNote',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'authorId',
+	  targetFieldName: 'authorId',
+	  checkFunction: isNumberOrString,
+	  formatFunction: convertToNumber
+	}, {
+	  fieldName: 'authorName',
+	  targetFieldName: 'authorName',
+	  checkFunction: isNumberOrString,
+	  formatFunction: convertToString
+	}, {
+	  fieldName: 'urlPreview',
+	  targetFieldName: 'urlPreview',
+	  checkFunction: main_core.Type.isString,
+	  formatFunction: prepareUrl
+	}, {
+	  fieldName: 'urlDownload',
+	  targetFieldName: 'urlDownload',
+	  checkFunction: main_core.Type.isString,
+	  formatFunction: prepareUrl
+	}, {
+	  fieldName: 'urlShow',
+	  targetFieldName: 'urlShow',
+	  checkFunction: main_core.Type.isString,
+	  formatFunction: prepareUrl
+	}, {
+	  fieldName: 'viewerAttrs',
+	  targetFieldName: 'viewerAttrs',
+	  checkFunction: main_core.Type.isPlainObject
+	}, {
+	  fieldName: 'isTranscribable',
+	  targetFieldName: 'isTranscribable',
+	  checkFunction: main_core.Type.isBoolean
+	}];
+
 	class FilesModel extends ui_vue3_vuex.BuilderModel {
 	  getName() {
 	    return 'files';
@@ -3358,7 +3875,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getState() {
 	    return {
 	      collection: {},
-	      temporaryFilesMap: new Map()
+	      temporaryFilesMap: new Map(),
+	      transcriptions: {}
 	    };
 	  }
 	  getElementState() {
@@ -3370,8 +3888,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      type: 'file',
 	      extension: '',
 	      icon: 'empty',
+	      isTranscribable: false,
 	      size: 0,
-	      image: false,
+	      image: null,
 	      status: im_v2_const.FileStatus.done,
 	      progress: 100,
 	      authorId: 0,
@@ -3379,7 +3898,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      urlPreview: '',
 	      urlShow: '',
 	      urlDownload: '',
-	      viewerAttrs: null
+	      viewerAttrs: null,
+	      isVideoNote: false
 	    };
 	  }
 	  getGetters() {
@@ -3433,6 +3953,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return state.collection[temporaryFileId];
 	        }
 	        return null;
+	      },
+	      /** @function files/getTranscription */
+	      getTranscription: state => fileId => {
+	        return state.transcriptions[fileId] || null;
 	      }
 	    };
 	  }
@@ -3442,7 +3966,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      add: (store, payload) => {
 	        const preparedFile = {
 	          ...this.getElementState(),
-	          ...this.validate(payload)
+	          ...this.formatFields(payload)
 	        };
 	        store.commit('add', {
 	          files: [preparedFile]
@@ -3453,7 +3977,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        const files = payload.flat().map(file => {
 	          return {
 	            ...this.getElementState(),
-	            ...this.validate(file)
+	            ...this.formatFields(file)
 	          };
 	        });
 	        store.commit('add', {
@@ -3472,7 +3996,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        store.commit('update', {
 	          id,
-	          fields: this.validate(fields)
+	          fields: this.formatFields(fields)
 	        });
 	        return true;
 	      },
@@ -3487,7 +4011,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        store.commit('updateWithId', {
 	          id,
-	          fields: this.validate(fields)
+	          fields: this.formatFields(fields)
 	        });
 	      },
 	      /** @function files/delete */
@@ -3505,6 +4029,21 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      /** @function files/setTemporaryFileMapping */
 	      setTemporaryFileMapping: (store, payload) => {
 	        store.commit('setTemporaryFileMapping', payload);
+	      },
+	      /** @function files/setTranscription */
+	      setTranscription: (store, payload) => {
+	        const {
+	          fileId,
+	          status,
+	          transcriptText,
+	          errorCode
+	        } = payload;
+	        store.commit('setTranscription', {
+	          fileId,
+	          status,
+	          transcriptText,
+	          errorCode
+	        });
 	      }
 	    };
 	  }
@@ -3545,124 +4084,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      },
 	      setTemporaryFileMapping: (state, payload) => {
 	        state.temporaryFilesMap.set(payload.serverFileId, payload.temporaryFileId);
+	      },
+	      setTranscription: (state, payload) => {
+	        state.transcriptions[payload.fileId] = {
+	          status: payload.status,
+	          transcriptText: payload.transcriptText,
+	          errorCode: payload.errorCode
+	        };
 	      }
 	    };
 	  }
-
-	  // eslint-disable-next-line max-lines-per-function,sonarjs/cognitive-complexity
-	  validate(file, options = {}) {
-	    const result = {};
-	    if (main_core.Type.isNumber(file.id) || main_core.Type.isStringFilled(file.id)) {
-	      result.id = file.id;
-	    }
-	    if (main_core.Type.isNumber(file.chatId) || main_core.Type.isString(file.chatId)) {
-	      result.chatId = Number.parseInt(file.chatId, 10);
-	    }
-	    if (!main_core.Type.isUndefined(file.date)) {
-	      result.date = im_v2_lib_utils.Utils.date.cast(file.date);
-	    }
-	    if (main_core.Type.isString(file.type)) {
-	      result.type = file.type;
-	    }
-	    if (main_core.Type.isString(file.extension)) {
-	      result.extension = file.extension.toString();
-	      if (result.type === 'image') {
-	        result.icon = 'img';
-	      } else if (result.type === 'video') {
-	        result.icon = 'mov';
-	      } else {
-	        result.icon = im_v2_lib_utils.Utils.file.getIconTypeByExtension(result.extension);
-	      }
-	    }
-	    if (main_core.Type.isString(file.name) || main_core.Type.isNumber(file.name)) {
-	      result.name = file.name.toString();
-	    }
-	    if (main_core.Type.isNumber(file.size) || main_core.Type.isString(file.size)) {
-	      result.size = Number.parseInt(file.size, 10);
-	    }
-	    if (main_core.Type.isBoolean(file.image)) {
-	      result.image = false;
-	    } else if (main_core.Type.isPlainObject(file.image)) {
-	      result.image = {
-	        width: 0,
-	        height: 0
-	      };
-	      if (main_core.Type.isString(file.image.width) || main_core.Type.isNumber(file.image.width)) {
-	        result.image.width = Number.parseInt(file.image.width, 10);
-	      }
-	      if (main_core.Type.isString(file.image.height) || main_core.Type.isNumber(file.image.height)) {
-	        result.image.height = Number.parseInt(file.image.height, 10);
-	      }
-	      if (result.image.width <= 0 || result.image.height <= 0) {
-	        result.image = false;
-	      }
-	    }
-	    if (main_core.Type.isString(file.status) && !main_core.Type.isUndefined(im_v2_const.FileStatus[file.status])) {
-	      result.status = file.status;
-	    }
-	    if (main_core.Type.isNumber(file.progress) || main_core.Type.isString(file.progress)) {
-	      result.progress = Number.parseInt(file.progress, 10);
-	    }
-	    if (main_core.Type.isNumber(file.authorId) || main_core.Type.isString(file.authorId)) {
-	      result.authorId = Number.parseInt(file.authorId, 10);
-	    }
-	    if (main_core.Type.isString(file.authorName) || main_core.Type.isNumber(file.authorName)) {
-	      result.authorName = file.authorName.toString();
-	    }
-	    if (main_core.Type.isString(file.urlPreview)) {
-	      if (!file.urlPreview || file.urlPreview.startsWith('http') || file.urlPreview.startsWith('bx') || file.urlPreview.startsWith('file') || file.urlPreview.startsWith('blob')) {
-	        result.urlPreview = file.urlPreview;
-	      } else {
-	        result.urlPreview = im_v2_application_core.Core.getHost() + file.urlPreview;
-	      }
-	    }
-	    if (main_core.Type.isString(file.urlDownload)) {
-	      if (!file.urlDownload || file.urlDownload.startsWith('http') || file.urlDownload.startsWith('bx') || file.urlDownload.startsWith('file') || file.urlDownload.startsWith('blob')) {
-	        result.urlDownload = file.urlDownload;
-	      } else {
-	        result.urlDownload = im_v2_application_core.Core.getHost() + file.urlDownload;
-	      }
-	    }
-	    if (main_core.Type.isString(file.urlShow)) {
-	      if (!file.urlShow || file.urlShow.startsWith('http') || file.urlShow.startsWith('bx') || file.urlShow.startsWith('file') || file.urlShow.startsWith('blob')) {
-	        result.urlShow = file.urlShow;
-	      } else {
-	        result.urlShow = im_v2_application_core.Core.getHost() + file.urlShow;
-	      }
-	    }
-	    if (main_core.Type.isPlainObject(file.viewerAttrs)) {
-	      result.viewerAttrs = file.viewerAttrs;
-	    }
-	    return result;
+	  formatFields(rawFields) {
+	    return im_v2_model.formatFieldsWithConfig(rawFields, fileFieldsConfig);
 	  }
 	}
-
-	const prepareDraft = draft => {
-	  if (!draft.text || draft.text === '') {
-	    return {
-	      text: '',
-	      date: null
-	    };
-	  }
-	  return {
-	    text: draft.text,
-	    date: new Date()
-	  };
-	};
-	const prepareInvitation = invited => {
-	  if (main_core.Type.isPlainObject(invited)) {
-	    return {
-	      isActive: true,
-	      originator: invited.originatorId,
-	      canResend: invited.canResend
-	    };
-	  }
-	  return {
-	    isActive: false,
-	    originator: 0,
-	    canResend: false
-	  };
-	};
 
 	const recentFieldsConfig = [{
 	  fieldName: ['id', 'dialogId'],
@@ -3683,10 +4118,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  targetFieldName: 'invitation',
 	  checkFunction: [main_core.Type.isPlainObject, main_core.Type.isBoolean],
 	  formatFunction: prepareInvitation
-	}, {
-	  fieldName: 'unread',
-	  targetFieldName: 'unread',
-	  checkFunction: main_core.Type.isBoolean
 	}, {
 	  fieldName: 'pinned',
 	  targetFieldName: 'pinned',
@@ -3753,7 +4184,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return {
 	      addActiveCall: (store, payload) => {
 	        const existingCall = Object.values(store.state.collection).find(item => {
-	          return item.dialogId === payload.dialogId || item.call.id === payload.call.id;
+	          return item.dialogId === payload.dialogId || item.call.uuid === payload.call.uuid;
 	        });
 	        if (existingCall) {
 	          store.commit('updateActiveCall', {
@@ -3829,15 +4260,11 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	}
 
-	var _formatFields$3 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
-	var _updateUnloadedRecentCounters = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("updateUnloadedRecentCounters");
-	var _updateUnloadedCopilotCounters = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("updateUnloadedCopilotCounters");
-	var _updateUnloadedCollabCounters = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("updateUnloadedCollabCounters");
-	var _updateUnloadedCounters = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("updateUnloadedCounters");
+	var _formatFields$4 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	var _shouldApplyUpdate = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("shouldApplyUpdate");
+	var _getAllCollections = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getAllCollections");
 	var _getMessage = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getMessage");
-	var _getDialog = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getDialog");
-	var _hasTodayMessage = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("hasTodayMessage");
-	var _canDelete = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("canDelete");
+	var _handleFakeItemWithDraft = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleFakeItemWithDraft");
 	var _prepareFakeItemWithDraft = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("prepareFakeItemWithDraft");
 	var _createFakeMessageForDraft = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("createFakeMessageForDraft");
 	var _shouldDeleteItemWithDraft = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("shouldDeleteItemWithDraft");
@@ -3853,32 +4280,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    Object.defineProperty(this, _prepareFakeItemWithDraft, {
 	      value: _prepareFakeItemWithDraft2
 	    });
-	    Object.defineProperty(this, _canDelete, {
-	      value: _canDelete2
-	    });
-	    Object.defineProperty(this, _hasTodayMessage, {
-	      value: _hasTodayMessage2
-	    });
-	    Object.defineProperty(this, _getDialog, {
-	      value: _getDialog2
+	    Object.defineProperty(this, _handleFakeItemWithDraft, {
+	      value: _handleFakeItemWithDraft2
 	    });
 	    Object.defineProperty(this, _getMessage, {
 	      value: _getMessage2
 	    });
-	    Object.defineProperty(this, _updateUnloadedCounters, {
-	      value: _updateUnloadedCounters2
+	    Object.defineProperty(this, _getAllCollections, {
+	      value: _getAllCollections2
 	    });
-	    Object.defineProperty(this, _updateUnloadedCollabCounters, {
-	      value: _updateUnloadedCollabCounters2
+	    Object.defineProperty(this, _shouldApplyUpdate, {
+	      value: _shouldApplyUpdate2
 	    });
-	    Object.defineProperty(this, _updateUnloadedCopilotCounters, {
-	      value: _updateUnloadedCopilotCounters2
-	    });
-	    Object.defineProperty(this, _updateUnloadedRecentCounters, {
-	      value: _updateUnloadedRecentCounters2
-	    });
-	    Object.defineProperty(this, _formatFields$3, {
-	      value: _formatFields2$3
+	    Object.defineProperty(this, _formatFields$4, {
+	      value: _formatFields2$4
 	    });
 	  }
 	  getName() {
@@ -3892,11 +4307,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getState() {
 	    return {
 	      collection: {},
-	      recentCollection: new Set(),
-	      unreadCollection: new Set(),
-	      copilotCollection: new Set(),
-	      channelCollection: new Set(),
-	      collabCollection: new Set()
+	      recentIndex: {},
+	      unreadIndex: {}
 	    };
 	  }
 	  getElementState() {
@@ -3907,7 +4319,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        text: '',
 	        date: null
 	      },
-	      unread: false,
 	      pinned: false,
 	      liked: false,
 	      invitation: {
@@ -3924,60 +4335,48 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  // eslint-disable-next-line max-lines-per-function
 	  getGetters() {
 	    return {
-	      /** @function recent/getRecentCollection */
-	      getRecentCollection: state => {
-	        return [...state.recentCollection].filter(dialogId => {
-	          const dialog = this.store.getters['chats/get'](dialogId);
-	          return Boolean(dialog);
-	        }).map(id => {
-	          return state.collection[id];
-	        });
+	      /** @function recent/getCollection */
+	      getCollection: state => payload => {
+	        const {
+	          type,
+	          unread = false,
+	          parentChatId = RecentModel.ROOT_PARENT_ID
+	        } = payload;
+	        const index = unread ? state.unreadIndex : state.recentIndex;
+	        const parentGroup = index[parentChatId];
+	        if (!parentGroup) {
+	          return [];
+	        }
+	        const typeGroup = parentGroup[type];
+	        if (!typeGroup) {
+	          return [];
+	        }
+	        return [...typeGroup].filter(dialogId => this.store.getters['chats/get'](dialogId) && state.collection[dialogId]).map(dialogId => state.collection[dialogId]);
 	      },
 	      /** @function recent/getUnreadCollection */
-	      getUnreadCollection: state => {
-	        return [...state.unreadCollection].map(id => {
-	          return state.collection[id];
-	        });
-	      },
-	      /** @function recent/getCopilotCollection */
-	      getCopilotCollection: state => {
-	        return [...state.copilotCollection].filter(dialogId => {
-	          const dialog = this.store.getters['chats/get'](dialogId);
-	          return Boolean(dialog);
-	        }).map(id => {
-	          return state.collection[id];
-	        });
-	      },
-	      /** @function recent/getChannelCollection */
-	      getChannelCollection: state => {
-	        return [...state.channelCollection].filter(dialogId => {
-	          const dialog = this.store.getters['chats/get'](dialogId);
-	          return Boolean(dialog);
-	        }).map(id => {
-	          return state.collection[id];
-	        });
-	      },
-	      /** @function recent/getCollabCollection */
-	      getCollabCollection: state => {
-	        return [...state.collabCollection].filter(dialogId => {
-	          const dialog = this.store.getters['chats/get'](dialogId);
-	          return Boolean(dialog);
-	        }).map(id => {
-	          return state.collection[id];
+	      getUnreadCollection: () => payload => {
+	        return this.store.getters['recent/getCollection']({
+	          ...payload,
+	          unread: true
 	        });
 	      },
 	      /** @function recent/getSortedCollection */
-	      getSortedCollection: state => {
-	        const recentCollectionAsArray = [...state.recentCollection].map(dialogId => {
-	          return state.collection[dialogId];
+	      getSortedCollection: () => payload => {
+	        const collection = this.store.getters['recent/getCollection'](payload);
+	        return [...collection].sort((a, b) => {
+	          const dateA = im_v2_lib_recent.RecentManager.getSortDate(a.dialogId);
+	          const dateB = im_v2_lib_recent.RecentManager.getSortDate(b.dialogId);
+	          if ((dateA == null ? void 0 : dateA.getTime()) === (dateB == null ? void 0 : dateB.getTime())) {
+	            return a.dialogId > b.dialogId ? 1 : -1;
+	          }
+	          return dateB - dateA;
 	        });
-	        const filteredCollection = recentCollectionAsArray.filter(item => {
-	          return !item.isBirthdayPlaceholder && !item.isFakeElement && item.messageId;
-	        });
-	        return [...filteredCollection].sort((a, b) => {
-	          const messageA = babelHelpers.classPrivateFieldLooseBase(this, _getMessage)[_getMessage](a.messageId);
-	          const messageB = babelHelpers.classPrivateFieldLooseBase(this, _getMessage)[_getMessage](b.messageId);
-	          return messageB.date - messageA.date;
+	      },
+	      /** @function recent/getSortedUnreadCollection */
+	      getSortedUnreadCollection: () => payload => {
+	        return this.store.getters['recent/getSortedCollection']({
+	          ...payload,
+	          unread: true
 	        });
 	      },
 	      /** @function recent/get */
@@ -3995,65 +4394,22 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        return babelHelpers.classPrivateFieldLooseBase(this, _getMessage)[_getMessage](element.messageId);
 	      },
-	      /** @function recent/needsBirthdayPlaceholder */
-	      needsBirthdayPlaceholder: state => dialogId => {
-	        const currentItem = state.collection[dialogId];
-	        if (!currentItem) {
+	      /** @function recent/hasInCollection */
+	      hasInCollection: state => payload => {
+	        const {
+	          dialogId,
+	          type,
+	          parentChatId = RecentModel.ROOT_PARENT_ID
+	        } = payload;
+	        const parentGroup = state.recentIndex[parentChatId];
+	        if (!parentGroup) {
 	          return false;
 	        }
-	        const dialog = this.store.getters['chats/get'](dialogId);
-	        if (!dialog || dialog.type !== im_v2_const.ChatType.user) {
+	        const typeGroup = parentGroup[type];
+	        if (!typeGroup) {
 	          return false;
 	        }
-	        const hasBirthday = this.store.getters['users/hasBirthday'](dialogId);
-	        if (!hasBirthday) {
-	          return false;
-	        }
-	        const isSelfChat = Number.parseInt(dialogId, 10) === im_v2_application_core.Core.getUserId();
-	        if (isSelfChat) {
-	          return false;
-	        }
-	        const showBirthday = this.store.getters['application/settings/get'](im_v2_const.Settings.recent.showBirthday);
-	        const hasTodayMessage = babelHelpers.classPrivateFieldLooseBase(this, _hasTodayMessage)[_hasTodayMessage](currentItem.messageId);
-	        return showBirthday && !hasTodayMessage && dialog.counter === 0;
-	      },
-	      /** @function recent/needsVacationPlaceholder */
-	      needsVacationPlaceholder: state => dialogId => {
-	        const currentItem = state.collection[dialogId];
-	        if (!currentItem) {
-	          return false;
-	        }
-	        const dialog = this.store.getters['chats/get'](dialogId);
-	        if (!dialog || dialog.type !== im_v2_const.ChatType.user) {
-	          return false;
-	        }
-	        const hasVacation = this.store.getters['users/hasVacation'](dialogId);
-	        if (!hasVacation) {
-	          return false;
-	        }
-	        const hasTodayMessage = babelHelpers.classPrivateFieldLooseBase(this, _hasTodayMessage)[_hasTodayMessage](currentItem.messageId);
-	        return !hasTodayMessage && dialog.counter === 0;
-	      },
-	      /** @function recent/getSortDate */
-	      getSortDate: state => dialogId => {
-	        const currentItem = state.collection[dialogId];
-	        if (!currentItem) {
-	          return null;
-	        }
-	        const message = babelHelpers.classPrivateFieldLooseBase(this, _getMessage)[_getMessage](currentItem.messageId);
-	        if (main_core.Type.isDate(currentItem.draft.date) && currentItem.draft.date > message.date) {
-	          return currentItem.draft.date;
-	        }
-	        const needsBirthdayPlaceholder = this.store.getters['recent/needsBirthdayPlaceholder'](currentItem.dialogId);
-	        if (needsBirthdayPlaceholder) {
-	          return im_v2_lib_utils.Utils.date.getStartOfTheDay();
-	        }
-	        const lastActivity = currentItem.lastActivityDate;
-	        const needToUseActivityDate = main_core.Type.isDate(lastActivity) && lastActivity > message.date;
-	        if (im_v2_lib_channel.ChannelManager.isChannel(currentItem.dialogId) && needToUseActivityDate) {
-	          return lastActivity;
-	        }
-	        return message.date;
+	        return typeGroup.has(dialogId);
 	      }
 	    };
 	  }
@@ -4062,254 +4418,227 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  /* eslint-disable-next-line max-lines-per-function */
 	  getActions() {
 	    return {
-	      /** @function recent/setRecent */
-	      setRecent: async (store, payload) => {
-	        const itemIds = await im_v2_application_core.Core.getStore().dispatch('recent/store', payload);
-	        store.commit('setRecentCollection', itemIds);
-	        babelHelpers.classPrivateFieldLooseBase(this, _updateUnloadedRecentCounters)[_updateUnloadedRecentCounters](payload);
+	      /** @function recent/setCollection */
+	      setCollection: async (store, payload) => {
+	        const {
+	          type,
+	          items,
+	          unread = false,
+	          parentChatId = RecentModel.ROOT_PARENT_ID
+	        } = payload;
+	        const itemIds = await im_v2_application_core.Core.getStore().dispatch('recent/set', items);
+	        store.commit('setIndex', {
+	          parentChatId,
+	          type,
+	          itemIds,
+	          unread
+	        });
 	      },
-	      /** @function recent/setUnread */
-	      setUnread: async (store, payload) => {
-	        const itemIds = await this.store.dispatch('recent/store', payload);
-	        store.commit('setUnreadCollection', itemIds);
+	      /** @function recent/setUnreadCollection */
+	      setUnreadCollection: async (store, payload) => {
+	        void im_v2_application_core.Core.getStore().dispatch('recent/setCollection', {
+	          ...payload,
+	          unread: true
+	        });
 	      },
-	      /** @function recent/setCopilot */
-	      setCopilot: async (store, payload) => {
-	        const itemIds = await this.store.dispatch('recent/store', payload);
-	        store.commit('setCopilotCollection', itemIds);
-	        babelHelpers.classPrivateFieldLooseBase(this, _updateUnloadedCopilotCounters)[_updateUnloadedCopilotCounters](payload);
+	      /** @function recent/clearCollection */
+	      clearCollection: async (store, payload) => {
+	        const {
+	          type,
+	          unread = false,
+	          parentChatId = RecentModel.ROOT_PARENT_ID
+	        } = payload;
+	        store.commit('clearCollection', {
+	          parentChatId,
+	          type,
+	          unread
+	        });
 	      },
-	      /** @function recent/setChannel */
-	      setChannel: async (store, payload) => {
-	        const itemIds = await this.store.dispatch('recent/store', payload);
-	        store.commit('setChannelCollection', itemIds);
+	      /** @function recent/clearUnreadCollection */
+	      clearUnreadCollection: async (store, payload) => {
+	        void im_v2_application_core.Core.getStore().dispatch('recent/clearCollection', {
+	          ...payload,
+	          unread: true
+	        });
 	      },
-	      /** @function recent/setCollab */
-	      setCollab: async (store, payload) => {
-	        const itemIds = await this.store.dispatch('recent/store', payload);
-	        store.commit('setCollabCollection', itemIds);
-	        babelHelpers.classPrivateFieldLooseBase(this, _updateUnloadedCollabCounters)[_updateUnloadedCollabCounters](payload);
-	      },
-	      /** @function recent/clearChannelCollection */
-	      clearChannelCollection: store => {
-	        store.commit('clearChannelCollection');
-	      },
-	      /** @function recent/store */
-	      store: (store, payload) => {
-	        if (!Array.isArray(payload) && main_core.Type.isPlainObject(payload)) {
+	      /** @function recent/set */
+	      set: (store, payload) => {
+	        if (!main_core.Type.isArray(payload) && main_core.Type.isPlainObject(payload)) {
 	          payload = [payload];
 	        }
 	        const itemsToUpdate = [];
 	        const itemsToAdd = [];
-	        payload.map(element => {
-	          return babelHelpers.classPrivateFieldLooseBase(this, _formatFields$3)[_formatFields$3](element);
-	        }).forEach(element => {
-	          const preparedElement = {
-	            ...element
-	          };
+	        for (const rawElement of payload) {
+	          const element = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$4)[_formatFields$4](rawElement);
 	          const existingItem = store.state.collection[element.dialogId];
 	          if (existingItem) {
 	            itemsToUpdate.push({
 	              dialogId: existingItem.dialogId,
-	              fields: preparedElement
+	              fields: element
 	            });
-	          } else {
-	            itemsToAdd.push({
-	              ...this.getElementState(),
-	              ...preparedElement
-	            });
+	            continue;
 	          }
-	        });
-	        if (itemsToAdd.length > 0) {
-	          store.commit('add', itemsToAdd);
+	          itemsToAdd.push({
+	            ...this.getElementState(),
+	            ...element
+	          });
 	        }
-	        if (itemsToUpdate.length > 0) {
-	          store.commit('update', itemsToUpdate);
-	        }
+	        store.commit('add', itemsToAdd);
+	        store.commit('update', itemsToUpdate);
 	        return [...itemsToAdd, ...itemsToUpdate].map(item => item.dialogId);
 	      },
 	      /** @function recent/update */
 	      update: (store, payload) => {
 	        const {
-	          id,
+	          dialogId,
 	          fields
 	        } = payload;
-	        const existingItem = store.state.collection[id];
+	        const existingItem = store.state.collection[dialogId];
 	        if (!existingItem) {
 	          return;
 	        }
 	        store.commit('update', {
-	          dialogId: existingItem.dialogId,
-	          fields: babelHelpers.classPrivateFieldLooseBase(this, _formatFields$3)[_formatFields$3](fields)
-	        });
-	      },
-	      /** @function recent/unread */
-	      unread: (store, payload) => {
-	        const existingItem = store.state.collection[payload.id];
-	        if (!existingItem) {
-	          return;
-	        }
-	        store.commit('update', {
-	          dialogId: existingItem.dialogId,
-	          fields: {
-	            unread: payload.action
-	          }
+	          dialogId,
+	          fields: babelHelpers.classPrivateFieldLooseBase(this, _formatFields$4)[_formatFields$4](fields)
 	        });
 	      },
 	      /** @function recent/pin */
 	      pin: (store, payload) => {
-	        const existingItem = store.state.collection[payload.id];
+	        const {
+	          dialogId,
+	          action
+	        } = payload;
+	        const existingItem = store.state.collection[dialogId];
 	        if (!existingItem) {
 	          return;
 	        }
 	        store.commit('update', {
-	          dialogId: existingItem.dialogId,
+	          dialogId,
 	          fields: {
-	            pinned: payload.action
+	            pinned: action
 	          }
 	        });
 	      },
 	      /** @function recent/like */
 	      like: (store, payload) => {
-	        const existingItem = store.state.collection[payload.id];
+	        const {
+	          dialogId,
+	          messageId,
+	          liked
+	        } = payload;
+	        const existingItem = store.state.collection[dialogId];
 	        if (!existingItem) {
 	          return;
 	        }
-	        const isLastMessage = existingItem.messageId === Number.parseInt(payload.messageId, 10);
-	        const isExactMessageLiked = !main_core.Type.isUndefined(payload.messageId) && payload.liked === true;
+	        const isLastMessage = existingItem.messageId === Number.parseInt(messageId, 10);
+	        const isExactMessageLiked = !main_core.Type.isUndefined(messageId) && liked === true;
 	        if (isExactMessageLiked && !isLastMessage) {
 	          return;
 	        }
 	        store.commit('update', {
-	          dialogId: existingItem.dialogId,
+	          dialogId,
 	          fields: {
-	            liked: payload.liked === true
+	            liked: liked === true
 	          }
-	        });
-	      },
-	      /** @function recent/setRecentDraft */
-	      setRecentDraft: (store, payload) => {
-	        im_v2_application_core.Core.getStore().dispatch('recent/setDraft', {
-	          id: payload.id,
-	          text: payload.text,
-	          collectionName: 'recentCollection',
-	          addMethodName: 'setRecentCollection'
-	        });
-	      },
-	      /** @function recent/setCopilotDraft */
-	      setCopilotDraft: (store, payload) => {
-	        im_v2_application_core.Core.getStore().dispatch('recent/setDraft', {
-	          id: payload.id,
-	          text: payload.text,
-	          collectionName: 'copilotCollection',
-	          addMethodName: 'setCopilotCollection'
 	        });
 	      },
 	      /** @function recent/setDraft */
 	      setDraft: (store, payload) => {
-	        const isRemovingDraft = !main_core.Type.isStringFilled(payload.text);
+	        const {
+	          dialogId,
+	          text,
+	          addFakeItems = true
+	        } = payload;
+	        const isRemovingDraft = !main_core.Type.isStringFilled(text);
 	        if (isRemovingDraft && babelHelpers.classPrivateFieldLooseBase(this, _shouldDeleteItemWithDraft)[_shouldDeleteItemWithDraft](payload)) {
-	          void im_v2_application_core.Core.getStore().dispatch('recent/delete', {
-	            id: payload.id
+	          void im_v2_application_core.Core.getStore().dispatch('recent/hide', {
+	            dialogId
 	          });
 	          return;
 	        }
-	        let existingItem = store.state.collection[payload.id];
-	        if (!existingItem && !isRemovingDraft) {
-	          store.commit('add', {
-	            ...this.getElementState(),
-	            ...babelHelpers.classPrivateFieldLooseBase(this, _prepareFakeItemWithDraft)[_prepareFakeItemWithDraft](payload)
-	          });
-	          existingItem = store.state.collection[payload.id];
+	        const hasRecentItem = im_v2_application_core.Core.getStore().getters['recent/hasInCollection']({
+	          dialogId,
+	          type: im_v2_const.RecentType.default
+	        });
+	        const needsFakeItem = !hasRecentItem && !isRemovingDraft;
+	        if (needsFakeItem && addFakeItems) {
+	          babelHelpers.classPrivateFieldLooseBase(this, _handleFakeItemWithDraft)[_handleFakeItemWithDraft](payload, store);
 	        }
-	        const existingCollectionItem = store.state[payload.collectionName].has(payload.id);
-	        if (!existingCollectionItem) {
-	          if (isRemovingDraft) {
-	            return;
-	          }
-	          store.commit(payload.addMethodName, [payload.id.toString()]);
+	        const existingItem = store.state.collection[dialogId];
+	        if (!existingItem) {
+	          return;
 	        }
-	        const fields = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$3)[_formatFields$3]({
-	          draft: {
-	            text: payload.text.toString()
+	        void im_v2_application_core.Core.getStore().dispatch('recent/update', {
+	          dialogId,
+	          fields: {
+	            draft: {
+	              text: text.toString()
+	            }
 	          }
 	        });
-	        if (fields.draft.text === existingItem.draft.text) {
+	      },
+	      /** @function recent/hide */
+	      hide: (store, payload) => {
+	        const {
+	          dialogId
+	        } = payload;
+	        const existingItem = store.state.collection[dialogId];
+	        if (!existingItem) {
 	          return;
 	        }
-	        store.commit('update', {
-	          dialogId: existingItem.dialogId,
-	          fields
+	        store.commit('removeFromCollections', {
+	          dialogId
 	        });
 	      },
 	      /** @function recent/delete */
 	      delete: (store, payload) => {
-	        const existingItem = store.state.collection[payload.id];
+	        const {
+	          dialogId
+	        } = payload;
+	        const existingItem = store.state.collection[dialogId];
 	        if (!existingItem) {
 	          return;
 	        }
-	        store.commit('deleteFromRecentCollection', existingItem.dialogId);
-	        store.commit('deleteFromCopilotCollection', existingItem.dialogId);
-	        store.commit('deleteFromChannelCollection', existingItem.dialogId);
-	        store.commit('deleteFromCollabCollection', existingItem.dialogId);
-	        const canDelete = babelHelpers.classPrivateFieldLooseBase(this, _canDelete)[_canDelete](existingItem.dialogId);
-	        if (!canDelete) {
-	          return;
-	        }
 	        store.commit('delete', {
-	          id: existingItem.dialogId
+	          dialogId
 	        });
-	      },
-	      /** @function recent/clearUnread */
-	      clearUnread: store => {
-	        store.commit('clearUnread');
 	      }
 	    };
 	  }
 	  getMutations() {
 	    return {
-	      setRecentCollection: (state, payload) => {
-	        payload.forEach(dialogId => {
-	          state.recentCollection.add(dialogId);
+	      setIndex: (state, payload) => {
+	        const {
+	          parentChatId,
+	          type,
+	          itemIds,
+	          unread
+	        } = payload;
+	        const index = unread ? state.unreadIndex : state.recentIndex;
+	        if (!index[parentChatId]) {
+	          index[parentChatId] = {};
+	        }
+	        const parentGroup = index[parentChatId];
+	        if (!parentGroup[type]) {
+	          parentGroup[type] = new Set();
+	        }
+	        const typeGroup = parentGroup[type];
+	        itemIds.forEach(dialogId => {
+	          typeGroup.add(dialogId);
 	        });
 	      },
-	      deleteFromRecentCollection: (state, payload) => {
-	        state.recentCollection.delete(payload);
-	      },
-	      setUnreadCollection: (state, payload) => {
-	        payload.forEach(dialogId => {
-	          state.unreadCollection.add(dialogId);
-	        });
-	      },
-	      setCopilotCollection: (state, payload) => {
-	        payload.forEach(dialogId => {
-	          state.copilotCollection.add(dialogId);
-	        });
-	      },
-	      deleteFromCopilotCollection: (state, payload) => {
-	        state.copilotCollection.delete(payload);
-	      },
-	      deleteFromChannelCollection: (state, payload) => {
-	        state.channelCollection.delete(payload);
-	      },
-	      setChannelCollection: (state, payload) => {
-	        payload.forEach(dialogId => {
-	          state.channelCollection.add(dialogId);
-	        });
-	      },
-	      clearChannelCollection: state => {
-	        state.channelCollection = new Set();
-	      },
-	      setCollabCollection: (state, payload) => {
-	        payload.forEach(dialogId => {
-	          state.collabCollection.add(dialogId);
-	        });
-	      },
-	      deleteFromCollabCollection: (state, payload) => {
-	        state.collabCollection.delete(payload);
+	      clearCollection: (state, payload) => {
+	        var _index$parentChatId;
+	        const {
+	          parentChatId,
+	          type,
+	          unread
+	        } = payload;
+	        const index = unread ? state.unreadIndex : state.recentIndex;
+	        (_index$parentChatId = index[parentChatId]) == null ? true : delete _index$parentChatId[type];
 	      },
 	      add: (state, payload) => {
-	        if (!Array.isArray(payload) && main_core.Type.isPlainObject(payload)) {
+	        if (!main_core.Type.isArray(payload) && main_core.Type.isPlainObject(payload)) {
 	          payload = [payload];
 	        }
 	        payload.forEach(item => {
@@ -4317,18 +4646,14 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        });
 	      },
 	      update: (state, payload) => {
-	        if (!Array.isArray(payload) && main_core.Type.isPlainObject(payload)) {
+	        if (!main_core.Type.isArray(payload) && main_core.Type.isPlainObject(payload)) {
 	          payload = [payload];
 	        }
 	        payload.forEach(({
 	          dialogId,
 	          fields
 	        }) => {
-	          // if we already got chat - we should not update it with fake user chat
-	          // (unless it's an accepted invitation or fake user with real message)
-	          const elementIsInRecent = state.recentCollection.has(dialogId);
-	          const isFakeElement = fields.isFakeElement && im_v2_lib_utils.Utils.text.isTempMessage(fields.messageId);
-	          if (elementIsInRecent && isFakeElement && !fields.invitation) {
+	          if (!babelHelpers.classPrivateFieldLooseBase(this, _shouldApplyUpdate)[_shouldApplyUpdate](dialogId, fields)) {
 	            return;
 	          }
 	          const currentElement = state.collection[dialogId];
@@ -4338,67 +4663,78 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          };
 	        });
 	      },
-	      delete: (state, payload) => {
-	        delete state.collection[payload.id];
+	      removeFromCollections: (state, payload) => {
+	        const {
+	          dialogId
+	        } = payload;
+	        const collections = babelHelpers.classPrivateFieldLooseBase(this, _getAllCollections)[_getAllCollections](state, [im_v2_const.RecentType.openChannel]);
+	        collections.forEach(idSet => idSet.delete(dialogId));
 	      },
-	      clearUnread: state => {
-	        Object.keys(state.collection).forEach(key => {
-	          state.collection[key].unread = false;
-	        });
+	      delete: (state, payload) => {
+	        const {
+	          dialogId
+	        } = payload;
+	        delete state.collection[dialogId];
 	      }
 	    };
 	  }
 	}
-	function _formatFields2$3(rawFields) {
+	function _formatFields2$4(rawFields) {
 	  const options = main_core.Type.isPlainObject(rawFields.options) ? rawFields.options : {};
 	  const fields = {
 	    ...rawFields,
 	    ...options
 	  };
-	  return im_v2_model.formatFieldsWithConfig(fields, recentFieldsConfig);
+	  return formatFieldsWithConfig(fields, recentFieldsConfig);
 	}
-	function _updateUnloadedRecentCounters2(payload) {
-	  babelHelpers.classPrivateFieldLooseBase(this, _updateUnloadedCounters)[_updateUnloadedCounters](payload, 'counters/setUnloadedChatCounters');
-	}
-	function _updateUnloadedCopilotCounters2(payload) {
-	  babelHelpers.classPrivateFieldLooseBase(this, _updateUnloadedCounters)[_updateUnloadedCounters](payload, 'counters/setUnloadedCopilotCounters');
-	}
-	function _updateUnloadedCollabCounters2(payload) {
-	  babelHelpers.classPrivateFieldLooseBase(this, _updateUnloadedCounters)[_updateUnloadedCounters](payload, 'counters/setUnloadedCollabCounters');
-	}
-	function _updateUnloadedCounters2(payload, updateMethod) {
-	  if (!Array.isArray(payload) && main_core.Type.isPlainObject(payload)) {
-	    payload = [payload];
-	  }
-	  const zeroedCountersForNewItems = {};
-	  const preparedItems = payload.map(item => im_v2_model.convertObjectKeysToCamelCase(item));
-	  preparedItems.forEach(item => {
-	    zeroedCountersForNewItems[item.chatId] = 0;
+	function _shouldApplyUpdate2(dialogId, fields) {
+	  // if we already got chat - we should not update it with fake user chat
+	  // (unless it's an accepted invitation or fake user with real message)
+	  const hasRecentItem = im_v2_application_core.Core.getStore().getters['recent/hasInCollection']({
+	    dialogId,
+	    type: im_v2_const.RecentType.default
 	  });
-	  void im_v2_application_core.Core.getStore().dispatch(updateMethod, zeroedCountersForNewItems);
+	  if (!hasRecentItem) {
+	    return true;
+	  }
+	  const isFakeElement = fields.isFakeElement && im_v2_lib_message.MessageManager.isTempMessage(fields.messageId);
+	  if (!isFakeElement) {
+	    return true;
+	  }
+	  return Boolean(fields.invitation);
+	}
+	function _getAllCollections2(state, excludeTypes = []) {
+	  const result = [];
+	  const trees = [state.recentIndex, state.unreadIndex];
+	  trees.forEach(indexTree => {
+	    Object.values(indexTree).forEach(parentGroup => {
+	      Object.entries(parentGroup).forEach(([recentType, idSet]) => {
+	        if (excludeTypes.includes(recentType)) {
+	          return;
+	        }
+	        result.push(idSet);
+	      });
+	    });
+	  });
+	  return result;
 	}
 	function _getMessage2(messageId) {
 	  return im_v2_application_core.Core.getStore().getters['messages/getById'](messageId);
 	}
-	function _getDialog2(dialogId) {
-	  return im_v2_application_core.Core.getStore().getters['chats/get'](dialogId);
-	}
-	function _hasTodayMessage2(messageId) {
-	  const message = babelHelpers.classPrivateFieldLooseBase(this, _getMessage)[_getMessage](messageId);
-	  const hasMessage = im_v2_lib_utils.Utils.text.isUuidV4(message.id) || message.id > 0;
-	  return hasMessage && im_v2_lib_utils.Utils.date.isToday(message.date);
-	}
-	function _canDelete2(dialogId) {
-	  const NOT_DELETABLE_TYPES = [im_v2_const.ChatType.openChannel];
-	  const {
-	    type
-	  } = babelHelpers.classPrivateFieldLooseBase(this, _getDialog)[_getDialog](dialogId);
-	  return !NOT_DELETABLE_TYPES.includes(type);
+	function _handleFakeItemWithDraft2(payload) {
+	  const recentItem = {
+	    ...this.getElementState(),
+	    ...babelHelpers.classPrivateFieldLooseBase(this, _prepareFakeItemWithDraft)[_prepareFakeItemWithDraft](payload)
+	  };
+	  void im_v2_application_core.Core.getStore().dispatch('recent/setCollection', {
+	    type: im_v2_const.RecentType.default,
+	    items: [recentItem]
+	  });
 	}
 	function _prepareFakeItemWithDraft2(payload) {
-	  const messageId = babelHelpers.classPrivateFieldLooseBase(this, _createFakeMessageForDraft)[_createFakeMessageForDraft](payload.id);
-	  return babelHelpers.classPrivateFieldLooseBase(this, _formatFields$3)[_formatFields$3]({
-	    dialogId: payload.id.toString(),
+	  const messageId = babelHelpers.classPrivateFieldLooseBase(this, _createFakeMessageForDraft)[_createFakeMessageForDraft](payload.dialogId);
+	  return babelHelpers.classPrivateFieldLooseBase(this, _formatFields$4)[_formatFields$4]({
+	    dialogId: payload.dialogId.toString(),
 	    draft: {
 	      text: payload.text.toString()
 	    },
@@ -4414,9 +4750,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  return messageId;
 	}
 	function _shouldDeleteItemWithDraft2(payload) {
-	  const existingItem = im_v2_application_core.Core.getStore().state.recent.collection[payload.id];
+	  const existingItem = im_v2_application_core.Core.getStore().getters['recent/get'](payload.dialogId);
 	  return existingItem && !main_core.Type.isStringFilled(payload.text) && existingItem.messageId.toString().startsWith(im_v2_const.FakeDraftMessagePrefix);
 	}
+	RecentModel.ROOT_PARENT_ID = 0;
 
 	class NotificationsModel extends ui_vue3_vuex.BuilderModel {
 	  getName() {
@@ -4441,7 +4778,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      notifyButtons: [],
 	      sectionCode: im_v2_const.NotificationTypesCodes.simple,
 	      read: false,
-	      settingName: 'im|default'
+	      settingName: 'im|default',
+	      moduleId: ''
 	    };
 	  }
 	  getGetters() {
@@ -4466,6 +4804,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return false;
 	        }
 	        return existingItem;
+	      },
+	      getSearchItemById: state => notificationId => {
+	        if (main_core.Type.isString(notificationId)) {
+	          const id = Number.parseInt(notificationId, 10);
+	          const existingItem = state.searchCollection.get(id);
+	          return existingItem != null ? existingItem : null;
+	        }
+	        const existingItem = state.searchCollection.get(notificationId);
+	        return existingItem != null ? existingItem : null;
 	      },
 	      getCounter: state => {
 	        return state.unreadCounter;
@@ -4536,9 +4883,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        });
 	        if (itemsToAdd.length > 0) {
 	          store.commit('add', itemsToAdd);
-	          itemsToAdd.forEach(() => {
-	            store.commit('increaseCounter');
-	          });
 	        }
 	        if (itemsToUpdate.length > 0) {
 	          store.commit('update', itemsToUpdate);
@@ -4597,9 +4941,18 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          });
 	        });
 	      },
-	      readAll: store => {
-	        store.commit('readAll');
-	        store.commit('setCounter', 0);
+	      readAllSimple: (store, payload = {}) => {
+	        const excludeIds = payload.excludeIds || [];
+	        const excludeIdsSet = new Set(excludeIds);
+	        const idsToMarkAsRead = [];
+	        store.state.collection.forEach(item => {
+	          if (!item.read && item.sectionCode === im_v2_const.NotificationTypesCodes.simple && !excludeIdsSet.has(item.id)) {
+	            idsToMarkAsRead.push(item.id);
+	          }
+	        });
+	        if (idsToMarkAsRead.length > 0) {
+	          store.commit('markAsRead', idsToMarkAsRead);
+	        }
 	      },
 	      delete: (store, payload) => {
 	        const existingItem = store.state.collection.get(payload.id);
@@ -4679,6 +5032,18 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          }
 	        });
 	      },
+	      markAsRead: (state, payload) => {
+	        payload.forEach(id => {
+	          const item = state.collection.get(id);
+	          if (item) {
+	            item.read = true;
+	            const searchItem = state.searchCollection.get(id);
+	            if (searchItem) {
+	              searchItem.read = true;
+	            }
+	          }
+	        });
+	      },
 	      setCounter: (state, payload) => {
 	        state.unreadCounter = Number.parseInt(payload, 10);
 	      },
@@ -4751,6 +5116,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      result.settingName = fields.setting_name;
 	    } else if (main_core.Type.isString(fields.settingName)) {
 	      result.settingName = fields.settingName;
+	    }
+	    if (main_core.Type.isString(fields.notify_module)) {
+	      result.moduleId = fields.notify_module;
 	    }
 	    return result;
 	  }
@@ -5476,7 +5844,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return {
 	      users: new Set(),
 	      hasNextPage: true,
-	      lastId: 0,
+	      nextCursor: null,
 	      inited: false
 	    };
 	  }
@@ -5503,12 +5871,12 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        return state.collection[chatId].hasNextPage;
 	      },
-	      /** @function sidebar/members/getLastId */
-	      getLastId: state => chatId => {
+	      /** @function sidebar/members/getNextCursor */
+	      getNextCursor: state => chatId => {
 	        if (!state.collection[chatId]) {
 	          return false;
 	        }
-	        return state.collection[chatId].lastId;
+	        return state.collection[chatId].nextCursor;
 	      },
 	      /** @function sidebar/members/getInited */
 	      getInited: state => chatId => {
@@ -5527,18 +5895,12 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          chatId,
 	          users,
 	          hasNextPage,
-	          lastId
+	          nextCursor
 	        } = payload;
 	        if (!main_core.Type.isNil(hasNextPage)) {
 	          store.commit('setHasNextPage', {
 	            chatId,
 	            hasNextPage
-	          });
-	        }
-	        if (!main_core.Type.isNil(lastId)) {
-	          store.commit('setLastId', {
-	            chatId,
-	            lastId
 	          });
 	        }
 	        store.commit('setInited', {
@@ -5551,6 +5913,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	            users
 	          });
 	        }
+	      },
+	      /** @function sidebar/members/setNextCursor */
+	      setNextCursor: (store, payload) => {
+	        store.commit('setNextCursor', payload);
 	      },
 	      /** @function sidebar/members/delete */
 	      delete: (store, payload) => {
@@ -5597,16 +5963,16 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        state.collection[chatId].hasNextPage = hasNextPage;
 	      },
-	      setLastId: (state, payload) => {
+	      setNextCursor: (state, payload) => {
 	        const {
 	          chatId,
-	          lastId
+	          nextCursor
 	        } = payload;
 	        const hasCollection = !main_core.Type.isNil(state.collection[chatId]);
 	        if (!hasCollection) {
 	          state.collection[chatId] = this.getChatState();
 	        }
-	        state.collection[chatId].lastId = lastId;
+	        state.collection[chatId].nextCursor = nextCursor;
 	      },
 	      setInited: (state, payload) => {
 	        const {
@@ -6443,18 +6809,18 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getGetters() {
 	    return {
 	      /** @function sidebar/files/get */
-	      get: state => (chatId, subType) => {
-	        if (!state.collection[chatId] || !state.collection[chatId][subType]) {
+	      get: state => (chatId, group) => {
+	        if (!state.collection[chatId] || !state.collection[chatId][group]) {
 	          return [];
 	        }
-	        return [...state.collection[chatId][subType].items.values()].sort((a, b) => b.id - a.id);
+	        return [...state.collection[chatId][group].items.values()].sort((a, b) => b.id - a.id);
 	      },
 	      /** @function sidebar/files/getSearchResultCollection */
-	      getSearchResultCollection: state => (chatId, subType) => {
-	        if (!state.collectionSearch[chatId] || !state.collectionSearch[chatId][subType]) {
+	      getSearchResultCollection: state => (chatId, group) => {
+	        if (!state.collectionSearch[chatId] || !state.collectionSearch[chatId][group]) {
 	          return [];
 	        }
-	        return [...state.collectionSearch[chatId][subType].items.values()].sort((a, b) => b.id - a.id);
+	        return [...state.collectionSearch[chatId][group].items.values()].sort((a, b) => b.id - a.id);
 	      },
 	      /** @function sidebar/files/getLatest */
 	      getLatest: (state, getters, rootState, rootGetters) => chatId => {
@@ -6463,25 +6829,21 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        let media = [];
 	        let audio = [];
-	        let documents = [];
-	        let other = [];
+	        let files = [];
 	        let briefs = [];
-	        if (state.collection[chatId][im_v2_const.SidebarFileTypes.media]) {
-	          media = [...state.collection[chatId][im_v2_const.SidebarFileTypes.media].items.values()];
+	        if (state.collection[chatId][im_v2_const.SidebarFileGroups.media]) {
+	          media = [...state.collection[chatId][im_v2_const.SidebarFileGroups.media].items.values()];
 	        }
-	        if (state.collection[chatId][im_v2_const.SidebarFileTypes.audio]) {
-	          audio = [...state.collection[chatId][im_v2_const.SidebarFileTypes.audio].items.values()];
+	        if (state.collection[chatId][im_v2_const.SidebarFileGroups.audio]) {
+	          audio = [...state.collection[chatId][im_v2_const.SidebarFileGroups.audio].items.values()];
 	        }
-	        if (state.collection[chatId][im_v2_const.SidebarFileTypes.document]) {
-	          documents = [...state.collection[chatId][im_v2_const.SidebarFileTypes.document].items.values()];
+	        if (state.collection[chatId][im_v2_const.SidebarFileGroups.file]) {
+	          files = [...state.collection[chatId][im_v2_const.SidebarFileGroups.file].items.values()];
 	        }
-	        if (state.collection[chatId][im_v2_const.SidebarFileTypes.brief]) {
-	          briefs = [...state.collection[chatId][im_v2_const.SidebarFileTypes.brief].items.values()];
+	        if (state.collection[chatId][im_v2_const.SidebarFileGroups.brief]) {
+	          briefs = [...state.collection[chatId][im_v2_const.SidebarFileGroups.brief].items.values()];
 	        }
-	        if (state.collection[chatId][im_v2_const.SidebarFileTypes.other]) {
-	          other = [...state.collection[chatId][im_v2_const.SidebarFileTypes.other].items.values()];
-	        }
-	        const sortedFlatCollection = [media, audio, documents, briefs, other].flat().sort((a, b) => b.id - a.id);
+	        const sortedFlatCollection = [media, audio, files, briefs].flat().sort((a, b) => b.id - a.id);
 	        return this.getTopThreeCompletedFiles(sortedFlatCollection, rootGetters);
 	      },
 	      /** @function sidebar/files/getLatestUnsorted */
@@ -6490,46 +6852,46 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return [];
 	        }
 	        let unsorted = [];
-	        if (state.collection[chatId][im_v2_const.SidebarFileTypes.fileUnsorted]) {
-	          unsorted = [...state.collection[chatId][im_v2_const.SidebarFileTypes.fileUnsorted].items.values()];
+	        if (state.collection[chatId][im_v2_const.SidebarFileGroups.fileUnsorted]) {
+	          unsorted = [...state.collection[chatId][im_v2_const.SidebarFileGroups.fileUnsorted].items.values()];
 	        }
 	        const sortedCollection = unsorted.sort((a, b) => b.id - a.id);
 	        return this.getTopThreeCompletedFiles(sortedCollection, rootGetters);
 	      },
 	      /** @function sidebar/files/getSize */
-	      getSize: state => (chatId, subType) => {
-	        if (!state.collection[chatId] || !state.collection[chatId][subType]) {
+	      getSize: state => (chatId, group) => {
+	        if (!state.collection[chatId] || !state.collection[chatId][group]) {
 	          return 0;
 	        }
-	        return state.collection[chatId][subType].items.size;
+	        return state.collection[chatId][group].items.size;
 	      },
 	      /** @function sidebar/files/hasNextPage */
-	      hasNextPage: state => (chatId, subType) => {
-	        if (!state.collection[chatId] || !state.collection[chatId][subType]) {
+	      hasNextPage: state => (chatId, group) => {
+	        if (!state.collection[chatId] || !state.collection[chatId][group]) {
 	          return false;
 	        }
-	        return state.collection[chatId][subType].hasNextPage;
+	        return state.collection[chatId][group].hasNextPage;
 	      },
 	      /** @function sidebar/files/hasNextPageSearch */
-	      hasNextPageSearch: state => (chatId, subType) => {
-	        if (!state.collectionSearch[chatId] || !state.collectionSearch[chatId][subType]) {
+	      hasNextPageSearch: state => (chatId, group) => {
+	        if (!state.collectionSearch[chatId] || !state.collectionSearch[chatId][group]) {
 	          return false;
 	        }
-	        return state.collectionSearch[chatId][subType].hasNextPage;
+	        return state.collectionSearch[chatId][group].hasNextPage;
 	      },
 	      /** @function sidebar/files/getLastId */
-	      getLastId: state => (chatId, subType) => {
-	        if (!state.collection[chatId] || !state.collection[chatId][subType]) {
+	      getLastId: state => (chatId, group) => {
+	        if (!state.collection[chatId] || !state.collection[chatId][group]) {
 	          return false;
 	        }
-	        return state.collection[chatId][subType].lastId;
+	        return state.collection[chatId][group].lastId;
 	      },
 	      /** @function sidebar/files/getSearchResultCollectionLastId */
-	      getSearchResultCollectionLastId: state => (chatId, subType) => {
-	        if (!state.collectionSearch[chatId] || !state.collectionSearch[chatId][subType]) {
+	      getSearchResultCollectionLastId: state => (chatId, group) => {
+	        if (!state.collectionSearch[chatId] || !state.collectionSearch[chatId][group]) {
 	          return false;
 	        }
-	        return state.collectionSearch[chatId][subType].lastId;
+	        return state.collectionSearch[chatId][group].lastId;
 	      },
 	      /** @function sidebar/files/isHistoryLimitExceeded */
 	      isHistoryLimitExceeded: state => chatId => {
@@ -6549,7 +6911,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        const {
 	          chatId,
 	          files,
-	          subType
+	          group
 	        } = payload;
 	        if (!main_core.Type.isArrayFilled(files) || !main_core.Type.isNumber(chatId)) {
 	          return;
@@ -6561,7 +6923,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          };
 	          store.commit('add', {
 	            chatId,
-	            subType,
+	            group,
 	            file: preparedFile
 	          });
 	        });
@@ -6571,7 +6933,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        const {
 	          chatId,
 	          files,
-	          subType
+	          group
 	        } = payload;
 	        if (!main_core.Type.isArrayFilled(files) || !main_core.Type.isNumber(chatId)) {
 	          return;
@@ -6583,7 +6945,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          };
 	          store.commit('addSearch', {
 	            chatId,
-	            subType,
+	            group,
 	            file: preparedFile
 	          });
 	        });
@@ -6609,7 +6971,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      setHasNextPage: (store, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          hasNextPage
 	        } = payload;
 	        if (!main_core.Type.isNumber(chatId)) {
@@ -6620,7 +6982,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        store.commit('setHasNextPage', {
 	          chatId,
-	          subType,
+	          group,
 	          hasNextPage
 	        });
 	      },
@@ -6628,7 +6990,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      setHasNextPageSearch: (store, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          hasNextPage
 	        } = payload;
 	        if (!main_core.Type.isNumber(chatId)) {
@@ -6639,7 +7001,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        store.commit('setHasNextPageSearch', {
 	          chatId,
-	          subType,
+	          group,
 	          hasNextPage
 	        });
 	      },
@@ -6647,7 +7009,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      setLastId: (store, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          lastId
 	        } = payload;
 	        if (!main_core.Type.isNumber(chatId)) {
@@ -6658,7 +7020,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        store.commit('setLastId', {
 	          chatId,
-	          subType,
+	          group,
 	          lastId
 	        });
 	      },
@@ -6666,7 +7028,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      setLastIdSearch: (store, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          lastId
 	        } = payload;
 	        if (!main_core.Type.isNumber(chatId)) {
@@ -6677,7 +7039,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        }
 	        store.commit('setLastIdSearch', {
 	          chatId,
-	          subType,
+	          group,
 	          lastId
 	        });
 	      },
@@ -6706,29 +7068,29 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        const {
 	          chatId,
 	          file,
-	          subType
+	          group
 	        } = payload;
 	        if (!state.collection[chatId]) {
 	          state.collection[chatId] = {};
 	        }
-	        if (!state.collection[chatId][subType]) {
-	          state.collection[chatId][subType] = this.getChatState();
+	        if (!state.collection[chatId][group]) {
+	          state.collection[chatId][group] = this.getChatState();
 	        }
-	        state.collection[chatId][subType].items.set(file.id, file);
+	        state.collection[chatId][group].items.set(file.id, file);
 	      },
 	      addSearch: (state, payload) => {
 	        const {
 	          chatId,
 	          file,
-	          subType
+	          group
 	        } = payload;
 	        if (!state.collectionSearch[chatId]) {
 	          state.collectionSearch[chatId] = {};
 	        }
-	        if (!state.collectionSearch[chatId][subType]) {
-	          state.collectionSearch[chatId][subType] = this.getChatState();
+	        if (!state.collectionSearch[chatId][group]) {
+	          state.collectionSearch[chatId][group] = this.getChatState();
 	        }
-	        state.collectionSearch[chatId][subType].items.set(file.id, file);
+	        state.collectionSearch[chatId][group].items.set(file.id, file);
 	      },
 	      delete: (state, payload) => {
 	        const {
@@ -6736,11 +7098,11 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          id
 	        } = payload;
 	        const hasCollectionSearch = !main_core.Type.isNil(state.collectionSearch[chatId]);
-	        Object.values(im_v2_const.SidebarFileTypes).forEach(subType => {
-	          if (state.collection[chatId][subType] && state.collection[chatId][subType].items.has(id)) {
-	            state.collection[chatId][subType].items.delete(id);
+	        Object.values(im_v2_const.SidebarFileGroups).forEach(group => {
+	          if (state.collection[chatId][group] && state.collection[chatId][group].items.has(id)) {
+	            state.collection[chatId][group].items.delete(id);
 	            if (hasCollectionSearch) {
-	              state.collectionSearch[chatId][subType].items.delete(id);
+	              state.collectionSearch[chatId][group].items.delete(id);
 	            }
 	          }
 	        });
@@ -6748,62 +7110,62 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      setHasNextPage: (state, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          hasNextPage
 	        } = payload;
 	        if (!state.collection[chatId]) {
 	          state.collection[chatId] = {};
 	        }
-	        const hasCollection = !main_core.Type.isNil(state.collection[chatId][subType]);
+	        const hasCollection = !main_core.Type.isNil(state.collection[chatId][group]);
 	        if (!hasCollection) {
-	          state.collection[chatId][subType] = this.getChatState();
+	          state.collection[chatId][group] = this.getChatState();
 	        }
-	        state.collection[chatId][subType].hasNextPage = hasNextPage;
+	        state.collection[chatId][group].hasNextPage = hasNextPage;
 	      },
 	      setHasNextPageSearch: (state, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          hasNextPage
 	        } = payload;
 	        if (!state.collectionSearch[chatId]) {
 	          state.collectionSearch[chatId] = {};
 	        }
-	        const hasCollection = !main_core.Type.isNil(state.collectionSearch[chatId][subType]);
+	        const hasCollection = !main_core.Type.isNil(state.collectionSearch[chatId][group]);
 	        if (!hasCollection) {
-	          state.collectionSearch[chatId][subType] = this.getChatState();
+	          state.collectionSearch[chatId][group] = this.getChatState();
 	        }
-	        state.collectionSearch[chatId][subType].hasNextPage = hasNextPage;
+	        state.collectionSearch[chatId][group].hasNextPage = hasNextPage;
 	      },
 	      setLastId: (state, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          lastId
 	        } = payload;
 	        if (!state.collection[chatId]) {
 	          state.collection[chatId] = {};
 	        }
-	        const hasCollection = !main_core.Type.isNil(state.collection[chatId][subType]);
+	        const hasCollection = !main_core.Type.isNil(state.collection[chatId][group]);
 	        if (!hasCollection) {
-	          state.collection[chatId][subType] = this.getChatState();
+	          state.collection[chatId][group] = this.getChatState();
 	        }
-	        state.collection[chatId][subType].lastId = lastId;
+	        state.collection[chatId][group].lastId = lastId;
 	      },
 	      setLastIdSearch: (state, payload) => {
 	        const {
 	          chatId,
-	          subType,
+	          group,
 	          lastId
 	        } = payload;
 	        if (!state.collectionSearch[chatId]) {
 	          state.collectionSearch[chatId] = {};
 	        }
-	        const hasCollection = !main_core.Type.isNil(state.collectionSearch[chatId][subType]);
+	        const hasCollection = !main_core.Type.isNil(state.collectionSearch[chatId][group]);
 	        if (!hasCollection) {
-	          state.collectionSearch[chatId][subType] = this.getChatState();
+	          state.collectionSearch[chatId][group] = this.getChatState();
 	        }
-	        state.collectionSearch[chatId][subType].lastId = lastId;
+	        state.collectionSearch[chatId][group].lastId = lastId;
 	      },
 	      clearSearch: state => {
 	        state.collectionSearch = {};
@@ -6904,11 +7266,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      getTotalChatCounter: ({
 	        unreadChats
 	      }) => {
-	        let count = 0;
-	        unreadChats.forEach(chatId => {
-	          count += im_v2_application_core.Core.getStore().getters['counters/getChatCounterByChatId'](chatId);
-	        });
-	        return count;
+	        return im_v2_application_core.Core.getStore().getters['counters/getTotalCounterByIds']([...unreadChats]);
 	      },
 	      /** @function sidebar/multidialog/get */
 	      get: ({
@@ -7039,6 +7397,146 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	}
 
+	const sidebarSharedLinkFieldsConfig = [{
+	  fieldName: 'id',
+	  targetFieldName: 'id',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'code',
+	  targetFieldName: 'code',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'dateCreate',
+	  targetFieldName: 'dateCreate',
+	  checkFunction: main_core.Type.isString,
+	  formatFunction: im_v2_lib_utils.Utils.date.cast
+	}, {
+	  fieldName: 'dateExpire',
+	  targetFieldName: 'dateExpire',
+	  checkFunction: main_core.Type.isString,
+	  formatFunction: im_v2_lib_utils.Utils.date.cast
+	}, {
+	  fieldName: 'entityId',
+	  targetFieldName: 'entityId',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'entityType',
+	  targetFieldName: 'entityType',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'requireApproval',
+	  targetFieldName: 'requireApproval',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'type',
+	  targetFieldName: 'type',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'url',
+	  targetFieldName: 'url',
+	  checkFunction: main_core.Type.isString
+	}];
+
+	const EntityType = {
+	  chat: 'chat'
+	};
+	class SharedLinkModel extends ui_vue3_vuex.BuilderModel {
+	  getState() {
+	    return {
+	      collection: {}
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      id: 0,
+	      code: '',
+	      dateCreate: new Date(),
+	      dateExpire: null,
+	      entityId: '',
+	      entityType: '',
+	      requireApproval: false,
+	      type: '',
+	      url: ''
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function sidebar/sharedLink/getChatInviteLink */
+	      getChatInviteLink: state => chatId => {
+	        const entityId = chatId.toString();
+	        return Object.values(state.collection).find(link => {
+	          return link.entityId === entityId && link.entityType === EntityType.chat;
+	        });
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function sidebar/sharedLink/set */
+	      set: (store, rawPayload) => {
+	        let payload = rawPayload;
+	        if (!Array.isArray(payload) && main_core.Type.isPlainObject(payload)) {
+	          payload = [payload];
+	        }
+	        const preparedLink = payload.map(link => {
+	          return this.formatFields(link);
+	        });
+	        preparedLink.forEach(link => {
+	          const existingLink = store.state.collection[link.id];
+	          if (existingLink) {
+	            store.commit('update', {
+	              id: link.id,
+	              fields: link
+	            });
+	            return;
+	          }
+	          store.commit('add', {
+	            id: link.id,
+	            fields: {
+	              ...this.getElementState(),
+	              ...link
+	            }
+	          });
+	        });
+	      },
+	      /** @function sidebar/sharedLink/regenerate */
+	      regenerate: (store, payload) => {
+	        const {
+	          newLink
+	        } = payload;
+	        const chatId = Number(newLink.entityId);
+	        const currentLink = im_v2_application_core.Core.getStore().getters['sidebar/sharedLink/getChatInviteLink'](chatId);
+	        void im_v2_application_core.Core.getStore().dispatch('sidebar/sharedLink/set', newLink);
+	        store.commit('delete', {
+	          id: currentLink.id
+	        });
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      add: (state, payload) => {
+	        // eslint-disable-next-line no-param-reassign
+	        state.collection[payload.id] = payload.fields;
+	      },
+	      update: (state, payload) => {
+	        // eslint-disable-next-line no-param-reassign
+	        state.collection[payload.id] = {
+	          ...state.collection[payload.id],
+	          ...payload.fields
+	        };
+	      },
+	      delete: (state, payload) => {
+	        // eslint-disable-next-line no-param-reassign
+	        delete state.collection[payload.id];
+	      }
+	    };
+	  }
+	  formatFields(fields) {
+	    return im_v2_model.formatFieldsWithConfig(fields, sidebarSharedLinkFieldsConfig);
+	  }
+	}
+
 	/* eslint-disable no-param-reassign */
 	class SidebarModel extends ui_vue3_vuex.BuilderModel {
 	  getName() {
@@ -7053,7 +7551,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      meetings: MeetingsModel,
 	      files: FilesModel$1,
 	      multidialog: MultidialogModel,
-	      messageSearch: MessageSearchModel
+	      messageSearch: MessageSearchModel,
+	      sharedLink: SharedLinkModel
 	    };
 	  }
 	  getState() {
@@ -7279,24 +7778,52 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  return result;
 	}
 
-	var _getChat = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getChat");
-	var _getChatByChatId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getChatByChatId");
-	var _isChatMuted = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("isChatMuted");
-	var _getRecentItemCounter = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getRecentItemCounter");
+	const counterFieldsConfig = [{
+	  fieldName: 'chatId',
+	  targetFieldName: 'chatId',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'parentChatId',
+	  targetFieldName: 'parentChatId',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'counter',
+	  targetFieldName: 'counter',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'isMarkedAsUnread',
+	  targetFieldName: 'isMarkedAsUnread',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'isMuted',
+	  targetFieldName: 'isMuted',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'recentSections',
+	  targetFieldName: 'recentSections',
+	  checkFunction: main_core.Type.isArray
+	}];
+
+	var _hasRecentType = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("hasRecentType");
+	var _isMuted = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("isMuted");
+	var _resolveCounter = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("resolveCounter");
+	var _formatFields$5 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	/* eslint-disable sonarjs/prefer-immediate-return */
+	// noinspection UnnecessaryLocalVariableJS
 	class CountersModel extends ui_vue3_vuex.BuilderModel {
 	  constructor(...args) {
 	    super(...args);
-	    Object.defineProperty(this, _getRecentItemCounter, {
-	      value: _getRecentItemCounter2
+	    Object.defineProperty(this, _formatFields$5, {
+	      value: _formatFields2$5
 	    });
-	    Object.defineProperty(this, _isChatMuted, {
-	      value: _isChatMuted2
+	    Object.defineProperty(this, _resolveCounter, {
+	      value: _resolveCounter2
 	    });
-	    Object.defineProperty(this, _getChatByChatId, {
-	      value: _getChatByChatId2
+	    Object.defineProperty(this, _isMuted, {
+	      value: _isMuted2
 	    });
-	    Object.defineProperty(this, _getChat, {
-	      value: _getChat2
+	    Object.defineProperty(this, _hasRecentType, {
+	      value: _hasRecentType2
 	    });
 	  }
 	  getName() {
@@ -7304,138 +7831,118 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	  getState() {
 	    return {
-	      unloadedChatCounters: {},
-	      unloadedLinesCounters: {},
-	      unloadedCopilotCounters: {},
-	      unloadedCollabCounters: {},
-	      commentCounters: {}
+	      collection: {}
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      chatId: 0,
+	      parentChatId: 0,
+	      counter: 0,
+	      isMarkedAsUnread: false,
+	      isMuted: false,
+	      recentSections: []
 	    };
 	  }
 
 	  // eslint-disable-next-line max-lines-per-function
 	  getGetters() {
 	    return {
-	      /** @function counters/getUnloadedChatCounters */
-	      getUnloadedChatCounters: state => {
-	        return state.unloadedChatCounters;
-	      },
 	      /** @function counters/getTotalChatCounter */
-	      getTotalChatCounter: state => {
-	        let loadedChatsCounter = 0;
-	        const recentCollection = im_v2_application_core.Core.getStore().getters['recent/getRecentCollection'];
-	        recentCollection.forEach(recentItem => {
-	          const recentItemCounter = babelHelpers.classPrivateFieldLooseBase(this, _getRecentItemCounter)[_getRecentItemCounter](recentItem);
-	          loadedChatsCounter += recentItemCounter;
-	        });
-	        let unloadedChatsCounter = 0;
-	        Object.values(state.unloadedChatCounters).forEach(counter => {
-	          unloadedChatsCounter += counter;
-	        });
-	        const channelCommentsCounter = im_v2_application_core.Core.getStore().getters['counters/getTotalCommentsCounter'];
-	        return loadedChatsCounter + unloadedChatsCounter + channelCommentsCounter;
+	      getTotalChatCounter: (state, getters) => {
+	        return getters.getCounterByRecentType(im_v2_const.RecentType.default);
 	      },
 	      /** @function counters/getTotalCopilotCounter */
-	      getTotalCopilotCounter: state => {
-	        let loadedChatsCounter = 0;
-	        const recentCollection = im_v2_application_core.Core.getStore().getters['recent/getCopilotCollection'];
-	        recentCollection.forEach(recentItem => {
-	          const chat = babelHelpers.classPrivateFieldLooseBase(this, _getChat)[_getChat](recentItem.dialogId);
-	          if (babelHelpers.classPrivateFieldLooseBase(this, _isChatMuted)[_isChatMuted](chat)) {
-	            return;
-	          }
-	          loadedChatsCounter += chat.counter;
-	        });
-	        let unloadedChatsCounter = 0;
-	        Object.values(state.unloadedCopilotCounters).forEach(counter => {
-	          unloadedChatsCounter += counter;
-	        });
-	        return loadedChatsCounter + unloadedChatsCounter;
+	      getTotalCopilotCounter: (state, getters) => {
+	        return getters.getCounterByRecentType(im_v2_const.RecentType.copilot);
 	      },
 	      /** @function counters/getTotalCollabCounter */
-	      getTotalCollabCounter: state => {
-	        let loadedChatsCounter = 0;
-	        const recentCollection = im_v2_application_core.Core.getStore().getters['recent/getCollabCollection'];
-	        recentCollection.forEach(recentItem => {
-	          const recentItemCounter = babelHelpers.classPrivateFieldLooseBase(this, _getRecentItemCounter)[_getRecentItemCounter](recentItem);
-	          loadedChatsCounter += recentItemCounter;
-	        });
-	        let unloadedChatsCounter = 0;
-	        Object.values(state.unloadedCollabCounters).forEach(counter => {
-	          unloadedChatsCounter += counter;
-	        });
-	        return loadedChatsCounter + unloadedChatsCounter;
+	      getTotalCollabCounter: (state, getters) => {
+	        return getters.getCounterByRecentType(im_v2_const.RecentType.collab);
+	      },
+	      /** @function counters/getTotalTaskCounter */
+	      getTotalTaskCounter: (state, getters) => {
+	        return getters.getCounterByRecentType(im_v2_const.RecentType.taskComments);
 	      },
 	      /** @function counters/getTotalLinesCounter */
-	      getTotalLinesCounter: state => {
-	        let unloadedLinesCounter = 0;
-	        Object.values(state.unloadedLinesCounters).forEach(counter => {
-	          unloadedLinesCounter += counter;
-	        });
-	        return unloadedLinesCounter;
+	      getTotalLinesCounter: (state, getters) => {
+	        return getters.getCounterByRecentType(im_v2_const.RecentType.openlines);
 	      },
-	      /** @function counters/getSpecificLinesCounter */
-	      getSpecificLinesCounter: state => chatId => {
-	        if (!state.unloadedLinesCounters[chatId]) {
+	      /** @function counters/getCounterByRecentType */
+	      getCounterByRecentType: state => recentType => {
+	        let totalCount = 0;
+	        const collection = state.collection;
+	        for (const counterItem of Object.values(collection)) {
+	          if (!babelHelpers.classPrivateFieldLooseBase(this, _hasRecentType)[_hasRecentType](collection, counterItem, recentType)) {
+	            continue;
+	          }
+	          if (babelHelpers.classPrivateFieldLooseBase(this, _isMuted)[_isMuted](collection, counterItem)) {
+	            continue;
+	          }
+	          totalCount += babelHelpers.classPrivateFieldLooseBase(this, _resolveCounter)[_resolveCounter](counterItem);
+	        }
+	        return totalCount;
+	      },
+	      /** @function counters/getTotalCounterByIds */
+	      getTotalCounterByIds: state => chatIds => {
+	        let totalCount = 0;
+	        for (const chatId of chatIds) {
+	          const counterItem = state.collection[chatId];
+	          if (!counterItem) {
+	            continue;
+	          }
+	          if (babelHelpers.classPrivateFieldLooseBase(this, _isMuted)[_isMuted](state.collection, counterItem)) {
+	            continue;
+	          }
+	          totalCount += babelHelpers.classPrivateFieldLooseBase(this, _resolveCounter)[_resolveCounter](counterItem);
+	        }
+	        return totalCount;
+	      },
+	      /** @function counters/getChildrenTotalCounter */
+	      getChildrenTotalCounter: state => parentChatId => {
+	        if (parentChatId === 0) {
 	          return 0;
 	        }
-	        return state.unloadedLinesCounters[chatId];
-	      },
-	      /** @function counters/getTotalCommentsCounter */
-	      getTotalCommentsCounter: state => {
-	        let totalCounter = 0;
-	        Object.entries(state.commentCounters).forEach(([channelChatId, channelCounters]) => {
-	          const channel = babelHelpers.classPrivateFieldLooseBase(this, _getChatByChatId)[_getChatByChatId](channelChatId);
-	          if (babelHelpers.classPrivateFieldLooseBase(this, _isChatMuted)[_isChatMuted](channel)) {
-	            return;
+	        let totalCount = 0;
+	        for (const counterItem of Object.values(state.collection)) {
+	          const hasRequiredParent = counterItem.parentChatId === parentChatId;
+	          if (!hasRequiredParent) {
+	            continue;
 	          }
-	          Object.values(channelCounters).forEach(commentCounter => {
-	            totalCounter += commentCounter;
-	          });
-	        });
-	        return totalCounter;
+	          totalCount += counterItem.counter;
+	        }
+	        return totalCount;
 	      },
-	      /** @function counters/getChannelComments */
-	      getChannelComments: state => chatId => {
-	        if (!state.commentCounters[chatId]) {
+	      /** @function counters/getChildrenIdsWithCounter */
+	      getChildrenIdsWithCounter: state => parentChatId => {
+	        if (parentChatId === 0) {
 	          return [];
 	        }
-	        return state.commentCounters[chatId];
+	        const childrenIdsWithCounter = [];
+	        for (const counterItem of Object.values(state.collection)) {
+	          const hasRequiredParent = counterItem.parentChatId === parentChatId;
+	          if (!hasRequiredParent || counterItem.counter === 0) {
+	            continue;
+	          }
+	          childrenIdsWithCounter.push(counterItem.chatId);
+	        }
+	        return childrenIdsWithCounter;
 	      },
-	      /** @function counters/getChannelCommentsCounter */
-	      getChannelCommentsCounter: state => chatId => {
-	        if (!state.commentCounters[chatId]) {
+	      /** @function counters/getCounterByChatId */
+	      getCounterByChatId: state => chatId => {
+	        const counterItem = state.collection[chatId];
+	        if (!counterItem) {
 	          return 0;
 	        }
-	        let result = 0;
-	        Object.values(state.commentCounters[chatId]).forEach(counter => {
-	          result += counter;
-	        });
-	        return result;
+	        return counterItem.counter;
 	      },
-	      /** @function counters/getChatCounterByChatId */
-	      getChatCounterByChatId: state => chatId => {
-	        const recentCollection = im_v2_application_core.Core.getStore().getters['recent/getRecentCollection'];
-	        const recentItem = recentCollection.find(element => {
-	          const chat = this.store.getters['chats/get'](element.dialogId, true);
-	          return chat.chatId === chatId;
-	        });
-	        if (!recentItem) {
-	          var _state$unloadedChatCo;
-	          return (_state$unloadedChatCo = state.unloadedChatCounters[chatId]) != null ? _state$unloadedChatCo : 0;
+	      /** @function counters/getUnreadStatus */
+	      getUnreadStatus: state => chatId => {
+	        const counterItem = state.collection[chatId];
+	        if (!counterItem) {
+	          return false;
 	        }
-	        return babelHelpers.classPrivateFieldLooseBase(this, _getRecentItemCounter)[_getRecentItemCounter](recentItem);
-	      },
-	      /** @function counters/getSpecificCommentsCounter */
-	      getSpecificCommentsCounter: state => payload => {
-	        var _state$commentCounter;
-	        const {
-	          channelId,
-	          commentChatId
-	        } = payload;
-	        if (!state.commentCounters[channelId]) {
-	          return 0;
-	        }
-	        return (_state$commentCounter = state.commentCounters[channelId][commentChatId]) != null ? _state$commentCounter : 0;
+	        return counterItem.isMarkedAsUnread;
 	      }
 	    };
 	  }
@@ -7444,164 +7951,201 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  /* eslint-disable-next-line max-lines-per-function */
 	  getActions() {
 	    return {
-	      /** @function counters/setUnloadedChatCounters */
-	      setUnloadedChatCounters: (store, payload) => {
-	        if (!main_core.Type.isPlainObject(payload)) {
+	      /** @function counters/setCounters */
+	      setCounters: (store, payload) => {
+	        if (!main_core.Type.isArray(payload)) {
 	          return;
 	        }
-	        store.commit('setUnloadedChatCounters', payload);
+	        const preparedItems = payload.map(counterItem => {
+	          const preparedItem = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$5)[_formatFields$5](counterItem);
+	          return {
+	            ...this.getElementState(),
+	            ...preparedItem
+	          };
+	        });
+	        store.commit('setCounters', preparedItems);
 	      },
-	      /** @function counters/setUnloadedLinesCounters */
-	      setUnloadedLinesCounters: (store, payload) => {
-	        if (!main_core.Type.isPlainObject(payload)) {
+	      /** @function counters/setCounter */
+	      setCounter: (store, payload) => {
+	        const {
+	          chatId
+	        } = payload;
+	        const existingItem = store.state.collection[chatId];
+	        if (!existingItem) {
 	          return;
 	        }
-	        store.commit('setUnloadedLinesCounters', payload);
+	        store.commit('setCounter', payload);
 	      },
-	      /** @function counters/setUnloadedCopilotCounters */
-	      setUnloadedCopilotCounters: (store, payload) => {
-	        if (!main_core.Type.isPlainObject(payload)) {
+	      /** @function counters/setUnreadStatus */
+	      setUnreadStatus: (store, payload) => {
+	        const {
+	          chatId
+	        } = payload;
+	        const existingItem = store.state.collection[chatId];
+	        if (!existingItem) {
 	          return;
 	        }
-	        store.commit('setUnloadedCopilotCounters', payload);
+	        store.commit('setUnreadStatus', payload);
 	      },
-	      /** @function counters/setUnloadedCollabCounters */
-	      setUnloadedCollabCounters: (store, payload) => {
-	        if (!main_core.Type.isPlainObject(payload)) {
+	      /** @function counters/setMuteStatus */
+	      setMuteStatus: (store, payload) => {
+	        const {
+	          chatId
+	        } = payload;
+	        const existingItem = store.state.collection[chatId];
+	        if (!existingItem) {
 	          return;
 	        }
-	        store.commit('setUnloadedCollabCounters', payload);
+	        store.commit('setMuteStatus', payload);
 	      },
-	      /** @function counters/setCommentCounters */
-	      setCommentCounters: (store, payload) => {
-	        if (!main_core.Type.isPlainObject(payload)) {
-	          return;
-	        }
-	        store.commit('setCommentCounters', payload);
+	      /** @function counters/clearByRecentType */
+	      clearByRecentType: (store, payload) => {
+	        store.commit('clearByRecentType', payload);
 	      },
-	      /** @function counters/readAllChannelComments */
-	      readAllChannelComments: (store, channelChatId) => {
-	        if (!main_core.Type.isNumber(channelChatId)) {
-	          return;
-	        }
-	        store.commit('readAllChannelComments', channelChatId);
+	      /** @function counters/clearById */
+	      clearById: (store, payload) => {
+	        store.commit('clearById', payload);
 	      },
-	      /** @function counters/deleteForChannel */
-	      deleteForChannel: (store, payload) => {
-	        if (!main_core.Type.isPlainObject(payload)) {
-	          return;
-	        }
-	        store.commit('deleteForChannel', payload);
+	      /** @function counters/clearByParentId */
+	      clearByParentId: (store, payload) => {
+	        store.commit('clearByParentId', payload);
+	      },
+	      /** @function counters/clear */
+	      clear: store => {
+	        store.commit('clear');
 	      }
 	    };
 	  }
 	  getMutations() {
 	    return {
-	      setUnloadedChatCounters: (state, payload) => {
-	        Object.entries(payload).forEach(([chatId, counter]) => {
-	          if (counter === 0) {
-	            delete state.unloadedChatCounters[chatId];
-	            return;
-	          }
-	          state.unloadedChatCounters[chatId] = counter;
+	      setCounters: (state, payload) => {
+	        payload.forEach(counterItem => {
+	          state.collection[counterItem.chatId] = counterItem;
 	        });
 	      },
-	      setUnloadedLinesCounters: (state, payload) => {
-	        Object.entries(payload).forEach(([chatId, counter]) => {
-	          if (counter === 0) {
-	            delete state.unloadedLinesCounters[chatId];
-	            return;
-	          }
-	          state.unloadedLinesCounters[chatId] = counter;
-	        });
-	      },
-	      setUnloadedCopilotCounters: (state, payload) => {
-	        Object.entries(payload).forEach(([chatId, counter]) => {
-	          if (counter === 0) {
-	            delete state.unloadedCopilotCounters[chatId];
-	            return;
-	          }
-	          state.unloadedCopilotCounters[chatId] = counter;
-	        });
-	      },
-	      setUnloadedCollabCounters: (state, payload) => {
-	        Object.entries(payload).forEach(([chatId, counter]) => {
-	          if (counter === 0) {
-	            delete state.unloadedCollabCounters[chatId];
-	            return;
-	          }
-	          state.unloadedCollabCounters[chatId] = counter;
-	        });
-	      },
-	      setCommentCounters: (state, payload) => {
-	        Object.entries(payload).forEach(([channelChatId, countersMap]) => {
-	          if (!state.commentCounters[channelChatId]) {
-	            state.commentCounters[channelChatId] = {};
-	          }
-	          const channelMap = state.commentCounters[channelChatId];
-	          Object.entries(countersMap).forEach(([commentChatId, counter]) => {
-	            if (counter === 0) {
-	              delete channelMap[commentChatId];
-	              return;
-	            }
-	            channelMap[commentChatId] = counter;
-	          });
-	        });
-	      },
-	      readAllChannelComments: (state, channelChatId) => {
-	        delete state.commentCounters[channelChatId];
-	      },
-	      deleteForChannel: (state, payload) => {
+	      setCounter: (state, payload) => {
 	        const {
-	          channelChatId,
-	          commentChatId
+	          chatId,
+	          counter
 	        } = payload;
-	        if (!state.commentCounters[channelChatId]) {
-	          return;
+	        const existingItem = state.collection[chatId];
+	        existingItem.counter = counter;
+	      },
+	      setUnreadStatus: (state, payload) => {
+	        const {
+	          chatId,
+	          status
+	        } = payload;
+	        const existingItem = state.collection[chatId];
+	        existingItem.isMarkedAsUnread = status;
+	      },
+	      setMuteStatus: (state, payload) => {
+	        const {
+	          chatId,
+	          status
+	        } = payload;
+	        const existingItem = state.collection[chatId];
+	        existingItem.isMuted = status;
+	      },
+	      clearByRecentType: (state, payload) => {
+	        const {
+	          recentType
+	        } = payload;
+	        const collection = state.collection;
+	        const idsToDelete = [];
+	        for (const counterItem of Object.values(collection)) {
+	          if (!babelHelpers.classPrivateFieldLooseBase(this, _hasRecentType)[_hasRecentType](collection, counterItem, recentType)) {
+	            continue;
+	          }
+	          idsToDelete.push(counterItem.chatId);
 	        }
-	        if (!commentChatId) {
-	          delete state.commentCounters[channelChatId];
-	          return;
+	        for (const chatId of idsToDelete) {
+	          delete collection[chatId];
 	        }
-	        delete state.commentCounters[channelChatId][commentChatId];
+	      },
+	      clearById: (state, payload) => {
+	        const {
+	          chatId
+	        } = payload;
+	        const collection = state.collection;
+	        delete collection[chatId];
+	        for (const counterItem of Object.values(collection)) {
+	          const hasRequiredParent = counterItem.parentChatId === chatId;
+	          if (!hasRequiredParent) {
+	            continue;
+	          }
+	          delete collection[counterItem.chatId];
+	        }
+	      },
+	      clearByParentId: (state, payload) => {
+	        const {
+	          parentChatId
+	        } = payload;
+	        const collection = state.collection;
+	        for (const counterItem of Object.values(collection)) {
+	          if (counterItem.parentChatId !== parentChatId) {
+	            continue;
+	          }
+	          delete collection[counterItem.chatId];
+	        }
+	      },
+	      clear: state => {
+	        state.collection = {};
 	      }
 	    };
 	  }
 	}
-	function _getChat2(dialogId) {
-	  return im_v2_application_core.Core.getStore().getters['chats/get'](dialogId, true);
-	}
-	function _getChatByChatId2(chatId) {
-	  return im_v2_application_core.Core.getStore().getters['chats/getByChatId'](chatId, true);
-	}
-	function _isChatMuted2(chat) {
-	  return chat.muteList.includes(im_v2_application_core.Core.getUserId());
-	}
-	function _getRecentItemCounter2(recentItem) {
-	  const chat = babelHelpers.classPrivateFieldLooseBase(this, _getChat)[_getChat](recentItem.dialogId);
-	  if (babelHelpers.classPrivateFieldLooseBase(this, _isChatMuted)[_isChatMuted](chat)) {
-	    return 0;
+	function _hasRecentType2(collection, counterItem, recentType) {
+	  const hasRequiredType = counterItem.recentSections.includes(recentType);
+	  if (hasRequiredType) {
+	    return true;
 	  }
-	  const isMarked = recentItem.unread;
-	  if (chat.counter === 0 && isMarked) {
+	  const parentChatId = counterItem.parentChatId;
+	  const parentChat = collection[parentChatId];
+	  const hasParentChat = parentChatId > 0 && parentChat;
+	  if (!hasParentChat) {
+	    return false;
+	  }
+	  const parentHasRequiredType = parentChat.recentSections.includes(recentType);
+	  return parentHasRequiredType;
+	}
+	function _isMuted2(collection, counterItem) {
+	  const parent = collection[counterItem.parentChatId];
+	  return counterItem.isMuted || (parent == null ? void 0 : parent.isMuted);
+	}
+	function _resolveCounter2(counterItem) {
+	  if (counterItem.counter > 0) {
+	    return counterItem.counter;
+	  }
+	  if (counterItem.isMarkedAsUnread) {
 	    return 1;
 	  }
-	  return chat.counter;
+	  return 0;
+	}
+	function _formatFields2$5(counterItem) {
+	  return im_v2_model.formatFieldsWithConfig(counterItem, counterFieldsConfig);
 	}
 
 	const copilotFieldsConfig = [{
-	  fieldName: 'recommendedRoles',
-	  targetFieldName: 'recommendedRoles',
-	  checkFunction: main_core.Type.isArray
+	  fieldName: 'code',
+	  targetFieldName: 'code',
+	  checkFunction: main_core.Type.isString
 	}, {
-	  fieldName: 'roles',
-	  targetFieldName: 'roles',
-	  checkFunction: main_core.Type.isPlainObject,
-	  formatFunction: target => {
-	    return Object.values(target).map(role => {
-	      return formatFieldsWithConfig(role, rolesFieldsConfig);
-	    });
-	  }
+	  fieldName: 'default',
+	  targetFieldName: 'default',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'recommended',
+	  targetFieldName: 'recommended',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'supportsReasoning',
+	  targetFieldName: 'supportsReasoning',
+	  checkFunction: main_core.Type.isBoolean
+	}, {
+	  fieldName: 'name',
+	  targetFieldName: 'name',
+	  checkFunction: main_core.Type.isString
 	}];
 
 	const chatFieldsConfig$1 = [{
@@ -7612,7 +8156,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  fieldName: 'role',
 	  targetFieldName: 'role',
 	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'engine',
+	  targetFieldName: 'aiModel',
+	  checkFunction: main_core.Type.isString
 	}];
+
+	const AI_MODEL_DEFAULT_NAME = 'none';
 
 	/* eslint-disable no-param-reassign */
 	class ChatsModel$1 extends ui_vue3_vuex.BuilderModel {
@@ -7624,7 +8174,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getElementState() {
 	    return {
 	      dialogId: '',
-	      role: ''
+	      role: '',
+	      aiModel: '',
+	      reasoningEnabled: false
 	    };
 	  }
 	  getGetters() {
@@ -7644,24 +8196,69 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return '';
 	        }
 	        return im_v2_application_core.Core.getStore().getters['copilot/roles/getAvatar'](role.code);
+	      },
+	      /** @function copilot/chats/getAIModel */
+	      getAIModel: state => dialogId => {
+	        const chat = state.collection[dialogId];
+	        if (!chat) {
+	          return null;
+	        }
+	        const aiModelList = im_v2_application_core.Core.getStore().getters['copilot/getAIModels'];
+	        const currentAiModel = aiModelList.find(aiModel => aiModel.code === chat.aiModel);
+	        return currentAiModel != null ? currentAiModel : AI_MODEL_DEFAULT_NAME;
+	      },
+	      /** @function copilot/chats/isReasoningEnabled */
+	      isReasoningEnabled: state => dialogId => {
+	        const chat = state.collection[dialogId];
+	        if (!chat) {
+	          return false;
+	        }
+	        return state.collection[dialogId].reasoningEnabled;
 	      }
 	    };
 	  }
 	  getActions() {
 	    return {
-	      /** @function copilot/chats/add */
-	      add: (store, payload) => {
+	      /** @function copilot/chats/set */
+	      set: (store, payload) => {
 	        if (!payload) {
 	          return;
 	        }
 	        const chatsToAdd = main_core.Type.isArrayFilled(payload) ? payload : [payload];
-	        chatsToAdd.forEach(chat => {
-	          const preparedChat = {
-	            ...this.getElementState(),
-	            ...this.formatFields(chat)
-	          };
-	          store.commit('add', preparedChat);
+	        const preparedChats = chatsToAdd.map(chat => {
+	          return this.formatFields(chat);
 	        });
+	        preparedChats.forEach(chat => {
+	          const existingItem = store.state.collection[chat.dialogId];
+	          if (existingItem) {
+	            store.commit('update', {
+	              dialogId: chat.dialogId,
+	              fields: chat
+	            });
+	            return;
+	          }
+	          store.commit('add', {
+	            dialogId: chat.dialogId,
+	            fields: {
+	              ...this.getElementState(),
+	              ...chat
+	            }
+	          });
+	        });
+	      },
+	      /** @function copilot/chats/updateModel */
+	      updateModel: (store, payload) => {
+	        if (!payload || !store.state.collection[payload.dialogId]) {
+	          return;
+	        }
+	        store.commit('updateModel', payload);
+	      },
+	      /** @function copilot/chats/toggleReasoning */
+	      toggleReasoning: (store, dialogId) => {
+	        if (!store.state.collection[dialogId]) {
+	          return;
+	        }
+	        store.commit('toggleReasoning', dialogId);
 	      }
 	    };
 	  }
@@ -7669,9 +8266,30 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return {
 	      add: (state, payload) => {
 	        const {
-	          dialogId
+	          dialogId,
+	          fields
 	        } = payload;
-	        state.collection[dialogId] = payload;
+	        state.collection[dialogId] = fields;
+	      },
+	      update: (state, payload) => {
+	        const {
+	          dialogId,
+	          fields
+	        } = payload;
+	        state.collection[dialogId] = {
+	          ...state.collection[dialogId],
+	          ...fields
+	        };
+	      },
+	      updateModel: (state, payload) => {
+	        const {
+	          dialogId,
+	          aiModel
+	        } = payload;
+	        state.collection[dialogId].aiModel = aiModel;
+	      },
+	      toggleReasoning: (state, dialogId) => {
+	        state.collection[dialogId].reasoningEnabled = !state.collection[dialogId].reasoningEnabled;
 	      }
 	    };
 	  }
@@ -7759,7 +8377,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	}
 
-	const rolesFieldsConfig$1 = [{
+	const rolesFieldsConfig = [{
 	  fieldName: 'avatar',
 	  targetFieldName: 'avatar',
 	  checkFunction: main_core.Type.isPlainObject,
@@ -7873,13 +8491,20 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      getDefault: state => {
 	        return Object.values(state.roles).find(role => role.default);
 	      },
+	      /** @function copilot/roles/getDefaultAvatar */
+	      getDefaultAvatar: (state, getters) => (size = 'M') => {
+	        var _getters$getDefault$a, _getters$getDefault2;
+	        const avatarSize = AvatarSizes[size];
+	        return (_getters$getDefault$a = (_getters$getDefault2 = getters.getDefault) == null ? void 0 : _getters$getDefault2.avatar[avatarSize]) != null ? _getters$getDefault$a : '';
+	      },
 	      /** @function copilot/roles/getAvatar */
 	      getAvatar: (state, getters) => (roleCode, size = 'M') => {
+	        const avatarSize = AvatarSizes[size];
 	        if (!state.roles[roleCode]) {
-	          var _getters$getDefault$p2, _getters$getDefault2;
-	          return (_getters$getDefault$p2 = (_getters$getDefault2 = getters.getDefault) == null ? void 0 : _getters$getDefault2.prompts) != null ? _getters$getDefault$p2 : [];
+	          var _getters$getDefault$a2, _getters$getDefault3;
+	          return (_getters$getDefault$a2 = (_getters$getDefault3 = getters.getDefault) == null ? void 0 : _getters$getDefault3.avatar[avatarSize]) != null ? _getters$getDefault$a2 : '';
 	        }
-	        return state.roles[roleCode].avatar[AvatarSizes[size]];
+	        return state.roles[roleCode].avatar[avatarSize];
 	      }
 	    };
 	  }
@@ -7909,7 +8534,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    };
 	  }
 	  formatFields(fields) {
-	    return formatFieldsWithConfig(fields, rolesFieldsConfig$1);
+	    return formatFieldsWithConfig(fields, rolesFieldsConfig);
 	  }
 	}
 
@@ -7930,7 +8555,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getState() {
 	    return {
 	      recommendedRoles: [],
-	      aiProvider: ''
+	      aiProvider: '',
+	      availableAIModels: {},
+	      name: ''
 	    };
 	  }
 	  getGetters() {
@@ -7939,12 +8566,37 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      getProvider: state => {
 	        return state.aiProvider;
 	      },
+	      /** @function copilot/getAIModels */
+	      getAIModels: state => {
+	        return Object.values(state.availableAIModels);
+	      },
 	      /** @function copilot/getRecommendedRoles */
 	      getRecommendedRoles: state => () => {
 	        const roles = state.recommendedRoles.map(roleCode => {
 	          return im_v2_application_core.Core.getStore().getters['copilot/roles/getByCode'](roleCode);
 	        });
 	        return roles.slice(0, RECOMMENDED_ROLES_LIMIT);
+	      },
+	      /** @function copilot/getDefaultModelName */
+	      getDefaultModelName: state => {
+	        const allModels = Object.values(state.availableAIModels);
+	        if (allModels.length === 0) {
+	          return '';
+	        }
+	        const defaultModel = allModels.find(model => model.default === true);
+	        if (!defaultModel) {
+	          return '';
+	        }
+	        return defaultModel.name;
+	      },
+	      /** @function copilot/isReasoningAvailableInModel */
+	      isReasoningAvailableInModel: state => code => {
+	        var _state$availableAIMod;
+	        return Boolean((_state$availableAIMod = state.availableAIModels[code]) == null ? void 0 : _state$availableAIMod.supportsReasoning);
+	      },
+	      /** @function copilot/getName */
+	      getName: state => {
+	        return state.name;
 	      }
 	    };
 	  }
@@ -7963,6 +8615,22 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          return;
 	        }
 	        store.commit('setProvider', payload);
+	      },
+	      /** @function copilot/setAvailableAIModels */
+	      setAvailableAIModels: (store, payload) => {
+	        if (!main_core.Type.isArrayFilled(payload)) {
+	          return;
+	        }
+	        payload.forEach(model => {
+	          store.commit('setAvailableAIModel', this.formatFields(model));
+	        });
+	      },
+	      /** @function copilot/setName */
+	      setName: (store, payload) => {
+	        if (!main_core.Type.isStringFilled(payload)) {
+	          return;
+	        }
+	        store.commit('setName', payload);
 	      }
 	    };
 	  }
@@ -7973,6 +8641,12 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      },
 	      setProvider: (state, payload) => {
 	        state.aiProvider = payload;
+	      },
+	      setAvailableAIModel: (state, payload) => {
+	        state.availableAIModels[payload.code] = payload;
+	      },
+	      setName: (state, payload) => {
+	        state.name = payload;
 	      }
 	    };
 	  }
@@ -7981,6 +8655,642 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	}
 
+	/* eslint-disable no-param-reassign */
+	class AiAssistantModel extends ui_vue3_vuex.BuilderModel {
+	  getName() {
+	    return 'aiAssistant';
+	  }
+	  getState() {
+	    return {
+	      mcpAuthId: null
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function aiAssistant/getMcpAuthId */
+	      getMcpAuthId: state => {
+	        return state.mcpAuthId;
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function aiAssistant/setMcpAuthId */
+	      setMcpAuthId: (store, mcpAuthId) => {
+	        store.commit('setMcpAuthId', mcpAuthId);
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      setMcpAuthId: (state, mcpAuthId) => {
+	        state.mcpAuthId = mcpAuthId;
+	      }
+	    };
+	  }
+	}
+
+	const stickerFieldsConfig = [{
+	  fieldName: 'id',
+	  targetFieldName: 'id',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'packId',
+	  targetFieldName: 'packId',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'packType',
+	  targetFieldName: 'packType',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'uri',
+	  targetFieldName: 'uri',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'type',
+	  targetFieldName: 'type',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'width',
+	  targetFieldName: 'width',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'height',
+	  targetFieldName: 'height',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'sort',
+	  targetFieldName: 'sort',
+	  checkFunction: main_core.Type.isNumber
+	}];
+
+	const recentStickerConfig = [{
+	  fieldName: 'id',
+	  targetFieldName: 'id',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'packId',
+	  targetFieldName: 'packId',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'packType',
+	  targetFieldName: 'packType',
+	  checkFunction: main_core.Type.isString
+	}];
+
+	const RECENT_LIMIT = 12;
+
+	/* eslint-disable no-param-reassign */
+	var _formatFields$6 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	var _applyLimit = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("applyLimit");
+	var _isEqual = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("isEqual");
+	class RecentStickersModel extends ui_vue3_vuex.BuilderModel {
+	  constructor(...args) {
+	    super(...args);
+	    Object.defineProperty(this, _isEqual, {
+	      value: _isEqual2
+	    });
+	    Object.defineProperty(this, _applyLimit, {
+	      value: _applyLimit2
+	    });
+	    Object.defineProperty(this, _formatFields$6, {
+	      value: _formatFields2$6
+	    });
+	  }
+	  getState() {
+	    return {
+	      collection: []
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      id: 0,
+	      packId: 0,
+	      packType: ''
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function stickers/recent/get */
+	      get: (state, getters, rootState, rootGetters) => {
+	        return state.collection.map(recentSticker => {
+	          return rootGetters['stickers/get']({
+	            id: recentSticker.id,
+	            packId: recentSticker.packId,
+	            packType: recentSticker.packType
+	          });
+	        }).filter(sticker => Boolean(sticker));
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function stickers/recent/set */
+	      set: (store, payload) => {
+	        payload.forEach(sticker => {
+	          const preparedRecentSticker = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$6)[_formatFields$6](sticker);
+	          store.commit('add', {
+	            ...this.getElementState(),
+	            ...preparedRecentSticker
+	          });
+	        });
+	      },
+	      /** @function stickers/recent/update */
+	      update: (store, payload) => {
+	        const preparedRecentSticker = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$6)[_formatFields$6](payload);
+	        store.commit('update', {
+	          ...this.getElementState(),
+	          ...preparedRecentSticker
+	        });
+	      },
+	      /** @function stickers/recent/clear */
+	      clear: store => {
+	        store.commit('clear');
+	      },
+	      /** @function stickers/recent/delete */
+	      delete: (store, payload) => {
+	        store.commit('delete', payload);
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      add: (state, payload) => {
+	        state.collection.push(payload);
+	        babelHelpers.classPrivateFieldLooseBase(this, _applyLimit)[_applyLimit](state);
+	      },
+	      update: (state, payload) => {
+	        state.collection = state.collection.filter(sticker => {
+	          return !babelHelpers.classPrivateFieldLooseBase(this, _isEqual)[_isEqual](sticker, payload);
+	        });
+	        state.collection.unshift(payload);
+	        babelHelpers.classPrivateFieldLooseBase(this, _applyLimit)[_applyLimit](state);
+	      },
+	      clear: state => {
+	        state.collection = [];
+	      },
+	      delete: (state, payload) => {
+	        state.collection = state.collection.filter(sticker => {
+	          return !babelHelpers.classPrivateFieldLooseBase(this, _isEqual)[_isEqual](sticker, payload);
+	        });
+	      }
+	    };
+	  }
+	}
+	function _formatFields2$6(sticker) {
+	  return formatFieldsWithConfig(sticker, recentStickerConfig);
+	}
+	function _applyLimit2(state) {
+	  if (state.collection.length > RECENT_LIMIT) {
+	    state.collection = state.collection.slice(0, RECENT_LIMIT);
+	  }
+	}
+	function _isEqual2(firstSticker, secondSticker) {
+	  return firstSticker.id === secondSticker.id && firstSticker.packId === secondSticker.packId && firstSticker.packType === secondSticker.packType;
+	}
+
+	const stickerMessagesConfig = [{
+	  fieldName: 'messageId',
+	  targetFieldName: 'messageId',
+	  checkFunction: isNumberOrString
+	}, {
+	  fieldName: 'id',
+	  targetFieldName: 'id',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'packId',
+	  targetFieldName: 'packId',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'packType',
+	  targetFieldName: 'packType',
+	  checkFunction: main_core.Type.isString
+	}];
+
+	var _formatFields$7 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	/* eslint-disable no-param-reassign */
+	class StickerMessagesModel extends ui_vue3_vuex.BuilderModel {
+	  constructor(...args) {
+	    super(...args);
+	    Object.defineProperty(this, _formatFields$7, {
+	      value: _formatFields2$7
+	    });
+	  }
+	  getState() {
+	    return {
+	      collection: new Map()
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      id: 0,
+	      packId: 0,
+	      packType: ''
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function stickers/messages/isSticker */
+	      isSticker: state => messageId => {
+	        return state.collection.has(messageId);
+	      },
+	      /** @function stickers/messages/getStickerByMessageId */
+	      getStickerByMessageId: state => messageId => {
+	        return state.collection.get(messageId);
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function stickers/messages/set */
+	      set: (store, payload) => {
+	        payload.forEach(message => {
+	          const preparedStickerMessage = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$7)[_formatFields$7](message);
+	          store.commit('add', {
+	            ...this.getElementState(),
+	            ...preparedStickerMessage
+	          });
+	        });
+	      },
+	      /** @function stickers/messages/updateWithId */
+	      updateWithId: (store, payload) => {
+	        const {
+	          oldId,
+	          newId
+	        } = payload;
+	        const tempMessageStickerIdentifier = store.state.collection.get(oldId);
+	        tempMessageStickerIdentifier.messageId = newId;
+	        store.commit('delete', oldId);
+	        store.commit('add', tempMessageStickerIdentifier);
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      add: (state, payload) => {
+	        const messageId = payload.messageId;
+	        delete payload.messageId;
+	        state.collection.set(messageId, payload);
+	      },
+	      delete: (state, payload) => {
+	        state.collection.delete(payload);
+	      }
+	    };
+	  }
+	}
+	function _formatFields2$7(stickerMessage) {
+	  return im_v2_model.formatFieldsWithConfig(stickerMessage, stickerMessagesConfig);
+	}
+
+	const packFieldsConfig = [{
+	  fieldName: 'id',
+	  targetFieldName: 'id',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'authorId',
+	  targetFieldName: 'authorId',
+	  checkFunction: main_core.Type.isNumber
+	}, {
+	  fieldName: 'name',
+	  targetFieldName: 'name',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'type',
+	  targetFieldName: 'type',
+	  checkFunction: main_core.Type.isString
+	}, {
+	  fieldName: 'isAdded',
+	  targetFieldName: 'isAdded',
+	  checkFunction: main_core.Type.isBoolean
+	}];
+
+	var _formatFields$8 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	var _getPackKey = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getPackKey");
+	/* eslint-disable no-param-reassign */
+	class PacksModel extends ui_vue3_vuex.BuilderModel {
+	  constructor(...args) {
+	    super(...args);
+	    Object.defineProperty(this, _getPackKey, {
+	      value: _getPackKey2
+	    });
+	    Object.defineProperty(this, _formatFields$8, {
+	      value: _formatFields2$8
+	    });
+	  }
+	  getState() {
+	    return {
+	      collection: new Map()
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      id: 0,
+	      key: '',
+	      type: '',
+	      name: '',
+	      authorId: null,
+	      isAdded: false
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function stickers/packs/get */
+	      get: state => {
+	        return [...state.collection.values()].filter(pack => pack.isAdded).sort((firstPack, secondPack) => {
+	          // Temporary manual sorting (until backend adds sort field):
+	          // - Custom packs: id desc
+	          // - Vendor packs: id desc
+	          if (firstPack.type !== secondPack.type) {
+	            return firstPack.type === im_v2_const.StickerPackType.custom ? -1 : 1;
+	          }
+	          return secondPack.id - firstPack.id;
+	        });
+	      },
+	      /** @function stickers/packs/getByIdentifier */
+	      getByIdentifier: state => ({
+	        id,
+	        type
+	      }) => {
+	        const packKey = babelHelpers.classPrivateFieldLooseBase(this, _getPackKey)[_getPackKey]({
+	          id,
+	          type
+	        });
+	        return state.collection.get(packKey);
+	      },
+	      /** @function stickers/packs/hasPack */
+	      hasPack: state => ({
+	        id,
+	        type
+	      }) => {
+	        const packKey = babelHelpers.classPrivateFieldLooseBase(this, _getPackKey)[_getPackKey]({
+	          id,
+	          type
+	        });
+	        return state.collection.has(packKey);
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function stickers/packs/set */
+	      set: (store, payload) => {
+	        payload.forEach(pack => {
+	          const preparedPack = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$8)[_formatFields$8](pack);
+	          const packKey = babelHelpers.classPrivateFieldLooseBase(this, _getPackKey)[_getPackKey](preparedPack);
+	          store.commit('add', {
+	            key: packKey,
+	            pack: {
+	              ...this.getElementState(),
+	              ...preparedPack,
+	              key: packKey
+	            }
+	          });
+	        });
+	      },
+	      /** @function stickers/packs/link */
+	      link: (store, payload) => {
+	        const packKey = babelHelpers.classPrivateFieldLooseBase(this, _getPackKey)[_getPackKey](payload);
+	        store.commit('update', {
+	          key: packKey,
+	          fields: {
+	            isAdded: true
+	          }
+	        });
+	      },
+	      /** @function stickers/packs/rename */
+	      rename: (store, payload) => {
+	        if (!main_core.Type.isStringFilled(payload.name)) {
+	          return;
+	        }
+	        const packKey = babelHelpers.classPrivateFieldLooseBase(this, _getPackKey)[_getPackKey](payload);
+	        store.commit('update', {
+	          key: packKey,
+	          fields: {
+	            name: payload.name
+	          }
+	        });
+	      },
+	      /** @function stickers/packs/unlink */
+	      unlink: (store, payload) => {
+	        const packKey = babelHelpers.classPrivateFieldLooseBase(this, _getPackKey)[_getPackKey](payload);
+	        store.commit('update', {
+	          key: packKey,
+	          fields: {
+	            isAdded: false
+	          }
+	        });
+	      },
+	      /** @function stickers/packs/delete */
+	      delete: (store, payload) => {
+	        const packKey = babelHelpers.classPrivateFieldLooseBase(this, _getPackKey)[_getPackKey](payload);
+	        store.commit('delete', {
+	          key: packKey
+	        });
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      add: (state, payload) => {
+	        const {
+	          key,
+	          pack
+	        } = payload;
+	        state.collection.set(key, pack);
+	      },
+	      delete: (state, payload) => {
+	        state.collection.delete(payload.key);
+	      },
+	      update: (state, payload) => {
+	        const pack = state.collection.get(payload.key);
+	        if (!pack) {
+	          return;
+	        }
+	        state.collection.set(payload.key, {
+	          ...pack,
+	          ...payload.fields
+	        });
+	      }
+	    };
+	  }
+	}
+	function _formatFields2$8(pack) {
+	  return im_v2_model.formatFieldsWithConfig(pack, packFieldsConfig);
+	}
+	function _getPackKey2({
+	  id,
+	  type
+	}) {
+	  return `${id}:${type}`;
+	}
+
+	var _formatFields$9 = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("formatFields");
+	var _getStickerKey = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getStickerKey");
+	/* eslint-disable no-param-reassign */
+	class StickersModel extends ui_vue3_vuex.BuilderModel {
+	  constructor(...args) {
+	    super(...args);
+	    Object.defineProperty(this, _getStickerKey, {
+	      value: _getStickerKey2
+	    });
+	    Object.defineProperty(this, _formatFields$9, {
+	      value: _formatFields2$9
+	    });
+	  }
+	  getName() {
+	    return 'stickers';
+	  }
+	  getNestedModules() {
+	    return {
+	      packs: PacksModel,
+	      recent: RecentStickersModel,
+	      messages: StickerMessagesModel
+	    };
+	  }
+	  getState() {
+	    return {
+	      collection: new Map()
+	    };
+	  }
+	  getElementState() {
+	    return {
+	      id: 0,
+	      packId: 0,
+	      packType: '',
+	      type: im_v2_const.StickerType.image,
+	      uri: '',
+	      width: 0,
+	      height: 0,
+	      sort: 0
+	    };
+	  }
+	  getGetters() {
+	    return {
+	      /** @function stickers/get */
+	      get: state => ({
+	        id,
+	        packId,
+	        packType
+	      }) => {
+	        const stickerKey = babelHelpers.classPrivateFieldLooseBase(this, _getStickerKey)[_getStickerKey]({
+	          id,
+	          packId,
+	          packType
+	        });
+	        return state.collection.get(stickerKey);
+	      },
+	      /** @function stickers/getByPack */
+	      getByPack: state => ({
+	        id,
+	        type
+	      }) => {
+	        return [...state.collection.values()].filter(sticker => {
+	          return sticker.packId === id && sticker.packType === type;
+	        }).sort((sticker1, sticker2) => sticker1.sort - sticker2.sort);
+	      },
+	      /** @function stickers/getPackCover */
+	      getPackCover: (state, getters) => ({
+	        id,
+	        type
+	      }) => {
+	        const packsStickers = getters.getByPack({
+	          id,
+	          type
+	        });
+	        if (packsStickers.length > 0) {
+	          return packsStickers[0].uri;
+	        }
+	        return '';
+	      }
+	    };
+	  }
+	  getActions() {
+	    return {
+	      /** @function stickers/set */
+	      set: (store, payload) => {
+	        payload.forEach(sticker => {
+	          const preparedSticker = babelHelpers.classPrivateFieldLooseBase(this, _formatFields$9)[_formatFields$9](sticker);
+	          const stickerKey = babelHelpers.classPrivateFieldLooseBase(this, _getStickerKey)[_getStickerKey](preparedSticker);
+	          store.commit('add', {
+	            key: stickerKey,
+	            sticker: {
+	              ...this.getElementState(),
+	              ...preparedSticker
+	            }
+	          });
+	        });
+	      },
+	      /** @function stickers/delete */
+	      delete: (store, payload) => {
+	        const {
+	          ids,
+	          packId,
+	          packType
+	        } = payload;
+	        ids.forEach(id => {
+	          const stickerKey = babelHelpers.classPrivateFieldLooseBase(this, _getStickerKey)[_getStickerKey]({
+	            id,
+	            packId,
+	            packType
+	          });
+	          store.commit('delete', stickerKey);
+	        });
+	      },
+	      /** @function stickers/deleteByPack */
+	      deleteByPack: (store, payload) => {
+	        const {
+	          id: packId,
+	          type: packType
+	        } = payload;
+	        [...store.state.collection.values()].forEach(sticker => {
+	          if (sticker.packId !== packId || sticker.packType !== packType) {
+	            return;
+	          }
+	          const {
+	            id
+	          } = sticker;
+	          const stickerKey = babelHelpers.classPrivateFieldLooseBase(this, _getStickerKey)[_getStickerKey]({
+	            id,
+	            packId,
+	            packType
+	          });
+	          store.commit('delete', stickerKey);
+	        });
+	      }
+	    };
+	  }
+	  getMutations() {
+	    return {
+	      add: (state, payload) => {
+	        const {
+	          key,
+	          sticker
+	        } = payload;
+	        state.collection.set(key, sticker);
+	      },
+	      delete: (state, key) => {
+	        state.collection.delete(key);
+	      }
+	    };
+	  }
+	}
+	function _formatFields2$9(rawSticker) {
+	  return formatFieldsWithConfig(rawSticker, stickerFieldsConfig);
+	}
+	function _getStickerKey2({
+	  id,
+	  packId,
+	  packType
+	}) {
+	  return `${packId}:${packType}:${id}`;
+	}
+
+	exports.convertToNumber = convertToNumber;
+	exports.convertToString = convertToString;
+	exports.isNumberOrString = isNumberOrString;
+	exports.convertObjectKeysToCamelCase = convertObjectKeysToCamelCase;
+	exports.prepareDraft = prepareDraft;
+	exports.prepareInvitation = prepareInvitation;
 	exports.ApplicationModel = ApplicationModel;
 	exports.MessagesModel = MessagesModel;
 	exports.ChatsModel = ChatsModel;
@@ -7992,13 +9302,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	exports.MarketModel = MarketModel;
 	exports.CountersModel = CountersModel;
 	exports.CopilotModel = CopilotModel;
+	exports.AiAssistantModel = AiAssistantModel;
+	exports.StickersModel = StickersModel;
 	exports.formatFieldsWithConfig = formatFieldsWithConfig;
-	exports.convertToNumber = convertToNumber;
-	exports.convertToString = convertToString;
-	exports.isNumberOrString = isNumberOrString;
-	exports.convertObjectKeysToCamelCase = convertObjectKeysToCamelCase;
-	exports.prepareDraft = prepareDraft;
-	exports.prepareInvitation = prepareInvitation;
 
-}((this.BX.Messenger.v2.Model = this.BX.Messenger.v2.Model || {}),BX.Event,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Const,BX.Messenger.v2.Application,BX.Vue3.Vuex,BX,BX.Messenger.v2.Model));
+}((this.BX.Messenger.v2.Model = this.BX.Messenger.v2.Model || {}),BX.Event,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Application,BX.Vue3.Vuex,BX.Messenger.v2.Model,BX.Messenger.v2.Const,BX));
 //# sourceMappingURL=registry.bundle.js.map

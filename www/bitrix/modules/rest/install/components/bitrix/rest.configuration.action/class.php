@@ -41,22 +41,64 @@ class CRestConfigurationActionComponent extends CBitrixComponent
 				$importPath = '#';
 			}
 
-			$result['ITEMS'][] = [
+			$item = [
 				'title' => Loc::getMessage('REST_CONFIGURATION_ACTION_TITLE_IMPORT'),
 				'link' => $importPath,
 				'icon' => '/bitrix/images/rest/configuration/rest-market-site-import.svg',
 				'disabled' => !$isAdmin
 			];
+
+			if ($this->getTemplateName() === 'crm')
+			{
+				if (($this->arParams['MANIFEST_CODE'] ?? '') === 'crm_smart_robots')
+				{
+					 $item['description'] = Loc::getMessage('REST_CONFIGURATION_ACTION_IMPORT_CRM_SMART_ROBOTS_DESCRIPTION');
+				}
+				else
+				{
+					$item['description'] = Loc::getMessage('REST_CONFIGURATION_ACTION_IMPORT_CRM_DESCRIPTION_MSGVER_1');
+				}
+
+				$item['title'] = Loc::getMessage('REST_CONFIGURATION_ACTION_IMPORT_CRM_TITLE_MSGVER_1');
+				$item['action'] = Loc::getMessage('REST_CONFIGURATION_ACTION_IMPORT_CRM_ACTION');
+				$item['icon'] = '/bitrix/images/rest/configuration/rest-market-site-import-crm.png';
+				$result['ITEMS']['import'] = $item;
+			}
+			else
+			{
+				$result['ITEMS'][] = $item;
+			}
 		}
 
 		if ($this->arParams['PATH_TO_EXPORT'] && $this->arParams['MANIFEST_CODE'])
 		{
-			$result['ITEMS'][] = [
+			$item = [
 				'title' => Loc::getMessage('REST_CONFIGURATION_ACTION_TITLE_EXPORT'),
 				'link' => $isAdmin ? str_replace('#MANIFEST_CODE#', $this->arParams['MANIFEST_CODE'], $this->arParams['PATH_TO_EXPORT']) : '#',
 				'icon' => '/bitrix/images/rest/configuration/rest-market-site-export.svg',
 				'disabled' => !$isAdmin
 			];
+
+			if ($this->getTemplateName() === 'crm')
+			{
+				if ($this->arParams['MANIFEST_CODE'] === 'crm_smart_robots')
+				{
+					$item['description'] = Loc::getMessage('REST_CONFIGURATION_ACTION_EXPORT_CRM_SMART_ROBOTS_DESCRIPTION');
+				}
+				else
+				{
+					$item['description'] = Loc::getMessage('REST_CONFIGURATION_ACTION_EXPORT_CRM_DESCRIPTION_MSGVER_1');
+				}
+
+				$item['title'] = Loc::getMessage('REST_CONFIGURATION_ACTION_EXPORT_CRM_TITLE_MSGVER_1');
+				$item['action'] = Loc::getMessage('REST_CONFIGURATION_ACTION_EXPORT_CRM_ACTION');
+				$item['icon'] = '/bitrix/images/rest/configuration/rest-market-site-export-crm.png';
+				$result['ITEMS']['export'] = $item;
+			}
+			else
+			{
+				$result['ITEMS'][] = $item;
+			}
 		}
 
 		if ($this->arParams['MP_LOAD_PATH'])

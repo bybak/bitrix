@@ -1,5 +1,6 @@
 import { Type, Loc, Event } from 'main.core';
 import type { BBCodeElementNode } from 'ui.bbcode.model';
+import { Outline } from 'ui.icon-set.api.core';
 
 import {
 	type BBCodeConversion,
@@ -16,7 +17,6 @@ import {
 	createCommand,
 	$createTextNode,
 	$getSelection,
-	$setSelection,
 	$isRangeSelection,
 	COMMAND_PRIORITY_EDITOR,
 	COMMAND_PRIORITY_LOW,
@@ -26,6 +26,7 @@ import {
 } from 'ui.lexical.core';
 
 import { $insertNodeToNearestRoot } from 'ui.lexical.utils';
+import { $restoreSelection } from '../../helpers/restore-selection';
 
 import Button from '../../toolbar/button';
 import type { SchemeValidationOptions } from '../../types/scheme-validation-options';
@@ -185,7 +186,7 @@ export class VideoPlugin extends BasePlugin
 						this.#videoDialog.destroy();
 					}
 
-					this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND);
+					this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND, { sender: 'video-dialog' });
 
 					this.#videoDialog = new VideoDialog({
 						// for an embedded popup: document.body -> this.getEditor().getScrollerContainer()
@@ -241,7 +242,14 @@ export class VideoPlugin extends BasePlugin
 
 			this.getEditor().registerCommand(
 				HIDE_DIALOG_COMMAND,
-				(): boolean => {
+				(payload): boolean => {
+					if (payload?.sender === 'video-dialog')
+					{
+						return false;
+					}
+
+					this.#lastSelection = null;
+
 					if (this.#videoDialog !== null)
 					{
 						this.#videoDialog.hide();
@@ -263,29 +271,26 @@ export class VideoPlugin extends BasePlugin
 
 	#restoreSelection(): boolean
 	{
-		const selection = $getSelection();
-		if (!$isRangeSelection(selection) && this.#lastSelection !== null)
-		{
-			$setSelection(this.#lastSelection);
-			this.#lastSelection = null;
+		const success = $restoreSelection(this.#lastSelection);
+		this.#lastSelection = null;
 
-			return true;
-		}
-
-		return false;
+		return success;
 	}
 
 	#handleDialogDestroy(): void
 	{
+		if (this.#videoDialog === null)
+		{
+			return;
+		}
+
 		this.#videoDialog = null;
 		Event.unbind(this.getEditor().getScrollerContainer(), 'scroll', this.#onEditorScroll);
 		this.getEditor().resetHighlightSelection();
 
 		this.getEditor().update(() => {
-			if (!this.#restoreSelection())
-			{
-				this.getEditor().focus();
-			}
+			this.#restoreSelection();
+			// this.getEditor().focus();
 		});
 	}
 
@@ -300,7 +305,7 @@ export class VideoPlugin extends BasePlugin
 	{
 		this.getEditor().getComponentRegistry().register('video', (): Button => {
 			const button: Button = new Button();
-			button.setContent('<span class="ui-icon-set --insert-video"></span>');
+			button.setIcon(Outline.RECORD_VIDEO);
 			button.disableInsideUnformatted();
 			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_VIDEO'));
 			button.subscribe('onClick', (): void => {

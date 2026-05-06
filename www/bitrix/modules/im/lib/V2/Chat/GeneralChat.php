@@ -3,18 +3,21 @@
 namespace Bitrix\Im\V2\Chat;
 
 use Bitrix\Im\Model\ChatTable;
+use Bitrix\Im\Recent;
 use Bitrix\Im\V2\Chat;
+use Bitrix\Im\V2\Chat\Cache\ChatCacheRegistry;
 use Bitrix\Im\V2\Entity\User\User;
 use Bitrix\Im\V2\Relation;
 use Bitrix\Im\V2\Result;
 use Bitrix\Im\V2\Service\Context;
 use Bitrix\Intranet\Settings\CommunicationSettings;
-use Bitrix\Main\Application;
 use Bitrix\Main\Config\Option;
-use Bitrix\Main\Data\Cache;
+use Bitrix\Main\DI\ServiceLocator;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
-use CAllSite;
+use Bitrix\Main\Type\DateTime;
+use CSite;
+use Bitrix\Im\V2\Chat\Add\AddResult;
 
 class GeneralChat extends GroupChat
 {
@@ -29,7 +32,6 @@ class GeneralChat extends GroupChat
 	protected static ?self $instance = null;
 	protected static bool $wasSearched = false;
 	protected static Result $resultFind;
-	protected static int $idStaticCache;
 
 	protected function getDefaultType(): string
 	{
@@ -77,23 +79,18 @@ class GeneralChat extends GroupChat
 		return Option::get('im', self::DISABLE_GENERAL_CHAT_OPTION, 'N') === 'N';
 	}
 
-	public function getManagerList(): array
+	public function getManagerList(bool $fullList = true): array
 	{
-		$cache = static::getCache(self::MANAGERS_CACHE_ID);
+		$getResult = ServiceLocator::getInstance()
+			->get(ChatCacheRegistry::class)
+			?->getGeneralChatManagersManager()
+			->getOrSet(
+				entityId: null,
+				dataProvider: fn() => $this->getRelationFacade()?->getManagerOnly()->getUserIds(),
+			)
+		;
 
-		$cachedManagerList = $cache->getVars();
-
-		if ($cachedManagerList !== false)
-		{
-			return $cachedManagerList;
-		}
-
-		$managerList = $this->getRelationFacade()->getManagerOnly()->getUserIds();
-
-		$cache->startDataCache();
-		$cache->endDataCache($managerList);
-
-		return $this->getRelationFacade()->getManagerOnly()->getUserIds();
+		return $getResult->getResult()?->value ?? [];
 	}
 
 	protected function changeManagers(array $userIds, bool $isManager, bool $sendPush = true): self
@@ -125,34 +122,34 @@ class GeneralChat extends GroupChat
 			return 0;
 		}
 
-		if (isset(self::$idStaticCache))
-		{
-			return self::$idStaticCache;
-		}
+		$getResult = ServiceLocator::getInstance()
+			->get(ChatCacheRegistry::class)
+			?->getGeneralChatIdManager()
+			->getOrSet(
+				entityId: null,
+				dataProvider: fn() => self::getGeneralChatIdWithoutCache() ?? 0,
+			)
+		;
 
-		$cache = static::getCache(self::ID_CACHE_ID);
+		return $getResult->getResult()?->value ?? 0;
+	}
 
-		$cachedId = $cache->getVars();
-
-		if ($cachedId !== false)
-		{
-			self::$idStaticCache = $cachedId ?? 0;
-
-			return self::$idStaticCache;
-		}
-
+	protected static function getGeneralChatIdWithoutCache(): ?int
+	{
 		$result = ChatTable::query()
 			->setSelect(['ID'])
 			->where('TYPE', Chat::IM_TYPE_OPEN)
 			->where('ENTITY_TYPE', Chat::ENTITY_TYPE_GENERAL)
-			->fetch() ?: []
+			->setLimit(1)
+			->fetch()
 		;
 
-		self::$idStaticCache = $result['ID'] ?? 0;
-		$cache->startDataCache();
-		$cache->endDataCache(self::$idStaticCache);
+		if ($result)
+		{
+			return (int)$result['ID'];
+		}
 
-		return self::$idStaticCache;
+		return null;
 	}
 
 	public function setManagers(array $managerIds): Chat
@@ -199,18 +196,16 @@ class GeneralChat extends GroupChat
 		return $result;
 	}
 
-	public function add(array $params, ?Context $context = null): Result
+	public function add(array $params, ?Context $context = null): AddResult
 	{
-		$result = new Result;
+		$result = new AddResult();
 
 		$generalChatResult = self::find();
 		if ($generalChatResult->hasResult())
 		{
 			$generalChat = new GeneralChat(['ID' => $generalChatResult->getResult()['ID']]);
-			return 	$result->setResult([
-				'CHAT_ID' => $generalChat->getChatId(),
-				'CHAT' => $generalChat,
-			]);
+
+			return $result->setChat($generalChat);
 		}
 
 		$installUsers = $this->getUsersForInstall();
@@ -236,8 +231,6 @@ class GeneralChat extends GroupChat
 			return $result->addError(new ChatError(ChatError::CREATION_ERROR));
 		}
 
-		$chat->sendBanner();
-
 		$adminIds = [];
 		if (Loader::includeModule('bitrix24'))
 		{
@@ -255,14 +248,12 @@ class GeneralChat extends GroupChat
 			$relation->save();
 		}
 
+		$chat->sendBanner();
 		$chat->addIndex();
 
 		self::linkGeneralChat($chat->getChatId());
 
-		$result->setResult([
-			'CHAT_ID' => $chat->getChatId(),
-			'CHAT' => $chat,
-		]);
+		$result->setChat($chat);
 
 		self::cleanGeneralChatCache(self::ID_CACHE_ID);
 		self::cleanGeneralChatCache(self::MANAGERS_CACHE_ID);
@@ -274,13 +265,13 @@ class GeneralChat extends GroupChat
 
 	private static function getPortalLanguage(): ?string
 	{
-		$defSite = CAllSite::GetDefSite();
+		$defSite = CSite::GetDefSite();
 		if ($defSite === false)
 		{
 			return null;
 		}
 
-		$portalData = CAllSite::GetByID($defSite)->Fetch();
+		$portalData = CSite::GetByID($defSite)->Fetch();
 		if ($portalData)
 		{
 			$languageId = $portalData['LANGUAGE_ID'];
@@ -321,12 +312,20 @@ class GeneralChat extends GroupChat
 	}
 
 	/**
-	 * @param self::MANAGERS_CACHE_ID|self::ID_CACHE_ID $cacheId
+	 * @param self::ID_CACHE_ID|self::MANAGERS_CACHE_ID $cacheId
 	 * @return void
 	 */
 	public static function cleanGeneralChatCache(string $cacheId): void
 	{
-		Application::getInstance()->getCache()->clean($cacheId, static::getCacheDir());
+		$chatRegistry = ServiceLocator::getInstance()->get(ChatCacheRegistry::class);
+		$manager = match ($cacheId)
+		{
+			self::ID_CACHE_ID => $chatRegistry?->getGeneralChatIdManager(),
+			self::MANAGERS_CACHE_ID => $chatRegistry?->getGeneralChatManagersManager(),
+			default => null
+		};
+
+		$manager?->clear(entityId: null);
 	}
 
 	public static function unlinkGeneralChat(): bool
@@ -540,7 +539,7 @@ class GeneralChat extends GroupChat
 			"MESSAGE" => $messageText,
 			"FROM_USER_ID" => $this->getContext(),
 			"SYSTEM" => 'Y',
-			"RECENT_ADD" => $config->skipRecent() ? 'N' : 'Y',
+			"RECENT_ADD" => $config->skipRecent ? 'N' : 'Y',
 			"PARAMS" => [
 				"CODE" => 'CHAT_JOIN',
 				"NOTIFY" => $this->getEntityType() === self::ENTITY_TYPE_LINE? 'Y': 'N',
@@ -548,11 +547,6 @@ class GeneralChat extends GroupChat
 			"PUSH" => 'N',
 			"SKIP_USER_CHECK" => 'Y',
 		]);
-	}
-
-	protected function needToSendMessageUserDelete(): bool
-	{
-		return true;
 	}
 
 	protected function sendMessageUserDelete(int $userId, Relation\DeleteUserConfig $config): void
@@ -565,11 +559,14 @@ class GeneralChat extends GroupChat
 		parent::sendMessageUserDelete($userId, $config);
 	}
 
-	protected function getMessageUserDeleteText(int $userId): string
+	public function getUserDeleteMessageText(int $deletedUserId): string
 	{
-		$user = User::getInstance($userId);
+		$user = User::getInstance($deletedUserId);
 
-		return Loc::getMessage("IM_CHAT_GENERAL_LEAVE_{$user->getGender()}", Array('#USER_NAME#' => htmlspecialcharsback($user->getName())));
+		return Loc::getMessage(
+			"IM_CHAT_GENERAL_LEAVE_{$user->getGender()}",
+			['#USER_NAME#' => htmlspecialcharsback($user->getName())]
+		);
 	}
 
 	public static function changeLangAgent(): string
@@ -595,18 +592,16 @@ class GeneralChat extends GroupChat
 		return '';
 	}
 
-	private static function getCache(string $cacheId): Cache
+	protected function updateStateAfterRelationsAdd(array $usersToAdd): Chat
 	{
-		$cache = Application::getInstance()->getCache();
-		$cacheTTL = 18144000;
-		$cacheDir = static::getCacheDir();
-		$cache->initCache($cacheTTL, $cacheId, $cacheDir);
+		$result = parent::updateStateAfterRelationsAdd($usersToAdd);
+		Recent::raiseChat($this, $this->getRelationsByUserIds($usersToAdd), new DateTime());
 
-		return $cache;
+		return $result;
 	}
 
-	private static function getCacheDir(): string
+	protected function disableUserDeleteMessage(bool $skipRecent = false): void
 	{
-		return '/bx/imc/general_chat';
+		return;
 	}
 }

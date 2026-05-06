@@ -2,12 +2,12 @@
 
 namespace Bitrix\Im\Configuration;
 
-use Bitrix\Im\Call\VideoStrategyType;
 use Bitrix\Im\Model\OptionStateTable;
 use Bitrix\Im\Model\OptionUserTable;
+use Bitrix\Im\V2\Application\Features;
+use Bitrix\Im\V2\Chat\Background\BackgroundId;
 use Bitrix\Main\ArgumentException;
 use Bitrix\Main\Config\Option;
-use Bitrix\Main\Loader;
 use Bitrix\Main\ObjectPropertyException;
 use Bitrix\Main\ORM\Fields\ExpressionField;
 use Bitrix\Main\ORM\Fields\Relations\Reference;
@@ -133,8 +133,8 @@ class General extends Base
 			'privacyCall' => Option::get("im", "privacy_call"),
 			'privacySearch' => Option::get("im", "privacy_search"),
 			'privacyProfile' => Option::get("im", "privacy_profile"),
-			'callAcceptIncomingVideo' => VideoStrategyType::ALLOW_ALL,
-			'backgroundImageId' => 1,
+			'callAcceptIncomingVideo' => 'AllowAll',/** @see \Bitrix\Call\VideoStrategyType::ALLOW_ALL */
+			'backgroundImageId' => BackgroundId::Azure->value,
 			'chatAlignment' => 'left',
 			'next' => false,
 			'pinnedChatSort' => 'byCost',
@@ -332,7 +332,7 @@ class General extends Base
 				)
 				->whereIn('USER_ID', $userList)
 				->where('USER.ACTIVE', 'Y')
-				->where('USER.IS_REAL_USER', 'Y')
+				->where('USER.REAL_USER', 'expr', true)
 		;
 		$notifySchemas = [
 			'simple' => [],
@@ -387,7 +387,7 @@ class General extends Base
 				)
 				->whereIn('USER_ID', $userList)
 				->where('USER.ACTIVE', 'Y')
-				->where('USER.IS_REAL_USER', 'Y')
+				->where('USER.REAL_USER', 'expr', true)
 				->whereExpr("COALESCE(%s, '$defaultSettingValue') = 'Y'", ['OPTION_STATE.VALUE'])
 		;
 
@@ -431,7 +431,24 @@ class General extends Base
 
 		$settings = static::decodeSettings($settings);
 
-		return self::filterGroupSettingsByDefault($settings);
+		return self::prepareRawGroupSettings($settings);
+	}
+
+	public static function prepareRawGroupSettings(array $settings): array
+	{
+		$settings = self::filterGroupSettingsByDefault($settings);
+
+		// Normalize backgroundImageId: legacy numeric values → text codes.
+		// Cache may store old integers (e.g. 5) that were never re-decoded.
+		if (isset($settings['backgroundImageId']))
+		{
+			$settings['backgroundImageId'] = BackgroundId::normalize((string)$settings['backgroundImageId'])
+				?? BackgroundId::Azure->value;
+		}
+
+		$redefinedSettings = self::getRedefinedSettings();
+
+		return array_replace($settings, $redefinedSettings);
 	}
 
 	public static function filterGroupSettingsByDefault(array $settings): array
@@ -442,6 +459,18 @@ class General extends Base
 		foreach ($defaultSettings as $name => $value)
 		{
 			$result[$name] = $settings[$name] ?? $value;
+		}
+
+		return $result;
+	}
+
+	protected static function getRedefinedSettings(): array
+	{
+		$result = [];
+
+		if (!Features::isDesktopRedirectAvailable())
+		{
+			$result['openDesktopFromPanel'] = false;
 		}
 
 		return $result;
@@ -572,7 +601,7 @@ class General extends Base
 
 			if ($decodedName === 'backgroundImageId')
 			{
-				$decodedSettings[$decodedName] = (int)$value;
+				$decodedSettings[$decodedName] = BackgroundId::normalize((string)$value) ?? BackgroundId::Azure->value;
 			}
 		}
 
@@ -718,8 +747,9 @@ class General extends Base
 
 					break;
 				case 'callAcceptIncomingVideo':
+					\Bitrix\Main\Loader::includeModule('call');
 					$verifiedSettings[$name] =
-						in_array($value, VideoStrategyType::getList())
+						in_array($value, \Bitrix\Call\VideoStrategyType::getList())
 							? $value
 							: $defaultSettings[$name]
 					;
@@ -732,7 +762,8 @@ class General extends Base
 					$verifiedSettings[$name] = !($value === 'N' || $value === false);
 					break;
 				case 'backgroundImageId':
-					$verifiedSettings[$name] = (int)$value > 0 ? (int)$value : 1;
+					$normalized = BackgroundId::normalize((string)$value);
+					$verifiedSettings[$name] = $normalized ?? BackgroundId::Azure->value;
 					break;
 				case 'chatAlignment':
 					$verifiedSettings[$name] =

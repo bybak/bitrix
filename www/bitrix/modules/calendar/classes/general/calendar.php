@@ -27,6 +27,8 @@ use Bitrix\Calendar\Core\Event\Tools\UidGenerator;
 use Bitrix\Calendar\OpenEvents;
 use Bitrix\Calendar\Sync\Managers\Synchronization;
 use Bitrix\Calendar\Sync\Util\Context;
+use Bitrix\Calendar\Synchronization\Internal\Service\Push\PushStorageManager;
+use Bitrix\Calendar\Synchronization\Public\Service\SynchronizationFeature;
 use Bitrix\Calendar\Ui\CountersManager;
 use Bitrix\Calendar\UserSettings;
 use Bitrix\Calendar\Util;
@@ -451,13 +453,17 @@ class CCalendar
 			'isExtranetUser' => $isExtranetUser,
 			'isGoogleApplicationRefused' => COption::GetOptionString('calendar', 'isGoogleApplicationRefused', 'N'),
 			'showGoogleApplicationRefused' => CUserOptions::getOption('calendar', 'showGoogleApplicationRefused', 'Y'),
+			'useAirDesign' => defined('AIR_SITE_TEMPLATE'),
+			'isBitrix24Template' => SITE_TEMPLATE_ID === 'bitrix24',
+			'isBitrix24Enabled' => Bitrix24Manager::isEnabled(),
 		];
 
 		if (Loader::includeModule('socialnetwork'))
 		{
 			$projectLimitFeatureId = \Bitrix\Socialnetwork\Helper\Feature::PROJECTS_GROUPS;
 
-			$JSConfig['projectFeatureEnabled'] = \Bitrix\Socialnetwork\Helper\Feature::isFeatureEnabled($projectLimitFeatureId)
+			$JSConfig['projectFeatureEnabled'] =
+				\Bitrix\Socialnetwork\Helper\Feature::isFeatureEnabled($projectLimitFeatureId)
 				|| \Bitrix\Socialnetwork\Helper\Feature::canTurnOnTrial($projectLimitFeatureId)
 			;
 		}
@@ -565,58 +571,12 @@ class CCalendar
 
 		self::$userMeetingSection = self::GetCurUserMeetingSection();
 
-		$followedSectionList = UserSettings::getFollowedSectionIdList(self::$userId);
 		$defaultHiddenSections = [];
 		$sections = [];
-		// collab user not have access to rooms management, but it should be defined on page for proper event display
-		$roomsList = Rooms\Manager::getRoomsList();
-
 		$categoryList = Rooms\Categories\Manager::getCategoryList();
-		$collabSectionList = [];
 
-		if (self::$type === 'location')
-		{
-			$sectionList = $roomsList ?? [];
-		}
-		else
-		{
-			$owners = [self::$ownerId];
-			$types = [self::$type];
-			if (self::$type === 'user' && OpenEvents\Feature::getInstance()->isAvailable())
-			{
-				$types[] = Core\Event\Tools\Dictionary::CALENDAR_TYPE['open_event'];
-				$owners[] = 0;
-			}
+		[$sectionList, $collabSectionList, $followedSectionList, $roomsList] = self::getSectionsInfo($isCollabUser);
 
-			$sectionList = self::getSectionList([
-				'CAL_TYPE' => $types,
-				'OWNER_ID' => $owners,
-				'ACTIVE' => 'Y',
-				'ADDITIONAL_IDS' => $followedSectionList,
-				'checkPermissions' => true,
-				'getPermissions' => true,
-				'getImages' => true,
-			]);
-
-			if (self::$type === 'user' && $isCollabUser)
-			{
-				$userCollabIds = UserCollabs::getInstance()->getIds(self::$userId);
-
-				$collabSectionList = self::getSectionList([
-					'CAL_TYPE' => Dictionary::CALENDAR_TYPE['group'],
-					'OWNER_ID' => $userCollabIds,
-					'ACTIVE' => 'Y',
-					'checkPermissions' => true,
-					'getPermissions' => true,
-				]);
-			}
-		}
-
-		$sectionList = array_merge(
-			$sectionList,
-			self::getSectionListAvailableForUser(self::$userId),
-			$collabSectionList
-		);
 		$sectionIdList = [];
 		foreach ($sectionList as $section)
 		{
@@ -657,12 +617,7 @@ class CCalendar
 			$readOnly = true;
 		}
 
-		$bCreateDefault = !self::$bAnonym;
-
-		if (self::$type === 'user')
-		{
-			$bCreateDefault = self::$ownerId === self::$userId;
-		}
+		$bCreateDefault = self::hasToCreateDefaultCalendar($sections);
 
 		$groupOrUser = self::$type === 'user' || self::$type === 'group';
 		if ($groupOrUser)
@@ -699,15 +654,6 @@ class CCalendar
 			if (in_array($section['ID'], $followedSectionList))
 			{
 				$sections[$i]['SUPERPOSED'] = true;
-			}
-
-			if (
-				$bCreateDefault
-				&& $section['CAL_TYPE'] === self::$type
-				&& (int)$section['OWNER_ID'] === self::$ownerId
-			)
-			{
-				$bCreateDefault = false;
 			}
 
 			$type = $sections[$i]['CAL_TYPE'];
@@ -1102,14 +1048,17 @@ class CCalendar
 		global $CACHE_MANAGER;
 
 		$id = (int)$id;
-		$markDeleted = $params['markDeleted'] ?? true;
-		$originalFrom = $params['originalFrom'] ?? null;
+
 		if (!$id)
 		{
 			return false;
 		}
 
+		$markDeleted = $params['markDeleted'] ?? true;
+		$originalFrom = $params['originalFrom'] ?? null;
+		$recursionMode = $params['recursionMode'] ?? null;
 		$checkPermissions = $params['checkPermissions'] ?? true;
+
 		if (!isset(self::$userId))
 		{
 			self::$userId = self::GetCurUserId();
@@ -1166,7 +1115,7 @@ class CCalendar
 				}
 			}
 
-			$sendNotification = $params['sendNotification'] ?? (($params['recursionMode'] ?? null) !== 'all');
+			$sendNotification = $params['sendNotification'] ?? $recursionMode !== 'all';
 			$userId = !empty($params['userId']) ? (int)$params['userId'] : self::$userId;
 
 			$res = CCalendarEvent::Delete([
@@ -1179,7 +1128,7 @@ class CCalendar
 				'requestUid' => $params['requestUid'] ?? null,
 			]);
 
-			if (($params['recursionMode'] ?? null) !== 'this' && !empty($event['RECURRENCE_ID']))
+			if (!empty($event['RECURRENCE_ID']) && !in_array($recursionMode, ['this', 'false'], true))
 			{
 				self::DeleteEvent($event['RECURRENCE_ID'], $doExternalSync, [
 					'sendNotification' => $sendNotification,
@@ -1191,7 +1140,7 @@ class CCalendar
 			{
 				$events = CCalendarEvent::GetEventsByRecId($id);
 
-				foreach($events as $ev)
+				foreach ($events as $ev)
 				{
 					self::DeleteEvent($ev['ID'], $doExternalSync, [
 						'sendNotification' => $sendNotification,
@@ -1200,7 +1149,7 @@ class CCalendar
 				}
 			}
 
-			if (isset($params['recursionMode']) && $params['recursionMode'] === 'all' && !empty($event['ATTENDEE_LIST']))
+			if ($recursionMode === 'all' && !empty($event['ATTENDEE_LIST']))
 			{
 				foreach($event['ATTENDEE_LIST'] as $attendee)
 				{
@@ -1329,7 +1278,7 @@ class CCalendar
 			}
 		}
 
-		return self::$arUserDepartment[$userId];
+		return self::$arUserDepartment[$userId] ?? null;
 	}
 
 	public static function SetUserDepartment($userId = 0, $dep = [])
@@ -1614,7 +1563,9 @@ class CCalendar
 	public static function GetAbsentEvents($params)
 	{
 		if (!isset($params['arUserIds']))
+		{
 			return false;
+		}
 
 		return CCalendarEvent::GetAbsent($params['arUserIds'], $params);
 	}
@@ -2480,6 +2431,7 @@ class CCalendar
 						'OWNER_ID' => $arFields['OWNER_ID'],
 					],
 					'checkPermissions' => false,
+					'getPermissions' => false,
 				]
 			);
 			if ($res && is_array($res) && isset($res[0]))
@@ -2687,7 +2639,7 @@ class CCalendar
 
 				$eventMod['DATE_FROM'] = $newParams['currentEventDateFrom'];
 				$commentXmlId = CCalendarEvent::GetEventCommentXmlId($eventMod);
-				$newParams['arFields']['RELATIONS'] = array('COMMENT_XML_ID' => $commentXmlId);
+				$newParams['arFields']['RELATIONS'] = ['COMMENT_XML_ID' => $commentXmlId];
 				$newParams['editInstance'] = true;
 				$newParams['sendEditNotification'] = true;
 
@@ -3129,7 +3081,7 @@ class CCalendar
 					}
 				}
 
-				foreach($events as $ev)
+				foreach ($events as $ev)
 				{
 					if ($ev['ID'] === $curEvent['ID'])
 					{
@@ -3295,8 +3247,9 @@ class CCalendar
 		$dateFrom = new Main\Type\DateTime(date('Ymd His',self::Timestamp($params['dateFrom'])), 'Ymd His', $dateFromTz);
 		$dateTo = new Main\Type\DateTime(date('Ymd His',self::Timestamp($params['dateTo'])), 'Ymd His', $dateToTz);
 
-		$parentInfoDate = getdate($dateFrom->getTimestamp());
-		$dateTo->setTime($parentInfoDate['hours'], $parentInfoDate['minutes']);
+		$parentEventHours = (int)$dateFrom->format('H');
+		$parentEventMinutes = (int)$dateFrom->format('i');
+		$dateTo->setTime($parentEventHours, $parentEventMinutes);
 
 		$diff = $dateFrom->getDiff($dateTo);
 
@@ -3312,11 +3265,10 @@ class CCalendar
 
 			for ($i = 0; $i < $diff; $i++)
 			{
-				$timestamp = $dateFrom->getTimestamp();
-				$date = getdate($timestamp);
-				$weekday = mb_strtoupper(mb_substr($date['weekday'], 0, 2));
+				$weekday = $dateFrom->format('D');
+				$weekdayCode = mb_strtoupper(mb_substr($weekday, 0, 2));
 
-				if (in_array($weekday, $params['rrule']['BYDAY'], true))
+				if (in_array($weekdayCode, $params['rrule']['BYDAY'], true))
 				{
 					$curCount++;
 				}
@@ -3478,13 +3430,10 @@ class CCalendar
 	public static function TempUser($TmpUser = false, $create = true, $ID = false)
 	{
 		global $USER;
+
 		if ($create && $TmpUser === false && (!$USER || !is_object($USER)))
 		{
 			$USER = new CUser;
-			if ($ID && (int)$ID > 0)
-			{
-				$USER->Authorize((int)$ID);
-			}
 
 			return $USER;
 		}
@@ -3492,6 +3441,7 @@ class CCalendar
 		if (!$create && $USER && is_object($USER))
 		{
 			unset($USER);
+
 			return false;
 		}
 		return false;
@@ -4536,15 +4486,14 @@ class CCalendar
 				return false;
 			}
 
-			$res = CCalendarSect::GetList(
-				array(
-					'arFilter' => array(
-						'CAL_TYPE' => 'group',
-						'OWNER_ID' => $groupId,
-					),
-					'checkPermissions' => false,
-				)
-			);
+			$res = CCalendarSect::GetList([
+				'arFilter' => [
+					'CAL_TYPE' => 'group',
+					'OWNER_ID' => $groupId,
+				],
+				'checkPermissions' => false,
+				'getPermissions' => false,
+			]);
 
 			foreach($res as $sect)
 			{
@@ -5746,7 +5695,7 @@ class CCalendar
 	{
 		GLOBAL $USER;
 
-		return $USER->IsAdmin();
+		return $USER && $USER->IsAdmin();
 	}
 
 	public static function GetWeekStart()
@@ -6505,15 +6454,16 @@ class CCalendar
 	 *
 	 * @todo temporary resolve. This method will change when we change a common design.
 	 */
-	public static function syncChange(int $id, array $arFields, array $params, ?array $curEvent): ?Sync\Util\Result
+	public static function syncChange(int $id, array $arFields, array $params, ?array $curEvent): void
 	{
 		/** @var Bitrix\Calendar\Core\Mappers\Factory $mapperFactory */
 		$mapperFactory = ServiceLocator::getInstance()->get('calendar.service.mappers.factory');
 		/** @var Core\Event\Event $event */
 		$event = $mapperFactory->getEvent()->resetCacheById($id)->getById($id);
+
 		if (!$event)
 		{
-			return null;
+			return;
 		}
 
 		if (
@@ -6523,7 +6473,9 @@ class CCalendar
 			&& (int)$curEvent['SECT_ID'] !== $event->getSection()->getId()
 		)
 		{
-			return self::changeCalendarSync($event, $curEvent, $params);
+			self::changeCalendarSync($event, $curEvent);
+
+			return;
 		}
 
 		$factories = FactoriesCollection::createBySection(
@@ -6532,7 +6484,7 @@ class CCalendar
 
 		if ($factories->count() === 0)
 		{
-			return null;
+			return;
 		}
 
 		$syncManager = new Synchronization($factories);
@@ -6561,109 +6513,110 @@ class CCalendar
 			}
 		}
 
-		$pushManager = new Sync\Managers\PushManager();
-		try
+		SynchronizationFeature::setUserId($event->getOwner()->getId());
+
+		if (SynchronizationFeature::isOn())
 		{
-			/** @var Sync\Factories\FactoryBase $factory */
-			foreach ($factories as $factory)
-			{
-				$pushManager->unLockConnection($factory->getConnection());
-				$pushManager->lockConnection($factory->getConnection(), 30);
-			}
-			if (($params['recursionEditMode'] ?? null) === 'skip')
-			{
-				if ($event->isInstance())
-				{
-					$params['editInstance'] = $event->isInstance();
-					$params['modeSync'] = true;
-				}
-
-				if (!empty($params['modeSync']))
-				{
-					$recurrenceSyncMode = ($params['editInstance'] << 2)
-						| ($params['editNextEvents'] << 1)
-						| ($params['editEntryUntil'] << 1)
-						| $params['editParentEvents']
-					;
-					switch ($recurrenceSyncMode)
-					{
-						case Sync\Dictionary::RECURRENCE_SYNC_MODE['exception']:
-							if ($event->getMeetingStatus() !== 'N')
-							{
-								$result = empty($curEvent)
-									? $syncManager->createInstance($event, $context)
-									: $syncManager->updateInstance($event, $context)
-								;
-							}
-							break;
-						case Sync\Dictionary::RECURRENCE_SYNC_MODE['deleteInstance']:
-							$context->add('diff', 'EXDATE', $curEvent['EXDATE']);
-							$result = $syncManager->deleteInstance($event, $context);
-							break;
-						case Sync\Dictionary::RECURRENCE_SYNC_MODE['exceptionNewSeries']:
-							$syncManager->deleteInstanceEventConnection($event);
-							if ($event->getMeetingStatus() !== 'N')
-							{
-								$result = $syncManager->createInstance($event, $context);
-							}
-							break;
-						default:
-							if ($event->getMeetingStatus() !== 'N')
-							{
-								$result = empty($curEvent)
-									? $syncManager->createEvent($event, $context)
-									: $syncManager->updateEvent($event, $context)
-								;
-							}
-					}
-				}
-			}
-			elseif (empty($curEvent))
-			{
-				if ($event->isInstance())
-				{
-					$attendeeMasterEvent = $mapperFactory->getEvent()->getMap([
-						'=PARENT_ID' => $event->getRecurrenceId(),
-						'=OWNER_ID' => $event->getOwner()->getId(),
-						'=CAL_TYPE' => 'user',
-					])->fetch();
-
-					if ($attendeeMasterEvent)
-					{
-						$result = $syncManager->reCreateRecurrence($attendeeMasterEvent, $context);
-					}
-					else
-					{
-						$result =  (new Sync\Util\Result())->addError(
-							new Main\Error("Master event not found", 404)
-						);
-					}
-				}
-				else if ($event->getMeetingStatus() !== 'N')
-				{
-					if (
-						!empty($params['editNextEvents'])
-						&& !empty($params['previousRecurrentId'])
-						&& $event->getExcludedDateCollection()?->count()
-					)
-					{
-						self::removeIncorrectRecurrentExDates($event->getExcludedDateCollection(), $params['previousRecurrentId']);
-					}
-
-					$result = $syncManager->createEvent($event, $context);
-				}
-			}
-			else
-			{
-				$syncManager->updateEvent($event, $context);
-			}
+			$pushManager = ServiceLocator::getInstance()->get(PushStorageManager::class);
 		}
-		catch(Throwable $e)
+		else
 		{
-			throw $e;
+			$pushManager = new Sync\Managers\PushManager();
 		}
 
-		return $result ?? null;
+		/** @var Sync\Factories\FactoryBase $factory */
+		foreach ($factories as $factory)
+		{
+			$pushManager->unLockConnection($factory->getConnection());
+			$pushManager->lockConnection($factory->getConnection(), 30);
+		}
+		if (($params['recursionEditMode'] ?? null) === 'skip')
+		{
+			if ($event->isInstance())
+			{
+				$params['editInstance'] = $event->isInstance();
+				$params['modeSync'] = true;
+			}
+
+			if (!empty($params['modeSync']))
+			{
+				$recurrenceSyncMode = ($params['editInstance'] << 2)
+					| ($params['editNextEvents'] << 1)
+					| ($params['editEntryUntil'] << 1)
+					| $params['editParentEvents']
+				;
+				switch ($recurrenceSyncMode)
+				{
+					case Sync\Dictionary::RECURRENCE_SYNC_MODE['exception']:
+						if ($event->getMeetingStatus() !== 'N')
+						{
+							empty($curEvent)
+								? $syncManager->createInstance($event, $context)
+								: $syncManager->updateInstance($event, $context)
+							;
+						}
+						break;
+					case Sync\Dictionary::RECURRENCE_SYNC_MODE['deleteInstance']:
+						$context->add('diff', 'EXDATE', $curEvent['EXDATE']);
+						$syncManager->deleteInstance($event, $context);
+						break;
+					case Sync\Dictionary::RECURRENCE_SYNC_MODE['exceptionNewSeries']:
+						$syncManager->deleteInstanceEventConnection($event);
+						if ($event->getMeetingStatus() !== 'N')
+						{
+							$syncManager->createInstance($event, $context);
+						}
+						break;
+					default:
+						if ($event->getMeetingStatus() !== 'N')
+						{
+							empty($curEvent)
+								? $syncManager->createEvent($event, $context)
+								: $syncManager->updateEvent($event, $context)
+							;
+						}
+				}
+			}
+		}
+		elseif (empty($curEvent))
+		{
+			if ($event->isInstance())
+			{
+				$attendeeMasterEvent = $mapperFactory->getEvent()->getMap([
+					'=PARENT_ID' => $event->getRecurrenceId(),
+					'=OWNER_ID' => $event->getOwner()->getId(),
+					'=CAL_TYPE' => 'user',
+				])->fetch();
+
+				if ($attendeeMasterEvent)
+				{
+					$syncManager->reCreateRecurrence($attendeeMasterEvent, $context);
+				}
+				else
+				{
+					$result = (new Sync\Util\Result())->addError(
+						new Main\Error("Master event not found", 404)
+					);
+				}
+			}
+			elseif ($event->getMeetingStatus() !== 'N')
+			{
+				if (
+					!empty($params['editNextEvents'])
+					&& !empty($params['previousRecurrentId'])
+					&& $event->getExcludedDateCollection()?->count()
+				)
+				{
+					self::removeIncorrectRecurrentExDates($event->getExcludedDateCollection(), $params['previousRecurrentId']);
+				}
+
+				$syncManager->createEvent($event, $context);
+			}
+		}
+		else
+		{
+			$syncManager->updateEvent($event, $context);
+		}
 	}
 
 	/**
@@ -6704,12 +6657,19 @@ class CCalendar
 		}
 	}
 
-	public static function changeCalendarSync(Core\Event\Event $event, array $currentEvent, array $params)
+	public static function changeCalendarSync(Core\Event\Event $event, array $currentEvent): void
 	{
-		$result = null;
 		/** @var Bitrix\Calendar\Core\Mappers\Factory $mapperFactory */
 		$mapperFactory = ServiceLocator::getInstance()->get('calendar.service.mappers.factory');
-		$pushManager = new Sync\Managers\PushManager();
+		if (SynchronizationFeature::isOn())
+		{
+			$pushManager = ServiceLocator::getInstance()->get(PushStorageManager::class);
+		}
+		else
+		{
+			$pushManager = new Sync\Managers\PushManager();
+		}
+
 		/** @var Core\Section\Section $oldSection */
 		$oldSection = $mapperFactory->getSection()->getById($currentEvent['SECTION_ID']);
 
@@ -6771,19 +6731,17 @@ class CCalendar
 					'=OWNER_ID' => $event->getOwner()->getId(),
 				])->fetch();
 
-				$result = $syncManager->createRecurrence($masterEvent, $context);
+				$syncManager->createRecurrence($masterEvent, $context);
 			}
-			else if ($event->getRecurringRule())
+			elseif ($event->getRecurringRule())
 			{
-				$result = $syncManager->createRecurrence($event, $context);
+				$syncManager->createRecurrence($event, $context);
 			}
 			else
 			{
-				$result = $syncManager->createEvent($event, $context);
+				$syncManager->createEvent($event, $context);
 			}
 		}
-
-		return $result;
 	}
 
 	/**
@@ -6929,5 +6887,165 @@ class CCalendar
 		}
 
 		return $result;
+	}
+
+	/**
+	 * @throws Main\Access\Exception\UnknownActionException
+	 */
+	public static function hasTypeAccess(): bool
+	{
+		$typeModel = TypeModel::createFromXmlId(self::$type);
+
+		return (new TypeAccessController(self::$userId))
+			->check(ActionDictionary::ACTION_TYPE_ACCESS, $typeModel, [])
+		;
+	}
+
+	public static function isReadOnly(array $sections, array $collabSectionList = []): bool
+	{
+		$permission = self::GetPermissions([
+			'type' => self::$type,
+			'ownerId' => self::$ownerId,
+			'userId' => self::$userId,
+		]);
+
+		$readOnly = !$permission['edit'] && !$permission['section_edit'];
+
+		if (self::$type === Dictionary::CALENDAR_TYPE['user'] && self::$userId !== self::$ownerId)
+		{
+			$readOnly = true;
+		}
+
+		if (self::$bAnonym)
+		{
+			$readOnly = true;
+		}
+
+		$groupOrUser = self::$type === Dictionary::CALENDAR_TYPE['user']
+			|| self::$type === Dictionary::CALENDAR_TYPE['group']
+		;
+		$noEditAccessedCalendars = $groupOrUser;
+
+		if (self::hasToCreateDefaultCalendar($sections))
+		{
+			$sections[] = \CCalendarSect::CreateDefault([
+				'type' => self::$type,
+				'ownerId' => self::$ownerId,
+			]);
+		}
+
+		foreach ($sections as $section)
+		{
+			if (
+				$groupOrUser
+				&& $section['CAL_TYPE'] === self::$type
+				&& (int)$section['OWNER_ID'] === (int)self::$ownerId
+			)
+			{
+				if ($noEditAccessedCalendars && $section['PERM']['edit'])
+				{
+					$noEditAccessedCalendars = false;
+				}
+
+				if ($readOnly && ($section['PERM']['edit'] || $section['PERM']['edit_section']))
+				{
+					$readOnly = false;
+				}
+			}
+		}
+
+		if (!empty($collabSectionList))
+		{
+			$noEditAccessedCalendars = self::checkCollabSectionAccess($collabSectionList);
+		}
+
+		if ($groupOrUser && $noEditAccessedCalendars)
+		{
+			$readOnly = true;
+		}
+
+		return $readOnly;
+	}
+
+	/**
+	 * @throws Main\ObjectPropertyException
+	 * @throws Main\SystemException
+	 * @throws ArgumentException
+	 */
+	public static function getSectionsInfo($isCollabUser): array
+	{
+		$followedSectionList = UserSettings::getFollowedSectionIdList(self::$userId);
+		$roomsList = Rooms\Manager::getRoomsList();
+		$collabSectionList = [];
+
+		if (self::$type === Dictionary::CALENDAR_TYPE['location'])
+		{
+			$sectionList = $roomsList ?? [];
+		}
+		else
+		{
+			$owners = [self::$ownerId];
+			$types = [self::$type];
+			if (self::$type === 'user' && OpenEvents\Feature::getInstance()->isAvailable())
+			{
+				$types[] = Core\Event\Tools\Dictionary::CALENDAR_TYPE['open_event'];
+				$owners[] = 0;
+			}
+
+			$sectionList = self::getSectionList([
+				'CAL_TYPE' => $types,
+				'OWNER_ID' => $owners,
+				'ACTIVE' => 'Y',
+				'ADDITIONAL_IDS' => $followedSectionList,
+				'checkPermissions' => true,
+				'getPermissions' => true,
+				'getImages' => true,
+			]);
+
+			if (self::$type === Dictionary::CALENDAR_TYPE['user'] && $isCollabUser)
+			{
+				$userCollabIds = UserCollabs::getInstance()->getIds(self::$userId);
+
+				$collabSectionList = self::getSectionList([
+					'CAL_TYPE' => Dictionary::CALENDAR_TYPE['group'],
+					'OWNER_ID' => $userCollabIds,
+					'ACTIVE' => 'Y',
+					'checkPermissions' => true,
+					'getPermissions' => true,
+				]);
+			}
+		}
+
+		$sectionList = array_merge(
+			$sectionList,
+			self::getSectionListAvailableForUser(self::$userId),
+			$collabSectionList
+		);
+
+		return [$sectionList, $collabSectionList, $followedSectionList, $roomsList];
+	}
+
+	public static function hasToCreateDefaultCalendar(array $sections): bool
+	{
+		$createDefault = !self::$bAnonym;
+
+		if (self::$type === Dictionary::CALENDAR_TYPE['user'])
+		{
+			$createDefault = self::$userId === (int)self::$ownerId;
+		}
+
+		foreach ($sections as $section)
+		{
+			if (
+				$createDefault
+				&& $section['CAL_TYPE'] === self::$type
+				&& (int)$section['OWNER_ID'] === (int)self::$ownerId
+			)
+			{
+				return false;
+			}
+		}
+
+		return $createDefault;
 	}
 }

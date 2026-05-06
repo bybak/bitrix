@@ -12,6 +12,7 @@ class SourceType
 	const GlobalVariable = 'GlobalVar';
 	const System = 'System';
 	const Activity = 'Activity';
+	const Input = 'Input';
 	const CalcFunction = 'Function';
 
 	public static function isType($type)
@@ -24,7 +25,7 @@ class SourceType
 
 	public static function getObjectSourceType($objectName, $fieldName): ?array
 	{
-		if (mb_substr($fieldName, -10) === '_printable')
+		if (mb_strtolower(mb_substr($fieldName, -10)) === '_printable')
 		{
 			$fieldName = mb_substr($fieldName, 0, -10);
 		}
@@ -57,6 +58,10 @@ class SourceType
 		{
 			// ['System', 'User', 'Id'] => User:Id
 			return [static::System, $objectName, $fieldName];
+		}
+		elseif ($objectName === static::Input)
+		{
+			return [static::Input, $fieldName];
 		}
 		elseif ($objectName)
 		{

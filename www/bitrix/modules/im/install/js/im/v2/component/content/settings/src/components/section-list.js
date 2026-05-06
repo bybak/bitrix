@@ -1,10 +1,10 @@
 import { SettingsSection } from 'im.v2.const';
 import { DesktopApi } from 'im.v2.lib.desktop-api';
 import { openHelpdeskArticle } from 'im.v2.lib.helpdesk';
+import { FeedbackManager } from 'im.v2.lib.feedback';
 
 import { SectionMetaData } from '../sections';
 
-import 'ui.feedback.form';
 import '../css/section-list.css';
 
 const AdditionalSections = {
@@ -64,16 +64,7 @@ export const SectionList = {
 		},
 		onFeedbackClick()
 		{
-			BX.UI.Feedback.Form.open({
-				id: 'im-v2-feedback',
-				forms: [
-					{ zones: ['ru'], id: 550, sec: '50my2x', lang: 'ru' },
-					{ zones: ['en'], id: 560, sec: '621lbr', lang: 'ru' },
-				],
-				presets: {
-					sender_page: 'profile',
-				},
-			});
+			void (new FeedbackManager()).openGeneralForm();
 		},
 		loc(phraseCode: string): string
 		{

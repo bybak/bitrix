@@ -1,5 +1,6 @@
+import { CollabInvitationService } from 'im.v2.provider.service.collab-invitation';
+
 import { AddToChatContent } from '../../elements/add-to-chat-content/add-to-chat-content';
-import { CollabInvitationService } from '../classes/collab-invitation-service';
 
 // @vue/component
 export const AddEmployeesTab = {
@@ -21,7 +22,7 @@ export const AddEmployeesTab = {
 	{
 		inviteMembers({ members })
 		{
-			void (new CollabInvitationService()).addEmployees({ dialogId: this.dialogId, members });
+			(new CollabInvitationService()).addEmployees({ dialogId: this.dialogId, members });
 			this.$emit('close');
 		},
 	},

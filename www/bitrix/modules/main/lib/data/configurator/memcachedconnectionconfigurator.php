@@ -2,14 +2,10 @@
 
 namespace Bitrix\Main\Data\Configurator;
 
-use Bitrix\Main\Application;
 use Bitrix\Main\NotSupportedException;
 
-class MemcachedConnectionConfigurator
+class MemcachedConnectionConfigurator extends MemcacheCommonConfigurator
 {
-	protected array $config;
-	protected array $servers = [];
-
 	/**
 	 * @throws NotSupportedException
 	 */
@@ -20,42 +16,7 @@ class MemcachedConnectionConfigurator
 			throw new NotSupportedException('memcached extension is not loaded.');
 		}
 
-		$this->config = $config;
-		$this->addServers($this->getConfig());
-	}
-
-	protected function addServers(array $config): MemcachedConnectionConfigurator
-	{
-		$servers = $config['servers'] ?? [];
-
-		if (isset($config['host'], $config['port']))
-		{
-			array_unshift($servers, [
-				'host' => $config['host'],
-				'port' => $config['port'],
-			]);
-		}
-
-		foreach ($servers as $server)
-		{
-			if (!isset($server['weight']) || $server['weight'] <= 0)
-			{
-				$server['weight'] = 1;
-			}
-
-			$this->servers[] = [
-				$server['host'] ?? 'localhost',
-				$server['port'] ?? '11211',
-				$server['weight']
-			];
-		}
-
-		return $this;
-	}
-
-	public function getConfig(): array
-	{
-		return $this->config;
+		parent::__construct($config);
 	}
 
 	public function createConnection(): ?\Memcached
@@ -87,17 +48,9 @@ class MemcachedConnectionConfigurator
 					$result = $success;
 				}
 			}
-
-			$error = error_get_last();
-			if (isset($error['type']) && $error['type'] === E_WARNING)
-			{
-				$exception = new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']);
-				$application = Application::getInstance();
-				$exceptionHandler = $application->getExceptionHandler();
-				$exceptionHandler->writeToLog($exception);
-			}
+			$this->log();
 		}
 
-		return $result? $connection : null;
+		return $result ? $connection : null;
 	}
 }

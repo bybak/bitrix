@@ -10,11 +10,13 @@ use Bitrix\Im\V2\Message\Send\MentionService;
 use Bitrix\Im\V2\Message\Send\SendingConfig;
 use Bitrix\Im\V2\Message\Send\SendingService;
 use Bitrix\Im\V2\MessageCollection;
+use Bitrix\Im\V2\Reading\Reader;
 use Bitrix\Im\V2\Relation;
 use Bitrix\Im\V2\RelationCollection;
 use Bitrix\Im\V2\Result;
 use Bitrix\Im\V2\Message;
 use Bitrix\Main\Application;
+use Bitrix\Main\DI\ServiceLocator;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Type\DateTime;
@@ -30,6 +32,9 @@ class CommentChat extends GroupChat
 	protected ?Chat $parentChat;
 	protected ?Message $parentMessage;
 
+	/**
+	 * @return Result<CommentChat|null>
+	 */
 	public static function get(Message $message, bool $createIfNotExists = true): Result
 	{
 		$result = new Result();
@@ -58,7 +63,6 @@ class CommentChat extends GroupChat
 	}
 
 	/**
-	 * @param MessageCollection $messages
 	 * @return Result<Chat[]>
 	 */
 	public static function getChatsByMessages(MessageCollection $messages): Result
@@ -91,6 +95,9 @@ class CommentChat extends GroupChat
 		return new Message\Send\Mention\CommentMentionService($config);
 	}
 
+	/**
+	 * @return Result<CommentChat|null>
+	 */
 	public static function create(Message $message): Result
 	{
 		$result = new Result();
@@ -122,11 +129,21 @@ class CommentChat extends GroupChat
 		return $createResult;
 	}
 
-	public function join(bool $withMessage = true): Chat
+	public function isAutoJoinEnabled(): bool
 	{
-		$this->getParentChat()->join();
+		return true;
+	}
 
-		return parent::join(false);
+	public function canUserAutoJoin(?int $userId = null): bool
+	{
+		return parent::canUserAutoJoin($userId) && $this->getParentChat()->getSelfRelation() !== null;
+	}
+
+	public function join(bool $withMessage = true, bool $byAutoJoin = false): Chat
+	{
+		$this->getParentChat()->join(byAutoJoin: $byAutoJoin);
+
+		return parent::join(withMessage: false, byAutoJoin: $byAutoJoin);
 	}
 
 	public function getRole(): string
@@ -148,10 +165,27 @@ class CommentChat extends GroupChat
 		return $role;
 	}
 
+	public function isCounterIncrementAllowed(): bool
+	{
+		return true;
+	}
+
+	public function allowMentionAllChatNotification(): bool
+	{
+		return false;
+	}
+
+	public function onBeforeMentionsChange(Message\Send\Mention\MentionChange $mentionChange): Result
+	{
+		$parentResult = parent::onBeforeMentionsChange($mentionChange);
+		$result = $this->subscribeUsers(true, $mentionChange->addedUserIds, $mentionChange->message->getPrevId());
+
+		return Result::merge($parentResult, $result);
+	}
+
 	protected function onAfterMessageSend(Message $message, SendingService $sendingService): void
 	{
 		$this->subscribe(true, $message->getAuthorId());
-		$this->subscribeUsers(true, $message->getUserIdsFromMention(), $message->getPrevId());
 		Message\LastMessages::insert($message);
 
 		if (!$sendingService->getConfig()->skipCounterIncrements())
@@ -160,11 +194,6 @@ class CommentChat extends GroupChat
 		}
 
 		parent::onAfterMessageSend($message, $sendingService);
-	}
-
-	protected function updateRecentAfterMessageSend(\Bitrix\Im\V2\Message $message, SendingConfig $config): Result
-	{
-		return new Result();
 	}
 
 	public function filterUsersToMention(array $userIds): array
@@ -188,14 +217,24 @@ class CommentChat extends GroupChat
 		);
 	}
 
-	public function getRelationsForSendMessage(): RelationCollection
+	public function getAllUserIdsForMention(): array
 	{
-		return parent::getRelationsForSendMessage()->filterNotifySubscribed();
+		return $this->getParentChat()->getRelations()->getUserIds();
+	}
+
+	public function getPullRecipients(): RelationCollection
+	{
+		return parent::getPullRecipients()->filterNotifySubscribed();
+	}
+
+	public function getUsersToNotify(): RelationCollection
+	{
+		return parent::getUsersToNotify()->filterNotifySubscribed();
 	}
 
 	protected function getParentRelationsForRaiseChat(): RelationCollection
 	{
-		$userIds = $this->getRelationsForSendMessage()->getUserIds();
+		$userIds = $this->getUsersToNotify()->getUserIds();
 
 		return $this->getParentChat()->getRelationsByUserIds($userIds);
 	}
@@ -217,7 +256,7 @@ class CommentChat extends GroupChat
 
 		if (!$subscribe)
 		{
-			$this->read();
+			ServiceLocator::getInstance()->get(Reader::class)->readAllInChat($this->getId(), $userId);
 		}
 
 		return $result;
@@ -330,7 +369,9 @@ class CommentChat extends GroupChat
 
 	public function getParentChat(): Chat
 	{
-		$this->parentChat ??= Chat::getInstance($this->getParentChatId());
+		$this->parentChat ??= Chat::getInstance($this->getParentChatId())
+			->setContext($this->getContext())
+		;
 
 		return $this->parentChat;
 	}
@@ -430,7 +471,7 @@ class CommentChat extends GroupChat
 
 		$parentChat = $message->getChat();
 
-		$addResult = ChatFactory::getInstance()->addChat([
+		$addResult = ChatFactory::getInstance()->withContextUser(0)->addChat([
 			'TYPE' => self::IM_TYPE_COMMENT,
 			'PARENT_CHAT' => $parentChat,
 			'PARENT_MESSAGE' => $message,
@@ -438,13 +479,16 @@ class CommentChat extends GroupChat
 			'AUTHOR_ID' => $parentChat->getAuthorId(),
 		]);
 
-		if (!$addResult->isSuccess())
+		/**
+		 * @var ?static $chat
+		 */
+		$chat = $addResult->getChat();
+
+		if (!isset($chat) || !$addResult->isSuccess())
 		{
 			return $addResult;
 		}
 
-		/** @var static $chat */
-		$chat = $addResult->getResult()['CHAT'];
 		$chat->parentMessage = $message;
 		$chat->sendPushChatCreate();
 
@@ -521,13 +565,8 @@ class CommentChat extends GroupChat
 		return 'com_create_' . $messageId;
 	}
 
-	protected function sendPushOnChangeUsers(RelationCollection $relations, array $pushMessage): void
+	protected function needToSendMessageUserDelete(): bool
 	{
-		if (!\Bitrix\Main\Loader::includeModule('pull'))
-		{
-			return;
-		}
-
-		\CPullWatch::AddToStack('IM_PUBLIC_COMMENT_' . $this->getParentChatId(), $pushMessage);
+		return false;
 	}
 }

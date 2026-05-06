@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS["BLOG_MODULE_NOT_INSTALL"] = "Модуль блогов не установлен.";
 $MESS["BLOG_BLOG_BLOG_TITLE"] = "Сообщения блога";
 $MESS["BLOG_BLOG_BLOG_REQUEST_ALREADY"] = "Ваша заявка уже находится на рассмотрении у автора блога";
@@ -41,4 +41,3 @@ $MESS["BLOG_BLOG_BLOG_NO_BLOG"] = "Блог не найден";
 $MESS["BLOG_BLOG_BLOG_LEAVED"] = "Вы вышли из друзей этого блога";
 $MESS["MESSAGE_COUNT"] = "Сообщения";
 $MESS["BLOG_BLOG_SESSID_WRONG"] = "Ваша сессия истекла, пожалуйста, повторите действие";
-?>

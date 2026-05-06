@@ -2,14 +2,14 @@
 
 namespace Bitrix\Rest\Marketplace;
 
-use Bitrix\Bitrix24\License\Market;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Config\Option;
+use Bitrix\Main\SystemException;
 use Bitrix\Main\Type\Date;
 use Bitrix\Rest\AppTable;
 use Bitrix\Rest\Engine\Access;
-use CBitrix24;
+use Bitrix\Rest\Integration\Bitrix24\Bitrix24;
 
 Loc::loadMessages(__FILE__);
 
@@ -126,15 +126,17 @@ class Notification
 
 			if (
 				$option === 'SUBSCRIPTION_MARKET_DEMO_END'
-				&& Loader::includeModule('bitrix24')
-				&& \Bitrix\Bitrix24\License::getCurrent()->getRegion() === 'ru'
+				&& Bitrix24::getInstance()->isAvailableForRuRegion()
 			)
 			{
-				return self::getSubscriptionMarketDemoEndNotifyData($option);
+				return self::getNotificationAboutDemoEnd($option);
 			}
 
-			$message = Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_MESS_MSGVER_1');
-			if ($message !== '')
+			$message = \Bitrix\Rest\Integration\Market\Label::isRenamedMarket()
+				? Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_MESS_MSGVER_1')
+				: Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_MESS_MSGVER_2');
+
+			if (!empty($message))
 			{
 				$result = [
 					'BUTTON_TEXT' => $url !== '' ? Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_BTN') : null,
@@ -144,6 +146,9 @@ class Notification
 			}
 			else
 			{
+				\Bitrix\Main\Application::getInstance()->getExceptionHandler()->writeToLog(
+					new SystemException("Notification message for code '$option' not found.")
+				);
 				static::reset();
 			}
 		}
@@ -151,13 +156,14 @@ class Notification
 		return $result;
 	}
 
-	private static function getSubscriptionMarketDemoEndNotifyData(string $option): array
+	private static function getNotificationAboutDemoEnd(string $option): array
 	{
-		$url = CBitrix24::isLicensePaid()? Market::getDefaultBuyPath() : Market::PATH_MARKET_BUT_WITHOUT_TARIFF;
 		return [
 			'BUTTON_TEXT' => Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_BTN_MSGVER_1'),
-			'PANEL_LINK' => $url,
-			'PANEL_MESSAGE' => Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_MESS_MSGVER_2')
+			'PANEL_LINK' => Bitrix24::getInstance()->getBuyPath(),
+			'PANEL_MESSAGE' => \Bitrix\Rest\Integration\Market\Label::isRenamedMarket()
+				? Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_MESS_MSGVER_2')
+				: Loc::getMessage('REST_MARKETPLACE_NOTIFICATION_' . $option . '_MESS_MSGVER_1')
 		];
 	}
 
@@ -232,8 +238,8 @@ class Notification
 						$maxCount >= 0
 						&& (
 							$entity[Access::ENTITY_COUNT] > $maxCount
-							|| $entity[Access::ENTITY_TYPE_APP_STATUS][AppTable::STATUS_PAID] > 0
-							|| $entity[Access::ENTITY_TYPE_APP_STATUS][AppTable::STATUS_SUBSCRIPTION] > 0
+							|| !empty($entity[Access::ENTITY_TYPE_APP_STATUS][AppTable::STATUS_PAID])
+							|| !empty($entity[Access::ENTITY_TYPE_APP_STATUS][AppTable::STATUS_SUBSCRIPTION])
 						)
 						&& static::getLastCheckTimestamp() > time()
 					)

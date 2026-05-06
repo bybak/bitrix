@@ -1,12 +1,13 @@
 import { hint } from 'ui.vue3.directives.hint';
 
+import { FeaturePromoter } from 'ui.info-helper';
 import { Utils } from 'im.v2.lib.utils';
-import { ActionByRole } from 'im.v2.const';
+import { ActionByRole, SliderCode } from 'im.v2.const';
 import { PermissionManager } from 'im.v2.lib.permission';
 import { Feature, FeatureManager } from 'im.v2.lib.feature';
-import { Button as MessengerButton, ButtonColor, ButtonSize, ChatHint } from 'im.v2.component.elements';
-
-import { CollabInvitationService } from '../classes/collab-invitation-service';
+import { Notifier } from 'im.v2.lib.notifier';
+import { ChatButton, ButtonColor, ButtonSize } from 'im.v2.component.elements.button';
+import { CollabInvitationService } from 'im.v2.provider.service.collab-invitation';
 
 import type { JsonObject } from 'main.core';
 import type { PopupOptions } from 'main.popup';
@@ -14,7 +15,7 @@ import type { PopupOptions } from 'main.popup';
 // @vue/component
 export const CopyInviteLink = {
 	name: 'CopyInviteLink',
-	components: { MessengerButton, ChatHint },
+	components: { ChatButton },
 	directives: { hint },
 	props:
 	{
@@ -24,6 +25,10 @@ export const CopyInviteLink = {
 		},
 		collabId: {
 			type: Number,
+			required: true,
+		},
+		langCode: {
+			type: String,
 			required: true,
 		},
 	},
@@ -41,6 +46,10 @@ export const CopyInviteLink = {
 		isInviteLinkAvailable(): boolean
 		{
 			return FeatureManager.isFeatureAvailable(Feature.inviteByLinkAvailable);
+		},
+		isEnabledCollabersInvitation(): boolean
+		{
+			return FeatureManager.isFeatureAvailable(Feature.enabledCollabersInvitation);
 		},
 		updateLinkHint(): { text: string, popupOptions: PopupOptions }
 		{
@@ -69,16 +78,23 @@ export const CopyInviteLink = {
 	{
 		async copyInviteLink()
 		{
+			if (!this.isEnabledCollabersInvitation)
+			{
+				this.showHelper();
+
+				return;
+			}
+
 			try
 			{
 				this.isCopyingInviteLink = true;
-				const link = await (new CollabInvitationService()).copyLink(this.collabId);
+				const link = await (new CollabInvitationService()).copyLink(this.collabId, this.langCode);
 				await Utils.text.copyToClipboard(link);
-				this.showNotification(this.loc('IM_ENTITY_SELECTOR_ADD_TO_COLLAB_LINK_COPIED'));
+				Notifier.onCopyLinkComplete();
 			}
 			catch
 			{
-				this.showNotification(this.loc('IM_ENTITY_SELECTOR_ADD_TO_COLLAB_LINK_NOT_COPIED'));
+				Notifier.collab.onCopyLinkError();
 			}
 			finally
 			{
@@ -87,28 +103,35 @@ export const CopyInviteLink = {
 		},
 		async updateLink()
 		{
+			if (!this.isEnabledCollabersInvitation)
+			{
+				this.showHelper();
+
+				return;
+			}
+
 			try
 			{
 				this.isUpdatingLink = true;
 				await (new CollabInvitationService()).updateLink(this.collabId);
-				this.showNotification(this.loc('IM_ENTITY_SELECTOR_ADD_TO_COLLAB_LINK_UPDATED'));
+				Notifier.collab.onUpdateLinkComplete();
 			}
 			catch
 			{
-				this.showNotification(this.loc('IM_ENTITY_SELECTOR_ADD_TO_COLLAB_LINK_UPDATED_ERROR'));
+				Notifier.onDefaultError();
 			}
 			finally
 			{
 				this.isUpdatingLink = false;
 			}
 		},
-		showNotification(content: string)
-		{
-			BX.UI.Notification.Center.notify({ content });
-		},
 		loc(phraseCode: string, replacements: {[string]: string} = {}): string
 		{
 			return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+		},
+		showHelper()
+		{
+			new FeaturePromoter({ code: SliderCode.collabInviteOff }).show();
 		},
 	},
 	template: `
@@ -116,7 +139,7 @@ export const CopyInviteLink = {
 			<span class="bx-im-add-to-collab__invite-block-title --ellipsis">
 				{{ loc('IM_ENTITY_SELECTOR_ADD_TO_COLLAB_INVITE_BY_LINK') }}
 			</span>
-			<MessengerButton
+			<ChatButton
 				:size="ButtonSize.M"
 				:color="ButtonColor.Primary"
 				:isRounded="true"

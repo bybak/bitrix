@@ -4,11 +4,10 @@ import {
 	MessageComponents,
 	CollectionManager,
 } from 'im.v2.component.message-list';
-import { MessageComponentManager } from 'im.v2.lib.message-component-manager';
+import { MessageComponentManager } from 'im.v2.lib.message-component';
 import { MessageComponent } from 'im.v2.const';
 
 import { CommentsDialogLoader } from './dialog-loader';
-import { CommentsMessageMenu } from '../classes/message-menu';
 
 import '../css/message-list.css';
 
@@ -28,7 +27,6 @@ export const CommentsMessageList = {
 	},
 	computed:
 	{
-		CommentsMessageMenu: () => CommentsMessageMenu,
 		dialog(): ImModelChat
 		{
 			return this.$store.getters['chats/get'](this.dialogId, true);
@@ -59,10 +57,6 @@ export const CommentsMessageList = {
 	},
 	methods:
 	{
-		onPostMessageMouseUp(message: ImModelMessage, event: MouseEvent)
-		{
-			this.$refs.messageList.onMessageMouseUp(message, event);
-		},
 		getMessageComponentName(message: ImModelMessage): $Values<typeof MessageComponent>
 		{
 			return (new MessageComponentManager(message)).getName();
@@ -71,7 +65,6 @@ export const CommentsMessageList = {
 	template: `
 		<MessageList
 			:dialogId="dialogId"
-			:messageMenuClass="CommentsMessageMenu"
 			ref="messageList"
 		>
 			<template #loader>
@@ -86,7 +79,6 @@ export const CommentsMessageList = {
 								:item="postMessage"
 								:dialogId="dialogId"
 								:key="postMessage.id"
-								@mouseup="onPostMessageMouseUp(postMessage, $event)"
 							>
 							</component>
 						</template>

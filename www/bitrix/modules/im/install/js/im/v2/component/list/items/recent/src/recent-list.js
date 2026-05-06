@@ -1,32 +1,32 @@
-import { BaseEvent } from 'main.core.events';
+import { type JsonObject } from 'main.core';
+import { BaseEvent, type EventEmitter } from 'main.core.events';
 
-import { ChatType, Settings } from 'im.v2.const';
-import { Utils } from 'im.v2.lib.utils';
-import { RecentService } from 'im.v2.provider.service';
-import { RecentMenu } from 'im.v2.lib.menu';
-import { DraftManager } from 'im.v2.lib.draft';
+import { ListLoadingState as LoadingState } from 'im.v2.component.elements.list-loading-state';
+import { RecentType } from 'im.v2.const';
 import { CreateChatManager } from 'im.v2.lib.create-chat';
-import { ListLoadingState as LoadingState } from 'im.v2.component.elements';
-
-import { RecentItem } from './components/recent-item/recent-item';
-import { ActiveCall } from './components/active-call';
-import { CreateChat } from './components/create-chat';
-import { EmptyState } from './components/empty-state';
+import { DraftManager } from 'im.v2.lib.draft';
+import { RecentMenu } from 'im.v2.lib.menu';
+import { RecentManager } from 'im.v2.lib.recent';
+import { Utils } from 'im.v2.lib.utils';
+import { type ImModelRecentItem, ImModelCallItem } from 'im.v2.model';
+import { LegacyRecentService } from 'im.v2.provider.service.recent';
 
 import { BroadcastManager } from './classes/broadcast-manager';
 import { LikeManager } from './classes/like-manager';
+import { ActiveCallList } from './components/active-call-list';
+import { CreateChat } from './components/create-chat';
+import { EmptyState } from './components/empty-state';
+import { RecentItem } from './components/recent-item/recent-item';
 
 import './css/recent-list.css';
 
 export { RecentItem } from './components/recent-item/recent-item';
-
-import type { JsonObject } from 'main.core';
-import type { ImModelRecentItem, ImModelCallItem } from 'im.v2.model';
+export { RecentUnreadList } from './components/modes/unread-recent-list';
 
 // @vue/component
 export const RecentList = {
 	name: 'RecentList',
-	components: { LoadingState, RecentItem, ActiveCall, CreateChat, EmptyState },
+	components: { LoadingState, RecentItem, ActiveCallList, CreateChat, EmptyState },
 	emits: ['chatClick'],
 	data(): JsonObject
 	{
@@ -39,37 +39,11 @@ export const RecentList = {
 	},
 	computed:
 	{
-		collection(): ImModelRecentItem[]
-		{
-			return this.getRecentService().getCollection();
-		},
-		isEmptyCollection(): boolean
-		{
-			return this.collection.length === 0;
-		},
 		preparedItems(): ImModelRecentItem[]
 		{
-			const filteredCollection = this.collection.filter((item) => {
-				let result = true;
-				if (!this.showBirthdays && item.isBirthdayPlaceholder)
-				{
-					result = false;
-				}
+			const collection = this.$store.getters['recent/getSortedCollection']({ type: RecentType.default });
 
-				if (item.isFakeElement && !this.isFakeItemNeeded(item))
-				{
-					result = false;
-				}
-
-				return result;
-			});
-
-			return [...filteredCollection].sort((a, b) => {
-				const firstDate = this.$store.getters['recent/getSortDate'](a.dialogId);
-				const secondDate = this.$store.getters['recent/getSortDate'](b.dialogId);
-
-				return secondDate - firstDate;
-			});
+			return collection.filter((item) => RecentManager.needToShowItem(item));
 		},
 		activeCalls(): ImModelCallItem[]
 		{
@@ -77,23 +51,15 @@ export const RecentList = {
 		},
 		pinnedItems(): ImModelRecentItem[]
 		{
-			return this.preparedItems.filter((item) => {
-				return item.pinned === true;
-			});
+			return this.preparedItems.filter((item) => item.pinned === true);
 		},
 		generalItems(): ImModelRecentItem[]
 		{
-			return this.preparedItems.filter((item) => {
-				return item.pinned === false;
-			});
+			return this.preparedItems.filter((item) => item.pinned === false);
 		},
-		showBirthdays(): boolean
+		isEmptyCollection(): boolean
 		{
-			return this.$store.getters['application/settings/get'](Settings.recent.showBirthday);
-		},
-		showInvited(): boolean
-		{
-			return this.$store.getters['application/settings/get'](Settings.recent.showInvited);
+			return this.preparedItems.length === 0;
 		},
 		firstPageLoaded(): boolean
 		{
@@ -102,7 +68,7 @@ export const RecentList = {
 	},
 	async created()
 	{
-		this.contextMenuManager = new RecentMenu();
+		this.contextMenuManager = new RecentMenu({ emitter: this.getEmitter() });
 
 		this.initBroadcastManager();
 		this.initLikeManager();
@@ -149,11 +115,17 @@ export const RecentList = {
 			}
 
 			const context = {
-				...item,
+				dialogId: item.dialogId,
+				recentItem: item,
 				compactMode: false,
 			};
 
-			this.contextMenuManager.openMenu(context, event.currentTarget);
+			const positionTarget = {
+				left: event.pageX,
+				top: event.pageY,
+			};
+
+			this.contextMenuManager.openMenu(context, positionTarget);
 
 			event.preventDefault();
 		},
@@ -205,22 +177,18 @@ export const RecentList = {
 				this.onCreationStatusChange,
 			);
 		},
-		isFakeItemNeeded(item: ImModelRecentItem): boolean
-		{
-			const dialog = this.$store.getters['chats/get'](item.dialogId, true);
-			const isUser = dialog.type === ChatType.user;
-			const hasBirthday = isUser && this.showBirthdays && this.$store.getters['users/hasBirthday'](item.dialogId);
-
-			return this.showInvited || hasBirthday;
-		},
-		getRecentService(): RecentService
+		getRecentService(): LegacyRecentService
 		{
 			if (!this.service)
 			{
-				this.service = RecentService.getInstance();
+				this.service = LegacyRecentService.getInstance();
 			}
 
 			return this.service;
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 		loc(phraseCode: string): string
 		{
@@ -229,18 +197,13 @@ export const RecentList = {
 	},
 	template: `
 		<div class="bx-im-list-recent__container">
-			<div v-if="activeCalls.length > 0" class="bx-im-list-recent__calls_container" :class="{'--with-shadow': listIsScrolled}">
-				<ActiveCall
-					v-for="activeCall in activeCalls"
-					:key="activeCall.dialogId"
-					:item="activeCall"
-					@click="onCallClick"
-				/>
-			</div>
+			<ActiveCallList :listIsScrolled="listIsScrolled" @onCallClick="onCallClick"/>
 			<CreateChat v-if="isCreatingChat" />
 			<LoadingState v-if="isLoading && !firstPageLoaded" />
 			<div v-else @scroll="onScroll" class="bx-im-list-recent__scroll-container">
-				<EmptyState v-if="isEmptyCollection" />
+				<EmptyState 
+					v-if="isEmptyCollection"
+				/>
 				<div v-if="pinnedItems.length > 0" class="bx-im-list-recent__pinned_container">
 					<RecentItem
 						v-for="item in pinnedItems"

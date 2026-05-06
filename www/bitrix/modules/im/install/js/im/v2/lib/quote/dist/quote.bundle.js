@@ -2,20 +2,38 @@
 this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
-(function (exports,main_core,main_core_events,im_v2_lib_copilot,im_v2_application_core,im_v2_const,im_v2_lib_dateFormatter,im_v2_lib_parser) {
+(function (exports,main_core,im_v2_lib_copilot,im_v2_application_core,im_v2_const,im_v2_lib_dateFormatter,im_v2_lib_parser) {
 	'use strict';
 
 	const QUOTE_DELIMITER = '-'.repeat(54);
 	const Quote = {
-	  sendQuoteEvent(message, text, dialogId) {
-	    main_core_events.EventEmitter.emit(im_v2_const.EventType.textarea.insertText, {
-	      text: this.prepareQuoteText(message, text),
+	  wrapWithDelimiters(text) {
+	    return `${QUOTE_DELIMITER}\n${text}\n${QUOTE_DELIMITER}\n`;
+	  },
+	  sendQuoteEvent(payload) {
+	    const {
+	      text,
+	      dialogId,
+	      context: {
+	        emitter
+	      },
+	      additionalParams = {}
+	    } = payload;
+	    emitter.emit(im_v2_const.EventType.textarea.insertText, {
+	      text,
 	      dialogId,
 	      withNewLine: true,
-	      replace: false
+	      ...additionalParams
 	    });
 	  },
-	  prepareQuoteText(message, text) {
+	  prepareInlineQuote(textBefore, textAfter, quoteText) {
+	    const needNewLineBefore = textBefore && !textBefore.endsWith('\n');
+	    const formattedTextBefore = needNewLineBefore ? `${textBefore}\n` : textBefore;
+	    const needNewLineAfter = textAfter && !textAfter.startsWith('\n');
+	    const formattedTextAfter = needNewLineAfter ? `\n${textAfter}` : textAfter;
+	    return `${formattedTextBefore}${QUOTE_DELIMITER}\n${quoteText}\n${QUOTE_DELIMITER}${formattedTextAfter}`;
+	  },
+	  prepareInlineMessageQuote(message, text) {
 	    const dialog = im_v2_application_core.Core.getStore().getters['chats/getByChatId'](message.chatId);
 	    let quoteTitle = main_core.Loc.getMessage('IM_DIALOG_CHAT_QUOTE_DEFAULT_TITLE');
 	    if (message.authorId) {
@@ -29,17 +47,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    } else {
 	      quoteContext = `#${dialog.dialogId}/${message.id}`;
 	    }
-	    return `${QUOTE_DELIMITER}\n` + `${quoteTitle} [${quoteDate}] ${quoteContext}\n` + `${quoteText}\n` + `${QUOTE_DELIMITER}\n`;
+	    const content = `${quoteTitle} [${quoteDate}] ${quoteContext}\n${quoteText}`;
+	    return this.wrapWithDelimiters(content);
 	  }
 	};
 	const getName = message => {
 	  let name = '';
 	  const copilotManager = new im_v2_lib_copilot.CopilotManager();
 	  if (copilotManager.isCopilotBot(message.authorId)) {
-	    name = copilotManager.getNameWithRole({
-	      dialogId: message.authorId,
-	      messageId: message.id
-	    });
+	    name = copilotManager.getNameWithRole(message.id);
 	  } else {
 	    const user = im_v2_application_core.Core.getStore().getters['users/get'](message.authorId);
 	    name = user.name;
@@ -49,5 +65,5 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 
 	exports.Quote = Quote;
 
-}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX,BX.Event,BX.Messenger.v2.Lib,BX.Messenger.v2.Application,BX.Messenger.v2.Const,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib));
+}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX,BX.Messenger.v2.Lib,BX.Messenger.v2.Application,BX.Messenger.v2.Const,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib));
 //# sourceMappingURL=quote.bundle.js.map

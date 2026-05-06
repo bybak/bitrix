@@ -780,8 +780,7 @@
 	BXMailMessage.prototype.markAsSpam = function (btn, uid)
 	{
 		btn.classList.add('mail-msg-view-control-disabled');
-		BX.ajax.runComponentAction('bitrix:mail.client', 'markAsSpam', {
-			mode: 'ajax',
+		BX.ajax.runAction('mail.message.markAsSpam', {
 			data: {ids: [uid]}
 		}).then(
 			this.onMessageActionSuccess.bind(this, btn),
@@ -856,8 +855,7 @@
 	BXMailMessage.prototype.processDelete = function (btn, uid)
 	{
 		btn.classList.add('mail-msg-view-control-disabled');
-		BX.ajax.runComponentAction('bitrix:mail.client', 'delete', {
-			mode: 'ajax',
+		BX.ajax.runAction('mail.message.delete', {
 			data: {ids: [uid]}
 		}).then(
 			this.onMessageActionSuccess.bind(this, btn),
@@ -918,17 +916,15 @@
 		var filter = BX.Main.filterManager.getById(gridId);
 		var dir = filter.getFilterFieldsValues()['DIR'];
 
-		var pr = BX.ajax.runComponentAction(
-			'bitrix:mail.client',
-			'syncMailbox',
+		var pr = BX.ajax.runAction(
+			'mail.mailboxconnecting.syncMailbox',
 			{
-				mode: 'ajax',
 				data: {
 					id: self.mailbox.ID,
 					dir: dir || self.mailbox.OPTIONS.inboxDir,
-					onlySyncCurrent: onlySyncCurrent === undefined ? false : onlySyncCurrent,
-				}
-			}
+					onlySyncCurrent: onlySyncCurrent === undefined ? 0 : Number(onlySyncCurrent),
+				},
+			},
 		);
 
 		pr.then(

@@ -2,6 +2,7 @@
 namespace Bitrix\Report\VisualConstructor\Helper;
 use Bitrix\Main\Config\Option;
 use Bitrix\Main\Loader;
+use Bitrix\Crm\Service\Container;
 
 /**
  * Class Analytic
@@ -15,9 +16,14 @@ class Analytic
 	 */
 	public static function isEnable()
 	{
+		if (\Bitrix\Report\VisualConstructor\Helper\Db::isPgSqlDb())
+		{
+			return false;
+		}
+
 		if (Loader::includeModule('crm'))
 		{
-			return \CCrmPerms::IsAccessEnabled();
+			return Container::getInstance()->getUserPermissions()->entityType()->canReadSomeItemsInCrm();
 		}
 		else
 		{

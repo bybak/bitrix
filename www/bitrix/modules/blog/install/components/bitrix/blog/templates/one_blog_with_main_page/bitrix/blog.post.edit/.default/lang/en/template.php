@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS ['BLOG_TITLE'] = "Title:";
 $MESS ['BLOG_TEXT'] = "Text:";
 $MESS ['BLOG_IMAGE'] = "Image:";
@@ -40,8 +40,8 @@ $MESS ['FPF_CODE'] = "Code";
 $MESS ['FPF_CUT'] = "Create preview (cut)";
 $MESS ['FPF_LIST'] = "Create list";
 $MESS ['FPF_QUOTE'] = "Quote";
-$MESS ['BPC_TEXT_ENTER_URL'] = "Enter full address (URL)";
-$MESS ['BPC_TEXT_ENTER_URL_NAME'] = "Enter site name";
+$MESS ['BPC_TEXT_ENTER_URL'] = "Enter the full address (URL)";
+$MESS ['BPC_TEXT_ENTER_URL_NAME'] = "Enter the text to be shown as a hyperlink";
 $MESS ['BPC_TEXT_ENTER_IMAGE'] = "Enter the full image address (URL)";
 $MESS ['BPC_LIST_PROMPT'] = "Enter the list item. Click 'Cancel' or type space to complete the list";
 $MESS ['BPC_ERROR_NO_URL'] = "Please enter the address (URL)";
@@ -64,4 +64,3 @@ $MESS ['BPC_VIDEO_BUTTON'] = "Insert";
 $MESS ['BPC_VIDEO_BUTTON_CANCEL'] = "Cancel";
 $MESS ['BLOG_FAVORITE_SORT'] = "Sorting index:";
 $MESS ['BLOG_FAVORITE_SORT_HINT'] = "With non-empty sorting index field the blog post will be automatically listed in Favorites and sorted by this sorting index.";
-?>

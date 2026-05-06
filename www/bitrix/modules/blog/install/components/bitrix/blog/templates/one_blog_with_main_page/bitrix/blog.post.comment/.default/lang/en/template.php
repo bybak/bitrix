@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS ['B_B_MS_FROM'] = "from";
 $MESS ['B_B_MS_REPLY'] = "Reply";
 $MESS ['B_B_MS_PARENT'] = "Parent";
@@ -21,8 +21,8 @@ $MESS ['BPC_IMAGE'] = "Color";
 $MESS ['BPC_CODE'] = "Code";
 $MESS ['BPC_LIST'] = "Create list";
 $MESS ['BPC_QUOTE'] = "Quote";
-$MESS ['BPC_TEXT_ENTER_URL'] = "Enter full address (URL)";
-$MESS ['BPC_TEXT_ENTER_URL_NAME'] = "Enter site name";
+$MESS ['BPC_TEXT_ENTER_URL'] = "Enter the full address (URL)";
+$MESS ['BPC_TEXT_ENTER_URL_NAME'] = "Enter the text to be shown as a hyperlink";
 $MESS ['BPC_TEXT_ENTER_IMAGE'] = "Enter the full image address (URL)";
 $MESS ['BPC_LIST_PROMPT'] = "Enter the list item. Click 'Cancel' or type space to complete the list";
 $MESS ['BPC_ERROR_NO_URL'] = "Please enter the address (URL)";
@@ -33,4 +33,3 @@ $MESS ['BPC_PAGE_OF'] = " of";
 $MESS ['BPC_MES_DELETE_POST_CONFIRM'] = "Are you sure want to delete this comment?";
 $MESS ['B_B_MS_PREVIEW'] = "Preview";
 $MESS ['B_B_MS_PREVIEW_TITLE'] = "Preview";
-?>

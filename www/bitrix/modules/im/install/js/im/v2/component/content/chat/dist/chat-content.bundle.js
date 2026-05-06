@@ -3,64 +3,32 @@ this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
-(function (exports,im_v2_lib_layout,im_v2_lib_utils,im_v2_lib_channel,im_v2_lib_access,im_v2_component_animation,im_v2_component_entitySelector,im_v2_application_core,im_public,im_v2_component_content_chatForms_forms,im_v2_lib_feature,im_v2_lib_theme,ui_notification,im_v2_lib_analytics,im_v2_lib_permission,im_v2_component_content_elements,im_v2_lib_logger,im_v2_model,im_v2_component_dialog_chat,im_v2_lib_messageComponentManager,main_core,main_core_events,im_v2_component_messageList,im_v2_const,im_v2_component_textarea,im_v2_component_elements,im_v2_provider_service) {
+(function (exports,main_core_events,ui_notification,im_v2_lib_layout,im_v2_lib_utils,im_v2_lib_channel,im_v2_lib_notifier,im_v2_component_elements_pulseAnimation,im_v2_component_elements_loader,im_v2_lib_counter,ui_dialogs_tooltip,im_v2_component_elements_chatTitle,im_v2_component_entitySelector,main_popup,im_v2_component_elements_popup,ui_vue3_directives_hint,ui_iconSet_api_core,ui_system_chip_vue,aiassistant_mcpSelector,im_v2_lib_rest,ui_iconSet_api_vue,im_v2_lib_healthCheck,im_v2_component_animation,im_v2_lib_localStorage,tasks_v2_application_taskCard,im_v2_lib_promo,im_v2_lib_invite,im_v2_component_content_chatForms_forms,im_v2_lib_feature,im_public,im_v2_lib_theme,im_v2_provider_service_copilot,im_v2_lib_copilot,main_core,im_v2_application_core,im_v2_lib_analytics,im_v2_component_elements_avatar,im_v2_lib_permission,im_v2_component_content_elements,im_v2_component_elements_toggle,im_v2_provider_service_comments,im_v2_lib_logger,im_v2_model,im_v2_component_dialog_chat,im_v2_component_messageList,im_v2_lib_messageComponent,im_v2_const,im_v2_component_textarea,im_v2_component_elements_button,im_v2_provider_service_chat) {
 	'use strict';
 
 	// @vue/component
 	const CommentsButton = {
 	  name: 'CommentsButton',
+	  components: {
+	    FloatButton: im_v2_component_dialog_chat.FloatButton
+	  },
 	  props: {
-	    dialogId: {
-	      type: String,
-	      required: true
-	    },
 	    counter: {
 	      type: Number,
 	      required: true
 	    }
 	  },
-	  data() {
-	    return {};
-	  },
 	  computed: {
-	    dialog() {
-	      return this.$store.getters['chats/get'](this.dialogId, true);
+	    floatButtonProps() {
+	      return {
+	        icon: im_v2_component_dialog_chat.FloatButtonIcon.comment,
+	        color: im_v2_component_dialog_chat.FloatButtonColor.success,
+	        counter: this.counter
+	      };
 	    }
 	  },
 	  template: `
-		<div class="bx-im-dialog-channel__comments-button">
-			<div class="bx-im-dialog-channel__comments-button_counter">
-				{{ counter }}
-			</div>
-		</div>
-	`
-	};
-
-	class ChannelMessageMenu extends im_v2_component_messageList.MessageMenu {
-	  getMenuItems() {
-	    return [
-	    // this.getReplyItem(),
-	    this.getCopyItem(), this.getCopyLinkItem(), this.getCopyFileItem(), this.getPinItem(), this.getForwardItem(), this.getDelimiter(), this.getMarkItem(), this.getFavoriteItem(), this.getDelimiter(), this.getDownloadFileItem(), this.getSaveToDiskItem(), this.getDelimiter(), this.getEditItem(), this.getDeleteItem(), this.getDelimiter(), this.getSelectItem()];
-	  }
-	}
-
-	// @vue/component
-	const ChannelMessageList = {
-	  name: 'ChannelMessageList',
-	  components: {
-	    MessageList: im_v2_component_messageList.MessageList
-	  },
-	  props: {
-	    dialogId: {
-	      type: String,
-	      required: true
-	    }
-	  },
-	  computed: {
-	    ChannelMessageMenu: () => ChannelMessageMenu
-	  },
-	  template: `
-		<MessageList :dialogId="dialogId" :messageMenuClass="ChannelMessageMenu" />
+		<FloatButton v-bind="floatButtonProps" />
 	`
 	};
 
@@ -69,7 +37,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  name: 'ChannelDialog',
 	  components: {
 	    ChatDialog: im_v2_component_dialog_chat.ChatDialog,
-	    ChannelMessageList,
 	    CommentsButton
 	  },
 	  props: {
@@ -94,17 +61,13 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      return this.dialog.role === im_v2_const.UserRole.guest;
 	    },
 	    isChatLayout() {
-	      return this.layout.name === im_v2_const.Layout.chat.name;
+	      return this.layout.name === im_v2_const.Layout.chat;
 	    },
-	    channelComments() {
-	      return this.$store.getters['counters/getChannelComments'](this.dialog.chatId);
+	    commentIdsWithCounter() {
+	      return this.$store.getters['counters/getChildrenIdsWithCounter'](this.dialog.chatId);
 	    },
 	    totalChannelCommentsCounter() {
-	      let counter = 0;
-	      Object.values(this.channelComments).forEach(commentCounter => {
-	        counter += commentCounter;
-	      });
-	      return counter;
+	      return this.$store.getters['counters/getChildrenTotalCounter'](this.dialog.chatId);
 	    },
 	    showCommentsButton() {
 	      return this.isChatLayout && this.totalChannelCommentsCounter > 0;
@@ -128,10 +91,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    async goToMessageContextByCommentsChatId(chatId) {
 	      this.$refs.dialog.showLoadingBar();
-	      const messageId = await this.$refs.dialog.getMessageService().loadContextByChatId(chatId).catch(error => {
-	        // eslint-disable-next-line no-console
-	        console.error('ChannelDialog: goToMessageContextByCommentsChatId error', error);
-	      });
+	      const messageId = await this.$refs.dialog.getMessageService().loadContextByChatId(chatId);
 	      this.$refs.dialog.hideLoadingBar();
 	      if (!messageId) {
 	        // eslint-disable-next-line no-console
@@ -145,7 +105,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      this.$refs.dialog.highlightMessage(messageId);
 	    },
 	    getNextChatIdToJump() {
-	      const commentChatIds = this.getCommentsChatIds();
+	      const commentChatIds = [...this.commentIdsWithCounter];
 	      commentChatIds.sort((a, z) => a - z);
 	      if (this.lastScrolledChatId === 0) {
 	        return commentChatIds[0];
@@ -156,30 +116,19 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      }
 	      return filteredChatIds[0];
 	    },
-	    getCommentsChatIds() {
-	      return Object.keys(this.channelComments).map(chatId => {
-	        return Number(chatId);
-	      });
-	    },
 	    readAllChannelComments() {
-	      im_v2_provider_service.CommentsService.readAllChannelComments(this.dialogId);
+	      void im_v2_provider_service_comments.CommentsService.readAllChannelComments(this.dialogId);
 	    }
 	  },
 	  template: `
-		<ChatDialog ref="dialog" :dialogId="dialogId" :resetOnExit="isGuest">
-			<template #message-list>
-				<ChannelMessageList :dialogId="dialogId" />
-			</template>
+		<ChatDialog ref="dialog" :dialogId="dialogId" :clearOnExit="isGuest">
 			<template #additional-float-button>
-				<Transition name="float-button-transition">
-					<CommentsButton
-						v-if="showCommentsButton"
-						:dialogId="dialogId"
-						:counter="totalChannelCommentsCounter"
-						@click="onCommentsButtonClick"
-						key="comments"
-					/>
-				</Transition>
+				<CommentsButton
+					v-if="showCommentsButton"
+					:dialogId="dialogId"
+					:counter="totalChannelCommentsCounter"
+					@click="onCommentsButtonClick"
+				/>
 			</template>
 		</ChatDialog>
 	`
@@ -188,7 +137,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	// @vue/component
 	const JoinPanel = {
 	  components: {
-	    ChatButton: im_v2_component_elements.Button
+	    ChatButton: im_v2_component_elements_button.ChatButton
 	  },
 	  props: {
 	    dialogId: {
@@ -197,8 +146,8 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  computed: {
-	    ButtonSize: () => im_v2_component_elements.ButtonSize,
-	    ButtonColor: () => im_v2_component_elements.ButtonColor
+	    ButtonSize: () => im_v2_component_elements_button.ButtonSize,
+	    ButtonColor: () => im_v2_component_elements_button.ButtonColor
 	  },
 	  methods: {
 	    onButtonClick() {
@@ -206,7 +155,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    getChatService() {
 	      if (!this.chatService) {
-	        this.chatService = new im_v2_provider_service.ChatService();
+	        this.chatService = new im_v2_provider_service_chat.ChatService();
 	      }
 	      return this.chatService;
 	    },
@@ -248,9 +197,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 		<ChatTextarea
 			:dialogId="dialogId"
 			:placeholder="this.loc('IM_CONTENT_CHANNEL_TEXTAREA_PLACEHOLDER')"
-			:withCreateMenu="false"
 			:withMarket="false"
-			:withAudioInput="false"
 			class="bx-im-channel-send-panel__container"
 		/>
 	`
@@ -289,8 +236,8 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	const CollabTitle = {
 	  name: 'CollabTitle',
 	  components: {
-	    ChatTitle: im_v2_component_elements.ChatTitle,
-	    LineLoader: im_v2_component_elements.LineLoader,
+	    ChatTitle: im_v2_component_elements_chatTitle.ChatTitle,
+	    LineLoader: im_v2_component_elements_loader.LineLoader,
 	    FadeAnimation: im_v2_component_animation.FadeAnimation
 	  },
 	  inject: ['currentSidebarPanel'],
@@ -324,15 +271,18 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  methods: {
 	    onMembersClick() {
 	      if (this.currentSidebarPanel === im_v2_const.SidebarDetailBlock.members) {
-	        main_core_events.EventEmitter.emit(im_v2_const.EventType.sidebar.close, {
+	        this.getEmitter().emit(im_v2_const.EventType.sidebar.close, {
 	          panel: im_v2_const.SidebarDetailBlock.members
 	        });
 	        return;
 	      }
-	      main_core_events.EventEmitter.emit(im_v2_const.EventType.sidebar.open, {
+	      this.getEmitter().emit(im_v2_const.EventType.sidebar.open, {
 	        panel: im_v2_const.SidebarDetailBlock.members,
 	        dialogId: this.dialogId
 	      });
+	    },
+	    getEmitter() {
+	      return this.$Bitrix.eventEmitter;
 	    },
 	    loc(phraseCode) {
 	      return this.$Bitrix.Loc.getMessage(phraseCode);
@@ -341,7 +291,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  template: `
 		<div class="bx-im-collab-header-title__container">
 			<div class="bx-im-collab-header-title__title-container --ellipsis">
-				<ChatTitle :dialogId="dialogId" />
+				<ChatTitle :dialogId="dialogId" :withAutoDelete="true" />
 			</div>
 			<LineLoader v-if="!dialog.inited" :width="50" :height="16" />
 			<FadeAnimation :duration="100">
@@ -363,6 +313,51 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	`
 	};
 
+	const IconKey = Object.freeze({
+	  addToChat: 'add-to-chat',
+	  collabEntities: 'collab-entities'
+	});
+
+	let _ = t => t,
+	  _t;
+	var _title = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("title");
+	var _text = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("text");
+	var _iconKey = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("iconKey");
+	class CollabTooltipContent {
+	  constructor(params) {
+	    Object.defineProperty(this, _title, {
+	      writable: true,
+	      value: void 0
+	    });
+	    Object.defineProperty(this, _text, {
+	      writable: true,
+	      value: void 0
+	    });
+	    Object.defineProperty(this, _iconKey, {
+	      writable: true,
+	      value: void 0
+	    });
+	    babelHelpers.classPrivateFieldLooseBase(this, _title)[_title] = params.title;
+	    babelHelpers.classPrivateFieldLooseBase(this, _text)[_text] = params.text;
+	    babelHelpers.classPrivateFieldLooseBase(this, _iconKey)[_iconKey] = params.iconKey;
+	  }
+	  render() {
+	    return main_core.Tag.render(_t || (_t = _`
+			<div class="bx-im-collab-tooltip__scope bx-im-collab-tooltip__container">
+				<div class="bx-im-collab-tooltip__icon --${0}"></div>
+				<div class="bx-im-collab-tooltip__title-container">
+					<div class="bx-im-collab-tooltip__title">
+						${0}
+					</div>
+					<div class="bx-im-collab-tooltip__text">
+						${0}
+					</div>
+				</div>
+			</div>
+		`), babelHelpers.classPrivateFieldLooseBase(this, _iconKey)[_iconKey], babelHelpers.classPrivateFieldLooseBase(this, _title)[_title], babelHelpers.classPrivateFieldLooseBase(this, _text)[_text]);
+	  }
+	}
+
 	// @vue/component
 	const EntityCounter = {
 	  name: 'EntityCounter',
@@ -374,7 +369,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  },
 	  computed: {
 	    preparedCounter() {
-	      return this.counter > 99 ? '99+' : this.counter.toString();
+	      return im_v2_lib_counter.CounterManager.formatCounter(this.counter);
 	    }
 	  },
 	  template: `
@@ -455,6 +450,11 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      required: true
 	    }
 	  },
+	  data() {
+	    return {
+	      highlightMode: false
+	    };
+	  },
 	  computed: {
 	    CollabEntityType: () => im_v2_const.CollabEntityType,
 	    dialog() {
@@ -488,13 +488,62 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      return this.calendarInfo.counter;
 	    }
 	  },
+	  mounted() {
+	    this.initPromo();
+	  },
 	  methods: {
+	    initPromo() {
+	      const promoManager = im_v2_lib_promo.PromoManager.getInstance();
+	      const promoId = im_v2_const.PromoId.collabEntities;
+	      const promoParams = {
+	        chatId: this.dialog.chatId
+	      };
+	      if (promoManager.needToShow(promoId, promoParams)) {
+	        void this.showCollabEntitiesPromo(promoId, promoParams);
+	      }
+	    },
+	    async showCollabEntitiesPromo(promoId, promoParams) {
+	      const tooltip = new ui_dialogs_tooltip.Tooltip({
+	        bindElement: this.$refs['collab-entities'],
+	        content: this.renderTooltipContent(),
+	        minWidth: 410,
+	        popupOptions: {
+	          offsetTop: 11,
+	          offsetLeft: 38,
+	          autoHide: true,
+	          closeIcon: true,
+	          closeIconSize: main_popup.CloseIconSize.LARGE,
+	          events: {
+	            onPopupShow: () => {
+	              this.highlightMode = true;
+	            },
+	            onPopupClose: () => {
+	              this.highlightMode = false;
+	            }
+	          }
+	        }
+	      });
+	      tooltip.show();
+	      void im_v2_lib_promo.PromoManager.getInstance().markAsWatched(promoId, promoParams);
+	    },
+	    renderTooltipContent() {
+	      const tooltipContent = new CollabTooltipContent({
+	        title: this.loc('IM_CONTENT_COLLAB_ONBOARDING_ENTITIES_TITLE'),
+	        text: this.loc('IM_CONTENT_COLLAB_ONBOARDING_ENTITIES_TEXT'),
+	        iconKey: IconKey.collabEntities
+	      });
+	      return tooltipContent.render();
+	    },
 	    loc(phraseCode) {
 	      return this.$Bitrix.Loc.getMessage(phraseCode);
 	    }
 	  },
 	  template: `
-		<div class="bx-im-collab-header__links-container" :class="{'--compact': compactMode}">
+		<div
+			class="bx-im-collab-header__links-container"
+			:class="{'--compact': compactMode, '--highlight': highlightMode}"
+			ref="collab-entities"
+		>
 			<EntityLink
 				:dialogId="dialogId"
 				:compactMode="compactMode"
@@ -522,6 +571,17 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	`
 	};
 
+	const PromoMessages = {
+	  [im_v2_const.PromoId.membersNotInvitedOneDayToCollab]: {
+	    title: 'IM_CONTENT_COLLAB_ONBOARDING_INVITE_MEMBERS_ONE_DAY_TITLE',
+	    text: 'IM_CONTENT_COLLAB_ONBOARDING_INVITE_MEMBERS_ONE_DAY_TEXT'
+	  },
+	  [im_v2_const.PromoId.membersNotInvitedFourDayToCollab]: {
+	    title: 'IM_CONTENT_COLLAB_ONBOARDING_INVITE_MEMBERS_FOUR_DAYS_TITLE',
+	    text: 'IM_CONTENT_COLLAB_ONBOARDING_INVITE_MEMBERS_FOUR_DAYS_TEXT'
+	  }
+	};
+
 	// @vue/component
 	const AddToChatButton = {
 	  name: 'AddToChatButton',
@@ -544,6 +604,14 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      showAddToChatPopup: false
 	    };
 	  },
+	  computed: {
+	    dialog() {
+	      return this.$store.getters['chats/get'](this.dialogId, true);
+	    }
+	  },
+	  mounted() {
+	    this.initPromo();
+	  },
 	  methods: {
 	    openAddToChatPopup() {
 	      im_v2_lib_analytics.Analytics.getInstance().userAdd.onChatHeaderClick(this.dialogId);
@@ -552,6 +620,41 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    closeAddToChatPopup() {
 	      this.$emit('close');
 	      this.showAddToChatPopup = false;
+	    },
+	    initPromo() {
+	      const promoManager = im_v2_lib_promo.PromoManager.getInstance();
+	      Object.keys(PromoMessages).forEach(promoId => {
+	        const promoParams = {
+	          chatId: this.dialog.chatId
+	        };
+	        if (promoManager.needToShow(promoId, promoParams)) {
+	          void this.showMembersNotInvitedPromo(promoId, promoParams);
+	        }
+	      });
+	    },
+	    showMembersNotInvitedPromo(promoId, promoParams) {
+	      const tooltip = new ui_dialogs_tooltip.Tooltip({
+	        bindElement: this.$refs['add-members'],
+	        content: this.renderTooltipContent(promoId),
+	        minWidth: 410,
+	        popupOptions: {
+	          offsetTop: 8,
+	          offsetLeft: 9,
+	          autoHide: true,
+	          closeIcon: true,
+	          closeIconSize: main_popup.CloseIconSize.LARGE
+	        }
+	      });
+	      tooltip.show();
+	      void im_v2_lib_promo.PromoManager.getInstance().markAsWatched(promoId, promoParams);
+	    },
+	    renderTooltipContent(promoId) {
+	      const tooltipContent = new CollabTooltipContent({
+	        title: this.loc(PromoMessages[promoId].title),
+	        text: this.loc(PromoMessages[promoId].text),
+	        iconKey: IconKey.addToChat
+	      });
+	      return tooltipContent.render();
 	    },
 	    loc(phraseCode) {
 	      return this.$Bitrix.Loc.getMessage(phraseCode);
@@ -575,35 +678,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	`
 	};
 
-	const RING_COUNT = 3;
-
-	// @vue/component
-	const PulseAnimation = {
-	  name: 'PulseAnimation',
-	  props: {
-	    showPulse: {
-	      type: Boolean,
-	      default: true
-	    }
-	  },
-	  computed: {
-	    rings() {
-	      if (!this.showPulse) {
-	        return [];
-	      }
-	      return Array.from({
-	        length: RING_COUNT
-	      });
-	    }
-	  },
-	  template: `
-		<div class="bx-im-pulse-animation__container">
-			<slot />
-			<div v-for="ring in rings" class="bx-im-pulse-animation__ring"></div>
-		</div>
-	`
-	};
-
 	// @vue/component
 	const CollabHeader = {
 	  name: 'CollabHeader',
@@ -613,7 +687,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    EntitiesPanel,
 	    AddToChatButton,
 	    AddToChatPopup: im_v2_component_entitySelector.AddToChat,
-	    PulseAnimation
+	    PulseAnimation: im_v2_component_elements_pulseAnimation.PulseAnimation
 	  },
 	  props: {
 	    dialogId: {
@@ -644,10 +718,10 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  created() {
-	    main_core_events.EventEmitter.subscribe(im_v2_const.EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
+	    this.getEmitter().subscribe(im_v2_const.EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
 	  },
 	  beforeUnmount() {
-	    main_core_events.EventEmitter.unsubscribe(im_v2_const.EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
+	    this.getEmitter().unsubscribe(im_v2_const.EventType.header.openAddToChatPopup, this.onOpenAddToChatPopup);
 	  },
 	  methods: {
 	    onOpenAddToChatPopup() {
@@ -662,6 +736,9 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    onCompactModeChange(compactMode) {
 	      this.compactMode = compactMode;
+	    },
+	    getEmitter() {
+	      return this.$Bitrix.eventEmitter;
 	    }
 	  },
 	  template: `
@@ -673,7 +750,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 				<EntitiesPanel :dialogId="dialogId" :compactMode="compactMode" />
 			</template>
 			<template #add-to-chat-button>
-				<PulseAnimation :showPulse="showAddToChatPopupDelayed">
+				<PulseAnimation :showPulse="showAddToChatPopupDelayed" class="bx-im-collab-header__add-to-chat">
 					<AddToChatButton 
 						:withAnimation="showAddToChatPopupDelayed" 
 						:dialogId="dialogId" 
@@ -699,10 +776,39 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  computed: {
-	    SpecialBackground: () => im_v2_lib_theme.SpecialBackground
+	    dialog() {
+	      return this.$store.getters['chats/get'](this.dialogId, true);
+	    },
+	    dialogInited() {
+	      return this.dialog.inited;
+	    }
+	  },
+	  watch: {
+	    dialogInited(newValue, oldValue) {
+	      if (!newValue || oldValue) {
+	        return;
+	      }
+	      this.initPromo();
+	    }
+	  },
+	  methods: {
+	    initPromo() {
+	      const promoManager = im_v2_lib_promo.PromoManager.getInstance();
+	      const promoId = im_v2_const.PromoId.collaberNotAcceptInvitationOneDay;
+	      const promoParams = {
+	        chatId: this.dialog.chatId
+	      };
+	      if (promoManager.needToShow(promoId, promoParams)) {
+	        this.showNotAcceptInvitationPromo(promoId, promoParams);
+	      }
+	    },
+	    showNotAcceptInvitationPromo(promoId, promoParams) {
+	      im_v2_lib_notifier.Notifier.collab.onCollaberNotAcceptInvitation();
+	      void im_v2_lib_promo.PromoManager.getInstance().markAsWatched(promoId, promoParams);
+	    }
 	  },
 	  template: `
-		<BaseChatContent :dialogId="dialogId" :backgroundId="SpecialBackground.collab">
+		<BaseChatContent :dialogId="dialogId">
 			<template #header>
 				<CollabHeader :dialogId="dialogId" :key="dialogId" />
 			</template>
@@ -714,8 +820,8 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	const MultidialogChatTitle = {
 	  name: 'MultidialogChatTitle',
 	  components: {
-	    EditableChatTitle: im_v2_component_elements.EditableChatTitle,
-	    ChatTitle: im_v2_component_elements.ChatTitle
+	    EditableChatTitle: im_v2_component_elements_chatTitle.EditableChatTitle,
+	    ChatTitle: im_v2_component_elements_chatTitle.ChatTitle
 	  },
 	  props: {
 	    dialogId: {
@@ -790,12 +896,12 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	};
 
 	// @vue/component
-	const NotesContent = {
-	  name: 'NotesContent',
+	const SelfChatContent = {
+	  name: 'SelfChatContent',
 	  components: {
 	    BaseChatContent: im_v2_component_content_elements.BaseChatContent,
 	    ChatHeader: im_v2_component_content_elements.ChatHeader,
-	    ChatTitle: im_v2_component_elements.ChatTitle
+	    ChatTitle: im_v2_component_elements_chatTitle.ChatTitle
 	  },
 	  props: {
 	    dialogId: {
@@ -805,7 +911,8 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  },
 	  computed: {
 	    titleType() {
-	      return Number.parseInt(this.dialogId, 10) === im_v2_application_core.Core.getUserId() ? im_v2_component_elements.ChatTitleType.notes : '';
+	      const isSelfChat = this.$store.getters['chats/isSelfChat'](this.dialogId);
+	      return isSelfChat ? im_v2_component_elements_chatTitle.ChatTitleType.selfChat : '';
 	    }
 	  },
 	  template: `
@@ -821,8 +928,983 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	`
 	};
 
+	const POPUP_ID = 'im-add-to-chat-hint-popup';
+
+	// @vue/component
+	const AddToChatHint = {
+	  name: 'AddToChatHint',
+	  components: {
+	    MessengerPopup: im_v2_component_elements_popup.MessengerPopup
+	  },
+	  props: {
+	    bindElement: {
+	      type: Object,
+	      required: true
+	    }
+	  },
+	  emits: ['close', 'hide'],
+	  computed: {
+	    POPUP_ID: () => POPUP_ID,
+	    config() {
+	      return {
+	        darkMode: true,
+	        bindElement: this.bindElement,
+	        angle: true,
+	        width: 346,
+	        closeIcon: true,
+	        offsetLeft: 8,
+	        className: 'bx-im-copilot-add-to-chat-hint__scope',
+	        contentBorderRadius: 0
+	      };
+	    },
+	    hintTitle() {
+	      return this.loc('IM_CONTENT_COPILOT_ADD_TO_CHAT_HINT_TITLE_MSGVER_1', {
+	        '#COPILOT_NAME#': this.copilotManager.getName()
+	      });
+	    },
+	    hintDescription() {
+	      return this.loc('IM_CONTENT_COPILOT_ADD_TO_CHAT_HINT_DESCRIPTION_MSGVER_1', {
+	        '#COPILOT_NAME#': this.copilotManager.getName()
+	      });
+	    }
+	  },
+	  created() {
+	    this.copilotManager = new im_v2_lib_copilot.CopilotManager();
+	  },
+	  methods: {
+	    loc(phraseCode, replacements = {}) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+	    }
+	  },
+	  template: `
+		<MessengerPopup
+			:config="config"
+			:id="POPUP_ID"
+			@close="$emit('close')"
+		>
+			<div class="bx-im-copilot-add-to-chat-hint__title">{{ hintTitle }}</div>
+			<br />
+			<div class="bx-im-copilot-add-to-chat-hint__description">{{ hintDescription }}</div>
+			<br />
+			<button class="bx-im-copilot-add-to-chat-hint__hide" @click="$emit('hide')">
+				{{ loc('IM_CONTENT_COPILOT_ADD_TO_CHAT_HINT_HIDE') }}
+			</button>
+		</MessengerPopup>
+	`
+	};
+
+	// @vue/component
+	const AddToChatButton$1 = {
+	  name: 'AddToChatButton',
+	  components: {
+	    AddToChat: im_v2_component_entitySelector.AddToChat,
+	    AddToChatHint
+	  },
+	  props: {
+	    dialogId: {
+	      type: String,
+	      default: ''
+	    }
+	  },
+	  data() {
+	    return {
+	      showInviteButton: false,
+	      showAddToChatPopup: false,
+	      showAddToChatHint: false
+	    };
+	  },
+	  mounted() {
+	    const needCopilotInRecentTabHint = im_v2_lib_promo.PromoManager.getInstance().needToShow(im_v2_const.PromoId.copilotInRecentTab);
+	    const needAddUsersToChatHint = im_v2_lib_promo.PromoManager.getInstance().needToShow(im_v2_const.PromoId.addUsersToCopilotChat);
+	    this.showAddToChatHint = !needCopilotInRecentTabHint && needAddUsersToChatHint;
+	  },
+	  methods: {
+	    openAddToChatPopup() {
+	      im_v2_lib_analytics.Analytics.getInstance().userAdd.onChatHeaderClick(this.dialogId);
+	      this.showAddToChatPopup = true;
+	    },
+	    closeAddToChatPopup() {
+	      this.showAddToChatPopup = false;
+	    },
+	    showHint() {
+	      this.showAddToChatHint = true;
+	    },
+	    closeHint() {
+	      this.showAddToChatHint = false;
+	    },
+	    onHintHide() {
+	      void im_v2_lib_promo.PromoManager.getInstance().markAsWatched(im_v2_const.PromoId.addUsersToCopilotChat);
+	      this.closeHint();
+	    },
+	    loc(phraseCode) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode);
+	    }
+	  },
+	  template: `
+		<div
+			:title="loc('IM_CONTENT_CHAT_HEADER_OPEN_INVITE_POPUP_TITLE')"
+			:class="{'--active': showAddToChatPopup}"
+			class="bx-im-chat-header__icon --add-people"
+			@click="openAddToChatPopup"
+			ref="add-members"
+		>
+			<slot name="invite-hint" :inviteButtonRef="$refs['add-members']"></slot>
+		</div>
+		<AddToChat
+			v-if="showAddToChatPopup"
+			:bindElement="$refs['add-members'] ?? {}"
+			:dialogId="dialogId"
+			:popupConfig="{ offsetTop: 15, offsetLeft: -300 }"
+			@close="closeAddToChatPopup"
+		/>
+		<AddToChatHint
+			v-if="showAddToChatHint"
+			:bindElement="$refs['add-members'] ?? {}"
+			@close="closeHint"
+			@hide="onHintHide"
+		/>
+	`
+	};
+
+	// @vue/component
+	const CopilotChatHeader = {
+	  name: 'CopilotChatHeader',
+	  components: {
+	    ChatHeader: im_v2_component_content_elements.ChatHeader,
+	    EditableChatTitle: im_v2_component_elements_chatTitle.EditableChatTitle,
+	    ChatAvatar: im_v2_component_elements_avatar.ChatAvatar,
+	    AddToChatButton: AddToChatButton$1
+	  },
+	  inject: ['currentSidebarPanel'],
+	  props: {
+	    dialogId: {
+	      type: String,
+	      default: ''
+	    }
+	  },
+	  data() {
+	    return {
+	      buttonPanelReady: false
+	    };
+	  },
+	  computed: {
+	    AvatarSize: () => im_v2_component_elements_avatar.AvatarSize,
+	    dialog() {
+	      return this.$store.getters['chats/get'](this.dialogId, true);
+	    },
+	    isInited() {
+	      return this.dialog.inited;
+	    },
+	    isGroupCopilotChat() {
+	      return new im_v2_lib_copilot.CopilotManager().isGroupCopilotChat(this.dialogId);
+	    },
+	    copilotRole() {
+	      var _role$name;
+	      const role = this.$store.getters['copilot/chats/getRole'](this.dialogId);
+	      return (_role$name = role == null ? void 0 : role.name) != null ? _role$name : '';
+	    },
+	    formattedUserCounter() {
+	      return main_core.Loc.getMessagePlural('IM_CONTENT_COPILOT_HEADER_USER_COUNT', this.dialog.userCounter, {
+	        '#COUNT#': this.dialog.userCounter
+	      });
+	    }
+	  },
+	  methods: {
+	    onNewTitleSubmit(newTitle) {
+	      void this.getChatService().renameChat(this.dialogId, newTitle);
+	    },
+	    onMembersClick() {
+	      if (!this.isInited) {
+	        return;
+	      }
+	      if (this.currentSidebarPanel === im_v2_const.SidebarDetailBlock.members) {
+	        this.getEmitter().emit(im_v2_const.EventType.sidebar.close, {
+	          panel: im_v2_const.SidebarDetailBlock.members
+	        });
+	        return;
+	      }
+	      this.getEmitter().emit(im_v2_const.EventType.sidebar.open, {
+	        panel: im_v2_const.SidebarDetailBlock.members,
+	        dialogId: this.dialogId
+	      });
+	    },
+	    onButtonPanelReady() {
+	      this.buttonPanelReady = true;
+	    },
+	    getChatService() {
+	      if (!this.chatService) {
+	        this.chatService = new im_v2_provider_service_chat.ChatService();
+	      }
+	      return this.chatService;
+	    },
+	    getEmitter() {
+	      return this.$Bitrix.eventEmitter;
+	    },
+	    loc(phraseCode, replacements = {}) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+	    }
+	  },
+	  template: `
+		<ChatHeader
+			:dialogId="dialogId"
+			:withSearchButton="false"
+			class="bx-im-copilot-header__container"
+			@buttonPanelReady="onButtonPanelReady"
+		>
+			<template #left>
+				<div class="bx-im-copilot-header__avatar">
+					<ChatAvatar
+						:avatarDialogId="dialogId"
+						:contextDialogId="dialogId"
+						:withSpecialTypes="false"
+						:size="AvatarSize.L"
+					/>
+				</div>
+				<div class="bx-im-copilot-header__info">
+					<EditableChatTitle :dialogId="dialogId" @newTitleSubmit="onNewTitleSubmit" />
+					<div
+						v-if="isGroupCopilotChat"
+						:title="loc('IM_CONTENT_COPILOT_HEADER_OPEN_MEMBERS_TITLE')"
+						@click="onMembersClick"
+						class="bx-im-copilot-header__subtitle --click"
+					>
+						{{ formattedUserCounter }}
+					</div>
+					<div v-else class="bx-im-copilot-header__subtitle">
+						{{ copilotRole }}
+					</div>
+				</div>
+			</template>
+			<template v-if="buttonPanelReady" #add-to-chat-button>
+				<AddToChatButton :dialogId="dialogId" />
+			</template>
+		</ChatHeader>
+	`
+	};
+
+	// @vue/component
+	const ReasoningButton = {
+	  name: 'ReasoningButton',
+	  directives: {
+	    hint: ui_vue3_directives_hint.hint
+	  },
+	  components: {
+	    Chip: ui_system_chip_vue.Chip
+	  },
+	  props: {
+	    dialogId: {
+	      type: String,
+	      required: true
+	    }
+	  },
+	  computed: {
+	    OutlineIcons: () => ui_iconSet_api_core.Outline,
+	    ChipDesign: () => ui_system_chip_vue.ChipDesign,
+	    ChipSize: () => ui_system_chip_vue.ChipSize,
+	    isActive() {
+	      return this.$store.getters['copilot/chats/isReasoningEnabled'](this.dialogId);
+	    },
+	    modelCode() {
+	      var _this$$store$getters$;
+	      return (_this$$store$getters$ = this.$store.getters['copilot/chats/getAIModel'](this.dialogId)) == null ? void 0 : _this$$store$getters$.code;
+	    },
+	    isReasoningAvailable() {
+	      return im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.isCopilotReasoningAvailable);
+	    },
+	    isReasoningAvailableInModel() {
+	      return this.$store.getters['copilot/isReasoningAvailableInModel'](this.modelCode);
+	    },
+	    design() {
+	      if (!this.isReasoningAvailableInModel) {
+	        return ui_system_chip_vue.ChipDesign.Disabled;
+	      }
+	      if (this.isActive) {
+	        return ui_system_chip_vue.ChipDesign.OutlineCopilot;
+	      }
+	      return ui_system_chip_vue.ChipDesign.Outline;
+	    },
+	    hint() {
+	      if (this.isReasoningAvailableInModel) {
+	        return null;
+	      }
+	      return {
+	        text: this.loc('IM_CONTENT_COPILOT_TEXTAREA_REASONING_BUTTON_HINT_NOT_AVAILABLE')
+	      };
+	    }
+	  },
+	  watch: {
+	    isReasoningAvailableInModel(isAvailable) {
+	      if (!isAvailable && this.isActive) {
+	        this.$store.dispatch('copilot/chats/toggleReasoning', this.dialogId);
+	      }
+	    }
+	  },
+	  methods: {
+	    toggle() {
+	      if (!this.isReasoningAvailableInModel) {
+	        return;
+	      }
+	      this.$store.dispatch('copilot/chats/toggleReasoning', this.dialogId);
+	      im_v2_lib_analytics.Analytics.getInstance().copilot.onToggleReasoning(this.dialogId);
+	    },
+	    loc(phraseCode) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode);
+	    }
+	  },
+	  template: `
+		<Chip
+			v-if="isReasoningAvailable"
+			v-hint="hint"
+			:text="loc('IM_CONTENT_COPILOT_TEXTAREA_REASONING_BUTTON')"
+			:rounded="true"
+			:size="ChipSize.Sm"
+			:icon="OutlineIcons.AI_STARS"
+			:design="design"
+			@click="toggle"
+		/>
+	`
+	};
+
+	// @vue/component
+	const CopilotTextarea = {
+	  name: 'CopilotTextarea',
+	  components: {
+	    ChatTextarea: im_v2_component_textarea.ChatTextarea,
+	    ReasoningButton
+	  },
+	  props: {
+	    dialogId: {
+	      type: String,
+	      required: true
+	    },
+	    isFileUploadEnabled: {
+	      type: Boolean,
+	      required: true
+	    }
+	  },
+	  methods: {
+	    loc(phraseCode) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode);
+	    }
+	  },
+	  template: `
+		<ChatTextarea
+			:dialogId="dialogId"
+			:placeholder="loc('IM_CONTENT_COPILOT_TEXTAREA_PLACEHOLDER')"
+			:withMarket="false"
+			:withEdit="false"
+			:withUploadMenu="isFileUploadEnabled"
+			:withSmileSelector="false"
+		>
+			<template #bottom-panel-buttons>
+				<ReasoningButton :dialogId="dialogId" />
+			</template>
+		</ChatTextarea>
+	`
+	};
+
+	// @vue/component
+	const CopilotContent = {
+	  name: 'CopilotContent',
+	  components: {
+	    BaseChatContent: im_v2_component_content_elements.BaseChatContent,
+	    CopilotChatHeader,
+	    CopilotTextarea
+	  },
+	  props: {
+	    dialogId: {
+	      type: String,
+	      default: ''
+	    }
+	  },
+	  computed: {
+	    isFileUploadEnabled() {
+	      return im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.isCopilotFileUploadAvailable);
+	    }
+	  },
+	  template: `
+		<BaseChatContent :dialogId="dialogId" :withDropArea="false">
+			<template #header>
+				<CopilotChatHeader :dialogId="dialogId" :key="dialogId" />
+			</template>
+			<template #textarea="{ onTextareaMount }">
+				<CopilotTextarea
+					:dialogId="dialogId"
+					:isFileUploadEnabled="isFileUploadEnabled"
+					:key="dialogId"
+					@mounted="onTextareaMount" 
+				/>
+			</template>
+		</BaseChatContent>
+	`
+	};
+
+	class McpHintService {
+	  sendSelectionHintOnce(authId) {
+	    im_v2_lib_logger.Logger.warn('McpHintService: sendSelectionHintOnce:', authId);
+	    const payload = {
+	      data: {
+	        authId
+	      }
+	    };
+	    return im_v2_lib_rest.runAction(im_v2_const.RestMethod.imV2McpSendSelectionHintOnce, payload).catch(errors => {
+	      const [firstError] = errors;
+	      console.error('McpHintService: sendSelectionHintOnce error:', errors);
+	      throw firstError;
+	    });
+	  }
+	}
+
+	const MAX_INTEGRATION_NAME_LENGTH = 20;
+	const MARTA_ANALYTICS_CONTEXT = 'marta_chat';
+
+	// @vue/component
+	const McpIntegration = {
+	  name: 'McpIntegration',
+	  components: {
+	    Chip: ui_system_chip_vue.Chip
+	  },
+	  data() {
+	    return {
+	      isSelectorOpened: false,
+	      mcpAuth: {
+	        id: null,
+	        name: null,
+	        icon: null
+	      }
+	    };
+	  },
+	  computed: {
+	    OutlineIcons: () => ui_iconSet_api_core.Outline,
+	    ChipDesign: () => ui_system_chip_vue.ChipDesign,
+	    ChipSize: () => ui_system_chip_vue.ChipSize,
+	    hasSelectedMcpAuth() {
+	      return this.mcpAuth.id !== null;
+	    },
+	    chipDesign() {
+	      if (this.hasSelectedMcpAuth) {
+	        return ui_system_chip_vue.ChipDesign.OutlineAccent2;
+	      }
+	      return ui_system_chip_vue.ChipDesign.Outline;
+	    },
+	    isAvailable() {
+	      return im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.aiAssistantMcpSelectorAvailable);
+	    },
+	    defaultIcon() {
+	      if (this.mcpIcon) {
+	        return null;
+	      }
+	      return ui_iconSet_api_core.Outline.APPS;
+	    },
+	    mcpIcon() {
+	      if (!this.mcpAuth.icon) {
+	        return null;
+	      }
+	      return {
+	        src: this.mcpAuth.icon,
+	        alt: ''
+	      };
+	    },
+	    chipName() {
+	      if (!this.mcpAuth.name) {
+	        return this.loc('IM_CONTENT_AI_ASSISTANT_MCP_INTEGRATIONS');
+	      }
+	      const needEllipsis = this.mcpAuth.name.length > MAX_INTEGRATION_NAME_LENGTH;
+	      if (needEllipsis) {
+	        return `${this.mcpAuth.name.slice(0, MAX_INTEGRATION_NAME_LENGTH)}...`;
+	      }
+	      return this.mcpAuth.name;
+	    }
+	  },
+	  beforeUnmount() {
+	    var _this$selector;
+	    this.clear();
+	    (_this$selector = this.selector) == null ? void 0 : _this$selector.destroy();
+	  },
+	  methods: {
+	    toggle() {
+	      im_v2_lib_analytics.Analytics.getInstance().aiAssistant.onMcpIntegrationClick();
+	      if (this.isSelectorOpened) {
+	        this.getSelector().hide();
+	        return;
+	      }
+	      this.getSelector().show();
+	    },
+	    getSelector() {
+	      if (this.selector) {
+	        return this.selector;
+	      }
+	      this.selector = new aiassistant_mcpSelector.McpSelector({
+	        context: MARTA_ANALYTICS_CONTEXT,
+	        targetNode: this.$refs.selector,
+	        dialogOptions: {
+	          popupOptions: {
+	            className: 'mcp-selector-dialog' // widget z-index fix
+	          }
+	        },
+
+	        entityOptions: {
+	          agentMode: false
+	        },
+	        events: {
+	          onSelect: event => {
+	            const {
+	              auth,
+	              mcp
+	            } = event.getData();
+	            if (!auth) {
+	              this.clear();
+	              return;
+	            }
+	            this.setMcpAuth({
+	              id: auth.id,
+	              name: auth.name,
+	              icon: mcp.iconUrl
+	            });
+	          },
+	          onHide: () => {
+	            this.isSelectorOpened = false;
+	          },
+	          onShow: () => {
+	            this.isSelectorOpened = true;
+	          }
+	        }
+	      });
+	      return this.selector;
+	    },
+	    setMcpAuth(mcpAuth) {
+	      this.mcpAuth = mcpAuth;
+	      this.$store.dispatch('aiAssistant/setMcpAuthId', this.mcpAuth.id);
+	      new McpHintService().sendSelectionHintOnce(this.mcpAuth.id);
+	    },
+	    clear() {
+	      this.mcpAuth = {
+	        id: null,
+	        name: null,
+	        icon: null
+	      };
+	      this.$store.dispatch('aiAssistant/setMcpAuthId', null);
+	    },
+	    onChipClearClick() {
+	      this.selector.clear();
+	      this.clear();
+	    },
+	    loc(phraseCode) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode);
+	    }
+	  },
+	  template: `
+		<span v-if="isAvailable" ref="selector" class="bx-im-mcp-integration__container">
+			<Chip
+				:text="chipName"
+				:rounded="true"
+				:size="ChipSize.Sm"
+				:dropdown="!hasSelectedMcpAuth"
+				:icon="defaultIcon"
+				:image="mcpIcon"
+				:design="chipDesign"
+				:withClear="hasSelectedMcpAuth"
+				@click="toggle"
+				@clear="onChipClearClick"
+			/>
+		</span>
+	`
+	};
+
+	class HealthCheckService {
+	  getEndpoint() {
+	    const langId = main_core.Loc.getMessage('LANGUAGE_ID');
+	    const {
+	      serviceHealthUrl
+	    } = im_v2_application_core.Core.getApplicationData();
+	    const url = new URL(serviceHealthUrl);
+	    url.searchParams.set('userLang', langId);
+	    return url.toString();
+	  }
+	  async getServiceHealthStatus() {
+	    const endpoint = this.getEndpoint();
+	    return new Promise(resolve => {
+	      main_core.ajax.get(endpoint, rawJson => {
+	        let response = {};
+	        try {
+	          response = JSON.parse(rawJson);
+	        } catch {
+	          resolve(null);
+	          return;
+	        }
+	        if (response.result !== 'error') {
+	          resolve(null);
+	          return;
+	        }
+	        resolve(response);
+	      });
+	    });
+	  }
+	}
+
+	const ICON_SIZE = 18;
+
+	// @vue/component
+	const ServiceHealthPanel = {
+	  components: {
+	    BIcon: ui_iconSet_api_vue.BIcon
+	  },
+	  data() {
+	    return {
+	      isShow: false,
+	      title: '',
+	      text: ''
+	    };
+	  },
+	  computed: {
+	    Color: () => im_v2_const.Color,
+	    OutlineIcons: () => ui_iconSet_api_vue.Outline,
+	    ICON_SIZE: () => ICON_SIZE,
+	    isServiceHealthPanelShown() {
+	      return im_v2_lib_healthCheck.HealthCheckManager.getInstance().getIsShown();
+	    },
+	    processedTitle() {
+	      return BX.util.strip_tags(this.title);
+	    },
+	    processedText() {
+	      return BX.util.strip_tags(this.text);
+	    }
+	  },
+	  async created() {
+	    if (this.isServiceHealthPanelShown) {
+	      return;
+	    }
+	    const data = await new HealthCheckService().getServiceHealthStatus();
+	    if (!data) {
+	      return;
+	    }
+	    this.setData(data);
+	    this.show();
+	  },
+	  methods: {
+	    setData(data) {
+	      const {
+	        statusTitle,
+	        statusInfo
+	      } = data;
+	      this.title = statusTitle;
+	      this.text = statusInfo;
+	    },
+	    show() {
+	      this.isShow = true;
+	    },
+	    hide() {
+	      this.isShow = false;
+	      im_v2_lib_healthCheck.HealthCheckManager.getInstance().setIsShown(true);
+	    }
+	  },
+	  template: `
+		<div v-if="isShow" class="bx-im-content-chat__service-health-panel">
+			<div class="bx-im-content-chat__service-health-panel_content">
+				<div
+					v-if="processedTitle"
+					:title="processedTitle"
+					class="bx-im-content-chat__service-health-panel_title --ellipsis"
+				>
+					{{ processedTitle }}
+				</div>
+				<div
+					v-if="processedText"
+					:title="processedText"
+					class="bx-im-content-chat__service-health-panel_text --line-clamp-4"
+				>
+					{{ processedText }}
+				</div>
+			</div>
+			<button
+				class="bx-im-content-chat__service-health-panel_close-button"
+				@click="hide"
+			>
+				<BIcon
+					:name="OutlineIcons.CROSS_M"
+					:color="Color.white"
+					:size="ICON_SIZE"
+					:hoverable="false"
+				/>
+			</button>
+		</div>
+	`
+	};
+
+	const AiAssistantBotContent = {
+	  name: 'AiAssistantBotContent',
+	  components: {
+	    BaseChatContent: im_v2_component_content_elements.BaseChatContent,
+	    ChatTextarea: im_v2_component_textarea.ChatTextarea,
+	    ServiceHealthPanel,
+	    McpIntegration
+	  },
+	  props: {
+	    dialogId: {
+	      type: String,
+	      required: true
+	    },
+	    withSidebar: {
+	      type: Boolean,
+	      default: true
+	    }
+	  },
+	  methods: {
+	    loc(phraseCode) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode);
+	    }
+	  },
+	  template: `
+		<BaseChatContent :dialogId="dialogId" :withSidebar="withSidebar" :withDropArea="false">
+			<template #header v-if="$slots['header']">
+				<slot name="header"></slot>
+			</template>
+			<template #sub-header>
+				<ServiceHealthPanel />
+			</template>
+			<template #textarea="{ onTextareaMount }">
+				<ChatTextarea
+					:dialogId="dialogId"
+					:key="dialogId"
+					:placeholder="loc('IM_CONTENT_AIASSISTANT_TEXTAREA_PLACEHOLDER_MSGVER_1')"
+					:withMarket="false"
+					:withEdit="false"
+					:withUploadMenu="false"
+					:withSmileSelector="false"
+					@mounted="onTextareaMount"
+				>
+					<template #bottom-panel-buttons>
+						<McpIntegration />
+					</template>
+				</ChatTextarea>
+			</template>
+		</BaseChatContent>
+	`
+	};
+
+	// @vue/component
+	const TaskCommentsCard = {
+	  name: 'TaskCommentsCard',
+	  props: {
+	    dialogId: {
+	      type: String,
+	      required: true
+	    }
+	  },
+	  computed: {
+	    dialog() {
+	      return this.$store.getters['chats/get'](this.dialogId, true);
+	    },
+	    taskId() {
+	      return Number(this.dialog.entityLink.id);
+	    }
+	  },
+	  watch: {
+	    dialogId(newValue, oldValue) {
+	      const chatSwitched = Boolean(newValue && oldValue);
+	      if (chatSwitched) {
+	        this.destroyTaskCard();
+	        void this.openTaskCard();
+	      }
+	    }
+	  },
+	  created() {
+	    void this.openTaskCard();
+	  },
+	  beforeUnmount() {
+	    this.destroyTaskCard();
+	  },
+	  methods: {
+	    async openTaskCard() {
+	      this.taskCardInstance = await tasks_v2_application_taskCard.TaskCard.embedFullCard({
+	        taskId: this.taskId
+	      });
+	      this.taskCardInstance.mount(this.$refs['task-card-container']);
+	    },
+	    destroyTaskCard() {
+	      this.taskCardInstance.unmount();
+	      this.taskCardInstance = null;
+	    }
+	  },
+	  template: `
+		<div ref="task-card-container" class="bx-im-task-comments-card__container"></div>
+	`
+	};
+
+	// @vue/component
+	const TaskCommentsHeader = {
+	  name: 'TaskCommentsHeader',
+	  components: {
+	    ChatHeader: im_v2_component_content_elements.ChatHeader
+	  },
+	  props: {
+	    dialogId: {
+	      type: String,
+	      default: ''
+	    },
+	    isTaskCardOpened: {
+	      type: Boolean,
+	      required: true
+	    }
+	  },
+	  emits: ['toggleTaskCard'],
+	  data() {
+	    return {
+	      compactMode: false
+	    };
+	  },
+	  computed: {
+	    isTaskCardAvailable() {
+	      return im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.isTaskCardAvailable);
+	    },
+	    needShowEntityLink() {
+	      return !this.isTaskCardAvailable;
+	    }
+	  },
+	  methods: {
+	    onCompactModeChange(compactMode) {
+	      this.compactMode = compactMode;
+	    },
+	    loc(phraseCode) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode);
+	    }
+	  },
+	  template: `
+		<ChatHeader 
+			:dialogId="dialogId" 
+			:withEntityLink="needShowEntityLink" 
+			@compactModeChange="onCompactModeChange"
+		>
+			<template v-if="isTaskCardAvailable" #after-actions>
+				<div 
+					@click="$emit('toggleTaskCard')" 
+					:class="['bx-im-task-comments-header-button__container', { '--active': isTaskCardOpened }]"
+				>
+					<div class="bx-im-task-comments-header-button__icon"></div>
+					<div :class="['bx-im-task-comments-header-button__title', { '--compact': compactMode }]">
+						{{ loc('IM_CONTENT_TASK_HEADER_BUTTON_TITLE') }}
+					</div>
+				</div>
+			</template>
+		</ChatHeader>
+	`
+	};
+
+	const TASK_CARD_WIDTH = 567;
+
+	// @vue/component
+	const TaskCommentsContent = {
+	  name: 'TaskCommentsContent',
+	  components: {
+	    BaseChatContent: im_v2_component_content_elements.BaseChatContent,
+	    TaskCommentsCard,
+	    TaskCommentsHeader,
+	    SidebarAnimation: im_v2_component_animation.SidebarAnimation
+	  },
+	  props: {
+	    dialogId: {
+	      type: String,
+	      required: true
+	    }
+	  },
+	  data() {
+	    return {
+	      isTaskCardOpened: im_v2_lib_localStorage.LocalStorageManager.getInstance().get(im_v2_const.LocalStorageKey.taskCommentsCardOpened, false)
+	    };
+	  },
+	  computed: {
+	    TASK_CARD_WIDTH: () => TASK_CARD_WIDTH,
+	    isTaskCardAvailable() {
+	      return im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.isTaskCardAvailable);
+	    }
+	  },
+	  methods: {
+	    toggleTaskCard() {
+	      if (this.isTaskCardOpened === false) {
+	        im_v2_lib_analytics.Analytics.getInstance().taskComments.onOpenCard(this.dialogId);
+	      }
+	      this.isTaskCardOpened = !this.isTaskCardOpened;
+	      this.saveTaskCardOpenedState();
+	    },
+	    saveTaskCardOpenedState() {
+	      const WRITE_TO_STORAGE_TIMEOUT = 200;
+	      clearTimeout(this.saveTaskCardStateTimeout);
+	      this.saveTaskCardStateTimeout = setTimeout(() => {
+	        im_v2_lib_localStorage.LocalStorageManager.getInstance().set(im_v2_const.LocalStorageKey.taskCommentsCardOpened, this.isTaskCardOpened);
+	      }, WRITE_TO_STORAGE_TIMEOUT);
+	    }
+	  },
+	  template: `
+		<BaseChatContent :dialogId="dialogId">
+			<template #header>
+				<TaskCommentsHeader
+					:dialogId="dialogId"
+					:isTaskCardOpened="isTaskCardOpened"
+					@toggleTaskCard="toggleTaskCard"
+				/>
+			</template>
+			<template #extra-panel>
+				<SidebarAnimation :width="TASK_CARD_WIDTH">
+					<TaskCommentsCard
+						v-if="isTaskCardAvailable && isTaskCardOpened"
+						:dialogId="dialogId"
+					/>
+				</SidebarAnimation>
+			</template>
+		</BaseChatContent>
+	`
+	};
+
+	// @vue/component
+	const FeatureBlock = {
+	  name: 'FeatureBlock',
+	  props: {
+	    name: {
+	      type: String,
+	      required: true
+	    },
+	    title: {
+	      type: String,
+	      required: true
+	    },
+	    subtitle: {
+	      type: String,
+	      required: true
+	    }
+	  },
+	  template: `
+		<div class="bx-im-content-chat-start__block">
+			<div class="bx-im-content-chat-start__block_icon" :class="'--' + name"></div>
+			<div class="bx-im-content-chat-start__block_content">
+				<div class="bx-im-content-chat-start__block_title">
+					{{ title }}
+				</div>
+				<div class="bx-im-content-chat-start__block_subtitle">
+					{{ subtitle }}
+				</div>
+			</div>
+		</div>
+	`
+	};
+
+	const IconClass = {
+	  group: '--group',
+	  chat: '--chat',
+	  list: '--list'
+	};
+	const EmptyStateListItemName = {
+	  audio: 'audio',
+	  messages: 'messages',
+	  chat: 'chat',
+	  collaboration: 'collaboration',
+	  business: 'business',
+	  result: 'result'
+	};
 	// @vue/component
 	const BaseEmptyState = {
+	  components: {
+	    FeatureBlock
+	  },
 	  props: {
 	    text: {
 	      type: String,
@@ -835,11 +1917,25 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    backgroundId: {
 	      type: [String, Number],
 	      default: ''
+	    },
+	    listItems: {
+	      type: Array,
+	      default: () => []
+	    },
+	    iconClassName: {
+	      type: String,
+	      default: ''
 	    }
 	  },
 	  computed: {
+	    items() {
+	      return this.listItems;
+	    },
 	    iconClass() {
-	      return this.isEmptyRecent ? '--empty' : '--default';
+	      if (this.iconClassName) {
+	        return this.iconClassName;
+	      }
+	      return this.isEmptyRecent ? IconClass.group : IconClass.chat;
 	    },
 	    preparedText() {
 	      if (this.text) {
@@ -857,7 +1953,10 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      return '';
 	    },
 	    isEmptyRecent() {
-	      return im_v2_provider_service.RecentService.getInstance().getCollection().length === 0;
+	      const recentCollection = im_v2_application_core.Core.getStore().getters['recent/getCollection']({
+	        type: im_v2_const.RecentType.default
+	      });
+	      return recentCollection.length === 0;
 	    },
 	    backgroundStyle() {
 	      if (main_core.Type.isStringFilled(this.backgroundId) || main_core.Type.isNumber(this.backgroundId)) {
@@ -881,6 +1980,15 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 				<div v-if="preparedSubtext" class="bx-im-content-chat-start__subtitle">
 					{{ preparedSubtext }}
 				</div>
+				<div v-if="items.length > 0" class="bx-im-content-chat-start__blocks">
+					<FeatureBlock
+						v-for="item in items"
+						:name="item.name"
+						:title="item.title"
+						:subtitle="item.subtitle"
+					/>
+				</div>
+				<slot name="bottom-content"></slot>
 			</div>
 		</div>
 	`
@@ -910,81 +2018,103 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	`
 	};
 
-	class UserService {
-	  async updateLastActivityDate(userId) {
-	    if (this.isPullServerWithUserStatusSupport()) {
-	      const lastActivityDate = await this.getUserActivityFromPull(userId);
-	      if (!lastActivityDate) {
-	        return Promise.resolve();
-	      }
-	      return this.updateUserModel(userId, {
-	        lastActivityDate
-	      });
-	    }
-	    const userData = await this.requestUserData(userId);
-	    return this.updateUserModel(userId, userData);
-	  }
-	  async getUserActivityFromPull(userId) {
-	    const result = await im_v2_application_core.Core.getPullClient().getUsersLastSeen([userId]).catch(error => {
-	      // eslint-disable-next-line no-console
-	      console.error('UserService: error getting user activity from P&P', error);
-	    });
-	    if (!main_core.Type.isNumber(result[userId])) {
-	      return null;
-	    }
-	    const activityDateAgo = result[userId] * 1000;
-	    return new Date(Date.now() - activityDateAgo);
-	  }
-	  async requestUserData(userId) {
-	    im_v2_lib_logger.Logger.warn(`UserService: get actual user data for - ${userId}`);
-	    const answer = await im_v2_application_core.Core.getRestClient().callMethod(im_v2_const.RestMethod.imUserGet, {
-	      ID: userId
-	    }).catch(error => {
-	      // eslint-disable-next-line no-console
-	      console.error('UserService: error getting user data', error);
-	    });
-	    return answer.data();
-	  }
-	  async updateUserModel(userId, userFields) {
-	    im_v2_lib_logger.Logger.warn('UserService: update user data', userFields);
-	    return im_v2_application_core.Core.getStore().dispatch('users/update', {
-	      id: userId,
-	      fields: userFields
-	    });
-	  }
-	  isPullServerWithUserStatusSupport() {
-	    return im_v2_application_core.Core.getPullClient().isJsonRpc();
-	  }
-	}
+	const SHOWCASE_TOOLS_PHRASES = [main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_CHATS'), main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_CALLS'), main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_CHANNELS'), main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_DOCS'), main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_TASKS'), main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_CALENDAR'), main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_FILES'), main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TOOL_BOARDS')];
 
 	// @vue/component
-	const FeatureBlock = {
-	  name: 'FeatureBlock',
-	  props: {
-	    name: {
-	      type: String,
-	      required: true
+	const EmbeddedChatPromoEmptyState = {
+	  name: 'EmbeddedChatPromoEmptyState',
+	  computed: {
+	    SHOWCASE_TOOLS_PHRASES: () => SHOWCASE_TOOLS_PHRASES,
+	    canInviteUsers() {
+	      return im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.intranetInviteAvailable);
 	    },
-	    title: {
-	      type: String,
-	      required: true
+	    preparedTitle() {
+	      return main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_TITLE', {
+	        '[color]': '<span class="--brand-accent-with-icon">',
+	        '[/color]': '</span>'
+	      });
 	    },
-	    subtitle: {
-	      type: String,
-	      required: true
+	    preparedInviteText() {
+	      const openInviteSliderHandler = 'BX.Messenger.v2.Lib.InviteManager.openInviteSlider()';
+	      return main_core.Loc.getMessage('IM_CONTENT_EMBEDDED_CHAT_START_FEATURE_INVITE_MSGVER_2', {
+	        '[action]': `<span class="bx-im-embedded-promo-start__invite-action" onclick="${openInviteSliderHandler}">`,
+	        '[/action]': '</span>'
+	      });
+	    }
+	  },
+	  mounted() {
+	    void im_v2_lib_promo.PromoManager.getInstance().markAsWatched(im_v2_const.PromoId.embeddedChatEmptyState);
+	  },
+	  methods: {
+	    loc(phraseCode, replacements = {}) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
 	    }
 	  },
 	  template: `
-		<div class="bx-im-content-collab-start__block">
-			<div class="bx-im-content-collab-start__block_icon" :class="'--' + name"></div>
-			<div class="bx-im-content-collab-start__block_content">
-				<div class="bx-im-content-collab-start__block_title">
-					{{ title }}
-				</div>
-				<div class="bx-im-content-collab-start__block_subtitle">
-					{{ subtitle }}
-				</div>
+		<div class="bx-im-embedded-promo-start__container">
+			<div class="bx-im-embedded-promo-start__title" v-html="preparedTitle"></div>
+			<div class="bx-im-embedded-promo-start__tools">
+				<div
+					v-for="tool in SHOWCASE_TOOLS_PHRASES"
+					:key="tool"
+					class="bx-im-embedded-promo-start__tools_item"
+				>{{ tool }}</div>
 			</div>
+			<div class="bx-im-embedded-promo-start__content">
+				<div class="bx-im-embedded-promo-start__features">
+					<div class="bx-im-embedded-promo-start__features_content">
+						<div class="bx-im-embedded-promo-start__feature_item">
+							<div class="bx-im-embedded-promo-start__feature_icon --people"></div>
+							<div class="bx-im-embedded-promo-start__feature_text">{{ loc('IM_CONTENT_EMBEDDED_CHAT_START_FEATURE_EASE') }}</div>
+						</div>
+						<div class="bx-im-embedded-promo-start__feature_item">
+							<div class="bx-im-embedded-promo-start__feature_icon --shield"></div>
+							<div class="bx-im-embedded-promo-start__feature_text">{{ loc('IM_CONTENT_EMBEDDED_CHAT_START_FEATURE_SAFETY') }}</div>
+						</div>
+						<div class="bx-im-embedded-promo-start__feature_item">
+							<div class="bx-im-embedded-promo-start__feature_icon --ai"></div>
+							<div class="bx-im-embedded-promo-start__feature_text">{{ loc('IM_CONTENT_EMBEDDED_CHAT_START_FEATURE_AI') }}</div>
+						</div>
+					</div>
+					<div v-if="canInviteUsers" v-html="preparedInviteText" class="bx-im-embedded-promo-start__invite_item"></div>
+				</div>
+				<div class="bx-im-embedded-promo-start__image"></div>
+			</div>
+		</div>
+	`
+	};
+
+	// @vue/component
+	const EmbeddedChatEmptyState = {
+	  name: 'EmbeddedChatEmptyState',
+	  computed: {
+	    canInviteUsers() {
+	      return im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.intranetInviteAvailable);
+	    }
+	  },
+	  methods: {
+	    onInviteActionClick() {
+	      const analyticsContext = im_v2_lib_analytics.Analytics.getInstance().sliderInvite.getEmptyStateContext();
+	      im_v2_lib_invite.InviteManager.openInviteSlider(analyticsContext);
+	    },
+	    loc(phraseCode, replacements = {}) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+	    }
+	  },
+	  template: `
+		<div class="bx-im-embedded-chat-start__container">
+			<div class="bx-im-embedded-chat-start__image"></div>
+			<div class="bx-im-embedded-chat-start__title">
+				{{ loc('IM_CONTENT_EMBEDDED_CHAT_START_FEATURE_SUBTITLE') }}
+			</div>
+			<template v-if="canInviteUsers">
+				<div class="bx-im-embedded-chat-start__separator_text">
+					{{ loc('IM_CONTENT_EMBEDDED_CHAT_START_SEPARATOR_TEXT') }}
+				</div>
+				<div @click="onInviteActionClick" class="bx-im-embedded-chat-start__invite">
+					{{ loc('IM_CONTENT_EMBEDDED_CHAT_START_INVITE_ACTION') }}
+				</div>
+			</template>
 		</div>
 	`
 	};
@@ -993,11 +2123,13 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	const CollabEmptyState = {
 	  name: 'CollabEmptyState',
 	  components: {
-	    FeatureBlock,
-	    MessengerButton: im_v2_component_elements.Button
+	    ChatButton: im_v2_component_elements_button.ChatButton,
+	    BaseEmptyState
 	  },
 	  computed: {
-	    ButtonSize: () => im_v2_component_elements.ButtonSize,
+	    ButtonSize: () => im_v2_component_elements_button.ButtonSize,
+	    IconClass: () => IconClass,
+	    SpecialBackground: () => im_v2_lib_theme.SpecialBackground,
 	    canCreateCollab() {
 	      const isAvailable = im_v2_lib_feature.FeatureManager.isFeatureAvailable(im_v2_lib_feature.Feature.collabCreationAvailable);
 	      const canCreate = im_v2_lib_permission.PermissionManager.getInstance().canPerformActionByUserType(im_v2_const.ActionByUserType.createCollab);
@@ -1013,12 +2145,45 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	        textHoverColor: im_v2_const.Color.collab70
 	      };
 	    },
+	    collaberEmptyStateListItems() {
+	      return [{
+	        title: this.loc('IM_CONTENT_COLLAB_START_BLOCK_COLLABER_TITLE_1'),
+	        subtitle: this.loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_1'),
+	        name: EmptyStateListItemName.collaboration
+	      }, {
+	        title: this.loc('IM_CONTENT_COLLAB_START_BLOCK_COLLABER_TITLE_2'),
+	        subtitle: this.loc('IM_CONTENT_COLLAB_START_BLOCK_COLLABER_SUBTITLE_2'),
+	        name: EmptyStateListItemName.business
+	      }, {
+	        title: this.loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_3'),
+	        subtitle: this.loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_3'),
+	        name: EmptyStateListItemName.result
+	      }];
+	    },
+	    baseEmptyStateListItems() {
+	      return [{
+	        title: this.loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_1'),
+	        subtitle: this.loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_1'),
+	        name: EmptyStateListItemName.collaboration
+	      }, {
+	        title: this.loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_2'),
+	        subtitle: this.loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_2'),
+	        name: EmptyStateListItemName.business
+	      }, {
+	        title: this.loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_3'),
+	        subtitle: this.loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_3'),
+	        name: EmptyStateListItemName.result
+	      }];
+	    },
+	    emptyStateListItems() {
+	      if (this.isCurrentUserCollaber) {
+	        return this.collaberEmptyStateListItems;
+	      }
+	      return this.baseEmptyStateListItems;
+	    },
 	    isCurrentUserCollaber() {
 	      const currentUser = this.$store.getters['users/get'](im_v2_application_core.Core.getUserId(), true);
 	      return currentUser.type === im_v2_const.UserType.collaber;
-	    },
-	    backgroundStyle() {
-	      return im_v2_lib_theme.ThemeManager.getBackgroundStyleById(im_v2_lib_theme.SpecialBackground.collab);
 	    }
 	  },
 	  methods: {
@@ -1031,47 +2196,14 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  template: `
-		<div class="bx-im-content-collab-start__container" :style="backgroundStyle">
-			<div class="bx-im-content-collab-start__content">
-				<div class="bx-im-content-collab-start__image"></div>
-				<div class="bx-im-content-collab-start__title">
-					{{ loc('IM_CONTENT_COLLAB_START_TITLE_V2') }}
-				</div>
-				<div v-if="isCurrentUserCollaber" class="bx-im-content-collab-start__blocks">
-					<FeatureBlock
-						:title="loc('IM_CONTENT_COLLAB_START_BLOCK_COLLABER_TITLE_1')"
-						:subtitle="loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_1')"
-						name="collaboration"
-					/>
-					<FeatureBlock
-						:title="loc('IM_CONTENT_COLLAB_START_BLOCK_COLLABER_TITLE_2')"
-						:subtitle="loc('IM_CONTENT_COLLAB_START_BLOCK_COLLABER_SUBTITLE_2')"
-						name="business"
-					/>
-					<FeatureBlock
-						:title="loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_3')"
-						:subtitle="loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_3')"
-						name="result"
-					/>
-				</div>
-				<div v-else class="bx-im-content-collab-start__blocks">
-					<FeatureBlock
-						:title="loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_1')"
-						:subtitle="loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_1')"
-						name="collaboration"
-					/>
-					<FeatureBlock
-						:title="loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_2')"
-						:subtitle="loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_2')"
-						name="business"
-					/>
-					<FeatureBlock
-						:title="loc('IM_CONTENT_COLLAB_START_BLOCK_TITLE_3')"
-						:subtitle="loc('IM_CONTENT_COLLAB_START_BLOCK_SUBTITLE_3')"
-						name="result"
-					/>
-				</div>
-				<MessengerButton
+		<BaseEmptyState
+			:text="loc('IM_CONTENT_COLLAB_START_TITLE_V2')"
+			:backgroundId="SpecialBackground.collab"
+			:listItems="emptyStateListItems"
+			:iconClassName="IconClass.list"
+		>
+			<template #bottom-content>
+				<ChatButton
 					v-if="canCreateCollab"
 					:size="ButtonSize.XXL"
 					:customColorScheme="createButtonColorScheme"
@@ -1079,29 +2211,196 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 					:isRounded="true"
 					@click="onCreateClick"
 				/>
+			</template>
+		</BaseEmptyState>
+	`
+	};
+
+	const BUTTON_BACKGROUND_COLOR = '#fff';
+	const BUTTON_HOVER_COLOR = '#eee';
+	const BUTTON_TEXT_COLOR = 'rgba(82, 92, 105, 0.9)';
+
+	// @vue/component
+	const CopilotEmptyState = {
+	  name: 'CopilotEmptyState',
+	  components: {
+	    ChatButton: im_v2_component_elements_button.ChatButton
+	  },
+	  data() {
+	    return {
+	      isCreatingChat: false
+	    };
+	  },
+	  computed: {
+	    ButtonSize: () => im_v2_component_elements_button.ButtonSize,
+	    backgroundStyle() {
+	      return im_v2_lib_theme.ThemeManager.getBackgroundStyleById(im_v2_lib_theme.SpecialBackground.copilot);
+	    },
+	    preparedText() {
+	      return this.loc('IM_CONTENT_COPILOT_EMPTY_STATE_MESSAGE_MSGVER_2', {
+	        '#BR#': '\n',
+	        '#COPILOT_NAME#': this.copilotManager.getName()
+	      });
+	    },
+	    buttonColorScheme() {
+	      return {
+	        borderColor: im_v2_const.Color.transparent,
+	        backgroundColor: BUTTON_BACKGROUND_COLOR,
+	        iconColor: BUTTON_TEXT_COLOR,
+	        textColor: BUTTON_TEXT_COLOR,
+	        hoverColor: BUTTON_HOVER_COLOR
+	      };
+	    }
+	  },
+	  created() {
+	    this.copilotManager = new im_v2_lib_copilot.CopilotManager();
+	  },
+	  methods: {
+	    async createDefaultChat() {
+	      this.isCreatingChat = true;
+	      try {
+	        const newDialogId = await this.getCopilotService().createDefaultChat();
+	        this.isCreatingChat = false;
+	        void im_public.Messenger.openCopilot(newDialogId);
+	      } catch {
+	        this.isCreatingChat = false;
+	      }
+	    },
+	    getCopilotService() {
+	      if (!this.copilotService) {
+	        this.copilotService = new im_v2_provider_service_copilot.CopilotService();
+	      }
+	      return this.copilotService;
+	    },
+	    loc(phraseCode, replacements = {}) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+	    }
+	  },
+	  template: `
+		<div class="bx-im-content-copilot-empty-state__container" :style="backgroundStyle">
+			<div class="bx-im-content-copilot-empty-state__content">
+				<div class="bx-im-content-copilot-empty-state__icon"></div>
+				<div class="bx-im-content-copilot-empty-state__text">{{ preparedText }}</div>
+				<ChatButton
+					class="--black-loader"
+					:size="ButtonSize.XL"
+					:customColorScheme="buttonColorScheme"
+					:text="loc('IM_CONTENT_COPILOT_EMPTY_STATE_ASK_QUESTION')"
+					:isRounded="true"
+					:isLoading="isCreatingChat"
+					@click="createDefaultChat"
+				/>
 			</div>
 		</div>
 	`
 	};
 
-	const EmptyStateComponentByLayout = {
-	  [im_v2_const.Layout.channel.name]: ChannelEmptyState,
-	  [im_v2_const.Layout.collab.name]: CollabEmptyState,
-	  default: BaseEmptyState
+	// @vue/component
+	const TaskEmptyState = {
+	  name: 'TaskFeatureListEmptyState',
+	  components: {
+	    BaseEmptyState
+	  },
+	  computed: {
+	    IconClass: () => IconClass,
+	    emptyStateListItems() {
+	      return [{
+	        title: this.loc('IM_CONTENT_TASK_START_FEATURE_LIST_BLOCK_TITLE_1'),
+	        subtitle: this.loc('IM_CONTENT_TASK_START_FEATURE_LIST_BLOCK_SUBTITLE_1'),
+	        name: EmptyStateListItemName.audio
+	      }, {
+	        title: this.loc('IM_CONTENT_TASK_START_FEATURE_LIST_BLOCK_TITLE_2'),
+	        subtitle: this.loc('IM_CONTENT_TASK_START_FEATURE_LIST_BLOCK_SUBTITLE_2'),
+	        name: EmptyStateListItemName.messages
+	      }, {
+	        title: this.loc('IM_CONTENT_TASK_START_FEATURE_LIST_BLOCK_TITLE_3'),
+	        subtitle: this.loc('IM_CONTENT_TASK_START_FEATURE_LIST_BLOCK_SUBTITLE_3'),
+	        name: EmptyStateListItemName.chat
+	      }];
+	    }
+	  },
+	  methods: {
+	    loc(phraseCode) {
+	      return this.$Bitrix.Loc.getMessage(phraseCode);
+	    }
+	  },
+	  template: `
+		<BaseEmptyState
+			:text="loc('IM_CONTENT_TASK_START_FEATURE_LIST_TITLE')"
+			:listItems="emptyStateListItems"
+			:iconClassName="IconClass.list"
+		/>
+	`
 	};
+
+	var _getUserActivityFromPull = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getUserActivityFromPull");
+	var _requestUserData = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("requestUserData");
+	var _updateUserModel = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("updateUserModel");
+	var _isPullServerWithUserStatusSupport = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("isPullServerWithUserStatusSupport");
+	class UserService {
+	  constructor() {
+	    Object.defineProperty(this, _isPullServerWithUserStatusSupport, {
+	      value: _isPullServerWithUserStatusSupport2
+	    });
+	    Object.defineProperty(this, _updateUserModel, {
+	      value: _updateUserModel2
+	    });
+	    Object.defineProperty(this, _requestUserData, {
+	      value: _requestUserData2
+	    });
+	    Object.defineProperty(this, _getUserActivityFromPull, {
+	      value: _getUserActivityFromPull2
+	    });
+	  }
+	  async updateLastActivityDate(userId) {
+	    if (babelHelpers.classPrivateFieldLooseBase(this, _isPullServerWithUserStatusSupport)[_isPullServerWithUserStatusSupport]()) {
+	      const lastActivityDate = await babelHelpers.classPrivateFieldLooseBase(this, _getUserActivityFromPull)[_getUserActivityFromPull](userId);
+	      if (!lastActivityDate) {
+	        return;
+	      }
+	      babelHelpers.classPrivateFieldLooseBase(this, _updateUserModel)[_updateUserModel](userId, {
+	        lastActivityDate
+	      });
+	      return;
+	    }
+	    const userData = await babelHelpers.classPrivateFieldLooseBase(this, _requestUserData)[_requestUserData](userId);
+	    babelHelpers.classPrivateFieldLooseBase(this, _updateUserModel)[_updateUserModel](userId, userData);
+	  }
+	}
+	async function _getUserActivityFromPull2(userId) {
+	  const result = await im_v2_application_core.Core.getPullClient().getUsersLastSeen([userId]).catch(error => {
+	    console.error('UserService: error getting user activity from P&P', error);
+	    throw error;
+	  });
+	  if (!main_core.Type.isNumber(result[userId])) {
+	    return null;
+	  }
+	  const activityDateAgo = result[userId] * 1000;
+	  return new Date(Date.now() - activityDateAgo);
+	}
+	async function _requestUserData2(userId) {
+	  im_v2_lib_logger.Logger.warn(`UserService: get actual user data for - ${userId}`);
+	  const answer = await im_v2_application_core.Core.getRestClient().callMethod(im_v2_const.RestMethod.imUserGet, {
+	    ID: userId
+	  }).catch(result => {
+	    console.error('UserService: error getting user data', result.error());
+	  });
+	  return answer.data();
+	}
+	async function _updateUserModel2(userId, userFields) {
+	  im_v2_lib_logger.Logger.warn('UserService: update user data', userFields);
+	  void im_v2_application_core.Core.getStore().dispatch('users/update', {
+	    id: userId,
+	    fields: userFields
+	  });
+	}
+	function _isPullServerWithUserStatusSupport2() {
+	  return im_v2_application_core.Core.getPullClient().isJsonRpc();
+	}
 
 	// @vue/component
 	const ChatOpener = {
 	  name: 'ChatOpener',
-	  components: {
-	    BaseChatContent: im_v2_component_content_elements.BaseChatContent,
-	    ChannelContent,
-	    CollabContent,
-	    MultidialogContent,
-	    EmptyState: BaseEmptyState,
-	    ChannelEmptyState,
-	    NotesContent
-	  },
 	  props: {
 	    dialogId: {
 	      type: String,
@@ -1128,15 +2427,70 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    isMultidialog() {
 	      return this.$store.getters['sidebar/multidialog/isSupport'](this.dialogId);
 	    },
-	    isNotes() {
-	      return Number.parseInt(this.dialogId, 10) === im_v2_application_core.Core.getUserId();
+	    isSelfChat() {
+	      return this.$store.getters['chats/isSelfChat'](this.dialogId);
+	    },
+	    isCopilot() {
+	      return this.dialog.type === im_v2_const.ChatType.copilot;
+	    },
+	    isAiAssistantBot() {
+	      return this.$store.getters['users/bots/isAiAssistant'](this.dialogId);
+	    },
+	    isTaskComments() {
+	      return this.dialog.type === im_v2_const.ChatType.taskComments;
 	    },
 	    isGuest() {
 	      return this.dialog.role === im_v2_const.UserRole.guest;
 	    },
+	    contentComponentConfig() {
+	      return [{
+	        condition: this.isChannel,
+	        component: ChannelContent
+	      }, {
+	        condition: this.isCollab,
+	        component: CollabContent
+	      }, {
+	        condition: this.isMultidialog,
+	        component: MultidialogContent
+	      }, {
+	        condition: this.isSelfChat,
+	        component: SelfChatContent
+	      }, {
+	        condition: this.isCopilot,
+	        component: CopilotContent
+	      }, {
+	        condition: this.isAiAssistantBot,
+	        component: AiAssistantBotContent
+	      }, {
+	        condition: this.isTaskComments,
+	        component: TaskCommentsContent
+	      }];
+	    },
+	    contentComponent() {
+	      const matchingItem = this.contentComponentConfig.find(item => {
+	        return item.condition === true;
+	      });
+	      return matchingItem ? matchingItem.component : im_v2_component_content_elements.BaseChatContent;
+	    },
 	    emptyStateComponent() {
 	      var _EmptyStateComponentB;
+	      const EmptyStateComponentByLayout = {
+	        [im_v2_const.Layout.channel]: ChannelEmptyState,
+	        [im_v2_const.Layout.collab]: CollabEmptyState,
+	        [im_v2_const.Layout.copilot]: CopilotEmptyState,
+	        [im_v2_const.Layout.chat]: this.chatEmptyStateComponent,
+	        [im_v2_const.Layout.taskComments]: TaskEmptyState,
+	        default: BaseEmptyState
+	      };
 	      return (_EmptyStateComponentB = EmptyStateComponentByLayout[this.layout.name]) != null ? _EmptyStateComponentB : EmptyStateComponentByLayout.default;
+	    },
+	    chatEmptyStateComponent() {
+	      const isEmbeddedMode = im_v2_lib_layout.LayoutManager.getInstance().isEmbeddedMode();
+	      const needToShowPromoEmptyState = im_v2_lib_promo.PromoManager.getInstance().needToShow(im_v2_const.PromoId.embeddedChatEmptyState);
+	      if (!isEmbeddedMode) {
+	        return BaseEmptyState;
+	      }
+	      return needToShowPromoEmptyState ? EmbeddedChatPromoEmptyState : EmbeddedChatEmptyState;
 	    }
 	  },
 	  watch: {
@@ -1159,7 +2513,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      if (im_v2_lib_utils.Utils.dialog.isExternalId(this.dialogId)) {
 	        const realDialogId = await this.getChatService().prepareDialogId(this.dialogId);
 	        void im_v2_lib_layout.LayoutManager.getInstance().setLayout({
-	          name: im_v2_const.Layout.chat.name,
+	          name: im_v2_const.Layout.chat,
 	          entityId: realDialogId,
 	          contextId: this.layout.contextId
 	        });
@@ -1169,7 +2523,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	        im_v2_lib_logger.Logger.warn(`ChatContent: chat ${this.dialogId} is already loaded`);
 	        if (this.isUser) {
 	          const userId = parseInt(this.dialog.dialogId, 10);
-	          void this.getUserService().updateLastActivityDate(userId);
+	          this.getUserService().updateLastActivityDate(userId);
 	        } else if (this.isChannel && !this.isGuest) {
 	          im_v2_lib_logger.Logger.warn(`ChatContent: channel ${this.dialogId} is loaded, loading comments metadata`);
 	          void this.getChatService().loadCommentInfo(this.dialogId);
@@ -1191,48 +2545,30 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    async loadChatWithContext() {
 	      im_v2_lib_logger.Logger.warn(`ChatContent: loading chat ${this.dialogId} with context - ${this.layout.contextId}`);
-	      await this.getChatService().loadChatWithContext(this.dialogId, this.layout.contextId).catch(errors => {
-	        this.sendAnalytics(errors);
-	        this.handleChatLoadError(errors);
-	        im_v2_lib_logger.Logger.error(errors);
+	      await this.getChatService().loadChatWithContext(this.dialogId, this.layout.contextId).catch(error => {
+	        this.sendAnalytics(error);
 	        im_public.Messenger.openChat();
 	      });
 	      im_v2_lib_logger.Logger.warn(`ChatContent: chat ${this.dialogId} is loaded with context of ${this.layout.contextId}`);
 	    },
 	    async loadChat() {
 	      im_v2_lib_logger.Logger.warn(`ChatContent: loading chat ${this.dialogId}`);
-	      await this.getChatService().loadChatWithMessages(this.dialogId).catch(errors => {
-	        this.handleChatLoadError(errors);
-	        im_v2_lib_logger.Logger.error(errors);
+	      await this.getChatService().loadChatWithMessages(this.dialogId).catch(() => {
 	        im_public.Messenger.openChat();
 	      });
 	      im_v2_lib_logger.Logger.warn(`ChatContent: chat ${this.dialogId} is loaded`);
 	    },
-	    handleChatLoadError(errors) {
-	      const [firstError] = errors;
-	      if (firstError.code === im_v2_lib_access.AccessErrorCode.accessDenied) {
-	        this.showNotification(this.loc('IM_CONTENT_CHAT_ACCESS_ERROR_MSGVER_1'));
-	      } else if (firstError.code === im_v2_lib_access.AccessErrorCode.messageNotFound) {
-	        this.showNotification(this.loc('IM_CONTENT_CHAT_CONTEXT_MESSAGE_NOT_FOUND'));
-	      }
-	    },
-	    sendAnalytics(errors) {
-	      const [firstError] = errors;
-	      if (firstError.code !== im_v2_lib_access.AccessErrorCode.messageNotFound) {
+	    sendAnalytics(error) {
+	      if (error.code !== im_v2_const.ErrorCode.message.notFound) {
 	        return;
 	      }
 	      im_v2_lib_analytics.Analytics.getInstance().messageDelete.onNotFoundNotification({
 	        dialogId: this.dialogId
 	      });
 	    },
-	    showNotification(text) {
-	      BX.UI.Notification.Center.notify({
-	        content: text
-	      });
-	    },
 	    getChatService() {
 	      if (!this.chatService) {
-	        this.chatService = new im_v2_provider_service.ChatService();
+	        this.chatService = new im_v2_provider_service_chat.ChatService();
 	      }
 	      return this.chatService;
 	    },
@@ -1249,11 +2585,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  template: `
 		<div class="bx-im-content-default-chat__container">
 			<component :is="emptyStateComponent" v-if="!dialogId" />
-			<ChannelContent v-else-if="isChannel" :dialogId="dialogId" />
-			<CollabContent v-else-if="isCollab" :dialogId="dialogId" />
-			<MultidialogContent v-else-if="isMultidialog" :dialogId="dialogId" />
-			<NotesContent v-else-if="isNotes" :dialogId="dialogId" />
-			<BaseChatContent v-else :dialogId="dialogId" />
+			<component :is="contentComponent" v-else :dialogId="dialogId" />
 		</div>
 	`
 	};
@@ -1262,7 +2594,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	const SubscribeToggle = {
 	  name: 'SubscribeToggle',
 	  components: {
-	    Toggle: im_v2_component_elements.Toggle
+	    Toggle: im_v2_component_elements_toggle.Toggle
 	  },
 	  props: {
 	    dialogId: {
@@ -1274,7 +2606,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    return {};
 	  },
 	  computed: {
-	    ToggleSize: () => im_v2_component_elements.ToggleSize,
+	    ToggleSize: () => im_v2_component_elements_toggle.ToggleSize,
 	    dialog() {
 	      return this.$store.getters['chats/get'](this.dialogId, true);
 	    },
@@ -1288,10 +2620,10 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  methods: {
 	    onToggleClick() {
 	      if (this.isSubscribed) {
-	        im_v2_provider_service.CommentsService.unsubscribe(this.postMessageId);
+	        im_v2_provider_service_comments.CommentsService.unsubscribe(this.postMessageId);
 	        return;
 	      }
-	      im_v2_provider_service.CommentsService.subscribe(this.postMessageId);
+	      im_v2_provider_service_comments.CommentsService.subscribe(this.postMessageId);
 	    },
 	    loc(phraseCode) {
 	      return this.$Bitrix.Loc.getMessage(phraseCode);
@@ -1310,7 +2642,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  name: 'CommentsHeader',
 	  components: {
 	    ChatHeader: im_v2_component_content_elements.ChatHeader,
-	    ChatAvatar: im_v2_component_elements.ChatAvatar,
+	    ChatAvatar: im_v2_component_elements_avatar.ChatAvatar,
 	    SubscribeToggle
 	  },
 	  props: {
@@ -1324,7 +2656,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  computed: {
-	    AvatarSize: () => im_v2_component_elements.AvatarSize,
+	    AvatarSize: () => im_v2_component_elements_avatar.AvatarSize,
 	    channel() {
 	      return this.$store.getters['chats/get'](this.channelId, true);
 	    },
@@ -1334,7 +2666,10 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  },
 	  methods: {
 	    onBackClick() {
-	      main_core_events.EventEmitter.emit(im_v2_const.EventType.dialog.closeComments);
+	      this.getEmitter().emit(im_v2_const.EventType.dialog.closeComments);
+	    },
+	    getEmitter() {
+	      return this.$Bitrix.eventEmitter;
 	    },
 	    loc(phraseCode) {
 	      return this.$Bitrix.Loc.getMessage(phraseCode);
@@ -1351,7 +2686,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 					<div class="bx-im-comment-header__title">{{ loc('IM_CONTENT_COMMENTS_HEADER_TITLE') }}</div>
 					<div class="bx-im-comment-header__subtitle">
 						<div class="bx-im-comment-header__subtitle_avatar">
-							<ChatAvatar :avatarDialogId="channelId" :contextDialogId="channelId" :size="AvatarSize.XS" />
+							<ChatAvatar :avatarDialogId="channelId" :size="AvatarSize.XS" />
 						</div>
 						<div class="bx-im-comment-header__subtitle_text">{{ channel.name }}</div>
 					</div>
@@ -1382,35 +2717,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	`
 	};
 
-	class CommentsMessageMenu extends im_v2_component_messageList.MessageMenu {
-	  getMenuItems() {
-	    if (this.isPostMessage()) {
-	      return [this.getCopyItem(), this.getCopyFileItem(), this.getDelimiter(), this.getDownloadFileItem(), this.getSaveToDiskItem(), this.getDelimiter(), this.getOpenInChannelItem()];
-	    }
-	    return [this.getReplyItem(), this.getCopyItem(), this.getCopyFileItem(),
-	    // this.getPinItem(),
-	    // this.getForwardItem(),
-	    this.getDelimiter(),
-	    // this.getMarkItem(),
-	    this.getFavoriteItem(), this.getDelimiter(), this.getCreateItem(), this.getDelimiter(), this.getDownloadFileItem(), this.getSaveToDiskItem(), this.getDelimiter(), this.getEditItem(), this.getDeleteItem()];
-	  }
-	  getOpenInChannelItem() {
-	    return {
-	      text: main_core.Loc.getMessage('IM_CONTENT_COMMENTS_MESSAGE_MENU_OPEN_IN_CHANNEL'),
-	      onclick: () => {
-	        main_core_events.EventEmitter.emit(im_v2_const.EventType.dialog.closeComments);
-	        this.menuInstance.close();
-	      }
-	    };
-	  }
-	  isPostMessage() {
-	    const {
-	      dialogId
-	    } = this.store.getters['chats/getByChatId'](this.context.chatId);
-	    return dialogId !== this.context.dialogId;
-	  }
-	}
-
 	// @vue/component
 	const CommentsMessageList = {
 	  name: 'CommentsMessageList',
@@ -1427,7 +2733,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  computed: {
-	    CommentsMessageMenu: () => CommentsMessageMenu,
 	    dialog() {
 	      return this.$store.getters['chats/get'](this.dialogId, true);
 	    },
@@ -1449,17 +2754,13 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  methods: {
-	    onPostMessageMouseUp(message, event) {
-	      this.$refs.messageList.onMessageMouseUp(message, event);
-	    },
 	    getMessageComponentName(message) {
-	      return new im_v2_lib_messageComponentManager.MessageComponentManager(message).getName();
+	      return new im_v2_lib_messageComponent.MessageComponentManager(message).getName();
 	    }
 	  },
 	  template: `
 		<MessageList
 			:dialogId="dialogId"
-			:messageMenuClass="CommentsMessageMenu"
 			ref="messageList"
 		>
 			<template #loader>
@@ -1474,7 +2775,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 								:item="postMessage"
 								:dialogId="dialogId"
 								:key="postMessage.id"
-								@mouseup="onPostMessageMouseUp(postMessage, $event)"
 							>
 							</component>
 						</template>
@@ -1523,9 +2823,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	        return;
 	      }
 	      dialog.showLoadingBar();
-	      await dialog.getMessageService().loadFirstPage().catch(error => {
-	        im_v2_lib_logger.Logger.error('goToMessageContext error', error);
-	      });
+	      await dialog.getMessageService().loadFirstPage();
 	      await this.$nextTick();
 	      dialog.hideLoadingBar();
 	      dialog.getScrollManager().scrollToMessage(this.postMessageId);
@@ -1537,7 +2835,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  template: `
-		<ChatDialog ref="dialog" :dialogId="dialogId" :saveScrollOnExit="false" :resetOnExit="true">
+		<ChatDialog ref="dialog" :dialogId="dialogId" :saveScrollOnExit="false" :clearOnExit="true">
 			<template v-if="dialogInited" #pinned-panel>
 				<PinnedMessages
 					:dialogId="dialogId"
@@ -1568,7 +2866,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 		<ChatTextarea
 			:dialogId="dialogId"
 			:withMarket="false"
-			:withAudioInput="false"
 			class="bx-im-comments-send-panel__container"
 		/>
 	`
@@ -1577,7 +2874,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	// @vue/component
 	const JoinPanel$1 = {
 	  components: {
-	    ChatButton: im_v2_component_elements.Button
+	    ChatButton: im_v2_component_elements_button.ChatButton
 	  },
 	  props: {
 	    dialogId: {
@@ -1586,8 +2883,8 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  computed: {
-	    ButtonSize: () => im_v2_component_elements.ButtonSize,
-	    ButtonColor: () => im_v2_component_elements.ButtonColor
+	    ButtonSize: () => im_v2_component_elements_button.ButtonSize,
+	    ButtonColor: () => im_v2_component_elements_button.ButtonColor
 	  },
 	  methods: {
 	    onButtonClick() {
@@ -1595,7 +2892,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    getChatService() {
 	      if (!this.chatService) {
-	        this.chatService = new im_v2_provider_service.ChatService();
+	        this.chatService = new im_v2_provider_service_chat.ChatService();
 	      }
 	      return this.chatService;
 	    },
@@ -1700,27 +2997,14 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    async loadChat() {
 	      im_v2_lib_logger.Logger.warn(`CommentsContent: loading comments for post ${this.postId}`);
-	      await this.getChatService().loadComments(this.postId).catch(error => {
-	        this.handleChatLoadError(error);
-	        im_v2_lib_logger.Logger.error(error);
+	      await this.getChatService().loadComments(this.postId).catch(() => {
 	        this.$emit('close');
 	      });
 	      im_v2_lib_logger.Logger.warn(`CommentsContent: comments for post ${this.postId} are loaded`);
 	    },
-	    handleChatLoadError(error) {
-	      const [firstError] = error;
-	      if (firstError.code === 'ACCESS_DENIED') {
-	        this.showNotification(this.loc('IM_CONTENT_CHAT_ACCESS_ERROR_MSGVER_1'));
-	      }
-	    },
-	    showNotification(text) {
-	      BX.UI.Notification.Center.notify({
-	        content: text
-	      });
-	    },
 	    getChatService() {
 	      if (!this.chatService) {
-	        this.chatService = new im_v2_provider_service.ChatService();
+	        this.chatService = new im_v2_provider_service_chat.ChatService();
 	      }
 	      return this.chatService;
 	    }
@@ -1765,12 +3049,14 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  created() {
-	    main_core_events.EventEmitter.subscribe(im_v2_const.EventType.dialog.openComments, this.onOpenComments);
 	    main_core_events.EventEmitter.subscribe(im_v2_const.EventType.dialog.closeComments, this.onCloseComments);
+	    this.getEmitter().subscribe(im_v2_const.EventType.dialog.openComments, this.onOpenComments);
+	    this.getEmitter().subscribe(im_v2_const.EventType.dialog.closeComments, this.onCloseComments);
 	  },
 	  beforeUnmount() {
-	    main_core_events.EventEmitter.unsubscribe(im_v2_const.EventType.dialog.openComments, this.onOpenComments);
 	    main_core_events.EventEmitter.unsubscribe(im_v2_const.EventType.dialog.closeComments, this.onCloseComments);
+	    this.getEmitter().unsubscribe(im_v2_const.EventType.dialog.openComments, this.onOpenComments);
+	    this.getEmitter().unsubscribe(im_v2_const.EventType.dialog.closeComments, this.onCloseComments);
 	  },
 	  methods: {
 	    onOpenComments(event) {
@@ -1793,6 +3079,9 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    onCommentsAnimationEnd() {
 	      this.commentsAnimationFlag = false;
+	    },
+	    getEmitter() {
+	      return this.$Bitrix.eventEmitter;
 	    }
 	  },
 	  template: `
@@ -1808,6 +3097,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	};
 
 	exports.ChatContent = ChatContent;
+	exports.AiAssistantBotContent = AiAssistantBotContent;
 
-}((this.BX.Messenger.v2.Component.Content = this.BX.Messenger.v2.Component.Content || {}),BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Animation,BX.Messenger.v2.Component.EntitySelector,BX.Messenger.v2.Application,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Content,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Content,BX.Messenger.v2.Lib,BX.Messenger.v2.Model,BX.Messenger.v2.Component.Dialog,BX.Messenger.v2.Lib,BX,BX.Event,BX.Messenger.v2.Component,BX.Messenger.v2.Const,BX.Messenger.v2.Component,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Service));
+}((this.BX.Messenger.v2.Component.Content = this.BX.Messenger.v2.Component.Content || {}),BX.Event,BX,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Lib,BX.UI.Dialogs,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Component.EntitySelector,BX.Main,BX.Messenger.v2.Component.Elements,BX.Vue3.Directives,BX.UI.IconSet,BX.UI.System.Chip.Vue,BX.AiAssistant,BX.Messenger.v2.Lib,BX.UI.IconSet,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Animation,BX.Messenger.v2.Lib,BX.Tasks.V2.Application,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Content,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Service,BX.Messenger.v2.Lib,BX,BX.Messenger.v2.Application,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Content,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Service,BX.Messenger.v2.Lib,BX.Messenger.v2.Model,BX.Messenger.v2.Component.Dialog,BX.Messenger.v2.Component,BX.Messenger.v2.Lib,BX.Messenger.v2.Const,BX.Messenger.v2.Component,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Service));
 //# sourceMappingURL=chat-content.bundle.js.map

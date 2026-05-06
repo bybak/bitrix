@@ -88,7 +88,7 @@ class OracleConnection extends Connection
 	/**
 	 * @inheritDoc
 	 */
-	protected function queryInternal($sql, array $binds = null, \Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
+	protected function queryInternal($sql, ?array $binds = null, ?\Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
 	{
 		$this->connectInternal();
 
@@ -162,7 +162,7 @@ class OracleConnection extends Connection
 	/**
 	 * @inheritDoc
 	 */
-	protected function createResult($result, \Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
+	protected function createResult($result, ?\Bitrix\Main\Diag\SqlTrackerQuery $trackerQuery = null)
 	{
 		return new OracleResult($result, $this, $trackerQuery);
 	}
@@ -461,6 +461,7 @@ class OracleConnection extends Connection
 						END;'
 			);
 		}
+		$this->clearCaches($currentName);
 	}
 
 	/**
@@ -478,6 +479,8 @@ class OracleConnection extends Connection
 		{
 			$this->query('DROP SEQUENCE ' . $this->getSqlHelper()->quote('sq_' . $aiName));
 		}
+
+		$this->clearCaches($tableName);
 	}
 
 	/*********************************************************

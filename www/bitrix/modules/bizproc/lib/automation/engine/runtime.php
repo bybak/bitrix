@@ -20,6 +20,7 @@ class Runtime
 
 	protected $target;
 	protected static $startedTemplates = [];
+	protected ?int $startDelay = null;
 	private static array $clearMap = [];
 
 	public function setTarget(BaseTarget $target)
@@ -42,6 +43,13 @@ class Runtime
 		return $this->target;
 	}
 
+	public function setStartDelay(?int $delay): static
+	{
+		$this->startDelay = $delay;
+
+		return $this;
+	}
+
 	protected function getWorkflowInstanceIds()
 	{
 		$documentType = $this->getTarget()->getDocumentType();
@@ -56,8 +64,25 @@ class Runtime
 				'=TEMPLATE.DOCUMENT_TYPE' => $documentType[2],
 			],
 		])->fetchAll();
+		$workflowInstanceIds = array_column($ids, 'ID');
 
-		return array_column($ids, 'ID');
+		$runtime = \CBPRuntime::getRuntime();
+		$workflows = $runtime->getWorkflows();
+		$workflowsRuntimeIds = [];
+		foreach ($workflows as $id => $workflow)
+		{
+			$eventType = $workflow->getRootActivity()->getDocumentEventType();
+			if (
+				($eventType === \CBPDocumentEventType::Automation || $eventType === \CBPDocumentEventType::Debug)
+				&& \CBPHelper::isEqualDocument($workflow->getDocumentType(), $documentType)
+				&& \CBPHelper::isEqualDocument($workflow->getDocumentId(), $this->getTarget()->getComplexDocumentId())
+			)
+			{
+				$workflowsRuntimeIds[] = $id;
+			}
+		}
+
+		return array_merge($workflowInstanceIds, $workflowsRuntimeIds);
 	}
 
 	public function getCurrentWorkflowId(): ?string
@@ -130,6 +155,7 @@ class Runtime
 				\CBPDocument::PARAM_DOCUMENT_EVENT_TYPE =>
 					$isDebug ? \CBPDocumentEventType::Debug : \CBPDocumentEventType::Automation,
 				\CBPDocument::PARAM_PRE_GENERATED_WORKFLOW_ID => $preGeneratedWorkflowId ?? null,
+				\CBPDocument::PARAM_START_WORKFLOW_DELAY => $this->startDelay,
 			];
 
 			if (isset($trigger['RETURN']) && is_array($trigger['RETURN']))
@@ -165,7 +191,6 @@ class Runtime
 				if ($trigger)
 				{
 					$this->writeTriggerTracking($workflowId, $trigger);
-					$this->writeTriggerAnalytics($documentComplexId, $trigger);
 				}
 
 				if ($useForcedTracking && !$isDebug)
@@ -180,7 +205,7 @@ class Runtime
 
 	protected function writeTriggerTracking($workflowId, $trigger)
 	{
-		$trackingService = \CBPRuntime::getRuntime(true)->getTrackingService();
+		$trackingService = \CBPRuntime::getRuntime()->getTrackingService();
 
 		$trackingService->write(
 			$workflowId,
@@ -191,15 +216,6 @@ class Runtime
 			'',
 			$trigger['ID']
 		);
-	}
-
-	protected function writeTriggerAnalytics(array $documentId, array $trigger)
-	{
-		$analyticsService = \CBPRuntime::getRuntime(true)->getAnalyticsService();
-		if ($analyticsService->isEnabled())
-		{
-			$analyticsService->write($documentId, 'trigger_run', $trigger['CODE']);
-		}
 	}
 
 	protected function stopTemplates()
@@ -222,7 +238,6 @@ class Runtime
 	/**
 	 * Document creation handler.
 	 *
-	 * @return void
 	 * @throws InvalidOperationException
 	 */
 	public function onDocumentAdd(?Context $context = null)
@@ -249,13 +264,12 @@ class Runtime
 			$this->writeCategoryTracking($preGeneratedWorkflowId);
 		}
 
-		$this->runDocumentStatus($preGeneratedWorkflowId);
+		return $this->runDocumentStatus($preGeneratedWorkflowId);
 	}
 
 	/**
 	 * Document status changed handler.
 	 *
-	 * @return void
 	 * @throws InvalidOperationException
 	 */
 	public function onDocumentStatusChanged()
@@ -281,7 +295,7 @@ class Runtime
 			}
 		}
 
-		$this->runDocumentStatus($preGeneratedWorkflowId);
+		return $this->runDocumentStatus($preGeneratedWorkflowId);
 	}
 
 	public function runDocumentStatus(string $preGeneratedWorkflowId = null): ?string

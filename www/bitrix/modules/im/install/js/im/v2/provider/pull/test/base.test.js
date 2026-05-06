@@ -337,6 +337,7 @@ function getDefaultFileData(additionalData = {})
 			extension: 'txt',
 			id: defaultFileId,
 			image: false,
+			isTranscribable: false,
 			name: 'testFile.txt',
 			progress: 100,
 			size: 999,
@@ -352,7 +353,7 @@ function getDefaultFileData(additionalData = {})
 async function setInitialData(store)
 {
 	await store.dispatch('chats/set', getDefaultChatData());
-	await store.dispatch('recent/store', getDefaultRecentData());
+	await store.dispatch('recent/set', getDefaultRecentData());
 	await store.dispatch('files/add', getDefaultFileData());
 	await store.dispatch('messages/add', getDefaultMessageData());
 	return Promise.resolve();

@@ -14,6 +14,7 @@ Loc::loadMessages(
 
 return [
 	'last' => Loc::getMessage('LD_BLOCK_SECTION_LAST'),
+	'favourite' => Loc::getMessage('LD_BLOCK_SECTION_FAVOURITE'),
 	'recommended' =>[
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_RECOMMENDED'),
 		'type' => ['knowledge']
@@ -99,61 +100,73 @@ return [
 
 	'other' => Loc::getMessage('LD_BLOCK_SECTION_OTHER'),
 
-	//for mainpage
+	//for Vibes
 	'widgets_company_life' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_COMPANY_LIFE'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_new_employees' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_NEW_EMPLOYEES'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_team' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_TEAM'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_automation' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_AUTOMATION'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_events' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_EVENTS'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_profile' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_PROFILE'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_tasks' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_TASKS'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_sales' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_SALES'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_hr' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_HR'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_other' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_OTHER'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_separators' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_TRANSITIONS_SEPARATORS'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_text' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_TEXT_NEW'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_image' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_WIDGETS_IMAGE'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
 	],
 	'widgets_video' => [
 		'name' => Loc::getMessage('LD_BLOCK_SECTION_VIDEO'),
-		'type' => ['mainpage'],
+		'type' => ['vibe'],
+	],
+	'widgets_tiles' => [
+		'name' => Loc::getMessage('LD_BLOCK_SECTION_TILES_NEW2'),
+		'type' => ['vibe'],
+	],
+	'widgets_columns' => [
+		'name' => Loc::getMessage('LD_BLOCK_SECTION_COLUMNS'),
+		'type' => ['vibe'],
+	],
+	'widgets_text_image' => [
+		'name' => Loc::getMessage('LD_BLOCK_SECTION_TEXT_IMAGE'),
+		'type' => ['vibe'],
 	],
 ];

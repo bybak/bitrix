@@ -1,0 +1,11 @@
+<?php
+$MESS["LANDING_BLOCK_WIDGET_71_5_NAME"] = "Textblock: eine Überschrift, ein Untertitel und 4 Textkacheln, alles mit einem hellen Hintergrund";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_BADGE"] = "Kachel-Tab";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_CARD"] = "Kachel ";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_CARD_BUTTON"] = "Schaltfläche";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_CARD_TEXT"] = "Kacheltext";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_CARD_TITLE"] = "Kachelüberschrift";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_CONTAINER"] = "Container";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_SUBTITLE"] = "Untertitel";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_TEXT"] = "Text";
+$MESS["LANDING_BLOCK_WIDGET_71_5_NODE_TITLE"] = "Kachel";

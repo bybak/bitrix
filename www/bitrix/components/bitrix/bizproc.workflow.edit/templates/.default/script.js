@@ -59,7 +59,6 @@
 			me.onAfterSliderClose(slider, arWorkflowGlobalConstants);
 		});
 	};
-
 })();
 
 function BPImportToClipboard()

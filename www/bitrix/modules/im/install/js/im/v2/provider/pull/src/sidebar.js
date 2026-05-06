@@ -35,11 +35,18 @@ export class SidebarPullHandler
 			return;
 		}
 
-		void this.userManager.setUsersToModel(Object.values(params.users));
+		const { chatId, users, newUsers, relations } = params;
+		void this.userManager.setUsersToModel(Object.values(users));
+
+		const usersToAdd = newUsers.filter((userId) => {
+			const { isHidden } = relations.find((relation) => relation.userId === userId);
+
+			return !isHidden;
+		});
 
 		void this.store.dispatch('sidebar/members/set', {
-			chatId: params.chatId,
-			users: params.newUsers,
+			chatId,
+			users: usersToAdd,
 		});
 	}
 
@@ -212,12 +219,12 @@ export class SidebarPullHandler
 		void this.userManager.setUsersToModel(params.users);
 		void this.store.dispatch('files/set', params.files);
 
-		const subType = params.link.subType ?? SidebarDetailBlock.fileUnsorted;
+		const group = params.link.group ?? SidebarDetailBlock.fileUnsorted;
 
 		void this.store.dispatch('sidebar/files/set', {
 			chatId: params.link.chatId,
 			files: [params.link],
-			subType,
+			group,
 		});
 	}
 
@@ -357,10 +364,11 @@ export class SidebarPullHandler
 		void this.store.dispatch('files/set', Object.values(files));
 
 		Object.values(files).forEach((file) => {
+			const group = file.group ?? SidebarDetailBlock.fileUnsorted;
 			void this.store.dispatch('sidebar/files/set', {
 				chatId: file.chatId,
 				files: [file],
-				subType: SidebarDetailBlock.fileUnsorted,
+				group,
 			});
 		});
 	}

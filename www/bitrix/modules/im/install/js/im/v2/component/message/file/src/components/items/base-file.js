@@ -1,22 +1,19 @@
-import 'ui.icons.disk';
 import { Type } from 'main.core';
+import 'ui.icons.disk';
+import { BIcon, Outline as OutlineIcons } from 'ui.icon-set.api.vue';
 
-import { FileType, FileViewerContext } from 'im.v2.const';
+import { ProgressBar, ProgressBarSize } from 'im.v2.component.elements.progressbar';
+import { FileViewerContext } from 'im.v2.const';
 import { Utils } from 'im.v2.lib.utils';
-
-import { ProgressBar } from './progress-bar';
-import { BaseFileContextMenu } from '../../classes/base-file-context-menu';
+import { type ImModelFile } from 'im.v2.model';
 
 import '../../css/items/base-file.css';
-
-import type { ImModelFile } from 'im.v2.model';
 
 // @vue/component
 export const BaseFileItem = {
 	name: 'BaseFileItem',
-	components: { ProgressBar },
-	props:
-	{
+	components: { ProgressBar, BIcon },
+	props: {
 		id: {
 			type: [String, Number],
 			required: true,
@@ -26,8 +23,10 @@ export const BaseFileItem = {
 			required: true,
 		},
 	},
-	computed:
-	{
+	emits: ['cancelClick'],
+	computed: {
+		ProgressBarSize: () => ProgressBarSize,
+		OutlineIcons: () => OutlineIcons,
 		file(): ImModelFile
 		{
 			return this.$store.getters['files/get'](this.id, true);
@@ -75,16 +74,7 @@ export const BaseFileItem = {
 			return Type.isStringFilled(this.file.urlPreview);
 		},
 	},
-	created()
-	{
-		this.contextMenu = new BaseFileContextMenu();
-	},
-	beforeUnmount()
-	{
-		this.contextMenu.destroy();
-	},
-	methods:
-	{
+	methods: {
 		download()
 		{
 			if (this.file.progress !== 100 || this.canBeOpenedWithViewer)
@@ -105,13 +95,22 @@ export const BaseFileItem = {
 				fileId: this.id,
 			});
 		},
+		onCancelClick(event)
+		{
+			this.$emit('cancelClick', event);
+		},
 	},
 	template: `
 		<div class="bx-im-base-file-item__container">
 			<div class="bx-im-base-file-item__viewer-container" v-bind="viewerAttributes" @click="download">
 				<div class="bx-im-base-file-item__icon-container" ref="loader-icon">
-					<ProgressBar v-if="!isLoaded" :item="file" :messageId="messageId" :withLabels="false" />
-					<div v-if="hasPreview" :style="imageStyles" class="bx-im-base-file-item__image"></div>
+					<ProgressBar 
+						v-if="!isLoaded" 
+						:item="file"
+						:size="ProgressBarSize.S"
+						@cancelClick="onCancelClick"
+					/>
+				<div v-if="hasPreview" :style="imageStyles" class="bx-im-base-file-item__image"></div>
 					<div v-else :class="iconClass" class="bx-im-base-file-item__type-icon ui-icon"><i></i></div>
 				</div>
 				<div class="bx-im-base-file-item__content">
@@ -121,11 +120,13 @@ export const BaseFileItem = {
 					<div class="bx-im-base-file-item__size">{{ fileSize }}</div>
 				</div>
 			</div>
-			<div 
-				class="bx-im-base-file-item__download-icon"
+			<BIcon
+				:name="OutlineIcons.DOWNLOAD"
 				:class="{'--not-active': !isLoaded}"
-				@click="openContextMenu"
-			></div>
+				:hoverable="isLoaded"
+				class="bx-im-base-file-item__download-icon"
+				@click.stop="openContextMenu"
+			/>
 		</div>
 	`,
 };

@@ -6,11 +6,13 @@ use Bitrix\Im\Common;
 use Bitrix\Im\Integration\Socialnetwork\Extranet;
 use Bitrix\Im\Model\RelationTable;
 use Bitrix\Im\Model\StatusTable;
+use Bitrix\Im\V2\Cache\CacheableEntity;
 use Bitrix\Im\V2\Chat\ChatError;
 use Bitrix\Im\V2\Chat\FavoriteChat;
 use Bitrix\Im\V2\Chat\PrivateChat;
 use Bitrix\Im\V2\Common\ContextCustomer;
 use Bitrix\Im\V2\Entity\Department\Departments;
+use Bitrix\Im\V2\Entity\User\Field\NameResolver;
 use Bitrix\Im\V2\Rest\RestEntity;
 use Bitrix\Im\V2\Result;
 use Bitrix\Im\V2\Service\Locator;
@@ -23,9 +25,11 @@ use Bitrix\Main\SystemException;
 use Bitrix\Main\Type\DateTime;
 use Bitrix\Main\UserTable;
 
-class User implements RestEntity
+class User implements RestEntity, CacheableEntity
 {
 	use ContextCustomer;
+
+	public const SYSTEM_USER_ID = 0;
 
 	public const PHONE_MOBILE = 'PERSONAL_MOBILE';
 	public const PHONE_WORK = 'WORK_PHONE';
@@ -43,6 +47,8 @@ class User implements RestEntity
 		'LAST_ACTIVITY_DATE'
 	];
 
+	protected const NON_CACHEABLE_FIELDS = ['ABSENT'];
+
 	/**
 	 * @var ModuleManager
 	 */
@@ -51,11 +57,6 @@ class User implements RestEntity
 	 * @var Loader
 	 */
 	protected static string $loader = Loader::class;
-
-	/**
-	 * @var static[]
-	 */
-	protected static array $userStaticCache = [];
 
 	protected array $accessCache = [];
 	protected array $userData = [];
@@ -71,19 +72,12 @@ class User implements RestEntity
 
 	public static function getInstance(?int $id): self
 	{
-		if (!isset($id))
+		if (!isset($id) || $id <= 0)
 		{
 			return new NullUser();
 		}
 
-		if (isset(self::$userStaticCache[$id]))
-		{
-			return self::$userStaticCache[$id];
-		}
-
-		self::$userStaticCache[$id] = UserFactory::getInstance()->getUserById($id);
-
-		return self::$userStaticCache[$id];
+		return UserFactory::getInstance()->getUserById($id);
 	}
 
 	public static function getCurrent(): self
@@ -99,9 +93,33 @@ class User implements RestEntity
 		}
 
 		$user = new static();
-		$user->userData = $userData;
+		$user->userData = self::prepareNonCachedUserData($userData);
 
 		return $user;
+	}
+
+	protected static function prepareNonCachedUserData(array $userData): array
+	{
+		$preparedUserData = $userData;
+		$preparedUserData['ABSENT'] = \CIMContactList::formatAbsentResult((int)$userData['ID']) ?: null;
+
+		return $preparedUserData;
+	}
+
+	public function toCacheRepresentation(): array
+	{
+		$cacheArray = $this->userData;
+		foreach (self::NON_CACHEABLE_FIELDS as $nonCacheableField)
+		{
+			unset($cacheArray[$nonCacheableField]);
+		}
+
+		return $cacheArray;
+	}
+
+	public function getCacheEntityId(): ?int
+	{
+		return $this->getId();
 	}
 
 	/**
@@ -171,12 +189,13 @@ class User implements RestEntity
 			return null;
 		}
 
-		if (!$createResult->isSuccess())
+		$chat = $createResult->getChat();
+		if (!($chat instanceof PrivateChat) || !$createResult->isSuccess())
 		{
 			return null;
 		}
 
-		return $createResult->getResult()['CHAT'];
+		return $chat;
 	}
 
 	final public function checkAccess(?int $idOtherUser = null): Result
@@ -351,6 +370,8 @@ class User implements RestEntity
 			'phones' => empty($this->getPhones()) ? false : $this->getPhones(),
 			'botData' => null,
 			'type' => $this->getType()->value,
+			'website' => $this->getWebsite(),
+			'email' => $this->getEmail(),
 		];
 	}
 
@@ -358,11 +379,6 @@ class User implements RestEntity
 	{
 		$option['FOR_REST'] = false;
 		$userData = $this->toRestFormat($option);
-
-		if ($option['USER_SHORT_FORMAT'] ?? null)
-		{
-			return $userData;
-		}
 
 		$converter = new Converter(Converter::TO_SNAKE | Converter::TO_UPPER | Converter::KEYS);
 		$userData = $converter->process($userData);
@@ -411,12 +427,16 @@ class User implements RestEntity
 
 	public function getName(): ?string
 	{
-		return $this->userData['NAME'] ?? null;
+		$resolveName = (new NameResolver((int)$this->getId()))->getName();
+
+		return $resolveName ?? $this->userData['NAME'] ?? null;
 	}
 
 	public function getFirstName(): ?string
 	{
-		return $this->userData['FIRST_NAME'] ?? null;
+		$resolveName = (new NameResolver((int)$this->getId()))->getFirstName();
+
+		return $resolveName ?? $this->userData['FIRST_NAME'] ?? null;
 	}
 
 	public function getLastName(): ?string
@@ -461,6 +481,16 @@ class User implements RestEntity
 	public function getExternalAuthId(): string
 	{
 		return $this->userData['EXTERNAL_AUTH_ID'] ?? 'default';
+	}
+
+	/**
+	 * @param string[] $skipTypes Type list to skip out.
+	 */
+	public function isInternalType(array $skipTypes = []): bool
+	{
+		$externalTypes = \Bitrix\Im\Model\UserTable::filterExternalUserTypes($skipTypes);
+
+		return !in_array($this->getExternalAuthId(), $externalTypes, true);
 	}
 
 	public function getWebsite(): string
@@ -523,11 +553,6 @@ class User implements RestEntity
 		return $this->userData['COLOR'] ?? '';
 	}
 
-	public function getTzOffset(): string
-	{
-		return $this->userData['TIME_ZONE_OFFSET'] ?? '';
-	}
-
 	public function getLanguageId(): ?string
 	{
 		return $this->userData['LANGUAGE_ID'] ?? null;
@@ -536,6 +561,11 @@ class User implements RestEntity
 	public function isExtranet(): bool
 	{
 		return $this->userData['IS_EXTRANET'] ?? false;
+	}
+
+	public function isCollaber(): bool
+	{
+		return $this->getType() === UserType::COLLABER;
 	}
 
 	public function isActive(): bool
@@ -590,6 +620,11 @@ class User implements RestEntity
 		}
 
 		return 'online';
+	}
+
+	public function getTimeZone(): string
+	{
+		return $this->userData['TIME_ZONE'] ?? '';
 	}
 
 	public function getIdle(bool $real = false): ?DateTime
@@ -737,10 +772,5 @@ class User implements RestEntity
 		}
 
 		return !empty($resultAdminIds) ? (int)min($resultAdminIds) : 0;
-	}
-
-	public static function clearStaticCache(int $id): void
-	{
-		unset(self::$userStaticCache[$id]);
 	}
 }

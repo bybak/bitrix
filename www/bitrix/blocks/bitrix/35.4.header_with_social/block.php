@@ -18,7 +18,7 @@
 								 data-card-preset="contact-link">
 								<a href="tel:#crmPhone1"
 								   class="landing-block-node-card-contactlink-link g-pa-10--md row align-items-center justify-content-center justify-content-sm-start justify-content-md-center justify-content-lg-start g-text-decoration-none--hover">
-									<span class="landing-block-node-card-icon-container text-md-center text-lg-left g-font-size-18 g-line-height-1 d-none d-sm-inline-block g-color-primary g-mr-10 col-12 g-pa-0">
+									<span class="landing-block-node-card-icon-container text-md-center text-lg-left g-font-size-18 g-line-height-1 d-none d-sm-inline-block g-color-main g-mr-10 col-12 g-pa-0">
 										<i class="landing-block-node-card-contactlink-icon icon icon-screen-smartphone"></i>
 									</span>
 									<span class="landing-block-node-card-text-container text-center text-sm-left text-md-center text-lg-left d-inline-block col-12 g-pa-0">
@@ -34,7 +34,7 @@
 							<div class="landing-block-node-card col-md g-mb-10 g-mb-0--md g-brd-right--md g-brd-gray-light-v4"
 								 data-card-preset="contact-text">
 								<div class="g-pa-10--md row align-items-center justify-content-center justify-content-sm-start justify-content-md-center justify-content-lg-start">
-									<div class="landing-block-node-card-icon-container text-md-center text-lg-left g-font-size-18 g-line-height-1 d-none d-sm-inline-block g-color-primary g-mr-10 col-12 g-pa-0">
+									<div class="landing-block-node-card-icon-container text-md-center text-lg-left g-font-size-18 g-line-height-1 d-none d-sm-inline-block g-color-main g-mr-10 col-12 g-pa-0">
 										<i class="landing-block-node-card-icon icon icon-clock"></i>
 									</div>
 									<div class="landing-block-node-card-text-container text-center text-sm-left text-md-center text-lg-left d-inline-block col-12 g-pa-0">
@@ -51,7 +51,7 @@
 								 data-card-preset="contact-link">
 								<a href="mailto:#crmEmail1"
 								   class="landing-block-node-card-contactlink-link g-pa-10--md row align-items-center justify-content-center justify-content-sm-start justify-content-md-center justify-content-lg-start g-text-decoration-none--hover">
-									<span class="landing-block-node-card-icon-container text-md-center text-lg-left g-font-size-18 g-line-height-1 d-none d-sm-inline-block g-color-primary g-mr-10 col-12 g-pa-0">
+									<span class="landing-block-node-card-icon-container text-md-center text-lg-left g-font-size-18 g-line-height-1 d-none d-sm-inline-block g-color-main g-mr-10 col-12 g-pa-0">
 										<i class="landing-block-node-card-contactlink-icon icon icon-envelope"></i>
 									</span>
 									<span class="landing-block-node-card-text-container text-center text-sm-left text-md-center text-lg-left d-inline-block col-12 g-pa-0">
@@ -68,7 +68,7 @@
 					</div>
 					<!-- socials -->
 					<div class="landing-block-socials-container col-sm-4 col-md-3 g-mb-10 g-mb-0--md align-self-center">
-						<ul class="landing-block-cards-social list-inline g-pa-10--md g-mb-0 row align-items-center justify-content-center justify-content-sm-start">
+						<ul class="landing-block-cards-social list-inline g-pa-10--md g-mb-0 align-items-center justify-content-center justify-content-sm-start">
 							<li class="landing-block-node-social-item list-inline-item g-valign-middle g-mx-3 g-mb-6"
 								data-card-preset="facebook">
 								<a class="landing-block-node-social-link d-block u-icon-v3 u-icon-size--sm g-rounded-50x g-bg-gray-light-v4 g-color-main g-bg-primary--hover g-color-white--hover g-font-size-14"

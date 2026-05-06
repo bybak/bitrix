@@ -29,9 +29,11 @@ BX.Kanban.Column = function(options)
 	this.total = null;
 	this.isTotalFrozen = false;
 	this.animate = options.animate || null;
+	this.autoPagination = false;
 
 	this.canEdit = null;
 	this.canSort = null;
+	this.canSortItems = null;
 	this.canRemove = null;
 	this.canAddItem = null;
 
@@ -89,7 +91,9 @@ BX.Kanban.Column = function(options)
 
 	this.pagination = new BX.Kanban.Pagination(this);
 
-	this.handleScrollWithThrottle =  BX.Runtime.throttle(this.handleScroll, 100, this);
+	this.handleScrollWithThrottle = BX.Runtime.throttle(this.handleScroll, 100, this);
+
+	BX.Event.EventEmitter.subscribe('Kanban.Grid:onRender', this.onGridRender.bind(this));
 };
 
 BX.Kanban.Column.DEFAULT_COLOR = "ace9fb";
@@ -125,13 +129,22 @@ BX.Kanban.Column.prototype =
 		this.setColor(options.color);
 		this.setData(options.data);
 
-		var boolOptions = ["canEdit", "canSort", "canRemove", "canAddItem", "droppable"];
-		boolOptions.forEach(function(boolOption) {
+		const boolOptions = [
+			'canEdit',
+			'canSort',
+			'canRemove',
+			'canAddItem',
+			'droppable',
+			'canSortItems',
+			'autoPagination',
+		];
+
+		boolOptions.forEach((boolOption) => {
 			if (BX.type.isBoolean(options[boolOption]))
 			{
 				this[boolOption] = options[boolOption];
 			}
-		}, this);
+		});
 	},
 
 	setColor: function(color)
@@ -194,7 +207,6 @@ BX.Kanban.Column.prototype =
 
 		item.setColumnId(this.getId());
 		//? setGrid
-
 		var index = BX.util.array_search(beforeItem, this.items);
 		if (index >= 0)
 		{
@@ -498,6 +510,11 @@ BX.Kanban.Column.prototype =
 		return this.canAddItem !== null ? this.canAddItem : this.getGrid().canAddItems();
 	},
 
+	canSortColumnItems: function()
+	{
+		return this.canSortItems ?? true;
+	},
+
 	/**
 	 *
 	 * @returns {number}
@@ -562,6 +579,11 @@ BX.Kanban.Column.prototype =
 
 	hasLoading: function()
 	{
+		if (this.autoPagination)
+		{
+			return true;
+		}
+
 		return this.total !== null && this.total > this.getItemsCount();
 	},
 
@@ -617,6 +639,11 @@ BX.Kanban.Column.prototype =
 		var columnContainer = this.getContainer();
 		columnContainer.classList[isEmptyColumn ? "add" : "remove"]("main-kanban-column-empty");
 		columnContainer.classList[this.isDroppable() ? "add" : "remove"]("main-kanban-column-droppable");
+
+		if (this.autoPagination)
+		{
+			columnContainer.classList.add("--auto-pagination");
+		}
 
 		if(!this.getGrid().firstRenderComplete)
 		{
@@ -1167,7 +1194,7 @@ BX.Kanban.Column.prototype =
 		var firstItem = this.getFirstItem(false);
 		if (firstItem)
 		{
-			var existsDraftItem = firstItem.getId().indexOf('kanban-new-item-') === 0;
+			const existsDraftItem = firstItem.getId().toString().indexOf('kanban-new-item-') === 0;
 			if (existsDraftItem)
 			{
 				firstItem.applyDraftEditMode();
@@ -1843,7 +1870,35 @@ BX.Kanban.Column.prototype =
 	{
 		this.getContainer().classList.remove("main-kanban-column-target-shown");
 		this.getDragTarget().style.removeProperty("height");
-	}
+	},
+
+	onGridRender(event)
+	{
+		const columns = event.getData()[0].getColumns();
+		const column = columns.find((el) => el.id === this.id);
+
+		this.addTitleHint(column?.layout.nameInner);
+	},
+
+	addTitleHint(element)
+	{
+		if (!element)
+		{
+			return;
+		}
+
+		const hintObject = element.closest('.main-kanban-column-title-info');
+		delete hintObject.dataset.hintInit;
+		delete hintObject.dataset.hint;
+		delete hintObject.dataset.hintNoIcon;
+
+		if (element.scrollWidth > element.clientWidth)
+		{
+			hintObject.dataset.hint = element.textContent;
+			hintObject.dataset.hintNoIcon = '';
+			BX.UI.Hint.initNode(hintObject);
+		}
+	},
 };
 
 
@@ -2018,6 +2073,7 @@ BX.Kanban.Pagination.prototype = {
 		jsDD.refreshDestArea();
 
 		var loader = this.getLoader();
+
 		if (!this.loadingInProgress && column.hasLoading() && loader.offsetTop < scrollTop + offsetHeight)
 		{
 			this.showLoader();

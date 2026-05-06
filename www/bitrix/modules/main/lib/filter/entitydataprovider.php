@@ -1,6 +1,7 @@
 <?php
 namespace Bitrix\Main\Filter;
 
+use Bitrix\HumanResources\Integration\UI\DepartmentProvider;
 use Bitrix\Main;
 
 abstract class EntityDataProvider extends DataProvider
@@ -22,7 +23,7 @@ abstract class EntityDataProvider extends DataProvider
 	 * @return Field
 	 * @throws Main\NotImplementedException
 	 */
-	protected function createField($fieldID, array $params = null)
+	protected function createField($fieldID, ?array $params = null)
 	{
 		if(!is_array($params))
 		{
@@ -49,6 +50,21 @@ abstract class EntityDataProvider extends DataProvider
 			],
 		];
 
+		$isEnableStructureNode = Main\Loader::includeModule('humanresources')
+			&& isset($params['isEnableStructureNode'])
+			&& $params['isEnableStructureNode'] === true
+		;
+		if ($isEnableStructureNode)
+		{
+			$entities[] = [
+				'id' => DepartmentProvider::ENTITY_ID,
+				'options' => [
+					'selectMode' => DepartmentProvider::MODE_USERS_ONLY,
+					'allowFlatDepartments' => true,
+				],
+			];
+		}
+
 		if (class_exists(\Bitrix\Socialnetwork\Integration\UI\EntitySelector\FiredUserProvider::class))
 		{
 			$entities[] = [
@@ -56,8 +72,10 @@ abstract class EntityDataProvider extends DataProvider
 				'options' => [
 					'inviteEmployeeLink' => false,
 					'intranetUsersOnly' => true,
-					'fieldName' => $params['fieldName'],
+					'fieldName' => $params['fieldName'] ?? null,
 					'referenceClass'  => ($params['referenceClass'] ?? null),
+					'referenceFieldName'  => ($params['referenceFieldName'] ?? null),
+					'referenceAdditionalFilter'  => ($params['referenceAdditionalFilter'] ?? null),
 					'entityTypeId' => ($params['entityTypeId'] ?? null),
 					'module' => ($params['module'] ?? null),
 				]

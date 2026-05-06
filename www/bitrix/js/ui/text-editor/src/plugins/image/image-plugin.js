@@ -1,5 +1,6 @@
 import { Event, Loc, Type } from 'main.core';
 import type { BBCodeElementNode } from 'ui.bbcode.model';
+import { Outline } from 'ui.icon-set.api.core';
 
 import {
 	type BBCodeConversion,
@@ -18,7 +19,6 @@ import {
 	$isRootOrShadowRoot,
 	$createParagraphNode,
 	$getSelection,
-	$setSelection,
 	$isRangeSelection,
 	COMMAND_PRIORITY_EDITOR,
 	COMMAND_PRIORITY_LOW,
@@ -29,6 +29,7 @@ import {
 
 import { $wrapNodeInElement, mergeRegister } from 'ui.lexical.utils';
 import { registerDraggableNode } from '../../helpers/register-draggable-node';
+import { $restoreSelection } from '../../helpers/restore-selection';
 import { validateImageUrl } from '../../helpers/validate-image-url';
 
 import Button from '../../toolbar/button';
@@ -184,7 +185,7 @@ export class ImagePlugin extends BasePlugin
 						this.#imageDialog.destroy();
 					}
 
-					this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND);
+					this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND, { sender: 'image-dialog' });
 
 					this.#imageDialog = new ImageDialog({
 						// for an embedded popup: document.body -> this.getEditor().getScrollerContainer()
@@ -233,7 +234,14 @@ export class ImagePlugin extends BasePlugin
 			),
 			this.getEditor().registerCommand(
 				HIDE_DIALOG_COMMAND,
-				(): boolean => {
+				(payload): boolean => {
+					if (payload?.sender === 'image-dialog')
+					{
+						return false;
+					}
+
+					this.#lastSelection = null;
+
 					if (this.#imageDialog !== null)
 					{
 						this.#imageDialog.destroy();
@@ -255,29 +263,26 @@ export class ImagePlugin extends BasePlugin
 
 	#restoreSelection(): boolean
 	{
-		const selection = $getSelection();
-		if (!$isRangeSelection(selection) && this.#lastSelection !== null)
-		{
-			$setSelection(this.#lastSelection);
-			this.#lastSelection = null;
+		const success = $restoreSelection(this.#lastSelection);
+		this.#lastSelection = null;
 
-			return true;
-		}
-
-		return false;
+		return success;
 	}
 
 	#handleDialogDestroy(): void
 	{
+		if (this.#imageDialog === null)
+		{
+			return;
+		}
+
 		this.#imageDialog = null;
 		Event.unbind(this.getEditor().getScrollerContainer(), 'scroll', this.#onEditorScroll);
 		this.getEditor().resetHighlightSelection();
 
 		this.getEditor().update(() => {
-			if (!this.#restoreSelection())
-			{
-				this.getEditor().focus();
-			}
+			this.#restoreSelection();
+			// this.getEditor().focus();
 		});
 	}
 
@@ -292,7 +297,7 @@ export class ImagePlugin extends BasePlugin
 	{
 		this.getEditor().getComponentRegistry().register('image', (): Button => {
 			const button: Button = new Button();
-			button.setContent('<span class="ui-icon-set --incert-image"></span>');
+			button.setIcon(Outline.IMAGE);
 			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_IMAGE'));
 			button.disableInsideUnformatted();
 			button.subscribe('onClick', (): void => {

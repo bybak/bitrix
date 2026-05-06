@@ -10,25 +10,14 @@ import {
 	typeof BBCodeTextNode,
 	typeof BBCodeTagScheme,
 	type BBCodeContentNode,
-	type BBCodeSpecialCharNode,
 } from 'ui.bbcode.model';
 import { BBCodeEncoder } from 'ui.bbcode.encoder';
 import { Linkify } from 'ui.linkify';
 import { ParserScheme } from './parser-scheme';
-
-const TAG_REGEX: RegExp = /\[(\/)?(\w+|\*).*?]/;
-const TAG_REGEX_GS: RegExp = /\[(\/)?(\w+|\*)(.*?)]/gs;
-const isSpecialChar = (symbol: string): boolean => {
-	return ['\n', '\t'].includes(symbol);
-};
-
-const isList = (tagName: string): boolean => {
-	return ['list', 'ul', 'ol'].includes(String(tagName).toLowerCase());
-};
-
-const isListItem = (tagName: string): boolean => {
-	return ['*', 'li'].includes(String(tagName).toLowerCase());
-};
+import {
+	BBCodeTokenizer,
+	type BBCodeToken,
+} from './tokenizer';
 
 const parserScheme = new ParserScheme();
 
@@ -37,11 +26,6 @@ type BBCodeParserOptions = {
 	onUnknown?: (node: BBCodeContentNode, scheme: BBCodeScheme) => void,
 	encoder?: BBCodeEncoder,
 	linkify?: boolean,
-};
-
-type NextTagResult = {
-	tagName: string,
-	isClosedTag: boolean,
 };
 
 class BBCodeParser
@@ -193,133 +177,175 @@ class BBCodeParser
 		}
 	}
 
-	static toLowerCase(value: string): string
+	decodeAttributes(sourceAttributes: Array<string, string>): Array<string, string>
 	{
-		if (Type.isStringFilled(value))
+		if (Type.isArrayFilled(sourceAttributes))
 		{
-			return value.toLowerCase();
+			return sourceAttributes.map(([key, value]) => {
+				return [
+					key,
+					this.getEncoder().decodeAttribute(value),
+				];
+			});
 		}
 
-		return value;
+		return sourceAttributes;
 	}
 
-	parseText(text: string): Array<BBCodeTextNode | BBCodeSpecialCharNode>
+	normalizeTokens(tokens: Array<BBCodeToken>): Array<BBCodeToken>
 	{
-		if (Type.isStringFilled(text))
+		const result: Array<BBCodeToken> = [];
+		const stack: Array<{ name: string; tokenIndex: number; nearestListTokenIndex: number }> = [];
+
+		const getLastListTokenIndex = (): number => {
+			for (let i = stack.length - 1; i >= 0; i--)
+			{
+				if (stack[i].name.toLowerCase() === 'list')
+				{
+					return stack[i].tokenIndex;
+				}
+			}
+
+			return -1;
+		};
+
+		const popAndClose = () => {
+			const entry = stack.pop();
+			if (!entry)
+			{
+				return;
+			}
+
+			const token = result[entry.tokenIndex];
+			if (token?.type === 'OPEN_TAG')
+			{
+				token.unclosed = false;
+			}
+
+			result.push({ type: 'CLOSE_TAG', name: entry.name, autoClosed: true });
+		};
+
+		for (const token of tokens)
 		{
-			return [...text]
-				.reduce((acc: Array<BBCodeTextNode | BBCodeSpecialCharNode>, symbol: string) => {
-					if (isSpecialChar(symbol))
+			if (token.type === 'OPEN_TAG')
+			{
+				const { name, value = '', attributes = {}, unclosed = false } = token;
+				const tagScheme = this.getScheme().getTagScheme(name);
+				const isVoid = tagScheme && tagScheme.isVoid();
+				const isBlock = tagScheme && tagScheme.hasGroup('#block');
+
+				if (isBlock)
+				{
+					while (stack.length > 0)
 					{
-						acc.push(symbol);
-					}
-					else
-					{
-						const lastItem: string = getByIndex(acc, -1);
-						if (isSpecialChar(lastItem) || Type.isNil(lastItem))
+						const topOfStack = stack[stack.length - 1];
+						const tokenInResult = result[topOfStack.tokenIndex];
+
+						if (tokenInResult?.type === 'OPEN_TAG' && tokenInResult.unclosed === true)
 						{
-							acc.push(symbol);
+							// eslint-disable-next-line max-depth
+							if (topOfStack.name === '*' && topOfStack.nearestListTokenIndex !== -1)
+							{
+								break;
+							}
+
+							popAndClose();
 						}
 						else
 						{
-							acc[acc.length - 1] += symbol;
+							break;
 						}
 					}
+				}
 
-					return acc;
-				}, [])
-				.map((fragment: string) => {
-					if (fragment === '\n')
+				let shouldAddToStack = !isVoid;
+
+				if (name === '*')
+				{
+					const lastListIdx = getLastListTokenIndex();
+					if (lastListIdx === -1)
 					{
-						return parserScheme.createNewLine();
+						shouldAddToStack = false;
 					}
-
-					if (fragment === '\t')
+					else
 					{
-						return parserScheme.createTab();
-					}
+						let prevStarIndex = -1;
+						for (let i = stack.length - 1; i >= 0; i--)
+						{
+							// eslint-disable-next-line max-depth
+							if (stack[i].name === '*' && stack[i].nearestListTokenIndex === lastListIdx)
+							{
+								prevStarIndex = i;
+								break;
+							}
+						}
 
-					return parserScheme.createText({
-						content: this.getEncoder().decodeText(fragment),
-					});
+						if (prevStarIndex !== -1)
+						{
+							// eslint-disable-next-line max-depth
+							while (stack.length - 1 >= prevStarIndex)
+							{
+								popAndClose();
+							}
+						}
+					}
+				}
+
+				result.push({
+					type: 'OPEN_TAG',
+					name,
+					value,
+					attributes: { ...attributes },
+					unclosed,
 				});
-		}
 
-		return [];
-	}
-
-	static findNextTagIndex(bbcode: string, startIndex = 0): number
-	{
-		const nextContent: string = bbcode.slice(startIndex);
-		const matchResult = nextContent.match(new RegExp(TAG_REGEX));
-		if (matchResult)
-		{
-			return matchResult.index + startIndex;
-		}
-
-		return -1;
-	}
-
-	static findNextTag(bbcode: string, startIndex = 0): ?NextTagResult
-	{
-		const nextContent: string = bbcode.slice(startIndex);
-		const matchResult = nextContent.match(new RegExp(TAG_REGEX));
-		if (matchResult)
-		{
-			const [, slash, tagName] = matchResult;
-
-			return {
-				tagName,
-				isClosedTag: slash === '\\',
-			};
-		}
-
-		return null;
-	}
-
-	static trimQuotes(value: string): string
-	{
-		const source = String(value);
-		if ((/^["'].*["']$/g).test(source))
-		{
-			return source.slice(1, -1);
-		}
-
-		return value;
-	}
-
-	parseAttributes(sourceAttributes: string): { value: ?string, attributes: Array<[string, string]> }
-	{
-		const result: {value: string, attributes: Array<Array<string, string>>} = { value: '', attributes: [] };
-
-		if (Type.isStringFilled(sourceAttributes))
-		{
-			if (sourceAttributes.startsWith('='))
-			{
-				result.value = this.getEncoder().decodeAttribute(
-					BBCodeParser.trimQuotes(
-						sourceAttributes.slice(1),
-					),
-				);
-
-				return result;
+				if (shouldAddToStack)
+				{
+					stack.push({
+						name,
+						tokenIndex: result.length - 1,
+						nearestListTokenIndex: getLastListTokenIndex(),
+					});
+				}
 			}
+			else if (token.type === 'CLOSE_TAG')
+			{
+				const { name } = token;
+				let matchIdx = -1;
 
-			return sourceAttributes
-				.trim()
-				.split(' ')
-				.filter(Boolean)
-				.reduce((acc: typeof result, item: string) => {
-					const [key: string, value: string = ''] = item.split('=');
-					acc.attributes.push([
-						BBCodeParser.toLowerCase(key),
-						this.getEncoder().decodeAttribute(
-							BBCodeParser.trimQuotes(value),
-						),
-					]);
+				for (let i = stack.length - 1; i >= 0; i--)
+				{
+					if (stack[i].name === name)
+					{
+						matchIdx = i;
+						break;
+					}
+				}
 
-					return acc;
-				}, result);
+				if (matchIdx === -1)
+				{
+					result.push({ type: 'CLOSE_TAG', name, orphaned: true });
+				}
+				else
+				{
+					while (stack.length - 1 > matchIdx)
+					{
+						popAndClose();
+					}
+
+					stack.pop();
+					result.push({ type: 'CLOSE_TAG', name });
+				}
+			}
+			else
+			{
+				result.push(token);
+			}
+		}
+
+		while (stack.length > 0)
+		{
+			popAndClose();
 		}
 
 		return result;
@@ -328,138 +354,96 @@ class BBCodeParser
 	parse(bbcode: string): BBCodeRootNode
 	{
 		const result: BBCodeRootNode = parserScheme.createRoot();
+		const stack = [result];
+		const wasOpened = [];
+		let level = 0;
 
-		const firstTagIndex: number = BBCodeParser.findNextTagIndex(bbcode);
-		if (firstTagIndex !== 0)
-		{
-			const textBeforeFirstTag: string = firstTagIndex === -1 ? bbcode : bbcode.slice(0, firstTagIndex);
-			result.appendChild(
-				...this.parseText(textBeforeFirstTag),
-			);
-		}
+		const tokenizer = new BBCodeTokenizer();
+		const tokens = this.normalizeTokens(
+			tokenizer.tokenize(bbcode),
+		);
 
-		const stack: Array<BBCodeElementNode> = [result];
-		const wasOpened: Array<string> = [];
-		let current: ?BBCodeElementNode = null;
-		let level: number = 0;
+		tokens.forEach((token: BBCodeToken) => {
+			const parent = stack[level];
 
-		bbcode.replace(TAG_REGEX_GS, (fullTag: string, slash: ?string, tagName: string, attrs: ?string, index: number) => {
-			const isOpeningTag: boolean = Boolean(slash) === false;
-			const startIndex: number = fullTag.length + index;
-			const nextContent: string = bbcode.slice(startIndex);
-			const attributes = this.parseAttributes(attrs);
-			const lowerCaseTagName: string = BBCodeParser.toLowerCase(tagName);
-			let parent: ?(BBCodeRootNode | BBCodeElementNode) = stack[level];
-
-			if (isOpeningTag)
+			switch (token.type)
 			{
-				const isPotentiallyVoid: boolean = !nextContent.includes(`[/${tagName}]`);
-				if (
-					isPotentiallyVoid
-					&& !isListItem(lowerCaseTagName)
-				)
-				{
-					const tagScheme: BBCodeTagScheme = this.getScheme().getTagScheme(lowerCaseTagName);
-					const isAllowedVoidTag: boolean = tagScheme && tagScheme.isVoid();
-					if (isAllowedVoidTag)
+				case 'OPEN_TAG': {
+					const tagScheme = this.getScheme().getTagScheme(token.name);
+					const isVoidTag = tagScheme && tagScheme.isVoid();
+
+					if (isVoidTag)
 					{
-						current = parserScheme.createElement({
-							name: lowerCaseTagName,
-							value: attributes.value,
-							attributes: Object.fromEntries(attributes.attributes),
+						const voidNode = parserScheme.createElement({
+							name: token.name,
+							value: this.getEncoder().decodeAttribute(token.value),
+							attributes: this.decodeAttributes(token.attributes),
 						});
 
-						current.setScheme(this.getScheme());
-						parent.appendChild(current);
+						voidNode.setScheme(this.getScheme());
+						parent.appendChild(voidNode);
+					}
+					else if (token.unclosed)
+					{
+						parent.appendChild(parserScheme.createText(`[${token.name}]`));
 					}
 					else
 					{
-						parent.appendChild(
-							parserScheme.createText(fullTag),
-						);
-					}
+						const currentNode = parserScheme.createElement({
+							name: token.name,
+							value: this.getEncoder().decodeAttribute(token.value),
+							attributes: this.decodeAttributes(token.attributes),
+						});
 
-					const nextTagIndex: number = BBCodeParser.findNextTagIndex(bbcode, startIndex);
-					if (nextTagIndex !== 0)
-					{
-						const content: string = nextTagIndex === -1 ? nextContent : bbcode.slice(startIndex, nextTagIndex);
-						parent.appendChild(
-							...this.parseText(content),
-						);
-					}
-				}
-				else
-				{
-					if (isListItem(lowerCaseTagName) && current && isListItem(current.getName()))
-					{
-						level--;
-						parent = stack[level];
-					}
-
-					current = parserScheme.createElement({
-						name: lowerCaseTagName,
-						value: attributes.value,
-						attributes: Object.fromEntries(attributes.attributes),
-					});
-
-					const nextTagIndex: number = BBCodeParser.findNextTagIndex(bbcode, startIndex);
-					if (nextTagIndex !== 0)
-					{
-						const content: string = nextTagIndex === -1 ? nextContent : bbcode.slice(startIndex, nextTagIndex);
-						current.appendChild(
-							...this.parseText(content),
-						);
-					}
-
-					if (!parent)
-					{
+						parent.appendChild(currentNode);
+						wasOpened.push(token.name);
+						stack.push(currentNode);
 						level++;
-						parent = stack[level];
 					}
 
-					parent.appendChild(current);
-
-					level++;
-					stack[level] = current;
-					wasOpened.push(lowerCaseTagName);
-				}
-			}
-			else
-			{
-				if (wasOpened.includes(lowerCaseTagName))
-				{
-					level--;
-					const openedTagIndex: number = wasOpened.indexOf(lowerCaseTagName);
-					wasOpened.splice(openedTagIndex, 1);
-				}
-				else
-				{
-					stack[level].appendChild(
-						parserScheme.createText(fullTag),
-					);
+					break;
 				}
 
-				if (isList(lowerCaseTagName) && level > 0)
-				{
-					level--;
-				}
-
-				const nextTagIndex: number = BBCodeParser.findNextTagIndex(bbcode, startIndex);
-				if (nextTagIndex !== 0 && stack[level])
-				{
-					const content: string = nextTagIndex === -1 ? nextContent : bbcode.slice(startIndex, nextTagIndex);
-					stack[level].appendChild(
-						...this.parseText(content),
-					);
-				}
-
-				if (level > 0 && isListItem(stack[level].getName()))
-				{
-					const nextTag: ?NextTagResult = BBCodeParser.findNextTag(bbcode, startIndex);
-					if (Type.isNull(nextTag) || isListItem(nextTag.tagName))
+				case 'CLOSE_TAG': {
+					if (wasOpened.includes(token.name))
 					{
+						const openedTagIndex = wasOpened.indexOf(token.name);
+						wasOpened.splice(openedTagIndex, 1);
+						stack.pop();
 						level--;
 					}
+					else
+					{
+						parent.appendChild(parserScheme.createText(`[/${token.name}]`));
+					}
+
+					break;
+				}
+
+				case 'TEXT': {
+					parent.appendChild(
+						parserScheme.createText({
+							content: this.getEncoder().decodeText(token.content),
+						}),
+					);
+
+					break;
+				}
+
+				case 'LINEBREAK': {
+					parent.appendChild(parserScheme.createNewLine());
+
+					break;
+				}
+
+				case 'TAB': {
+					parent.appendChild(parserScheme.createTab());
+
+					break;
+				}
+
+				default: {
+					break;
 				}
 			}
 		});
@@ -508,9 +492,9 @@ class BBCodeParser
 			)
 			{
 				const content = node.toString({ encode: false });
-				const tokens: Array<Linkify.MultiToken> = Linkify.tokenize(content);
+				const MultiTokens: Array<Linkify.MultiToken> = Linkify.tokenize(content);
 
-				const nodes = tokens.map((token: Linkify.MultiToken) => {
+				const nodes = MultiTokens.map((token: Linkify.MultiToken) => {
 					if (token.t === 'url')
 					{
 						return parserScheme.createElement({
@@ -537,6 +521,14 @@ class BBCodeParser
 				});
 
 				node.replace(...nodes);
+			}
+		});
+
+		BBCodeNode.flattenAst(result).forEach((node: BBCodeNode) => {
+			const tagScheme: BBCodeTagScheme = this.getScheme().getTagScheme(node);
+			if (tagScheme)
+			{
+				tagScheme.runOnParseHandler(node);
 			}
 		});
 

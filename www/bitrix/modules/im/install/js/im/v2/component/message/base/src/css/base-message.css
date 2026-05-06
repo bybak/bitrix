@@ -1,15 +1,15 @@
 .bx-im-message-base__scope {
-	--im-message-base__padding-top_body: 9px;
-	--im-message-base__padding-right_body: 10px;
+	--im-message-base__padding-top_body: 8px;
+	--im-message-base__padding-right_body: 12px;
 	--im-message-base__padding-bottom_body: 6px;
-	--im-message-base__padding-left_body: 14px;
+	--im-message-base__padding-left_body: 12px;
 	--im-message-base__padding_body:
 		var(--im-message-base__padding-top_body)
 		var(--im-message-base__padding-right_body)
 		var(--im-message-base__padding-bottom_body)
 		var(--im-message-base__padding-left_body)
 	;
-	--im-message-base__offset_context-menu: 54px;
+	--im-message-base__offset_context-menu: 42px;
 	--im-message-base__background-color: var(--im-color-palette-white-base);
 	--im-message-base__background-color_self: #e9fecb;
 	--im-message-base__background-color_error: var(--im-color-palette-red-20);
@@ -45,10 +45,11 @@
 	position: relative;
 	display: inline-flex;
 	flex-direction: column;
-	max-width: 100%
+	max-width: 100%;
 }
 
 .bx-im-message-base__container::before {
+	pointer-events: none;
 	position: absolute;
 	left: -60vw;
 	right: -60vw;
@@ -109,10 +110,6 @@
 	box-shadow: var(--im-message-base__box-shadow);
 }
 
-.bx-im-message-base__wrap .bx-im-message-base__body {
-	max-width: calc(100% - var(--im-message-base__offset_context-menu));
-}
-
 .bx-im-message-base__wrap.--is-bulk-actions-mode .bx-im-message-base__body {
 	max-width: 100%;
 }
@@ -132,6 +129,10 @@
 	box-shadow: none;
 }
 
+.bx-im-message-base__wrap.--system .bx-im-message-base__body {
+	background-color: rgba(var(--im-color-palette-white-base-rgb), 0.3);
+}
+
 .bx-im-message-base__wrap.--has-error .bx-im-message-base__body {
 	background-color: var(--im-message-base__background-color_error);
 }
@@ -145,6 +146,9 @@
 /* body border radius */
 .bx-im-message-base__body {
 	border-radius: 6px
+}
+.bx-im-message-base__wrap.--system .bx-im-message-base__body {
+	border-radius: var(--im-border-radius-md);
 }
 
 /* bigger top radius for first in batch */
@@ -211,12 +215,16 @@
 	background: url('./images/arrow-opponent.svg?v2');
 }
 
+.bx-im-message-base__wrap.--opponent:last-child.--has-error .bx-im-message-base__body::before {
+	background: url('./images/arrow-left-error.svg');
+}
+
 .bx-im-content-chat__container.--left-align .bx-im-message-base__wrap.--self:last-child .bx-im-message-base__body::before {
 	background: url('./images/arrow-self-left.svg?v2');
 }
 
 .bx-im-content-chat__container.--left-align .bx-im-message-base__wrap.--has-error.--self:last-child .bx-im-message-base__body::before {
-	background: url('./images/arrow-self-left-error.svg?v2');
+	background: url('./images/arrow-left-error.svg');
 }
 /* end left */
 
@@ -232,7 +240,7 @@
 }
 
 .bx-im-content-chat__container.--center-align .bx-im-message-base__wrap.--has-error.--self:last-child .bx-im-message-base__body::before {
-	background: url('./images/arrow-self-error.svg?v2');
+	background: url('./images/arrow-right-error.svg');
 }
 /* end right */
 

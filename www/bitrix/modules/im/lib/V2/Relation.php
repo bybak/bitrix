@@ -10,14 +10,16 @@ use Bitrix\Im\V2\Common\FieldAccessImplementation;
 use Bitrix\Im\V2\Common\RegistryEntryImplementation;
 use Bitrix\Im\V2\Entity\User\User;
 use Bitrix\Im\V2\Relation\Reason;
+use Bitrix\Im\V2\Rest\RestEntity;
+use Bitrix\Main\DB\SqlExpression;
 use Bitrix\Main\Type\DateTime;
 
-class Relation implements ArrayAccess, RegistryEntry, ActiveRecord
+class Relation implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity
 {
 	use FieldAccessImplementation;
 	use ActiveRecordImplementation
 	{
-		save as protected saveDefault;
+		prepareFields as protected prepareFieldsDefault;
 	}
 	use RegistryEntryImplementation;
 	use ContextCustomer;
@@ -42,6 +44,7 @@ class Relation implements ArrayAccess, RegistryEntry, ActiveRecord
 	protected ?int $startCounter = null;
 	protected ?User $user = null;
 	protected Reason $reason = Reason::DEFAULT;
+	protected ?bool $isHidden = null;
 	protected bool $isFake = false;
 
 	public function __construct($source = null)
@@ -113,14 +116,30 @@ class Relation implements ArrayAccess, RegistryEntry, ActiveRecord
 		return $this;
 	}
 
-	public function save(): Result
+	public function prepareFields(): Result
 	{
 		if ($this->isFake)
 		{
-			return new Result();
+			return (new Result())->setData(['SKIP_SAVE' => true]);
 		}
 
-		return $this->saveDefault();
+		return $this->prepareFieldsDefault();
+	}
+
+	public function toRestFormat(array $option = []): ?array
+	{
+		return [
+			'id' => $this->getId(),
+			'userId' => $this->getUserId(),
+			'chatId' => $this->getChatId(),
+			'isHidden' => $this->isHidden(),
+			'role' => mb_strtolower($this->getRole()),
+		];
+	}
+
+	public static function getRestEntityName(): string
+	{
+		return 'relation';
 	}
 
 	/**
@@ -227,6 +246,11 @@ class Relation implements ArrayAccess, RegistryEntry, ActiveRecord
 				'loadFilter' => 'prepareReasonForLoad', /** @see Relation::prepareReasonForLoad */
 				'saveFilter' => 'prepareReasonForSave', /** @see Relation::prepareReasonForSave */
 			],
+			'IS_HIDDEN' => [
+				'field' => 'isHidden',
+				'set' => 'markAsHidden', /** @see Relation::markAsHidden */
+				'get' => 'isHidden', /** @see Relation::isHidden */
+			],
 		];
 	}
 
@@ -307,6 +331,18 @@ class Relation implements ArrayAccess, RegistryEntry, ActiveRecord
 	{
 		$this->lastId = $lastId;
 		return $this;
+	}
+
+	public function updateLastId(int $lastId): ?int
+	{
+		$newLastId = new SqlExpression('(CASE WHEN ?# > ?i THEN ?# ELSE ?i END)', 'LAST_ID', $lastId, 'LAST_ID', $lastId);
+		RelationTable::updateByFilter(
+			['=CHAT_ID' => $this->chatId, '=USER_ID' => $this->userId],
+			['LAST_ID' => $newLastId]
+		);
+		$this->fillActual(['LAST_ID']);
+
+		return $this->getLastId();
 	}
 
 	public function getLastSendId(): ?int
@@ -466,6 +502,35 @@ class Relation implements ArrayAccess, RegistryEntry, ActiveRecord
 	public function prepareReasonForSave(Reason $reason): string
 	{
 		return $reason->value;
+	}
+
+	public function isHidden(): ?bool
+	{
+		return $this->isHidden;
+	}
+
+	public function markAsHidden(?bool $isHidden): Relation
+	{
+		$this->isHidden = $isHidden;
+		return $this;
+	}
+
+	public function getRole(): string
+	{
+		if (!$this->getId())
+		{
+			return Chat::ROLE_GUEST;
+		}
+		if ($this->getChat()->getAuthorId() === $this->getUserId())
+		{
+			return Chat::ROLE_OWNER;
+		}
+		if ($this->getManager())
+		{
+			return Chat::ROLE_MANAGER;
+		}
+
+		return Chat::ROLE_MEMBER;
 	}
 
 	public function markAsFake(): self

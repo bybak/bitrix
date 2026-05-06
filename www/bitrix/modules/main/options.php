@@ -3,7 +3,7 @@
  * Bitrix Framework
  * @package bitrix
  * @subpackage main
- * @copyright 2001-2024 Bitrix
+ * @copyright 2001-2025 Bitrix
  */
 
 /**
@@ -141,11 +141,67 @@ if(isset($smsSenders[$currentSmsSender]))
 
 //countries for phone formatting
 $countriesReference = GetCountryArray();
-$countriesArray = array();
+$countriesArray = [
+	"" => GetMessage('main_options_select_country'),
+];
 foreach ($countriesReference['reference_id'] as $k => $v)
 {
 	$countriesArray[$v] = $countriesReference['reference'][$k];
 }
+
+// acsess dialog
+CJSCore::Init(array('access'));
+
+//show the public panel for users
+$arCodes = unserialize(COption::GetOptionString("main", "show_panel_for_users"), ['allowed_classes' => false]);
+if(!is_array($arCodes))
+{
+	$arCodes = array();
+}
+
+//hide the public panel for users
+$arHideCodes = unserialize(COption::GetOptionString("main", "hide_panel_for_users"), ['allowed_classes' => false]);
+if(!is_array($arHideCodes))
+{
+	$arHideCodes = array();
+}
+
+// new device notify users
+$deviceNotifyCodes = unserialize(COption::GetOptionString("main", "user_device_notify_codes"), ['allowed_classes' => false]);
+if(!is_array($deviceNotifyCodes))
+{
+	$deviceNotifyCodes = [];
+}
+
+$access = new CAccess();
+$arNames = $access->GetNames(array_merge($arCodes, $arHideCodes, $deviceNotifyCodes));
+
+$panel = "
+<div id=\"bx_access_div\">
+";
+foreach($arCodes as $code)
+{
+	$panel .= '<div style="margin-bottom:4px"><input type="hidden" name="show_panel_for_users[]" value="'.$code.'">'.($arNames[$code]["provider"] <> ''? $arNames[$code]["provider"].': ':'').htmlspecialcharsbx($arNames[$code]["name"]).'&nbsp;<a href="javascript:void(0);" onclick="DeleteAccess(this, \''.$code.'\')" class="access-delete"></a></div>';
+}
+$panel .= '</div><a href="javascript:void(0)" class="bx-action-href" onclick="ShowPanelFor()">'.GetMessage("main_sett_add_users").'</a>';
+
+$panelHide = "
+<div id=\"bx_access_hide_div\">
+";
+foreach($arHideCodes as $code)
+{
+	$panelHide .= '<div style="margin-bottom:4px"><input type="hidden" name="hide_panel_for_users[]" value="'.$code.'">'.($arNames[$code]["provider"] <> ''? $arNames[$code]["provider"].': ':'').htmlspecialcharsbx($arNames[$code]["name"]).'&nbsp;<a href="javascript:void(0);" onclick="DeleteAccess(this, \''.$code.'\')" class="access-delete"></a></div>';
+}
+$panelHide .= '</div><a href="javascript:void(0)" class="bx-action-href" onclick="HidePanelFor()">'.GetMessage("main_sett_add_users").'</a>';
+
+$deviceNotify = "
+<div id=\"bx_access_notify_div\">
+";
+foreach($deviceNotifyCodes as $code)
+{
+	$deviceNotify .= '<div style="margin-bottom:4px"><input type="hidden" name="user_device_notify_codes[]" value="'.$code.'">'.($arNames[$code]["provider"] <> ''? $arNames[$code]["provider"].': ':'').htmlspecialcharsbx($arNames[$code]["name"]).'&nbsp;<a href="javascript:void(0);" onclick="DeleteAccess(this, \''.$code.'\')" class="access-delete"></a></div>';
+}
+$deviceNotify .= '</div><a href="javascript:void(0)" class="bx-action-href" onclick="DeviceNotifyFor()">'.GetMessage("main_sett_add_users").'</a>';
 
 $arAllOptions = array(
 	"main" => Array(
@@ -199,6 +255,21 @@ $arAllOptions = array(
 
 		GetMessage('main_options_geo'),
 		array("collect_geonames", GetMessage('main_options_geo_collect_names'), "N", array("checkbox", "Y")),
+
+		GetMessage("main_options_map"),
+		Array("map_top_menu_type", GetMessage("MAIN_TOP_MENU_TYPE"), "top", Array("text", 30)),
+		Array("map_left_menu_type", GetMessage("MAIN_LEFT_MENU_TYPE"), "left", Array("text", 30)),
+
+		GetMessage("MAIN_OPTIONS_URL_PREVIEW"),
+		Array("url_preview_enable", GetMessage("MAIN_OPTION_URL_PREVIEW_ENABLE"), "N", array("checkbox", "Y")),
+		Array("url_preview_save_images", GetMessage("MAIN_OPTION_URL_PREVIEW_SAVE_IMAGES"), "N", array("checkbox", "Y")),
+
+		GetMessage("MAIN_OPTIONS_IMAGE_EDITOR"),
+		Array("imageeditor_proxy_enabled", GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED"), "N", array("selectbox", [
+			"N" => GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED_NO"),
+			"Y" => GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED_YES_FOR_ALL"),
+			"YWL" => GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED_YES_FROM_WHITE_LIST"),
+		])),
 	),
 	"mail" => array(
 		GetMessage("main_options_mail"),
@@ -256,11 +327,17 @@ $arAllOptions = array(
 		Array("event_log_user_edit", GetMessage("MAIN_EVENT_LOG_USER_EDIT"), "N", Array("checkbox", "Y")),
 		Array("event_log_user_delete", GetMessage("MAIN_EVENT_LOG_USER_DELETE"), "N", Array("checkbox", "Y")),
 		Array("event_log_user_groups", GetMessage("MAIN_EVENT_LOG_USER_GROUPS"), "N", Array("checkbox", "Y")),
+		Array("event_log_group_edit", GetMessage('MAIN_EVENT_LOG_GROUP_EDIT'), "N", Array("checkbox", "Y")),
 		Array("event_log_group_policy", GetMessage("MAIN_EVENT_LOG_GROUP_POLICY"), "N", Array("checkbox", "Y")),
 		Array("event_log_module_access", GetMessage("MAIN_EVENT_LOG_MODULE_ACCESS"), "N", Array("checkbox", "Y")),
 		Array("event_log_file_access", GetMessage("MAIN_EVENT_LOG_FILE_ACCESS"), "N", Array("checkbox", "Y")),
 		Array("event_log_task", GetMessage("MAIN_EVENT_LOG_TASK"), "N", Array("checkbox", "Y")),
 		Array("event_log_marketplace", GetMessage("MAIN_EVENT_LOG_MARKETPLACE"), "N", Array("checkbox", "Y")),
+
+		GetMessage('main_option_additional_log_title'),
+		Array("event_log_syslog", GetMessage('main_option_event_log_syslog'), "N", Array("checkbox", "Y")),
+		Array("event_log_filelog", GetMessage('main_option_event_log_file'), "N", Array("checkbox", "Y")),
+		Array("event_log_filelog_path", GetMessage('main_option_event_log_file_path'), "", Array("text", 30)),
 
 		GetMessage("MAIN_OPT_PROFILE"),
 		Array("user_profile_history", GetMessage("MAIN_OPT_PROFILE_HYSTORY"), "N", Array("checkbox", "Y")),
@@ -271,6 +348,8 @@ $arAllOptions = array(
 		Array('device_history_cleanup_days', GetMessage('main_options_device_history_days'), '180', ['text', 5]),
 		Array('user_device_geodata', GetMessage('main_options_device_geoip'), 'N', ['checkbox', 'Y']),
 		Array('user_device_notify', GetMessage('main_options_device_history_notify', ['#EMAIL_TEMPLATES_URL#' => '/bitrix/admin/message_admin.php?lang=' . LANGUAGE_ID . '&amp;set_filter=Y&amp;find_type_id=' . Device::EMAIL_EVENT]), 'N', ['checkbox', 'Y']),
+		Array('user_device_notify_im', GetMessage('main_options_device_history_notify_im'), 'N', ['checkbox', 'Y']),
+		Array("", GetMessage('main_options_device_history_notify_only'), $deviceNotify, Array("statichtml")),
 		Array('note' => GetMessage('main_options_device_history_note')),
 	),
 	"update" => Array(
@@ -296,21 +375,6 @@ $arAllOptions = array(
 	),
 );
 
-$arAllOptions["main"][] = GetMessage("main_options_map");
-$arAllOptions["main"][] = Array("map_top_menu_type", GetMessage("MAIN_TOP_MENU_TYPE"), "top", Array("text", 30));
-$arAllOptions["main"][] = Array("map_left_menu_type", GetMessage("MAIN_LEFT_MENU_TYPE"), "left", Array("text", 30));
-
-$arAllOptions["main"][] = GetMessage("MAIN_OPTIONS_URL_PREVIEW");
-$arAllOptions["main"][] = Array("url_preview_enable", GetMessage("MAIN_OPTION_URL_PREVIEW_ENABLE"), "N", array("checkbox", "Y"));
-$arAllOptions["main"][] = Array("url_preview_save_images", GetMessage("MAIN_OPTION_URL_PREVIEW_SAVE_IMAGES"), "N", array("checkbox", "Y"));
-
-$arAllOptions["main"][] = GetMessage("MAIN_OPTIONS_IMAGE_EDITOR");
-$imageEditorOptions = array();
-$imageEditorOptions["N"] = GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED_NO");
-$imageEditorOptions["Y"] = GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED_YES_FOR_ALL");
-$imageEditorOptions["YWL"] = GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED_YES_FROM_WHITE_LIST");
-$arAllOptions["main"][] = Array("imageeditor_proxy_enabled", GetMessage("MAIN_OPTION_IMAGE_EDITOR_PROXY_ENABLED"), "N", array("selectbox", $imageEditorOptions));
-
 $allowedHostsList = unserialize(COption::GetOptionString("main", "imageeditor_proxy_white_list"), ['allowed_classes' => false]);
 
 if (!is_array($allowedHostsList) || empty($allowedHostsList))
@@ -318,23 +382,21 @@ if (!is_array($allowedHostsList) || empty($allowedHostsList))
 	$allowedHostsList = [''];
 }
 
-$allowedWhiteListLabel = GetMessage("MAIN_OPTIONS_IMAGE_EDITOR_PROXY_WHITE_LIST");
-$allowedWhiteListPlaceholder = GetMessage("MAIN_OPTIONS_IMAGE_EDITOR_PROXY_WHITE_LIST_PLACEHOLDER");
-
 foreach($allowedHostsList as $key => $item)
 {
-	$arAllOptions["main"][] = Array("imageeditor_proxy_white_list", $key === 0 ? $allowedWhiteListLabel : "", $item, Array("text", 30));
+	$arAllOptions["main"][] = Array("imageeditor_proxy_white_list", $key === 0 ? GetMessage("MAIN_OPTIONS_IMAGE_EDITOR_PROXY_WHITE_LIST") : "", $item, Array("text", 30));
 }
 
 $addAllowedHost = "
     <script>
         var whiteListValues = " . Json::encode($allowedHostsList) . ";
+        var allowedWhiteListPlaceholder = '" . GetMessageJS("MAIN_OPTIONS_IMAGE_EDITOR_PROXY_WHITE_LIST_PLACEHOLDER") . "';
         var firstWhiteListInputs = [].slice.call(document.querySelectorAll('input[name=\'imageeditor_proxy_white_list\']'));
 
         if (firstWhiteListInputs.length)
         {
             firstWhiteListInputs.forEach(function(item, index) {
-            	item.setAttribute('placeholder', '".htmlspecialcharsbx($allowedWhiteListPlaceholder)."');
+            	item.setAttribute('placeholder', allowedWhiteListPlaceholder);
             	item.name = 'imageeditor_proxy_white_list[]';
             	item.setAttribute('value', whiteListValues[index]);
 
@@ -430,91 +492,6 @@ $addAllowedHost = "
 $addAllowedHost .= "<a href=\"javascript:void(0)\" onclick=\"addProxyAllowedHost(this)\" hidefocus=\"true\" class=\"adm-btn adm-add-allowed-host\">".GetMessage("MAIN_OPTIONS_IMAGE_EDITOR_PROXY_WHITE_LIST_ADD_HOST")."</a>";
 $arAllOptions["main"][] = Array("", "", $addAllowedHost, Array("statichtml"));
 
-
-CJSCore::Init(array('access'));
-
-//show the public panel for users
-$arCodes = unserialize(COption::GetOptionString("main", "show_panel_for_users"), ['allowed_classes' => false]);
-if(!is_array($arCodes))
-	$arCodes = array();
-
-//hide the public panel for users
-$arHideCodes = unserialize(COption::GetOptionString("main", "hide_panel_for_users"), ['allowed_classes' => false]);
-if(!is_array($arHideCodes))
-	$arHideCodes = array();
-
-$access = new CAccess();
-$arNames = $access->GetNames(array_merge($arCodes, $arHideCodes));
-
-$panel = "
-<script>
-
-function InsertAccess(arRights, divId, hiddenName)
-{
-	var div = BX(divId);
-	for(var provider in arRights)
-	{
-		for(var id in arRights[provider])
-		{
-			var pr = BX.Access.GetProviderPrefix(provider, id);
-			var newDiv = document.createElement('DIV');
-			newDiv.style.marginBottom = '4px';
-			newDiv.innerHTML = '<input type=\"hidden\" name=\"'+hiddenName+'\" value=\"'+id+'\">' + (pr? pr+': ':'') + BX.util.htmlspecialchars(arRights[provider][id].name) + '&nbsp;<a href=\"javascript:void(0);\" onclick=\"DeleteAccess(this, \\''+id+'\\')\" class=\"access-delete\"></a>';
-			div.appendChild(newDiv);
-		}
-	}
-}
-
-function DeleteAccess(ob, id)
-{
-	var div = BX.findParent(ob, {'tag':'div'});
-	div.parentNode.removeChild(div);
-}
-
-function ShowPanelFor()
-{
-	BX.Access.Init({
-		other: {disabled:true}
-	});
-	BX.Access.SetSelected({});
-	BX.Access.ShowForm({
-		callback: function(obSelected)
-		{
-			InsertAccess(obSelected, 'bx_access_div', 'show_panel_for_users[]');
-		}
-	});
-}
-
-function HidePanelFor()
-{
-	BX.Access.Init();
-	BX.Access.SetSelected({});
-	BX.Access.ShowForm({
-		callback: function(obSelected)
-		{
-			InsertAccess(obSelected, 'bx_access_hide_div', 'hide_panel_for_users[]');
-		}
-	});
-}
-</script>
-
-<div id=\"bx_access_div\">
-";
-
-foreach($arCodes as $code)
-	$panel .= '<div style="margin-bottom:4px"><input type="hidden" name="show_panel_for_users[]" value="'.$code.'">'.($arNames[$code]["provider"] <> ''? $arNames[$code]["provider"].': ':'').htmlspecialcharsbx($arNames[$code]["name"]).'&nbsp;<a href="javascript:void(0);" onclick="DeleteAccess(this, \''.$code.'\')" class="access-delete"></a></div>';
-
-$panel .= '</div><a href="javascript:void(0)" class="bx-action-href" onclick="ShowPanelFor()">'.GetMessage("main_sett_add_users").'</a>';
-
-$panelHide = "
-<div id=\"bx_access_hide_div\">
-";
-
-foreach($arHideCodes as $code)
-	$panelHide .= '<div style="margin-bottom:4px"><input type="hidden" name="hide_panel_for_users[]" value="'.$code.'">'.($arNames[$code]["provider"] <> ''? $arNames[$code]["provider"].': ':'').htmlspecialcharsbx($arNames[$code]["name"]).'&nbsp;<a href="javascript:void(0);" onclick="DeleteAccess(this, \''.$code.'\')" class="access-delete"></a></div>';
-
-$panelHide .= '</div><a href="javascript:void(0)" class="bx-action-href" onclick="HidePanelFor()">'.GetMessage("main_sett_add_users").'</a>';
-
 $arAllOptions["main"][] = GetMessage("main_sett_public_panel");
 $arAllOptions["main"][] = Array("", GetMessage("main_sett_public_panel_show"), $panel, Array("statichtml"));
 $arAllOptions["main"][] = Array("", GetMessage("main_sett_public_panel_hide"), $panelHide, Array("statichtml"));
@@ -566,6 +543,7 @@ $arAllOptions["auth"][] = array("new_user_agreement", GetMessage("MAIN_REGISTER_
 $arAllOptions["auth"][] = GetMessage("main_options_restrictions");
 $arAllOptions["auth"][] = Array("inactive_users_block_days", GetMessage("main_options_block_inactive"), "0", Array("text", 5));
 $arAllOptions["auth"][] = Array("secure_logout", GetMessage("main_options_secure_logout"), "N", Array("checkbox", "Y"));
+$arAllOptions["auth"][] = Array("secure_auth_forms", GetMessage('main_options_secure_auth_forms'), "N", Array("checkbox", "Y"));
 
 $arAllOptions["auth"][] = GetMessage("MAIN_OPTION_SESS");
 $arAllOptions["auth"][] = Array("session_expand", GetMessage("MAIN_OPTION_SESS_EXPAND"), "Y", Array("checkbox", "Y"));
@@ -606,6 +584,7 @@ if($_SERVER["REQUEST_METHOD"]=="POST" && !empty($_POST["Update"]) && ($USER->Can
 	COption::SetOptionString("main", "admin_lid", $_POST["admin_lid"] ?? '');
 	COption::SetOptionString("main", "show_panel_for_users", serialize($_POST["show_panel_for_users"] ?? ''));
 	COption::SetOptionString("main", "hide_panel_for_users", serialize($_POST["hide_panel_for_users"] ?? ''));
+	COption::SetOptionString("main", "user_device_notify_codes", serialize($_POST["user_device_notify_codes"] ?? ''));
 	COption::SetOptionString("main", "imageeditor_proxy_white_list", serialize($_POST["imageeditor_proxy_white_list"] ?? ''));
 	COption::SetOptionString("main", "cookie_name", \Bitrix\Main\Web\Cookie::normalizeName($_POST["cookie_name"]));
 
@@ -669,6 +648,66 @@ function ShowParamsHTMLByArray($arParams)
 	}
 }
 ?>
+<script>
+
+function InsertAccess(arRights, divId, hiddenName)
+{
+	var div = BX(divId);
+	for(var provider in arRights)
+	{
+		for(var id in arRights[provider])
+		{
+			var pr = BX.Access.GetProviderPrefix(provider, id);
+			var newDiv = document.createElement('DIV');
+			newDiv.style.marginBottom = '4px';
+			newDiv.innerHTML = '<input type="hidden" name="'+hiddenName+'" value="'+id+'">' + (pr? pr+': ':'') + BX.util.htmlspecialchars(arRights[provider][id].name) + '&nbsp;<a href="javascript:void(0);" onclick="DeleteAccess(this, \''+id+'\')" class="access-delete"></a>';
+			div.appendChild(newDiv);
+		}
+	}
+}
+
+function DeleteAccess(ob, id)
+{
+	var div = BX.findParent(ob, {'tag':'div'});
+	div.parentNode.removeChild(div);
+}
+
+function ShowPanelFor()
+{
+	BX.Access.Init();
+	BX.Access.SetSelected({});
+	BX.Access.ShowForm({
+		callback: function(obSelected)
+		{
+			InsertAccess(obSelected, 'bx_access_div', 'show_panel_for_users[]');
+		}
+	});
+}
+
+function HidePanelFor()
+{
+	BX.Access.Init();
+	BX.Access.SetSelected({});
+	BX.Access.ShowForm({
+		callback: function(obSelected)
+		{
+			InsertAccess(obSelected, 'bx_access_hide_div', 'hide_panel_for_users[]');
+		}
+	});
+}
+
+function DeviceNotifyFor()
+{
+	BX.Access.Init();
+	BX.Access.SetSelected({});
+	BX.Access.ShowForm({
+		callback: function(obSelected)
+		{
+			InsertAccess(obSelected, 'bx_access_notify_div', 'user_device_notify_codes[]');
+		}
+	});
+}
+</script>
 <form name="main_options" method="POST" action="<?echo $APPLICATION->GetCurPage()?>?mid=<?=htmlspecialcharsbx($mid)?>&amp;lang=<?echo LANG?>">
 <?=bitrix_sessid_post()?>
 <?

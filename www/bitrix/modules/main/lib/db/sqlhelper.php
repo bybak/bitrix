@@ -112,6 +112,19 @@ abstract class SqlHelper
 	}
 
 	/**
+	 * Returns full text safe data representation.
+	 *
+	 * @param string $value Value to be cut to safe full text length.
+	 * @param integer $maxLength Limits string length if set.
+	 *
+	 * @return string
+	 */
+	public function convertToFullText($value, $maxLength = 0)
+	{
+		return "'" . $this->forSql($value, $maxLength) . "'";
+	}
+
+	/**
 	 * Returns function for getting current time.
 	 *
 	 * @return string
@@ -445,7 +458,7 @@ abstract class SqlHelper
 	 *
 	 * @return string Value to write to column.
 	 */
-	public function convertToDb($value, ORM\Fields\IReadable $field = null)
+	public function convertToDb($value, ?ORM\Fields\IReadable $field = null)
 	{
 		if ($value === null)
 		{
@@ -747,7 +760,7 @@ abstract class SqlHelper
 	 *
 	 * @return \Bitrix\Main\ORM\Fields\ScalarField
 	 */
-	abstract public function getFieldByColumnType($name, $type, array $parameters = null);
+	abstract public function getFieldByColumnType($name, $type, ?array $parameters = null);
 
 	/**
 	 * Returns ascending order specifier for ORDER BY clause.

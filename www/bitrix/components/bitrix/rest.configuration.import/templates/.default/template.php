@@ -117,7 +117,7 @@ else
 						<div class="rest-configuration-start-icon"></div>
 						<div class="rest-configuration-start-icon-circle"></div>
 					</div>
-					<p class="rest-configuration-info"><?=\Bitrix\Rest\Integration\Market\Label::isRenamedMarket() ? Loc::getMessage("REST_CONFIGURATION_IMPORT_ROLLBACK_MODE_DESCRIPTION_2_MSGVER_1") : Loc::getMessage("REST_CONFIGURATION_IMPORT_ROLLBACK_MODE_DESCRIPTION_2");?></p>
+					<p class="rest-configuration-info"><?=\Bitrix\Rest\Integration\Market\Label::isRenamedMarket() ? Loc::getMessage("REST_CONFIGURATION_IMPORT_ROLLBACK_MODE_DESCRIPTION_2_MSGVER_1") : Loc::getMessage("REST_CONFIGURATION_IMPORT_ROLLBACK_MODE_DESCRIPTION_2_MSGVER_2");?></p>
 					<form method="post">
 						<?=bitrix_sessid_post()?>
 						<? foreach($arResult['ROLLBACK_ITEMS'] as $item):?>
@@ -163,8 +163,9 @@ else
 						'IMPORT_CONTEXT' => $arResult['IMPORT_CONTEXT'],
 						'IMPORT_MANIFEST' => $arResult['IMPORT_MANIFEST_FILE'],
 						'MANIFEST_CODE' => $arResult['MANIFEST_CODE'],
-						'APP' => $arResult['APP'],
+						'APP' => $arResult['APP'] ?? null,
 						'FROM' => $arResult['FROM'],
+						'ADDITIONAL' => $arParams['ADDITIONAL'] ?? null,
 					),
 					$component,
 					array(
@@ -175,11 +176,16 @@ else
 			<? else:
 				if(!empty($arResult['MANIFEST']['IMPORT_DESCRIPTION_UPLOAD']))
 				{
-					$importFileDescription = $arResult['MANIFEST']['IMPORT_DESCRIPTION_UPLOAD'];
+					$importFileDescription = htmlspecialcharsbx($arResult['MANIFEST']['IMPORT_DESCRIPTION_UPLOAD']);
 				}
 				else
 				{
-					$importFileDescription = Loc::getMessage('REST_CONFIGURATION_IMPORT_SAVE_FILE_DESCRIPTION');
+					$importFileDescription = Loc::getMessage('REST_CONFIGURATION_IMPORT_SAVE_FILE_DESCRIPTION_MSGVER_1',
+						[
+							'#LINK_START#' => '<a class="rest-configuration-pointer-link" onclick="top.BX.Helper.show(`redirect=detail&code=25376980`)">',
+							'#LINK_END#' => '</a>'
+						]
+					);
 				}
 				?>
 				<div class="rest-configuration-start-icon-main rest-configuration-start-icon-main-zip">
@@ -196,7 +202,7 @@ else
 						</label>
 					</div>
 				</form>
-				<p class="rest-configuration-info"><?=htmlspecialcharsbx($importFileDescription)?></p>
+				<p class="rest-configuration-info"><?= $importFileDescription?></p>
 			<? endif;?>
 		<? elseif (!empty($arResult['INSTALL_APP'])):?>
 			<?php
@@ -207,7 +213,7 @@ else
 					'APP_CODE' => $arResult['INSTALL_APP'],
 					'IFRAME' => 'Y',
 					'FROM' => $arResult['FROM'],
-					'ADDITIONAL' => $arParams['ADDITIONAL'],
+					'ADDITIONAL' => $arParams['ADDITIONAL'] ?? null,
 					'ZIP_ID' => $arParams['ZIP_ID'],
 				),
 				$component,

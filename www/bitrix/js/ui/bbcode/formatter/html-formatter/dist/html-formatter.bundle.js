@@ -164,8 +164,10 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	    img.className = 'ui-typography-smiley';
 	    img.alt = smiley.getTyping();
 	    if (smiley.getWidth() > 0 && smiley.getHeight() > 0) {
-	      img.width = smiley.getWidth();
-	      img.height = smiley.getHeight();
+	      main_core.Dom.style(img, {
+	        width: `${smiley.getWidth()}px`,
+	        height: `${smiley.getHeight()}px`
+	      });
 	    }
 	    return img;
 	  }
@@ -202,34 +204,14 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	  }
 	}
 
-	function trimLineBreaks(nodes) {
-	  const trimmedNodes = [...nodes];
-	  const firstNode = trimmedNodes[0];
-	  const lastNode = trimmedNodes[trimmedNodes.length - 1];
-	  if (isLineBreakNode(firstNode) || isParagraphNode(firstNode) && firstNode.isEmpty()) {
-	    trimmedNodes.splice(0, 1);
-	  }
-	  if (isLineBreakNode(lastNode) || isParagraphNode(lastNode) && lastNode.isEmpty()) {
-	    trimmedNodes.splice(-1, 1);
-	  }
-	  return trimmedNodes;
-	}
-	function isLineBreakNode(node) {
-	  return node && node.getScheme().isNewLine(node);
-	}
-	function isParagraphNode(node) {
-	  return node && node.getName() === 'p';
-	}
-
 	function normalizeLineBreaks(node) {
 	  const scheme = node.getScheme();
-	  const children = trimLineBreaks(node.getChildren(), scheme);
-	  node.setChildren(children);
 
-	  // to avoid a height collapsing for empty elements
-	  if (children.length === 0 || !scheme.isNewLine(children.at(-1)) && /^\s*$/.test(node.getTextContent())) {
-	    node.appendChild(scheme.createNewLine());
-	  }
+	  // To avoid a height collapsing for empty elements we need to add an additional <br> (<p></p> => <p><br></p>).
+	  // If we end an element with a LineBreakNode, then we need to add an additional <br>.
+	  // A browser doesn't render the last <br> (<p>text<br></p>).
+
+	  node.appendChild(scheme.createNewLine());
 	  return node;
 	}
 
@@ -337,6 +319,8 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	  }
 	}
 
+	let _$1 = t => t,
+	  _t$1;
 	class TableNodeFormatter extends ui_bbcode_formatter.NodeFormatter {
 	  constructor(options = {}) {
 	    super({
@@ -348,6 +332,13 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	            classname: 'ui-typography-table'
 	          }
 	        });
+	      },
+	      after({
+	        element
+	      }) {
+	        const container = main_core.Tag.render(_t$1 || (_t$1 = _$1`<div class="ui-typography-table-scroll"></div>`));
+	        container.appendChild(element);
+	        return container;
 	      },
 	      ...options
 	    });
@@ -443,11 +434,12 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	      convert({
 	        node
 	      }) {
+	        const nested = node.getChildren().some(child => child.getName() === 'list');
 	        return main_core.Dom.create({
 	          tag: 'li',
 	          attrs: {
 	            ...node.getAttributes(),
-	            className: 'ui-typography-li'
+	            className: `ui-typography-li${nested ? ' --nested' : ''}`
 	          }
 	        });
 	      },
@@ -478,7 +470,10 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	  }
 	}
 
+	let _$2 = t => t,
+	  _t$2;
 	var _codeParser = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("codeParser");
+	var _handleCopyButtonClick = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleCopyButtonClick");
 	class CodeNodeFormatter extends ui_bbcode_formatter.NodeFormatter {
 	  constructor(options = {}) {
 	    super({
@@ -492,24 +487,71 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	        node
 	      }) {
 	        const content = node.getTextContent();
-	        return main_core.Dom.create({
+	        const code = main_core.Dom.create({
 	          tag: 'code',
 	          attrs: {
 	            className: 'ui-typography-code'
+	          },
+	          events: {
+	            mouseenter: () => {
+	              main_core.Dom.removeClass(button, ['--copied']);
+	              main_core.Dom.addClass(button, '--visible');
+	            },
+	            mouseleave: () => {
+	              main_core.Dom.removeClass(button, ['--visible']);
+	            }
 	          },
 	          dataset: {
 	            decorator: true
 	          },
 	          children: getCodeTokenNodes(babelHelpers.classPrivateFieldLooseBase(this, _codeParser)[_codeParser].parse(content))
 	        });
+	        const button = main_core.Tag.render(_t$2 || (_t$2 = _$2`
+					<button type="button" 
+						class="ui-typography-code-copy-button" 
+						onclick="${0}" 
+						title="${0}"
+						aria-label="${0}"
+					>
+						<span class="ui-typography-code-copy-icon ui-icon-set --o-copy"></span>
+						<span class="ui-typography-code-copy-icon ui-icon-set --o-copied"></span>
+					</button>
+				`), babelHelpers.classPrivateFieldLooseBase(this, _handleCopyButtonClick)[_handleCopyButtonClick].bind(this), main_core.Loc.getMessage('HTML_FORMATTER_COPY_TO_CLIPBOARD'), main_core.Loc.getMessage('HTML_FORMATTER_COPY_TO_CLIPBOARD'));
+	        code.append(button);
+	        return code;
 	      },
 	      ...options
+	    });
+	    Object.defineProperty(this, _handleCopyButtonClick, {
+	      value: _handleCopyButtonClick2
 	    });
 	    Object.defineProperty(this, _codeParser, {
 	      writable: true,
 	      value: new ui_codeParser.CodeParser()
 	    });
 	  }
+	}
+	function _handleCopyButtonClick2(event) {
+	  const button = event.currentTarget;
+	  const codeElement = button.parentElement;
+	  const text = codeElement.innerText;
+	  event.stopPropagation();
+	  if (navigator.clipboard && window.isSecureContext) {
+	    void navigator.clipboard.writeText(text);
+	  } else {
+	    const textarea = document.createElement('textarea');
+	    textarea.value = text;
+	    main_core.Dom.style(textarea, {
+	      position: 'fixed',
+	      left: '-9999px'
+	    });
+	    main_core.Dom.attr(textarea, 'aria-hidden', 'true');
+	    document.body.appendChild(textarea);
+	    textarea.select();
+	    document.execCommand('copy');
+	    document.body.removeChild(textarea);
+	  }
+	  main_core.Dom.addClass(button, '--copied');
 	}
 	function getCodeTokenNodes(tokens) {
 	  const nodes = [];
@@ -533,16 +575,17 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	  return nodes;
 	}
 
+	function validateUrl(url, allowDomainRelativeUrl = true) {
+	  if (allowDomainRelativeUrl) {
+	    return /^(http:|https:|mailto:|tel:|sms:|\/)/i.test(url);
+	  }
+	  return /^(http:|https:|mailto:|tel:|sms:)/i.test(url);
+	}
+
 	class LinkNodeFormatter extends ui_bbcode_formatter.NodeFormatter {
 	  constructor(options = {}) {
 	    super({
 	      name: 'url',
-	      validate({
-	        node
-	      }) {
-	        const nodeValue = LinkNodeFormatter.fetchNodeValue(node);
-	        return !LinkNodeFormatter.startsWithJavascriptScheme(nodeValue);
-	      },
 	      before({
 	        node,
 	        formatter
@@ -594,21 +637,24 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	          }
 	          return node.getContent();
 	        })();
-	        const nodeAttributes = node.getAttributes();
-	        const {
-	          defaultTarget = '_blank',
-	          attributes
-	        } = formatter.getLinkSettings();
-	        return main_core.Dom.create({
-	          tag: 'a',
-	          attrs: {
-	            ...nodeAttributes,
-	            ...attributes,
-	            href: sourceHref,
-	            target: defaultTarget,
-	            className: 'ui-typography-link'
-	          }
-	        });
+	        if (validateUrl(sourceHref)) {
+	          const nodeAttributes = node.getAttributes();
+	          const {
+	            defaultTarget = '_blank',
+	            attributes
+	          } = formatter.getLinkSettings();
+	          return main_core.Dom.create({
+	            tag: 'a',
+	            attrs: {
+	              ...nodeAttributes,
+	              ...attributes,
+	              href: sourceHref,
+	              target: defaultTarget,
+	              className: 'ui-typography-link'
+	            }
+	          });
+	        }
+	        return document.createDocumentFragment();
 	      },
 	      ...options
 	    });
@@ -619,14 +665,6 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	      return value;
 	    }
 	    return node.toPlainText();
-	  }
-	  static startsWithJavascriptScheme(sourceHref) {
-	    if (main_core.Type.isStringFilled(sourceHref)) {
-	      // eslint-disable-next-line no-control-regex
-	      const regexp = /^[\u0000-\u001F ]*j[\t\n\r]*a[\t\n\r]*v[\t\n\r]*a[\t\n\r]*s[\t\n\r]*c[\t\n\r]*r[\t\n\r]*i[\t\n\r]*p[\t\n\r]*t[\t\n\r]*:/i;
-	      return regexp.test(sourceHref);
-	    }
-	    return false;
 	  }
 	}
 
@@ -806,7 +844,8 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	function createImageNode({
 	  src,
 	  width,
-	  height
+	  height,
+	  viewerAttrs = {}
 	}) {
 	  return main_core.Dom.create({
 	    tag: 'span',
@@ -814,7 +853,8 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	      className: 'ui-typography-image-container'
 	    },
 	    dataset: {
-	      decorator: true
+	      decorator: true,
+	      ...viewerAttrs
 	    },
 	    children: [main_core.Dom.create({
 	      tag: 'img',
@@ -874,6 +914,7 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	  url,
 	  width,
 	  height,
+	  viewerAttrs = {},
 	  type
 	}) {
 	  const video = main_core.Dom.create({
@@ -909,7 +950,8 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	      className: 'ui-typography-video-container'
 	    },
 	    dataset: {
-	      decorator: true
+	      decorator: true,
+	      ...viewerAttrs
 	    },
 	    children: [video]
 	  });
@@ -996,12 +1038,14 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	  constructor(options = {}) {
 	    const formatter = options.formatter;
 	    const fileMode = formatter.getFileMode();
+	    const viewerGroupBy = main_core.Text.getRandom();
 	    super({
 	      name: fileMode || '__unknown__',
 	      convert({
 	        node,
 	        data
 	      }) {
+	        var _data$files;
 	        if (fileMode === null) {
 	          return node;
 	        }
@@ -1017,11 +1061,19 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	        if (!main_core.Type.isStringFilled(serverFileId) || fileMode === 'disk' && !/^n?\d+$/i.test(serverFileId) || fileMode === 'file' && !/^(\d+|[\da-f-]{36}\.[\da-f]{32,})$/i.test(serverFileId)) {
 	          return createTextNode();
 	        }
-	        const info = data.files.find(file => {
-	          return file.serverFileId.toString() === serverFileId.toString();
+	        const info = data == null ? void 0 : (_data$files = data.files) == null ? void 0 : _data$files.find(file => {
+	          var _file$customData;
+	          return file.serverFileId.toString() === serverFileId.toString() || `n${(_file$customData = file.customData) == null ? void 0 : _file$customData.objectId.toString()}` === serverFileId.toString();
 	        });
 	        if (!info) {
 	          return createTextNode();
+	        }
+	        const viewerAttrsExist = main_core.Type.isPlainObject(info.viewerAttrs);
+	        const viewerAttrs = viewerAttrsExist ? {
+	          ...info.viewerAttrs
+	        } : {};
+	        if (viewerAttrsExist && !main_core.Type.isStringFilled(viewerAttrs.viewerGroupBy) && main_core.Type.isUndefined(viewerAttrs.viewerSeparateItem)) {
+	          viewerAttrs.viewerGroupBy = viewerGroupBy;
 	        }
 	        if (info.isImage) {
 	          let width = main_core.Text.toInteger(node.getAttribute('width'));
@@ -1031,7 +1083,8 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	          return createImageNode({
 	            width,
 	            height,
-	            src: info.serverPreviewUrl
+	            src: info.serverPreviewUrl,
+	            viewerAttrs
 	          });
 	        }
 	        if (info.isVideo) {
@@ -1041,6 +1094,7 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	          height = main_core.Type.isNumber(height) && height > 0 ? Math.round(height) : null;
 	          return createVideoNode({
 	            url: info.downloadUrl,
+	            viewerAttrs,
 	            width,
 	            height
 	          });
@@ -1054,7 +1108,8 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	          text: info.name || 'unknown',
 	          dataset: {
 	            fileId: info.serverFileId,
-	            fileInfo: JSON.stringify(info)
+	            fileInfo: JSON.stringify(info),
+	            ...viewerAttrs
 	          }
 	        });
 	      },
@@ -1215,45 +1270,54 @@ this.BX.UI.BBCode = this.BX.UI.BBCode || {};
 	  props: {
 	    bbcode: {
 	      type: String,
-	      required: false,
 	      default: ''
+	    },
+	    /** @type HtmlFormatterOptions */
+	    options: {
+	      type: Object,
+	      default: undefined
+	    },
+	    /** @type FormatterData */
+	    formatData: {
+	      type: Object,
+	      default: () => ({})
 	    }
 	  },
 	  beforeCreate() {
 	    this.htmlFormatter = null;
 	  },
 	  mounted() {
-	    this.format(this.bbcode);
+	    this.format();
 	  },
 	  unmounted() {
 	    this.htmlFormatter = null;
 	  },
 	  watch: {
-	    bbcode(newValue) {
-	      this.format(newValue);
+	    bbcode() {
+	      this.format();
+	    },
+	    formatData() {
+	      this.format();
 	    }
 	  },
 	  methods: {
-	    format(bbcode) {
+	    format() {
 	      const result = this.getHtmlFormatter().format({
-	        source: bbcode
+	        source: this.bbcode,
+	        data: this.formatData
 	      });
-	      const container = this.$refs.content;
-	      main_core.Dom.clean(container);
-	      // eslint-disable-next-line @bitrix24/bitrix24-rules/no-native-dom-methods
-	      container.appendChild(result);
-	      // container.parentNode.replaceChild(result, container);
+	      main_core.Dom.clean(this.$el);
+	      main_core.Dom.append(result, this.$el);
 	    },
-
 	    getHtmlFormatter() {
-	      if (this.htmlFormatter !== null) {
-	        return this.htmlFormatter;
-	      }
-	      this.htmlFormatter = new HtmlFormatter();
+	      var _this$htmlFormatter;
+	      (_this$htmlFormatter = this.htmlFormatter) != null ? _this$htmlFormatter : this.htmlFormatter = new HtmlFormatter(this.options);
 	      return this.htmlFormatter;
 	    }
 	  },
-	  template: '<div class="ui-typography-container" ref="content"></div>'
+	  template: `
+		<div class="ui-typography-container"></div>
+	`
 	};
 
 	exports.HtmlFormatter = HtmlFormatter;

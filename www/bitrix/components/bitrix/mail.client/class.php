@@ -1,8 +1,12 @@
 <?php
 
+use Bitrix\Mail\Helper\AnalyticsHelper;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main;
 use Bitrix\Mail;
+use Bitrix\Mail\Helper\LicenseManager;
+use Bitrix\Mail\Helper\Config\Feature;
+
 
 \Bitrix\Main\UI\Extension::load('mail.messagegrid');
 
@@ -79,7 +83,10 @@ class CMailClientComponent extends CBitrixComponent
 				'msg_view'    => 'message/#id#',
 				'msg_list'    => 'list/#id#/#start_sync_with_showing_stepper#',
 				'config_dirs' => 'config/dirs',
-                'addressbook' => 'addressbook',
+				'addressbook' => 'addressbook',
+				'mbx_list' => 'mailbox-list',
+				'massconnect' => 'massconnect',
+				'config_permissions' => 'permissions',
 			);
 		}
 		else
@@ -94,7 +101,10 @@ class CMailClientComponent extends CBitrixComponent
 				'msg_view'    => 'page=msg_view&id=#id#',
 				'msg_list'    => 'page=msg_list&id=#id#&start_sync_with_showing_stepper=#start_sync_with_showing_stepper#',
 				'config_dirs' => 'page=config_dirs',
-                'addressbook' => 'page=addressbook',
+				'addressbook' => 'page=addressbook',
+				'mbx_list' => 'page=mailbox-list',
+				'massconnect' => 'page=massconnect',
+				'config_permissions' => 'page=permissions',
 			);
 		}
 
@@ -125,6 +135,36 @@ class CMailClientComponent extends CBitrixComponent
 		if (empty($componentPage) || !array_key_exists($componentPage, $defaultUrlTemplates))
 			$componentPage = 'home';
 
+		$gridPages = ['mbx_list', 'massconnect', 'config_permissions'];
+		if (in_array($componentPage, $gridPages, true) && !Feature::isMailboxGridAvailable())
+		{
+			$componentPage = 'home';
+		}
+
+		if ($componentPage === 'mbx_list' && !LicenseManager::isMailboxManagementEnabled())
+		{
+			$this->arParams['MAIL_SLIDER_CODE'] = 'limit_v2_mail_mailboxes_management_grid';
+			$this->includeComponentTemplate('hidden_module');
+
+			return;
+		}
+
+		if ($componentPage === 'massconnect' && !LicenseManager::isMailboxesMassConnectEnabled())
+		{
+			$this->arParams['MAIL_SLIDER_CODE'] = 'limit_v2_mail_mailbox_massconnect';
+			$this->includeComponentTemplate('hidden_module');
+
+			return;
+		}
+
+		if ($componentPage === 'config_permissions' && !LicenseManager::isAccessRightsEnabled())
+		{
+			$this->arParams['MAIL_SLIDER_CODE'] = 'limit_v2_mail_access_rights';
+			$this->includeComponentTemplate('hidden_module');
+
+			return;
+		}
+
 		$this->arResult['VARIABLES'] = $variables;
 
 		$this->arResult['PATH_TO_USER_CALENDAR_EVENT'] = \CComponentEngine::makePathFromTemplate(
@@ -151,33 +191,18 @@ class CMailClientComponent extends CBitrixComponent
 			array('user_id' => $USER->getId())
 		);
 
-		$APPLICATION->setAdditionalCSS('/bitrix/components/bitrix/mail.client.sidepanel/templates/.default/style.css');
 		$APPLICATION->setAdditionalCSS('/bitrix/components/bitrix/mail.client.config/templates/.default/style.css');
 		$APPLICATION->setAdditionalCSS('/bitrix/components/bitrix/mail.contact.avatar/templates/.default/style.css');
 
 		$APPLICATION->setAdditionalCSS('/bitrix/components/bitrix/main.interface.buttons/templates/.default/style.css');
 
+		$requestSource = $_REQUEST['source'] ?? null;
+		if ($validSource = AnalyticsHelper::getValidatedSource($componentPage, $requestSource))
+		{
+			$this->arResult['ANALYTICS']['SOURCE'] = $validSource;
+		}
+
 		$this->includeComponentTemplate($componentPage);
-	}
-
-	public function includePageComponent($name, $template, &$params)
-	{
-		global $APPLICATION;
-
-		if (isset($_REQUEST['IFRAME']) && $_REQUEST['IFRAME'] == 'Y')
-		{
-			$APPLICATION->includeComponent(
-				'bitrix:mail.client.sidepanel',
-				'',
-				array(
-					'COMPONENT_ARGUMENTS' => array($name, $template, $params, $this),
-				)
-			);
-		}
-		else
-		{
-			$APPLICATION->includeComponent($name, $template, $params, $this);
-		}
 	}
 
 }

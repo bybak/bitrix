@@ -266,7 +266,7 @@ abstract class Connection extends Data\Connection
 	 * @return resource
 	 * @throws SqlQueryException | DuplicateEntryException
 	 */
-	abstract protected function queryInternal($sql, array $binds = null, Diag\SqlTrackerQuery $trackerQuery = null);
+	abstract protected function queryInternal($sql, ?array $binds = null, ?Diag\SqlTrackerQuery $trackerQuery = null);
 
 	/**
 	 * Returns database-depended result of the query.
@@ -276,7 +276,7 @@ abstract class Connection extends Data\Connection
 	 *
 	 * @return Result
 	 */
-	abstract protected function createResult($result, Diag\SqlTrackerQuery $trackerQuery = null);
+	abstract protected function createResult($result, ?Diag\SqlTrackerQuery $trackerQuery = null);
 
 	/**
 	 * Executes a query to the database.
@@ -347,7 +347,7 @@ abstract class Connection extends Data\Connection
 	 * @return string|null
 	 * @throws SqlQueryException
 	 */
-	public function queryScalar($sql, array $binds = null)
+	public function queryScalar($sql, ?array $binds = null)
 	{
 		$result = $this->query($sql, $binds, 0, 1);
 
@@ -368,7 +368,7 @@ abstract class Connection extends Data\Connection
 	 * @return void
 	 * @throws SqlQueryException
 	 */
-	public function queryExecute($sql, array $binds = null)
+	public function queryExecute($sql, ?array $binds = null)
 	{
 		$this->query($sql, $binds);
 	}
@@ -858,6 +858,7 @@ abstract class Connection extends Data\Connection
 	public function dropColumn($tableName, $columnName)
 	{
 		$this->query('ALTER TABLE ' . $this->getSqlHelper()->quote($tableName) . ' DROP COLUMN ' . $this->getSqlHelper()->quote($columnName));
+		$this->clearCaches($tableName);
 	}
 
 	/**
@@ -977,7 +978,7 @@ abstract class Connection extends Data\Connection
 	 *
 	 * @return void
 	 */
-	public function setTracker(Diag\SqlTracker $sqlTracker = null)
+	public function setTracker(?Diag\SqlTracker $sqlTracker = null)
 	{
 		$this->sqlTracker = $sqlTracker;
 	}
@@ -1029,11 +1030,19 @@ abstract class Connection extends Data\Connection
 	/**
 	 * Clears all internal caches which may be used by some dictionary functions.
 	 *
+	 * @params string | null $table
 	 * @return void
 	 */
-	public function clearCaches()
+	public function clearCaches(?string $table = null)
 	{
-		$this->tableColumnsCache = [];
+		if ($table === null)
+		{
+			$this->tableColumnsCache = [];
+		}
+		else
+		{
+			unset($this->tableColumnsCache[$table]);
+		}
 	}
 
 	/**

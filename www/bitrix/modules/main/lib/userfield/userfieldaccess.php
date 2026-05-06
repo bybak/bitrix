@@ -15,7 +15,7 @@ abstract class UserFieldAccess
 
 	protected $userId;
 
-	public function __construct(int $userId = null)
+	public function __construct(?int $userId = null)
 	{
 		if($userId === null)
 		{
@@ -25,7 +25,7 @@ abstract class UserFieldAccess
 		$this->userId = $userId;
 	}
 
-	public static function getInstance(string $moduleId, int $userId = null): UserFieldAccess
+	public static function getInstance(string $moduleId, ?int $userId = null): UserFieldAccess
 	{
 		$configuration = Configuration::getInstance($moduleId);
 
@@ -73,6 +73,7 @@ abstract class UserFieldAccess
 			'resourcebooking', // available in crm only
 			'mail_message', // no way to edit
 			'hlblock', // the field is not implemented yet
+			'string_formatted',
 		];
 	}
 
@@ -145,6 +146,11 @@ abstract class UserFieldAccess
 
 	public function canAdd(array $field): bool
 	{
+		if ($this->isRestrictedType($field))
+		{
+			return false;
+		}
+
 		$availableEntityIds = $this->getAvailableEntityIds();
 
 		return (isset($field['ENTITY_ID']) && in_array($field['ENTITY_ID'], $availableEntityIds, true));
@@ -158,5 +164,12 @@ abstract class UserFieldAccess
 	public function canDelete(int $id): bool
 	{
 		return $this->canUpdate($id);
+	}
+
+	protected function isRestrictedType(array $field): bool
+	{
+		$restrictedTypes = $this->getRestrictedTypes();
+
+		return isset($field['USER_TYPE_ID']) && in_array($field['USER_TYPE_ID'], $restrictedTypes, true);
 	}
 }

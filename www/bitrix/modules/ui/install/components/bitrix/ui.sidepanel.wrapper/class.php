@@ -165,6 +165,19 @@ class UIPageSliderWrapperComponent extends \CBitrixComponent
 			$this->arResult["SHOW_BITRIX24_THEME"] = "N";
 		}
 
+		$this->arResult['DESIGN_SYSTEM_CONTEXT'] = (
+			isset($this->arParams['DESIGN_SYSTEM_CONTEXT']) && is_string($this->arParams['DESIGN_SYSTEM_CONTEXT'])
+				? $this->arParams['DESIGN_SYSTEM_CONTEXT']
+				: ''
+		);
+
+		$this->arResult['SHOW_TOOLBAR'] = !($this->arParams['PLAIN_VIEW'] || $this->arParams['HIDE_TOOLBAR']);
+		if (isset($this->arParams['USE_UI_TOOLBAR']) && $this->arParams['USE_UI_TOOLBAR'] === 'Y')
+		{
+			// Compatibility
+			$this->arResult['SHOW_TOOLBAR'] = true;
+		}
+
 		if ($this->isPageSliderContext() && !self::$isWrapperCalled)
 		{
 			self::$isWrapperCalled = true;

@@ -1,5 +1,10 @@
 <?php
 
+if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
+{
+	die();
+}
+
 use Bitrix\Catalog\Access\AccessController;
 use Bitrix\Catalog\Access\ActionDictionary;
 use Bitrix\Catalog\Component\BaseForm;
@@ -24,11 +29,6 @@ use Bitrix\Main\Result;
 use Bitrix\UI\Toolbar\Facade\Toolbar;
 use Bitrix\Main\Application;
 use Bitrix\Main\Error;
-
-if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
-{
-	die();
-}
 
 class CatalogProductVariationDetailsComponent
 	extends \CBitrixComponent
@@ -252,23 +252,25 @@ class CatalogProductVariationDetailsComponent
 					$propertyType = $property->getPropertyType();
 				}
 
-				// grid file properties
-				if (!empty($fields[$name.'_custom']['isFile']))
-				{
-					$field = $this->prepareFilePropertyFromGrid($fields[$name.'_custom']);
-					if (empty($field))
-					{
-						$field = '';
-					}
-					unset($fields[$name.'_custom']);
-				}
 				// editor file properties
-				elseif ($propertyType === PropertyTable::TYPE_FILE)
+				if ($propertyType === PropertyTable::TYPE_FILE)
 				{
 					$descriptions = $fields[$name.'_descr'] ?? [];
 					$deleted = $fields[$name.'_del'] ?? [];
 
-					$editorFiles = $this->prepareFilePropertyFromEditor($fields[$name] ?? [], $descriptions, $deleted);
+					if (isset($fields[$name . '_tile_widget']))
+					{
+						$controlId = BaseForm::PROPERTY_FIELD_PREFIX . $index . '_uploader';
+						if (in_array($index, $this->filePropertyIdsFromGrid))
+						{
+							$controlId = BaseForm::GRID_FIELD_PREFIX . $controlId;
+						}
+						$field = $fields[$name . '_tile_widget'];
+						$field = $this->getForm()->parseTileWidgetFileField($property, $controlId, $field);
+
+						unset($fields[$name . '_tile_widget']);
+					}
+					$editorFiles = $this->prepareFilePropertyFromEditor($field ?? [], $descriptions, $deleted);
 					$editorFiles = array_column($editorFiles ?? [], 'VALUE');
 					$checkedField = [];
 
@@ -295,20 +297,8 @@ class CatalogProductVariationDetailsComponent
 								$checkedField[] = $editorFile; // array file ['tmp_name', 'size', ...], no need to check
 							}
 						}
+						$field = $checkedField;
 					}
-					else
-					{
-						$controlId = BaseForm::PROPERTY_FIELD_PREFIX . $index . '_uploader';
-						if (in_array($index, $this->filePropertyIdsFromGrid))
-						{
-							$controlId = BaseForm::GRID_FIELD_PREFIX . $controlId;
-						}
-						$checkedField = \Bitrix\Main\UI\FileInputUtility::instance()->checkFiles(
-							$controlId,
-							$editorFiles
-						);
-					}
-					$field = $checkedField;
 					if (empty($field))
 					{
 						$field = '';
@@ -714,63 +704,63 @@ class CatalogProductVariationDetailsComponent
 
 			if ($variation)
 			{
-				$this->parseGridFields($fields);
-				$propertyFields = $this->parsePropertyFields($fields);
-				$this->checkCompatiblePictureFields($variation, $propertyFields);
-				$priceFields = $this->parsePriceFields($fields);
-				$measureRatioField = $this->parseMeasureRatioFields($fields);
-
-				if (!empty($fields))
-				{
-					$this->prepareDescriptionFields($fields);
-					$this->preparePictureFields($fields);
-					$this->prepareCatalogFields($fields);
-					$this->prepareDateFields($fields);
-
-					if (isset($fields['PURCHASING_PRICE']))
-					{
-						if (is_string($fields['PURCHASING_PRICE']))
-						{
-							$fields['PURCHASING_PRICE'] = str_replace(
-								',', '.', trim($fields['PURCHASING_PRICE'])
-							);
-						}
-						if ($fields['PURCHASING_PRICE'] === '')
-						{
-							$fields['PURCHASING_PRICE'] = null;
-						}
-					}
-
-					$variation->setFields($fields);
-
-					if (isset($fields['BARCODE']))
-					{
-						$variation
-							->getBarcodeCollection()
-							->setSimpleBarcodeValue($fields['BARCODE'])
-						;
-					}
-				}
-
-				if (!empty($propertyFields))
-				{
-					$variation->getPropertyCollection()->setValues($propertyFields);
-				}
-
-				if (!empty($priceFields) && $this->getForm()->isPricesEditable())
-				{
-					$variation->getPriceCollection()->setValues($priceFields);
-				}
-
-				if (!empty($measureRatioField))
-				{
-					$variation->getMeasureRatioCollection()->setDefault($measureRatioField);
-				}
-
 				$connection = Application::getConnection();
 				$connection->startTransaction();
+
 				try
 				{
+					$this->parseGridFields($fields);
+					$propertyFields = $this->parsePropertyFields($fields);
+					$this->checkCompatiblePictureFields($variation, $propertyFields);
+					$priceFields = $this->parsePriceFields($fields);
+					$measureRatioField = $this->parseMeasureRatioFields($fields);
+
+					if (!empty($fields))
+					{
+						$this->prepareDescriptionFields($fields);
+						$this->preparePictureFields($fields);
+						$this->prepareCatalogFields($fields);
+						$this->prepareDateFields($fields);
+
+						if (isset($fields['PURCHASING_PRICE']))
+						{
+							if (is_string($fields['PURCHASING_PRICE']))
+							{
+								$fields['PURCHASING_PRICE'] = str_replace(
+									',', '.', trim($fields['PURCHASING_PRICE'])
+								);
+							}
+							if ($fields['PURCHASING_PRICE'] === '')
+							{
+								$fields['PURCHASING_PRICE'] = null;
+							}
+						}
+
+						$variation->setFields($fields);
+
+						if (isset($fields['BARCODE']))
+						{
+							$variation
+								->getBarcodeCollection()
+								->setSimpleBarcodeValue($fields['BARCODE'])
+							;
+						}
+					}
+
+					if (!empty($propertyFields))
+					{
+						$variation->getPropertyCollection()->setValues($propertyFields);
+					}
+
+					if (!empty($priceFields) && $this->getForm()->isPricesEditable())
+					{
+						$variation->getPriceCollection()->setValues($priceFields);
+					}
+
+					if (!empty($measureRatioField))
+					{
+						$variation->getMeasureRatioCollection()->setDefault($measureRatioField);
+					}
 					$result = $variation->save();
 				}
 				catch (SqlQueryException)
@@ -881,13 +871,6 @@ class CatalogProductVariationDetailsComponent
 		return true;
 	}
 
-	private function getApplication()
-	{
-		global $APPLICATION;
-
-		return $APPLICATION;
-	}
-
 	protected function setIblockId(int $iblockId): self
 	{
 		$this->iblockId = $iblockId;
@@ -917,11 +900,6 @@ class CatalogProductVariationDetailsComponent
 		return $this->productId;
 	}
 
-	private function hasProductId(): bool
-	{
-		return $this->getProductId() > 0;
-	}
-
 	protected function setVariationId(int $variationId): self
 	{
 		$this->variationId = $variationId;
@@ -942,7 +920,8 @@ class CatalogProductVariationDetailsComponent
 	protected function placePageTitle(BaseSku $variation): void
 	{
 		$title = $variation->isNew() ? Loc::getMessage('CPVD_NEW_VARIATION_TITLE_MSGVER_1') : Bitrix\Main\Text\HtmlFilter::encode($variation->getName());
-		$this->getApplication()->setTitle($title);
+
+		Toolbar::setTitle($title);
 	}
 
 	protected function loadProduct()
@@ -1183,126 +1162,6 @@ class CatalogProductVariationDetailsComponent
 		}
 
 		return Bitrix\Main\Engine\Response\AjaxJson::createSuccess();
-	}
-
-	private function parseIsSkuProduct(array $fields, BaseProduct $product): bool
-	{
-		$skuGridId = $this->getForm()->getVariationGridId();
-		$skuFields = $fields[$skuGridId] ?? [];
-
-		if (count($skuFields) > 1)
-		{
-			return true;
-		}
-
-		foreach ($skuFields as $id => $sku)
-		{
-			if (is_numeric($id) && $this->getProductId() !== $id)
-			{
-				return true;
-			}
-
-			if (!is_numeric($id) && !$product->isNew())
-			{
-				return true;
-			}
-
-			$propertyPrefix = GridVariationForm::preparePropertyName();
-			$morePhotoName = GridVariationForm::preparePropertyName(BaseForm::MORE_PHOTO);
-			$morePhotoNameCustom = "{$morePhotoName}_custom";
-
-			foreach ($sku as $name => $value)
-			{
-				if (
-					$name !== $morePhotoName
-					&& $name !== $morePhotoNameCustom
-					&& mb_strpos($name, $propertyPrefix) === 0)
-				{
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}
-
-	private function parseSkuFields(&$fields)
-	{
-		$skuGridId = $this->getForm()->getVariationGridId();
-
-		$skuFields = $fields[$skuGridId] ?? [];
-		unset($fields['ID'], $fields[$skuGridId]);
-
-		foreach ($fields as $name => $field)
-		{
-			if (mb_strpos($name, BaseForm::GRID_FIELD_PREFIX) === 0)
-			{
-				unset($fields[$name]);
-			}
-		}
-
-		$prefixLength = mb_strlen(BaseForm::GRID_FIELD_PREFIX);
-
-		foreach ($skuFields as $id => $sku)
-		{
-			foreach ($sku as $name => $value)
-			{
-				if (mb_strpos($name, BaseForm::GRID_FIELD_PREFIX) === 0)
-				{
-					$originalName = mb_substr($name, $prefixLength);
-					$skuFields[$id][$originalName] = $value;
-					unset($skuFields[$id][$name]);
-				}
-			}
-		}
-
-		return $skuFields;
-	}
-
-	private function prepareSkuPictureFields(&$fields)
-	{
-		$pictureFieldNames = ['DETAIL_PICTURE', 'PREVIEW_PICTURE'];
-
-		foreach ($pictureFieldNames as $name)
-		{
-			$customName = $name.'_custom';
-
-			if (!empty($fields[$name.'_custom']['isFile']))
-			{
-				unset($fields[$name.'_custom']['isFile']);
-
-				$fileProps = $this->prepareDetailPictureFromGrid($fields[$customName]);
-
-				if ($fileProps)
-				{
-					$fields[$name] = $fileProps;
-				}
-
-				unset($fields[$customName]);
-			}
-		}
-	}
-
-	private function prepareDetailPictureFromGrid($propertyFields)
-	{
-		$fileProp = [];
-
-		foreach ($propertyFields as $key => $value)
-		{
-			if (isset($propertyFields[$key.'_descr']) && (is_array($value) || is_numeric($value)))
-			{
-				$description = $propertyFields[$key.'_descr'] ?? null;
-				$delete = $propertyFields[$key.'_del'] ?? false;
-				$fileProp[] = \CIBlock::makeFilePropArray($value, $delete, $description);
-			}
-		}
-
-		if (empty($fileProp))
-		{
-			$fileProp[] = \CIBlock::makeFilePropArray([], true);
-		}
-
-		return reset($fileProp)['VALUE'] ?? null;
 	}
 
 	protected function getCreationPropertyUrl(): string

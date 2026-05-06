@@ -1,0 +1,9 @@
+<?php
+$MESS["BIZPROC_STORAGE_EDIT_CONFIRM_MESSAGE"] = "Möchten Sie diesen Speicher wirklich löschen?";
+$MESS["BIZPROC_STORAGE_EDIT_CONFIRM_MESSAGE_OK"] = "Ja";
+$MESS["BIZPROC_STORAGE_EDIT_DELETE_MESSAGE"] = "Speicher wurde gelöscht.";
+$MESS["BIZPROC_STORAGE_EDIT_SAVE_MESSAGE"] = "Speicher wurde gespeichert.";
+$MESS["BIZPROC_STORAGE_EDIT_TAB_DETAIL_TITLE"] = "Neuer Speicher";
+$MESS["BIZPROC_STORAGE_EDIT_TAB_EDIT_TITLE"] = "Bearbeiten";
+$MESS["BIZPROC_STORAGE_EDIT_TAB_FIELDS_TITLE"] = "Feldeinstellungen";
+$MESS["BIZPROC_STORAGE_EDIT_TAB_LIST_TITLE"] = "Speicherliste";

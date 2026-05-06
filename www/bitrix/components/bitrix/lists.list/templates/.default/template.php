@@ -162,7 +162,10 @@ if(!IsModuleInstalled("intranet"))
 
 	$APPLICATION->SetAdditionalCSS("/bitrix/js/lists/css/intranet-common.css");
 }
-
+else
+{
+	\Bitrix\Main\UI\Extension::load(['intranet.old-interface.intranet-common']);
+}
 
 if ($arResult["CAN_ADD_ELEMENT"] || $arResult["CAN_EDIT_SECTIONS"])
 {
@@ -192,7 +195,7 @@ if($arResult["SECTION_ID"])
 			'link' => $arResult["LIST_PARENT_URL"],
 			'color' => \Bitrix\UI\Buttons\Color::LINK,
 			'text' => GetMessage("CT_BLL_SECTION_RETURN"),
-			'classList' => ['lists-list-back'],
+			'icon' => \Bitrix\UI\Buttons\Icon::BACK,
 		],
 		\Bitrix\UI\Toolbar\ButtonLocation::AFTER_FILTER
 	);

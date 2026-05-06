@@ -1,0 +1,4 @@
+<?php
+$MESS["CHECKOUT_VIEW_TOTAL_CLOSE"] = "Schließen";
+$MESS["CHECKOUT_VIEW_TOTAL_TOTAL_ITEMS"] = "Gesamt";
+$MESS["CHECKOUT_VIEW_TOTAL_TOTAL_SUMMARY"] = "Zusammenfassung";

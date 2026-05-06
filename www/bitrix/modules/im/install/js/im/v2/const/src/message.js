@@ -10,8 +10,10 @@ export const MessageComponent = Object.freeze({
 	default: 'DefaultMessage',
 	file: 'FileMessage',
 	smile: 'SmileMessage',
+	sticker: 'StickerMessage',
 	unsupported: 'UnsupportedMessage',
 	deleted: 'DeletedMessage',
+	error: 'ErrorMessage',
 	callInvite: 'CallInviteMessage',
 	zoomInvite: 'ZoomInviteMessage',
 	chatCreation: 'ChatCreationMessage',
@@ -23,17 +25,21 @@ export const MessageComponent = Object.freeze({
 	supervisorUpdateFeature: 'SupervisorUpdateFeatureMessage',
 	supervisorEnableFeature: 'SupervisorEnableFeatureMessage',
 	sign: 'SignMessage',
+	admin: 'AdminMessage',
 	checkIn: 'CheckInMessage',
 	supportVote: 'SupportVoteMessage',
 	supportSessionNumber: 'SupportSessionNumberMessage',
 	supportChatCreation: 'SupportChatCreationMessage',
-	system: 'SystemMessage',
 	channelPost: 'ChannelPost',
 	generalChatCreationMessage: 'GeneralChatCreationMessage',
 	generalChannelCreationMessage: 'GeneralChannelCreationMessage',
 	channelCreationMessage: 'ChannelCreationMessage',
 	callMessage: 'CallMessage',
 	voteMessage: 'VoteMessage',
+	taskChatCreationMessage: 'TaskChatCreationMessage',
+	convertToCollabMessage: 'ConvertToCollabMessage',
+	aiAssistantMessage: 'AiAssistantMessage',
+	aiBizprocMessage: 'AiBizprocMessage',
 	...OpenLinesMessageComponent,
 });
 
@@ -60,3 +66,11 @@ export const OwnMessageStatus = Object.freeze({
 
 export const FakeMessagePrefix = 'temp';
 export const FakeDraftMessagePrefix = 'temp-draft';
+
+export const AutoDeleteDelay = Object.freeze({
+	Off: 0,
+	Hour: 1,
+	Day: 24,
+	Week: 168,
+	Month: 720,
+});

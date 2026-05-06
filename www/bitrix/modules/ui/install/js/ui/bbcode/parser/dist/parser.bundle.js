@@ -1,7 +1,7 @@
 /* eslint-disable */
 this.BX = this.BX || {};
 this.BX.UI = this.BX.UI || {};
-(function (exports,ui_bbcode_astProcessor,main_core,ui_bbcode_encoder,ui_linkify,ui_bbcode_model) {
+(function (exports,ui_bbcode_astProcessor,ui_bbcode_encoder,ui_linkify,ui_bbcode_model,main_core) {
 	'use strict';
 
 	function getByIndex(array, index) {
@@ -29,17 +29,129 @@ this.BX.UI = this.BX.UI || {};
 	  }
 	}
 
-	const TAG_REGEX = /\[(\/)?(\w+|\*).*?]/;
 	const TAG_REGEX_GS = /\[(\/)?(\w+|\*)(.*?)]/gs;
-	const isSpecialChar = symbol => {
-	  return ['\n', '\t'].includes(symbol);
+	const LF = '\n';
+	const CRLF = '\r\n';
+	const TAB = '\t';
+	const isLinebreak = symbol => {
+	  return [LF, CRLF].includes(symbol);
 	};
-	const isList = tagName => {
-	  return ['list', 'ul', 'ol'].includes(String(tagName).toLowerCase());
+	const isTab = symbol => {
+	  return symbol === TAB;
 	};
-	const isListItem = tagName => {
-	  return ['*', 'li'].includes(String(tagName).toLowerCase());
-	};
+	class BBCodeTokenizer {
+	  static trimQuotes(value) {
+	    const source = String(value);
+	    if (/^["'].*["']$/g.test(source)) {
+	      return source.slice(1, -1);
+	    }
+	    return value;
+	  }
+	  static toLowerCase(value) {
+	    if (main_core.Type.isStringFilled(value)) {
+	      return value.toLowerCase();
+	    }
+	    return value;
+	  }
+	  tokenize(bbcode) {
+	    const tokens = [];
+	    let lastIndex = 0;
+	    bbcode.replace(TAG_REGEX_GS, (fullTag, slash, tagName, attrs, index) => {
+	      if (index > lastIndex) {
+	        const textBetween = bbcode.slice(lastIndex, index);
+	        tokens.push(...this.parseText(textBetween));
+	      }
+	      const isOpeningTag = Boolean(slash) === false;
+	      const startIndex = fullTag.length + index;
+	      const attributes = this.parseAttributes(attrs);
+	      const lowerCaseTagName = BBCodeTokenizer.toLowerCase(tagName);
+	      if (isOpeningTag) {
+	        const nextContent = bbcode.slice(startIndex);
+	        const unclosed = !nextContent.includes(`[/${tagName}]`);
+	        tokens.push({
+	          type: 'OPEN_TAG',
+	          name: lowerCaseTagName,
+	          value: attributes.value,
+	          attributes: Object.fromEntries(attributes.attributes),
+	          unclosed
+	        });
+	      } else {
+	        tokens.push({
+	          type: 'CLOSE_TAG',
+	          name: lowerCaseTagName
+	        });
+	      }
+	      lastIndex = startIndex;
+	    });
+	    if (lastIndex < bbcode.length) {
+	      const remainingText = bbcode.slice(lastIndex);
+	      tokens.push(...this.parseText(remainingText));
+	    }
+	    return tokens;
+	  }
+	  parseText(text) {
+	    const tokens = [];
+	    if (main_core.Type.isStringFilled(text)) {
+	      const regex = /\\r\\n|\\n|\\t|\\.|.|\r\n|\n|\t/g;
+	      const matches = [...text.matchAll(regex)];
+	      let textBuffer = '';
+	      for (const match of matches) {
+	        const char = match[0];
+	        if (isLinebreak(char)) {
+	          if (textBuffer) {
+	            tokens.push({
+	              type: 'TEXT',
+	              content: textBuffer
+	            });
+	            textBuffer = '';
+	          }
+	          tokens.push({
+	            type: 'LINEBREAK'
+	          });
+	        } else if (isTab(char)) {
+	          if (textBuffer) {
+	            tokens.push({
+	              type: 'TEXT',
+	              content: textBuffer
+	            });
+	            textBuffer = '';
+	          }
+	          tokens.push({
+	            type: 'TAB'
+	          });
+	        } else {
+	          textBuffer += char;
+	        }
+	      }
+	      if (textBuffer) {
+	        tokens.push({
+	          type: 'TEXT',
+	          content: textBuffer
+	        });
+	      }
+	    }
+	    return tokens;
+	  }
+	  parseAttributes(sourceAttributes) {
+	    const result = {
+	      value: '',
+	      attributes: []
+	    };
+	    if (main_core.Type.isStringFilled(sourceAttributes)) {
+	      if (sourceAttributes.startsWith('=')) {
+	        result.value = BBCodeTokenizer.trimQuotes(sourceAttributes.slice(1));
+	        return result;
+	      }
+	      return sourceAttributes.trim().split(' ').filter(Boolean).reduce((acc, item) => {
+	        const [key, value = ''] = item.split('=');
+	        acc.attributes.push([BBCodeTokenizer.toLowerCase(key), BBCodeTokenizer.trimQuotes(value)]);
+	        return acc;
+	      }, result);
+	    }
+	    return result;
+	  }
+	}
+
 	const parserScheme = new ParserScheme();
 	class BBCodeParser {
 	  constructor(options = {}) {
@@ -131,170 +243,215 @@ this.BX.UI = this.BX.UI || {};
 	      }
 	    }
 	  }
-	  static toLowerCase(value) {
-	    if (main_core.Type.isStringFilled(value)) {
-	      return value.toLowerCase();
-	    }
-	    return value;
-	  }
-	  parseText(text) {
-	    if (main_core.Type.isStringFilled(text)) {
-	      return [...text].reduce((acc, symbol) => {
-	        if (isSpecialChar(symbol)) {
-	          acc.push(symbol);
-	        } else {
-	          const lastItem = getByIndex(acc, -1);
-	          if (isSpecialChar(lastItem) || main_core.Type.isNil(lastItem)) {
-	            acc.push(symbol);
-	          } else {
-	            acc[acc.length - 1] += symbol;
-	          }
-	        }
-	        return acc;
-	      }, []).map(fragment => {
-	        if (fragment === '\n') {
-	          return parserScheme.createNewLine();
-	        }
-	        if (fragment === '\t') {
-	          return parserScheme.createTab();
-	        }
-	        return parserScheme.createText({
-	          content: this.getEncoder().decodeText(fragment)
-	        });
+	  decodeAttributes(sourceAttributes) {
+	    if (main_core.Type.isArrayFilled(sourceAttributes)) {
+	      return sourceAttributes.map(([key, value]) => {
+	        return [key, this.getEncoder().decodeAttribute(value)];
 	      });
 	    }
-	    return [];
+	    return sourceAttributes;
 	  }
-	  static findNextTagIndex(bbcode, startIndex = 0) {
-	    const nextContent = bbcode.slice(startIndex);
-	    const matchResult = nextContent.match(new RegExp(TAG_REGEX));
-	    if (matchResult) {
-	      return matchResult.index + startIndex;
-	    }
-	    return -1;
-	  }
-	  static findNextTag(bbcode, startIndex = 0) {
-	    const nextContent = bbcode.slice(startIndex);
-	    const matchResult = nextContent.match(new RegExp(TAG_REGEX));
-	    if (matchResult) {
-	      const [, slash, tagName] = matchResult;
-	      return {
-	        tagName,
-	        isClosedTag: slash === '\\'
-	      };
-	    }
-	    return null;
-	  }
-	  static trimQuotes(value) {
-	    const source = String(value);
-	    if (/^["'].*["']$/g.test(source)) {
-	      return source.slice(1, -1);
-	    }
-	    return value;
-	  }
-	  parseAttributes(sourceAttributes) {
-	    const result = {
-	      value: '',
-	      attributes: []
-	    };
-	    if (main_core.Type.isStringFilled(sourceAttributes)) {
-	      if (sourceAttributes.startsWith('=')) {
-	        result.value = this.getEncoder().decodeAttribute(BBCodeParser.trimQuotes(sourceAttributes.slice(1)));
-	        return result;
+	  normalizeTokens(tokens) {
+	    const result = [];
+	    const stack = [];
+	    const getLastListTokenIndex = () => {
+	      for (let i = stack.length - 1; i >= 0; i--) {
+	        if (stack[i].name.toLowerCase() === 'list') {
+	          return stack[i].tokenIndex;
+	        }
 	      }
-	      return sourceAttributes.trim().split(' ').filter(Boolean).reduce((acc, item) => {
-	        const [key, value = ''] = item.split('=');
-	        acc.attributes.push([BBCodeParser.toLowerCase(key), this.getEncoder().decodeAttribute(BBCodeParser.trimQuotes(value))]);
-	        return acc;
-	      }, result);
+	      return -1;
+	    };
+	    const popAndClose = () => {
+	      const entry = stack.pop();
+	      if (!entry) {
+	        return;
+	      }
+	      const token = result[entry.tokenIndex];
+	      if ((token == null ? void 0 : token.type) === 'OPEN_TAG') {
+	        token.unclosed = false;
+	      }
+	      result.push({
+	        type: 'CLOSE_TAG',
+	        name: entry.name,
+	        autoClosed: true
+	      });
+	    };
+	    for (const token of tokens) {
+	      if (token.type === 'OPEN_TAG') {
+	        const {
+	          name,
+	          value = '',
+	          attributes = {},
+	          unclosed = false
+	        } = token;
+	        const tagScheme = this.getScheme().getTagScheme(name);
+	        const isVoid = tagScheme && tagScheme.isVoid();
+	        const isBlock = tagScheme && tagScheme.hasGroup('#block');
+	        if (isBlock) {
+	          // Автозакрытие только тегов с unclosed: true перед блочным тегом,
+	          // но НЕ закрывать [*] из других списков
+	          while (stack.length > 0) {
+	            const topOfStack = stack[stack.length - 1];
+	            const tokenInResult = result[topOfStack.tokenIndex];
+
+	            // Проверяем, является ли верхний тег в стеке unclosed
+	            if ((tokenInResult == null ? void 0 : tokenInResult.type) === 'OPEN_TAG' && tokenInResult.unclosed === true) {
+	              // Защита: не закрывать [*], если он принадлежит другому списку
+	              if (topOfStack.name === '*' && topOfStack.nearestListTokenIndex !== -1) {
+	                // Прерываем автозакрытие, если тег [*] относится к списку
+	                break;
+	              }
+	              popAndClose(); // Закрываем его
+	            } else {
+	              // Если тег не OPEN_TAG или не unclosed, останавливаем закрытие
+	              break;
+	            }
+	          }
+	        }
+	        let shouldAddToStack = !isVoid;
+	        if (name === '*') {
+	          const lastListIdx = getLastListTokenIndex();
+	          if (lastListIdx === -1) {
+	            shouldAddToStack = false;
+	          } else {
+	            let prevStarIndex = -1;
+	            for (let i = stack.length - 1; i >= 0; i--) {
+	              if (stack[i].name === '*' && stack[i].nearestListTokenIndex === lastListIdx) {
+	                prevStarIndex = i;
+	                break;
+	              }
+	            }
+	            if (prevStarIndex !== -1) {
+	              // eslint-disable-next-line max-depth
+	              while (stack.length - 1 >= prevStarIndex) {
+	                popAndClose();
+	              }
+	            }
+	          }
+	        }
+	        result.push({
+	          type: 'OPEN_TAG',
+	          name,
+	          value,
+	          attributes: {
+	            ...attributes
+	          },
+	          unclosed
+	        });
+	        if (shouldAddToStack) {
+	          stack.push({
+	            name,
+	            tokenIndex: result.length - 1,
+	            nearestListTokenIndex: getLastListTokenIndex()
+	          });
+	        }
+	      } else if (token.type === 'CLOSE_TAG') {
+	        const {
+	          name
+	        } = token;
+	        let matchIdx = -1;
+	        for (let i = stack.length - 1; i >= 0; i--) {
+	          if (stack[i].name === name) {
+	            matchIdx = i;
+	            break;
+	          }
+	        }
+	        if (matchIdx === -1) {
+	          result.push({
+	            type: 'CLOSE_TAG',
+	            name,
+	            orphaned: true
+	          });
+	        } else {
+	          while (stack.length - 1 > matchIdx) {
+	            popAndClose();
+	          }
+	          stack.pop();
+	          result.push({
+	            type: 'CLOSE_TAG',
+	            name
+	          });
+	        }
+	      } else {
+	        result.push(token);
+	      }
+	    }
+	    while (stack.length > 0) {
+	      popAndClose();
 	    }
 	    return result;
 	  }
 	  parse(bbcode) {
 	    const result = parserScheme.createRoot();
-	    const firstTagIndex = BBCodeParser.findNextTagIndex(bbcode);
-	    if (firstTagIndex !== 0) {
-	      const textBeforeFirstTag = firstTagIndex === -1 ? bbcode : bbcode.slice(0, firstTagIndex);
-	      result.appendChild(...this.parseText(textBeforeFirstTag));
-	    }
 	    const stack = [result];
 	    const wasOpened = [];
-	    let current = null;
 	    let level = 0;
-	    bbcode.replace(TAG_REGEX_GS, (fullTag, slash, tagName, attrs, index) => {
-	      const isOpeningTag = Boolean(slash) === false;
-	      const startIndex = fullTag.length + index;
-	      const nextContent = bbcode.slice(startIndex);
-	      const attributes = this.parseAttributes(attrs);
-	      const lowerCaseTagName = BBCodeParser.toLowerCase(tagName);
-	      let parent = stack[level];
-	      if (isOpeningTag) {
-	        const isPotentiallyVoid = !nextContent.includes(`[/${tagName}]`);
-	        if (isPotentiallyVoid && !isListItem(lowerCaseTagName)) {
-	          const tagScheme = this.getScheme().getTagScheme(lowerCaseTagName);
-	          const isAllowedVoidTag = tagScheme && tagScheme.isVoid();
-	          if (isAllowedVoidTag) {
-	            current = parserScheme.createElement({
-	              name: lowerCaseTagName,
-	              value: attributes.value,
-	              attributes: Object.fromEntries(attributes.attributes)
-	            });
-	            current.setScheme(this.getScheme());
-	            parent.appendChild(current);
-	          } else {
-	            parent.appendChild(parserScheme.createText(fullTag));
+	    const tokenizer = new BBCodeTokenizer();
+	    const tokens = this.normalizeTokens(tokenizer.tokenize(bbcode));
+	    tokens.forEach(token => {
+	      const parent = stack[level];
+	      switch (token.type) {
+	        case 'OPEN_TAG':
+	          {
+	            const tagScheme = this.getScheme().getTagScheme(token.name);
+	            const isVoidTag = tagScheme && tagScheme.isVoid();
+	            if (isVoidTag) {
+	              const voidNode = parserScheme.createElement({
+	                name: token.name,
+	                value: this.getEncoder().decodeAttribute(token.value),
+	                attributes: this.decodeAttributes(token.attributes)
+	              });
+	              voidNode.setScheme(this.getScheme());
+	              parent.appendChild(voidNode);
+	            } else if (token.unclosed) {
+	              parent.appendChild(parserScheme.createText(`[${token.name}]`));
+	            } else {
+	              const currentNode = parserScheme.createElement({
+	                name: token.name,
+	                value: this.getEncoder().decodeAttribute(token.value),
+	                attributes: this.decodeAttributes(token.attributes)
+	              });
+	              parent.appendChild(currentNode);
+	              wasOpened.push(token.name);
+	              stack.push(currentNode);
+	              level++;
+	            }
+	            break;
 	          }
-	          const nextTagIndex = BBCodeParser.findNextTagIndex(bbcode, startIndex);
-	          if (nextTagIndex !== 0) {
-	            const content = nextTagIndex === -1 ? nextContent : bbcode.slice(startIndex, nextTagIndex);
-	            parent.appendChild(...this.parseText(content));
+	        case 'CLOSE_TAG':
+	          {
+	            if (wasOpened.includes(token.name)) {
+	              const openedTagIndex = wasOpened.indexOf(token.name);
+	              wasOpened.splice(openedTagIndex, 1);
+	              stack.pop();
+	              level--;
+	            } else {
+	              parent.appendChild(parserScheme.createText(`[/${token.name}]`));
+	            }
+	            break;
 	          }
-	        } else {
-	          if (isListItem(lowerCaseTagName) && current && isListItem(current.getName())) {
-	            level--;
-	            parent = stack[level];
+	        case 'TEXT':
+	          {
+	            parent.appendChild(parserScheme.createText({
+	              content: this.getEncoder().decodeText(token.content)
+	            }));
+	            break;
 	          }
-	          current = parserScheme.createElement({
-	            name: lowerCaseTagName,
-	            value: attributes.value,
-	            attributes: Object.fromEntries(attributes.attributes)
-	          });
-	          const nextTagIndex = BBCodeParser.findNextTagIndex(bbcode, startIndex);
-	          if (nextTagIndex !== 0) {
-	            const content = nextTagIndex === -1 ? nextContent : bbcode.slice(startIndex, nextTagIndex);
-	            current.appendChild(...this.parseText(content));
+	        case 'LINEBREAK':
+	          {
+	            parent.appendChild(parserScheme.createNewLine());
+	            break;
 	          }
-	          if (!parent) {
-	            level++;
-	            parent = stack[level];
+	        case 'TAB':
+	          {
+	            parent.appendChild(parserScheme.createTab());
+	            break;
 	          }
-	          parent.appendChild(current);
-	          level++;
-	          stack[level] = current;
-	          wasOpened.push(lowerCaseTagName);
-	        }
-	      } else {
-	        if (wasOpened.includes(lowerCaseTagName)) {
-	          level--;
-	          const openedTagIndex = wasOpened.indexOf(lowerCaseTagName);
-	          wasOpened.splice(openedTagIndex, 1);
-	        } else {
-	          stack[level].appendChild(parserScheme.createText(fullTag));
-	        }
-	        if (isList(lowerCaseTagName) && level > 0) {
-	          level--;
-	        }
-	        const nextTagIndex = BBCodeParser.findNextTagIndex(bbcode, startIndex);
-	        if (nextTagIndex !== 0 && stack[level]) {
-	          const content = nextTagIndex === -1 ? nextContent : bbcode.slice(startIndex, nextTagIndex);
-	          stack[level].appendChild(...this.parseText(content));
-	        }
-	        if (level > 0 && isListItem(stack[level].getName())) {
-	          const nextTag = BBCodeParser.findNextTag(bbcode, startIndex);
-	          if (main_core.Type.isNull(nextTag) || isListItem(nextTag.tagName)) {
-	            level--;
+	        default:
+	          {
+	            break;
 	          }
-	        }
 	      }
 	    });
 	    const getFinalLineBreaksIndexes = node => {
@@ -322,8 +479,8 @@ this.BX.UI = this.BX.UI || {};
 	        const content = node.toString({
 	          encode: false
 	        });
-	        const tokens = ui_linkify.Linkify.tokenize(content);
-	        const nodes = tokens.map(token => {
+	        const MultiTokens = ui_linkify.Linkify.tokenize(content);
+	        const nodes = MultiTokens.map(token => {
 	          if (token.t === 'url') {
 	            return parserScheme.createElement({
 	              name: 'url',
@@ -343,6 +500,12 @@ this.BX.UI = this.BX.UI || {};
 	        node.replace(...nodes);
 	      }
 	    });
+	    ui_bbcode_model.BBCodeNode.flattenAst(result).forEach(node => {
+	      const tagScheme = this.getScheme().getTagScheme(node);
+	      if (tagScheme) {
+	        tagScheme.runOnParseHandler(node);
+	      }
+	    });
 	    result.setScheme(this.getScheme(), this.getOnUnknownHandler());
 	    return result;
 	  }
@@ -350,5 +513,5 @@ this.BX.UI = this.BX.UI || {};
 
 	exports.BBCodeParser = BBCodeParser;
 
-}((this.BX.UI.BBCode = this.BX.UI.BBCode || {}),BX.UI.BBCode,BX,BX.UI.BBCode,BX.UI,BX.UI.BBCode));
+}((this.BX.UI.BBCode = this.BX.UI.BBCode || {}),BX.UI.BBCode,BX.UI.BBCode,BX.UI,BX.UI.BBCode,BX));
 //# sourceMappingURL=parser.bundle.js.map

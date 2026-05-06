@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Bitrix\Main\Messenger\Internals\Storage\Db\Model;
 
-use Bitrix\Main\Entity\IntegerField;
-use Bitrix\Main\Entity\TextField;
+use Bitrix\Main\ArgumentException;
+use Bitrix\Main\DB\SqlExpression;
+use Bitrix\Main\DB\SqlQueryException;
 use Bitrix\Main\ORM\Data\DataManager;
 use Bitrix\Main\ORM\Event;
 use Bitrix\Main\ORM\EventResult;
+use Bitrix\Main\ORM\Fields\IntegerField;
+use Bitrix\Main\ORM\Fields\TextField;
 use Bitrix\Main\ORM\Fields\DatetimeField;
 use Bitrix\Main\ORM\Fields\StringField;
+use Bitrix\Main\SystemException;
 use Bitrix\Main\Type\DateTime;
 
 /**
@@ -86,5 +90,26 @@ class MessengerMessageTable extends DataManager
 				->configureDefaultValue(MessageStatus::New->value)
 				->configureSize(10),
 		];
+	}
+
+	/**
+	 * @throws ArgumentException
+	 * @throws SqlQueryException
+	 * @throws SystemException
+	 */
+	public static function requeueStaleMessages(DateTime $thresholdDate): void
+	{
+		$connection = static::getEntity()->getConnection();
+
+		$sql = new SqlExpression(
+			'UPDATE ?# SET STATUS = ?s, UPDATED_AT = ? WHERE STATUS = ?s AND UPDATED_AT < ?',
+			static::getTableName(),
+			MessageStatus::New->value,
+			new DateTime(),
+			MessageStatus::Processing->value,
+			$thresholdDate,
+		);
+
+		$connection->queryExecute($sql->compile());
 	}
 }

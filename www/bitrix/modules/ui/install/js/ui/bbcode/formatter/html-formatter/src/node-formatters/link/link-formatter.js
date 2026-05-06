@@ -13,17 +13,14 @@ import {
 	BBCodeScheme,
 } from 'ui.bbcode.model';
 
+import { validateUrl } from '../../helpers/validate-url';
+
 export class LinkNodeFormatter extends NodeFormatter
 {
 	constructor(options: NodeFormatterOptions = {})
 	{
 		super({
 			name: 'url',
-			validate({ node }: ValidateCallbackOptions): boolean {
-				const nodeValue: string = LinkNodeFormatter.fetchNodeValue(node);
-
-				return !LinkNodeFormatter.startsWithJavascriptScheme(nodeValue);
-			},
 			before({ node, formatter }: AfterCallbackOptions): BBCodeElementNode {
 				if (formatter.isShortLinkEnabled())
 				{
@@ -89,19 +86,25 @@ export class LinkNodeFormatter extends NodeFormatter
 
 					return node.getContent();
 				})();
-				const nodeAttributes: {[key: string]: string} = node.getAttributes();
-				const { defaultTarget = '_blank', attributes } = formatter.getLinkSettings();
 
-				return Dom.create({
-					tag: 'a',
-					attrs: {
-						...nodeAttributes,
-						...attributes,
-						href: sourceHref,
-						target: defaultTarget,
-						className: 'ui-typography-link',
-					},
-				});
+				if (validateUrl(sourceHref))
+				{
+					const nodeAttributes: {[key: string]: string} = node.getAttributes();
+					const { defaultTarget = '_blank', attributes } = formatter.getLinkSettings();
+
+					return Dom.create({
+						tag: 'a',
+						attrs: {
+							...nodeAttributes,
+							...attributes,
+							href: sourceHref,
+							target: defaultTarget,
+							className: 'ui-typography-link',
+						},
+					});
+				}
+
+				return document.createDocumentFragment();
 			},
 			...options,
 		});
@@ -116,18 +119,5 @@ export class LinkNodeFormatter extends NodeFormatter
 		}
 
 		return node.toPlainText();
-	}
-
-	static startsWithJavascriptScheme(sourceHref: string): boolean
-	{
-		if (Type.isStringFilled(sourceHref))
-		{
-			// eslint-disable-next-line no-control-regex
-			const regexp = /^[\u0000-\u001F ]*j[\t\n\r]*a[\t\n\r]*v[\t\n\r]*a[\t\n\r]*s[\t\n\r]*c[\t\n\r]*r[\t\n\r]*i[\t\n\r]*p[\t\n\r]*t[\t\n\r]*:/i;
-
-			return regexp.test(sourceHref);
-		}
-
-		return false;
 	}
 }

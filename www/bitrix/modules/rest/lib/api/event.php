@@ -4,8 +4,6 @@ namespace Bitrix\Rest\Api;
 
 use Bitrix\Bitrix24\Feature;
 use Bitrix\Main\Application;
-use Bitrix\Main\ArgumentException;
-use Bitrix\Main\ArgumentNullException;
 use Bitrix\Main\Error;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Result;
@@ -145,8 +143,8 @@ class Event extends \IRestService
 	 * @return bool
 	 *
 	 * @throws AccessException
-	 * @throws ArgumentException
-	 * @throws ArgumentNullException
+	 * @throws Exceptions\ArgumentException
+	 * @throws Exceptions\ArgumentNullException
 	 * @throws AuthTypeException
 	 * @throws RestException
 	 * @throws \Exception
@@ -168,7 +166,7 @@ class Event extends \IRestService
 		$eventCallback = $query['HANDLER'] ?? '';
 		$options = isset($query['OPTIONS']) && is_array($query['OPTIONS']) ? $query['OPTIONS'] : [];
 
-		if($eventUser > 0)
+		if ($eventUser > 0)
 		{
 			if(!\CRestUtil::isAdmin() && $eventUser !== intval($USER->GetID()))
 			{
@@ -227,11 +225,7 @@ class Event extends \IRestService
 
 			foreach($scopeList as $scope)
 			{
-				if(
-					isset($serviceDescription[$scope])
-					&& is_array($serviceDescription[$scope][\CRestUtil::EVENTS])
-					&& array_key_exists($eventName, $serviceDescription[$scope][\CRestUtil::EVENTS])
-				)
+				if (!empty($serviceDescription[$scope][\CRestUtil::EVENTS][$eventName]))
 				{
 					$eventInfo = $serviceDescription[$scope][\CRestUtil::EVENTS][$eventName];
 					if(is_array($eventInfo))
@@ -332,8 +326,8 @@ class Event extends \IRestService
 	 * @return array
 	 *
 	 * @throws AccessException
-	 * @throws ArgumentException
-	 * @throws ArgumentNullException
+	 * @throws Exceptions\ArgumentException
+	 * @throws Exceptions\ArgumentNullException
 	 * @throws AuthTypeException
 	 * @throws \Bitrix\Main\ObjectPropertyException
 	 * @throws \Bitrix\Main\SystemException
@@ -356,14 +350,14 @@ class Event extends \IRestService
 
 		if($eventName == '')
 		{
-			throw new ArgumentNullException("EVENT");
+			throw new Exceptions\ArgumentNullException("EVENT");
 		}
 
 		if($eventType <> '')
 		{
 			if(!in_array($eventType, array(EventTable::TYPE_ONLINE, EventTable::TYPE_OFFLINE)))
 			{
-				throw new ArgumentException('Value must be one of {'.EventTable::TYPE_ONLINE.'|'.EventTable::TYPE_OFFLINE.'}', 'EVENT_TYPE');
+				throw new Exceptions\ArgumentException('Value must be one of {'.EventTable::TYPE_ONLINE.'|'.EventTable::TYPE_OFFLINE.'}', 'EVENT_TYPE');
 			}
 		}
 		else
@@ -707,12 +701,12 @@ class Event extends \IRestService
 
 		if($processId === null)
 		{
-			throw new ArgumentNullException('PROCESS_ID');
+			throw new Exceptions\ArgumentNullException('PROCESS_ID');
 		}
 
 		if(!is_array($messageId))
 		{
-			throw new ArgumentException('Value must be array of MESSAGE_ID values', 'message_id');
+			throw new Exceptions\ArgumentException('Value must be array of MESSAGE_ID values', 'message_id');
 		}
 
 		$clientInfo = AppTable::getByClientId($server->getClientId());

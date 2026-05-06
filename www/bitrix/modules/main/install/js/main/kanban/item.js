@@ -167,6 +167,9 @@ BX.Kanban.Item.prototype =
 			bodyContainer.appendChild(this.getCheckbox());
 		}
 		bodyContainer.appendChild(this.render());
+
+		this.toggleDragging();
+
 		return this.getContainer();
 	},
 
@@ -407,6 +410,17 @@ BX.Kanban.Item.prototype =
 		jsDD.registerObject(itemContainer);
 	},
 
+	unsetDraggable: function()
+	{
+		const itemContainer = this.getContainer();
+
+		itemContainer.onbxdragstart = null;
+		itemContainer.onbxdrag = null;
+		itemContainer.onbxdragstop = null;
+
+		jsDD.unregisterObject(itemContainer);
+	},
+
 	makeDroppable: function()
 	{
 		if (!this.isDroppable())
@@ -428,6 +442,18 @@ BX.Kanban.Item.prototype =
 		{
 			//when we load new items in drag mode
 			this.disableDropping();
+		}
+	},
+
+	toggleDragging: function()
+	{
+		if (this.isDraggable() && !this.getContainer().onbxdragstart)
+		{
+			this.makeDraggable();
+		}
+		else if (!this.isDraggable() && this.getContainer().onbxdragstart)
+		{
+			this.unsetDraggable();
 		}
 	},
 
@@ -469,7 +495,7 @@ BX.Kanban.Item.prototype =
 	 */
 	isDraggable: function()
 	{
-		return this.draggable && this.getGrid().canSortItems();
+		return this.draggable && this.getColumn().canSortColumnItems() && this.getGrid().canSortItems();
 	},
 
 	/**
@@ -506,7 +532,7 @@ BX.Kanban.Item.prototype =
 
 			this.dragElement.style.position = "absolute";
 			this.dragElement.style.width = bodyContainer.offsetWidth + "px";
-			this.dragElement.className = "main-kanban-item main-kanban-item-drag";
+			this.dragElement.className = "main-kanban-item main-kanban-item-drag --ui-context-content-light";
 
 			document.body.appendChild(this.dragElement);
 		}
@@ -520,7 +546,7 @@ BX.Kanban.Item.prototype =
 
 		this.dragElement = BX.create("div", {
 			props: {
-				className: "main-kanban-item-drag-multi"
+				className: "main-kanban-item-drag-multi --ui-context-content-light"
 			}
 		});
 

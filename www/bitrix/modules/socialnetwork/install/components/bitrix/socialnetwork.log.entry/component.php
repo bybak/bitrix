@@ -74,7 +74,7 @@ if (empty($arParams["PATH_TO_LOG_TAG"]))
 {
 	$folderUsers = COption::GetOptionString("socialnetwork", "user_page", false, SITE_ID);
 	$arParams["PATH_TO_LOG_TAG"] = $folderUsers."log/?TAG=#tag#";
-	if (SITE_TEMPLATE_ID === 'bitrix24')
+	if (SITE_TEMPLATE_ID === 'bitrix24' || SITE_TEMPLATE_ID === 'air')
 	{
 		$arParams["PATH_TO_LOG_TAG"] .= "&apply_filter=Y";
 	}
@@ -116,6 +116,16 @@ $arEvent = __SLEGetLogRecord($arParams["LOG_ID"], $arParams, $arCurrentUserSubsc
 if (!$arEvent)
 {
 	return;
+}
+
+if (
+	$arEvent['EVENT']['EVENT_ID'] === 'tasks'
+	&& Loader::includeModule('tasks')
+	&& class_exists(\Bitrix\Tasks\V2\FormV2Feature::class)
+	&& \Bitrix\Tasks\V2\FormV2Feature::isOn()
+)
+{
+	$arEvent['HAS_COMMENTS'] = false;
 }
 
 $contentId = Livefeed\Provider::getContentId($arEvent['EVENT']);

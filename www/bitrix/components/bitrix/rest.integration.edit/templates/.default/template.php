@@ -9,6 +9,7 @@ use Bitrix\Main\Web\Json;
 
 Loc::loadMessages(__FILE__);
 
+\Bitrix\UI\Toolbar\Facade\Toolbar::deleteFavoriteStar();
 \Bitrix\Main\UI\Extension::load('ui.design-tokens');
 ?>
 <form method="post" id="rest-integration-form">
@@ -199,7 +200,10 @@ Loc::loadMessages(__FILE__);
 								<div class="integration-row-input-title">
 									<?=Loc::getMessage('REST_INTEGRATION_EDIT_GENERATOR_LABEL_SELECTOR_REST_METHOD')?>
 								</div>
-								<div class="integration-webhook-method-api-select ui-ctl ui-ctl-textbox ui-ctl-w100">
+								<div
+									data-id="integration-webhook-method-api-select"
+									class="integration-webhook-method-api-select ui-ctl ui-ctl-textbox ui-ctl-w100"
+								>
 									<?
 									$APPLICATION->IncludeComponent(
 										"bitrix:rest.integration.selector",
@@ -271,7 +275,6 @@ Loc::loadMessages(__FILE__);
 									<?=Loc::getMessage('REST_INTEGRATION_EDIT_GENERATOR_ADD_PARAM_BTN')?>
 								</span>
 								<? if (isset($data['QUERY_INFORMATION_URL']) && $data['QUERY_INFORMATION_URL']): ?>
-
 									<a
 										href="<?=$data['QUERY_INFORMATION_URL']?>" target="_blank"
 										class="integration-webhook-param-control-item"
@@ -280,7 +283,10 @@ Loc::loadMessages(__FILE__);
 									</a>
 								<? endif; ?>
 							</div>
-							<div class="integration-row integration-row-padding-right">
+							<div
+								data-id="integration-webhook-curl"
+								class="integration-row integration-row-padding-right"
+							>
 								<div class="integration-row-input-title">
 									<?=Loc::getMessage('REST_INTEGRATION_EDIT_GENERATOR_LABEL_GENERATED_URL')?>
 								</div>
@@ -641,7 +647,7 @@ Loc::loadMessages(__FILE__);
 											><?=Loc::getMessage('REST_INTEGRATION_EDIT_SHOW_MORE_BTN')?></span>
 										<?php endif;?>
 									</div>
-									<? if ($arResult['DESCRIPTION_' . $block]): ?>
+									<? if (isset($arResult['DESCRIPTION_' . $block]) && $arResult['DESCRIPTION_' . $block]): ?>
 										<div class="integration-row integration-row-padding-right">
 											<? if (!empty($arResult['DESCRIPTION_' . $block]['TITLE'])): ?>
 												<div class="integration-row-container-title-text">

@@ -1,11 +1,13 @@
 <?php
 
-$MESS["IM_TEXTAREA_PLACEHOLDER_V3"] = "Нажмите @, чтобы упомянуть человека или чат";
+$MESS["IM_TEXTAREA_PLACEHOLDER_MSGVER_1"] = "Нажмите @ или +, чтобы упомянуть человека, чат или AI";
+$MESS["IM_TEXTAREA_PLACEHOLDER_WITHOUT_AI"] = "Нажмите @ или +, чтобы упомянуть человека или чат";
 $MESS["IM_TEXTAREA_ICON_SEND_VOICE"] = "Отправить голосовое сообщение";
 $MESS["IM_TEXTAREA_ICON_SEND_TEXT"] = "Отправить сообщение (#SEND_MESSAGE_COMBINATION#)";
 $MESS["IM_TEXTAREA_ICON_UPLOAD_TITLE"] = "Прикрепить";
 $MESS["IM_TEXTAREA_ICON_APPLICATION"] = "Панель приложений";
 $MESS["IM_TEXTAREA_ICON_SMILE"] = "Смайлы и GIF-картинки";
+$MESS["IM_TEXTAREA_ICON_EMOTE"] = "Эмодзи и стикеры";
 $MESS["IM_TEXTAREA_EMOJI_CATEGORY_PEOPLE"] = "Смайлы и люди";
 $MESS["IM_TEXTAREA_EMOJI_CATEGORY_ANIMALS"] = "Животные и природа";
 $MESS["IM_TEXTAREA_EMOJI_CATEGORY_FOOD"] = "Еда и напитки";
@@ -37,8 +39,11 @@ $MESS["IM_TEXTAREA_CREATE_AI_IMAGE_TITLE"] = "Создать картинку";
 $MESS["IM_TEXTAREA_CREATE_AI_IMAGE_SUBTITLE"] = "AI создаст любую картинку по вашему описанию";
 $MESS["IM_TEXTAREA_MARKET_APPS_SHOW_MORE_BUTTON"] = "Ещё +#NUMBER#";
 $MESS["IM_TEXTAREA_MARKET_OTHER_APPS"] = "Остальные приложения";
-$MESS["IM_TEXTAREA_MARKET_APPS_EMPTY_STATE"] = "Вы пока не добавили приложение, установите его в Маркете";
+$MESS["IM_TEXTAREA_MARKET_APPS_EMPTY_STATE_MSGVER_2"] = "Вы пока не добавили приложение, установите его в [url]Маркетплейсе[/url]";
 $MESS["IM_TEXTAREA_SMILE_SELECTOR_SMILES_TAB"] = "Смайлы";
+$MESS["IM_TEXTAREA_STICKER_SELECTOR_EMOJI_TAB"] = "Эмодзи";
+$MESS["IM_TEXTAREA_STICKER_SELECTOR_STICKER_TAB"] = "Стикеры";
+$MESS["IM_TEXTAREA_STICKER_SELECTOR_STICKERS_RECENT"] = "Недавние";
 
 $MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_COMPUTED_TITLE"] = "Выбрано: #COUNT#";
 $MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_BUTTON_SEND"] = "Отправить";
@@ -46,7 +51,7 @@ $MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_BUTTON_CANCEL"] = "Отменить";
 $MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_INPUT_PLACEHOLDER_2"] = "Добавить подпись";
 $MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_FILE_UPLOAD_ERROR"] = "Не удалось загрузить файл";
 $MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_SEND_WITHOUT_COMPRESSION"] = "Отправить без сжатия";
-$MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_FILES_LIMIT_MESSAGE_10"] = "Можно отправить не больше 10 файлов за раз";
+$MESS["IM_TEXTAREA_UPLOAD_PREVIEW_POPUP_FILES_LIMIT_MESSAGE_100"] = "Можно отправить не больше 100 файлов за раз";
 
 $MESS["IM_TEXTAREA_GIPHY_EMPTY_STATE"] = "По вашему запросу ничего не найдено";
 $MESS["IM_TEXTAREA_GIPHY_UNAVAILABLE_STATE"] = "Интеграция с Giphy недоступна";
@@ -55,6 +60,7 @@ $MESS["IM_TEXTAREA_GIPHY_INPUT_PLACEHOLDER"] = "Поиск по Giphy.com";
 
 $MESS["IM_TEXTAREA_REPLY_AUDIO_TITLE"] = "Аудио";
 $MESS["IM_TEXTAREA_REPLY_DELETED_TITLE"] = "Сообщение удалено";
+$MESS["IM_TEXTAREA_REPLY_STICKER_TITLE"] = "Стикер";
 
 $MESS["IM_TEXTAREA_FORWARD_SYSTEM"] = "Системное сообщение";
 $MESS["IM_TEXTAREA_FORWARD_MESSAGES_SYSTEM"] = "Системные сообщения";
@@ -75,6 +81,25 @@ $MESS["IM_TEXTAREA_MENTION_CHAT_TYPE"] = "Групповой чат";
 $MESS["IM_TEXTAREA_MENTION_OPEN_CHANNEL_TYPE"] = "Открытый канал";
 $MESS["IM_TEXTAREA_MENTION_PRIVATE_CHANNEL_TYPE"] = "Закрытый канал";
 $MESS["IM_TEXTAREA_MENTION_COLLAB_TYPE"] = "Коллаба";
+$MESS["IM_TEXTAREA_MENTION_COPILOT_SUBTITLE"] = "AI-помощник по любым вопросам";
+$MESS["IM_TEXTAREA_AUTO_DELETE_TITLE"] = "В этом чате включено автоудаление сообщений";
+$MESS["IM_TEXTAREA_MENTION_ALL_PARTICIPANTS_TITLE"] = "Все";
+$MESS["IM_TEXTAREA_MENTION_ALL_PARTICIPANTS_AVATAR_TITLE"] = "Все";
+$MESS["IM_TEXTAREA_MENTION_ALL_PARTICIPANTS_SUBTITLE"] = "Все участники";
+$MESS["IM_TEXTAREA_MENTION_ALL_PARTICIPANTS_TEXT"] = "Все";
+$MESS["IM_TEXTAREA_MENTION_ADD_TO_CHAT_DROPDOWN_TITLE"] = "Нет в чате";
+$MESS["IM_TEXTAREA_MENTION_ADD_TO_CHAT_DROPDOWN_MENU"] = "Добавить в чат";
 
-$MESS["IM_TEXTAREA_AUDIO_INPUT_ERROR"] = "Не удалось распознать речь, попробуйте позже";
-$MESS["IM_TEXTAREA_UNKNOWN_ERROR"] = "Не удалось выполнить действие, попробуйте позже";
+$MESS["IM_TEXTAREA_EMOTE_POPUP_PROMO_TITLE"] = "Стикер вместо сотни слов 🔥";
+$MESS["IM_TEXTAREA_EMOTE_POPUP_PROMO_DESCRIPTION"] = "Теперь делиться эмоциями ещё быстрее. Можно использовать готовые стикеры и создавать свои";
+
+
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_LINK_LABEL"] = "адрес ссылки";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_LINK_PLACEHOLDER"] = "https://";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_ITEM_BOLD"] = "Жирный";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_ITEM_ITALIC"] = "Курсив";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_ITEM_UNDERLINE"] = "Подчёркнутый";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_ITEM_STRIKETHROUGH"] = "Зачёркнутый";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_ITEM_CODE"] = "Код";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_ITEM_QUOTE"] = "Цитата";
+$MESS["IM_TEXTAREA_FORMAT_TOOLBAR_ITEM_LINK"] = "Вставить ссылку";

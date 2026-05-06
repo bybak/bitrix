@@ -70,6 +70,8 @@ export default class Uploader extends EventEmitter
 	#dropNodes: Set<HTMLElement> = new Set();
 	#pastingNodes: Set<HTMLElement> = new Set();
 
+	#destroying: boolean = false;
+
 	static getById(id: string): ?Uploader
 	{
 		return instances.get(id) || null;
@@ -503,23 +505,38 @@ export default class Uploader extends EventEmitter
 		}
 	}
 
-	// stop(): void
-	// {
-	// 	this.#status = UploaderStatus.STOPPED;
-	//
-	// 	this.getFiles().forEach((file: UploaderFile) => {
-	// 		if (file.isUploading())
-	// 		{
-	// 			file.abort();
-	// 			file.setStatus(FileStatus.PENDING);
-	// 		}
-	// 	});
-	//
-	// 	this.emit('onStop');
-	// }
+	stop(): void
+	{
+		if (this.#status !== UploaderStatus.STOPPED)
+		{
+			this.#status = UploaderStatus.STOPPED;
+
+			// this.getFiles().forEach((file: UploaderFile) => {
+			// 	if (file.isUploading())
+			// 	{
+			// 		file.abort();
+			// 		file.setStatus(FileStatus.PENDING);
+			// 	}
+			// });
+
+			this.emit('onStop');
+		}
+	}
+
+	isDestroyed(): boolean
+	{
+		return false;
+	}
 
 	destroy(options?: DestroyOptions): void
 	{
+		if (this.#destroying)
+		{
+			return;
+		}
+
+		this.#destroying = true;
+
 		this.emit(UploaderEvent.DESTROY);
 
 		this.unassignBrowseAll();
@@ -539,6 +556,7 @@ export default class Uploader extends EventEmitter
 		this.#filters = null;
 
 		Object.setPrototypeOf(this, null);
+		this.isDestroyed = () => true;
 	}
 
 	removeFiles(options?: RemoveFileOptions): void
@@ -1020,6 +1038,16 @@ export default class Uploader extends EventEmitter
 	getPendingFileCount(): number
 	{
 		return this.#files.filter((file: UploaderFile): boolean => file.isReadyToUpload()).length;
+	}
+
+	isInProgress(): boolean
+	{
+		if (this.getStatus() === UploaderStatus.STARTED)
+		{
+			return true;
+		}
+
+		return this.#files.some((file: UploaderFile): boolean => file.isInProgress());
 	}
 
 	static getImageExtensions(): Array<string>

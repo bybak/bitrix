@@ -1,0 +1,259 @@
+<?php
+
+namespace Bitrix\UI\AccessRights\V2\Options\RightSection\RightItem;
+
+use Bitrix\Main\Type\Contract\Arrayable;
+use JsonSerializable;
+
+class Variable implements JsonSerializable, Arrayable
+{
+	protected ?string $entityId = null;
+	protected ?string $supertitle = null;
+	protected ?string $avatar = null;
+	protected array $avatarOptions = [];
+	protected array $conflictsWith = [];
+	protected array $requires = [];
+	protected ?bool $isSecondary = null;
+	protected ?string $hint = null;
+	protected ?bool $isUseGroupHeadValuesInHint = null;
+
+	public function __construct(
+		protected int|string $id,
+		protected string $title,
+	)
+	{
+	}
+
+	public function getId(): int|string
+	{
+		return $this->id;
+	}
+
+	public function setId(int|string $id): static
+	{
+		$this->id = $id;
+
+		return $this;
+	}
+
+	public function getTitle(): string
+	{
+		return $this->title;
+	}
+
+	public function setTitle(string $title): static
+	{
+		$this->title = $title;
+
+		return $this;
+	}
+
+	public function getEntityId(): ?string
+	{
+		return $this->entityId;
+	}
+
+	public function setEntityId(?string $entityId): static
+	{
+		$this->entityId = $entityId;
+
+		return $this;
+	}
+
+	public function getSupertitle(): ?string
+	{
+		return $this->supertitle;
+	}
+
+	public function setSupertitle(?string $supertitle): static
+	{
+		$this->supertitle = $supertitle;
+
+		return $this;
+	}
+
+	public function getAvatar(): ?string
+	{
+		return $this->avatar;
+	}
+
+	public function setAvatar(?string $avatar): static
+	{
+		$this->avatar = $avatar;
+
+		return $this;
+	}
+
+	public function getAvatarOptions(): array
+	{
+		return $this->avatarOptions;
+	}
+
+	public function setAvatarOptions(array $avatarOptions): static
+	{
+		$this->avatarOptions = $avatarOptions;
+
+		return $this;
+	}
+
+	public function getConflictsWith(): array
+	{
+		return $this->conflictsWith;
+	}
+
+	public function setConflictsWith(array $variableIds): static
+	{
+		$this->conflictsWith = $variableIds;
+
+		return $this;
+	}
+
+	public function addConflictsWith(string $variableId): static
+	{
+		$this->conflictsWith[] = $variableId;
+
+		return $this;
+	}
+
+	public function getRequires(): array
+	{
+		return $this->requires;
+	}
+
+	public function setRequires(array $variableIds): static
+	{
+		$this->requires = $variableIds;
+
+		return $this;
+	}
+
+	public function addRequires(string $variableId): static
+	{
+		$this->requires[] = $variableId;
+
+		return $this;
+	}
+
+	public function isSecondary(): ?bool
+	{
+		return $this->isSecondary;
+	}
+
+	public function setIsSecondary(?bool $isSecondary): static
+	{
+		$this->isSecondary = $isSecondary;
+
+		return $this;
+	}
+
+	public function getHint(): ?string
+	{
+		return $this->hint;
+	}
+
+	public function setHint(?string $hint): static
+	{
+		$this->hint = $hint;
+
+		return $this;
+	}
+
+	public function getIsUseGroupHeadValuesInHint(): ?bool
+	{
+		return $this->isUseGroupHeadValuesInHint;
+	}
+
+	public function setIsUseGroupHeadValuesInHint(?bool $isUseGroupHeadValuesInHint): static
+	{
+		$this->isUseGroupHeadValuesInHint = $isUseGroupHeadValuesInHint;
+
+		return $this;
+	}
+
+	public function toArray(): array
+	{
+		return [
+			'id' => $this->getId(),
+			'title' => $this->getTitle(),
+			'entityId' => $this->getEntityId(),
+			'supertitle' => $this->getSupertitle(),
+			'avatar' => $this->getAvatar(),
+			'avatarOptions' => $this->getAvatarOptions(),
+			'conflictsWith' => $this->getConflictsWith(),
+			'requires' => $this->getRequires(),
+			'secondary' => $this->isSecondary(),
+			'hint' => $this->getHint(),
+			'isUseGroupHeadValuesInHint' => $this->getIsUseGroupHeadValuesInHint(),
+		];
+	}
+
+	public function jsonSerialize(): array
+	{
+		return $this->toArray();
+	}
+
+	public static function tryFromArray(array $data): ?self
+	{
+		if (!isset($data['id']))
+		{
+			return null;
+		}
+
+		if (!isset($data['title']) || !is_string($data['title']))
+		{
+			return null;
+		}
+
+		$variable = new self(
+			$data['id'],
+			$data['title'],
+		);
+
+		if (isset($data['entityId']))
+		{
+			$variable->setEntityId((string)$data['entityId']);
+		}
+
+		if (isset($data['supertitle']))
+		{
+			$variable->setSupertitle((string)$data['supertitle']);
+		}
+
+		if (isset($data['avatar']))
+		{
+			$variable->setAvatar((string)$data['avatar']);
+		}
+
+		if (isset($data['avatarOptions']) && is_array($data['avatarOptions']))
+		{
+			$variable->setAvatarOptions($data['avatarOptions']);
+		}
+
+		if (isset($data['conflictsWith']) && is_array($data['conflictsWith']))
+		{
+			$variable->setConflictsWith($data['conflictsWith']);
+		}
+
+		if (isset($data['requires']) && is_array($data['requires']))
+		{
+			$variable->setRequires($data['requires']);
+		}
+
+		if (isset($data['secondary']))
+		{
+			$variable->setIsSecondary((bool)$data['secondary']);
+		}
+
+		if (isset($data['hint']))
+		{
+			$variable->setHint((string)$data['hint']);
+		}
+
+		if (isset($data['isUseGroupHeadValuesInHint']))
+		{
+			$variable->setIsUseGroupHeadValuesInHint((bool)$data['isUseGroupHeadValuesInHint']);
+		}
+
+		return $variable;
+	}
+}

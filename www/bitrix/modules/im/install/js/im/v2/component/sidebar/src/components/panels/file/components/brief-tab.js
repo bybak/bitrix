@@ -1,5 +1,7 @@
-import { SidebarFileTypes, SidebarDetailBlock } from 'im.v2.const';
-import { Loader } from 'im.v2.component.elements';
+import { Extension } from 'main.core';
+
+import { SidebarFileGroups, SidebarDetailBlock } from 'im.v2.const';
+import { Loader } from 'im.v2.component.elements.loader';
 
 import { File } from '../../../../classes/panels/file';
 import { FileSearch } from '../../../../classes/panels/search/file-search';
@@ -9,11 +11,11 @@ import { DetailEmptyState as StartState, DetailEmptyState } from '../../../eleme
 import { DetailEmptySearchState } from '../../../elements/detail-empty-search-state/detail-empty-search-state';
 import { FileMenu } from '../../../../classes/context-menu/file/file-menu';
 import { SidebarCollectionFormatter } from '../../../../classes/sidebar-collection-formatter';
-import { Extension } from 'main.core';
 
 import '../css/brief-tab.css';
 
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelChat, ImModelSidebarFileItem } from 'im.v2.model';
 
 const DEFAULT_MIN_TOKEN_SIZE = 3;
@@ -60,10 +62,10 @@ export const BriefTab = {
 		{
 			if (this.isSearch)
 			{
-				return this.$store.getters['sidebar/files/getSearchResultCollection'](this.chatId, SidebarFileTypes.brief);
+				return this.$store.getters['sidebar/files/getSearchResultCollection'](this.chatId, SidebarFileGroups.brief);
 			}
 
-			return this.$store.getters['sidebar/files/get'](this.chatId, SidebarFileTypes.brief);
+			return this.$store.getters['sidebar/files/get'](this.chatId, SidebarFileGroups.brief);
 		},
 		formattedCollection(): Array
 		{
@@ -92,7 +94,7 @@ export const BriefTab = {
 		this.service = new File({ dialogId: this.dialogId });
 		this.serviceSearch = new FileSearch({ dialogId: this.dialogId });
 		this.collectionFormatter = new SidebarCollectionFormatter();
-		this.contextMenu = new FileMenu();
+		this.contextMenu = new FileMenu({ emitter: this.getEmitter() });
 	},
 	beforeUnmount()
 	{
@@ -120,7 +122,7 @@ export const BriefTab = {
 			const target = event.target;
 			const isAtThreshold = target.scrollTop + target.clientHeight >= target.scrollHeight - target.clientHeight;
 			const nameGetter = this.searchQuery.length > 0 ? 'sidebar/files/hasNextPageSearch' : 'sidebar/files/hasNextPage';
-			const hasNextPage = this.$store.getters[nameGetter](this.chatId, SidebarFileTypes.brief);
+			const hasNextPage = this.$store.getters[nameGetter](this.chatId, SidebarFileGroups.brief);
 
 			return isAtThreshold && hasNextPage;
 		},
@@ -136,17 +138,21 @@ export const BriefTab = {
 			this.isLoading = true;
 			if (this.isSearchQueryMinimumSize)
 			{
-				await this.service.loadNextPage(SidebarFileTypes.brief);
+				await this.service.loadNextPage(SidebarFileGroups.brief);
 			}
 			else
 			{
-				await this.serviceSearch.loadNextPage(SidebarFileTypes.brief, this.searchQuery);
+				await this.serviceSearch.loadNextPage(SidebarFileGroups.brief, this.searchQuery);
 			}
 			this.isLoading = false;
 		},
-		loc(phraseCode: string, replacements: {[p: string]: string} = {}): string
+		getEmitter(): EventEmitter
 		{
-			return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+			return this.$Bitrix.eventEmitter;
+		},
+		loc(phraseCode: string): string
+		{
+			return this.$Bitrix.Loc.getMessage(phraseCode);
 		},
 	},
 	template: `
@@ -156,7 +162,6 @@ export const BriefTab = {
 				<BriefItem
 					v-for="file in dateGroup.items"
 					:brief="file"
-					:contextDialogId="dialogId"
 					:searchQuery="searchQuery"
 					@contextMenuClick="onContextMenuClick"
 				/>
@@ -176,8 +181,8 @@ export const BriefTab = {
 				</template>
 				<DetailEmptyState
 					v-else-if="isEmptyState"
-					:title="loc('IM_SIDEBAR_BRIEFS_EMPTY')"
-					:iconType="SidebarDetailBlock.other"
+					:title="loc('IM_SIDEBAR_BRIEFS_EMPTY_MSGVER_2')"
+					:iconType="SidebarDetailBlock.document"
 				/>
 			</template>
 			<Loader v-if="isLoading || isLoadingSearch" class="bx-im-sidebar-detail__loader-container" />

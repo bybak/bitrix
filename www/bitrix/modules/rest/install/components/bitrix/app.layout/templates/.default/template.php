@@ -95,10 +95,6 @@ elseif(isset($arParams['MOBILE']) && $arParams['MOBILE'] == 'Y')
 	$frameStyle[] = 'width: 100%';
 	//$frameStyle[] = 'height: 100%';
 }
-elseif($arParams['POPUP'])
-{
-	$frameStyle[] = 'height: calc(100% - 4px)';
-}
 
 if($arParams['PLACEMENT'] !== \Bitrix\Rest\PlacementTable::PLACEMENT_DEFAULT)
 {
@@ -110,6 +106,9 @@ if($arParams['PLACEMENT'] !== \Bitrix\Rest\PlacementTable::PLACEMENT_DEFAULT)
 	<input type="hidden" name="AUTH_ID" value="<?=$arResult['AUTH']['access_token']?>" />
 	<input type="hidden" name="AUTH_EXPIRES" value="<?=$arResult['AUTH']['expires_in']?>" />
 	<input type="hidden" name="REFRESH_ID" value="<?=$arResult['AUTH']['refresh_token']?>" />
+	<input type="hidden" name="SERVER_ENDPOINT" value="<?=$arResult['AUTH']['server_endpoint']?>" />
+	<input type="hidden" name="APPLICATION_TOKEN" value="<?=$arResult['APP_TOKEN']?>" />
+	<input type="hidden" name="APPLICATION_SCOPE" value="<?=$arResult['AUTH']['scope']?>" />
 	<input type="hidden" name="member_id" value="<?=htmlspecialcharsbx($arResult['MEMBER_ID'])?>">
 	<input type="hidden" name="status" value="<?=htmlspecialcharsbx($arResult['APP_STATUS']['STATUS'])?>">
 	<input type="hidden" name="PLACEMENT" value="<?=htmlspecialcharsbx($arParams["PLACEMENT"])?>">
@@ -175,7 +174,7 @@ BX.rest.AppLayout.set(
 <?
 if($arParams['PLACEMENT'] !== \Bitrix\Rest\PlacementTable::PLACEMENT_DEFAULT):
 ?>
-BX.rest.AppLayout.get('<?=$arResult['APP_SID']?>').denyInterface(['setTitle', 'setScroll', 'reloadWindow']);
+BX.rest.AppLayout.get('<?=$arResult['APP_SID']?>').denyInterface(['setTitle']);
 <?
 endif;
 if($arParams['POPUP']):

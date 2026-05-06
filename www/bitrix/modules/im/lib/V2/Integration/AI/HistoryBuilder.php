@@ -217,7 +217,7 @@ class HistoryBuilder implements Contract\MemoryBuilder
 		$replayedMessageIds = array_diff($replayedMessageIds, $ids);
 		$replayedMessages = new V2\MessageCollection($replayedMessageIds);
 		$replayedMessages->fillParams();
-		$messages->merge($replayedMessages);
+		$messages->mergeRegistry($replayedMessages);
 		$messages->fillFiles();
 
 		if ($this->messages === null)
@@ -289,7 +289,7 @@ class HistoryBuilder implements Contract\MemoryBuilder
 
 	protected function getReply(V2\Message $message): ?Message
 	{
-		$replyId = $message->getParams()->get(Params::REPLY_ID)->getValue();
+		$replyId = $message->getReplyId();
 
 		if (!$replyId)
 		{

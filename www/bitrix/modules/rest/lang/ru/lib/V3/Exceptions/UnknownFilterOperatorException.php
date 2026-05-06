@@ -1,0 +1,2 @@
+<?
+$MESS['REST_V3_EXCEPTIONS_UNKNOWNFILTEROPERATOREXCEPTION'] = 'Неизвестный оператор фильтра `#OPERATOR#`';

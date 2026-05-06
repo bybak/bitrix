@@ -68,7 +68,11 @@ class Params extends Registry
 		REPLY_ID = 'REPLY_ID',
 		BETA = 'BETA',
 		COPILOT_PROMPT_CODE = 'COPILOT_PROMPT_CODE',
-		COPILOT_ROLE = 'COPILOT_ROLE'
+		COPILOT_ROLE = 'COPILOT_ROLE',
+		STICKER_PARAMS = 'STICKER_PARAMS',
+		AI_ASSISTANT_MCP_AUTH_ID = 'AI_ASSISTANT_MCP_AUTH_ID',
+		COPILOT_REASONING = 'COPILOT_REASONING',
+		AI_TASK_TRIGGER_MESSAGE_ID = 'AI_TASK_TRIGGER_MESSAGE_ID'
 	;
 
 	//todo: Move it into CRM module
@@ -256,6 +260,15 @@ class Params extends Registry
 			'type' => Param::TYPE_STRING,
 			'isHidden' => true,
 		],
+		self::COPILOT_REASONING => [
+			'type' => Param::TYPE_BOOL,
+			'isHidden' => true,
+			'default' => false,
+		],
+		self::AI_ASSISTANT_MCP_AUTH_ID => [
+			'type' => Param::TYPE_INT,
+			'isHidden' => true,
+		],
 
 		//todo: Move it into CRM module
 		self::CRM_FORM_FILLED => [
@@ -269,6 +282,14 @@ class Params extends Registry
 		self::CRM_FORM_SEC => [
 			'type' => Param::TYPE_STRING,
 			'default' => '',
+		],
+		self::STICKER_PARAMS => [
+			'className' => Message\Param\StickerParams::class,
+			'type' => Param::TYPE_JSON,
+		],
+		self::AI_TASK_TRIGGER_MESSAGE_ID => [
+			'type' => Param::TYPE_INT,
+			'default' => 0,
 		],
 	];
 
@@ -620,6 +641,10 @@ class Params extends Registry
 				$prepareResult = $item->prepareFields();
 				if ($prepareResult->isSuccess())
 				{
+					if ($prepareResult->getData()['SKIP_SAVE'] ?? false)
+					{
+						continue;
+					}
 					if ($item->isChanged())
 					{
 						$dataEntityCollection->add($item->getDataEntity());
@@ -649,6 +674,10 @@ class Params extends Registry
 						$prepareResult = $subItem->prepareFields();
 						if ($prepareResult->isSuccess())
 						{
+							if ($prepareResult->getData()['SKIP_SAVE'] ?? false)
+							{
+								continue;
+							}
 							if ($subItem->isChanged())
 							{
 								$dataEntityCollection->add($subItem->getDataEntity());
@@ -973,7 +1002,10 @@ class Params extends Registry
 		$result = [];
 		foreach ($this as $paramName => $param)
 		{
-			$result[$paramName] = $param->toRestFormat();
+			if ($param->hasValue())
+			{
+				$result[$paramName] = $param->toRestFormat();
+			}
 		}
 
 		return $result;

@@ -173,7 +173,6 @@ else
 			? Helper\Workgroup::getProjectPresets([
 				'currentExtranetSite' => $arResult['bExtranet'],
 				'entityOptions' => $arParams['PROJECT_OPTIONS'],
-				'isFromFlowCreationForm' => $arParams['isFromFlowCreationForm'] ?? false,
 			])
 			: []
 	);
@@ -1060,7 +1059,7 @@ else
 							&& $feature === 'chat'
 						)
 						{
-							CUserOptions::setOption('socialnetwork', 'default_chat_create_default', ($_POST[$feature . '_active'] === 'Y' ? 'Y' : 'N'));
+							CUserOptions::setOption('socialnetwork', 'default_chat_create_default', (($_POST[$feature . '_active'] ?? null) === 'Y' ? 'Y' : 'N'));
 						}
 
 						if (!$idTmp)
@@ -1705,6 +1704,8 @@ else
 						'edit'
 					);
 
+					while (@ob_end_clean());
+
 					$APPLICATION->RestartBuffer();
 					echo CUtil::PhpToJsObject([
 						'MESSAGE' => 'SUCCESS',
@@ -1794,7 +1795,7 @@ else
 
 				if (isset($_POST['ajax_request']) && $_POST['ajax_request'] === 'Y')
 				{
-					ob_end_clean();
+					while (@ob_end_clean());
 
 					$wizardStepProcessed = '';
 					if ($bSecondStepSuccess)

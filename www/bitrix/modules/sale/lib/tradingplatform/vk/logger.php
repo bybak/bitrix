@@ -525,7 +525,7 @@ class Logger
 			),
 			"VK_NOT_AVAILABLE" => array(
 				"MESSAGE" => Loc::getMessage("SALE_VK_ERROR__VK_NOT_AVAILABLE", array(
-					'#A1' => '<a href="http://vk.com">http://vk.com</a>',
+					'#A1' => '<a href="https://vk.ru">https://vk.ru</a>',
 				)),
 				"CRITICAL" => true,
 				"CODE" => "VK_NOT_AVAILABLE",
@@ -724,6 +724,12 @@ class Logger
 				"CRITICAL" => false,
 				"CODE" => "ERR_UPLOAD_BAD_IMAGE_SIZE_PRODUCT_PHOTOS",
 				"ITEMS_TYPE" => 'PHOTO',
+			],
+			'VK_INVALID_STATE' => [
+				'MESSAGE' => Loc::getMessage('SALE_VK_ERRORS__VK_INVALID_STATE'),
+				'CRITICAL' => true,
+				'CODE' => 'VK_INVALID_STATE',
+				'ITEMS_TYPE' => 'NONE',
 			],
 		);
 

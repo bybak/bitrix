@@ -4,6 +4,7 @@ use Bitrix\Mail\Helper\LicenseManager;
 use Bitrix\Main;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Web\Json;
+use Bitrix\Main\Web\Uri;
 
 \Bitrix\Main\UI\Extension::load([
 	'mail.setting-selector',
@@ -55,45 +56,64 @@ if (!empty($mailbox))
 }
 
 // @TODO: split by types
-$accessList = array();
-$accessLast = array();
-$accessSelected = array();
+
+$accessSelectedCodes = [];
+$accessSelected = [];
 foreach ($arParams['ACCESS_LIST'] as $type => $list)
 {
 	foreach ($list as $id => $item)
 	{
-		if ('users' == $type)
-		{
-			$accessList[$id] = $item;
-		}
-
-		$accessLast[$id] = $id;
-		$accessSelected[$id] = $type;
+		$accessSelectedCodes[] = $id;
+		$accessSelected[] = [$type, $item['entityId']];
 	}
 }
 
-$crmQueueList = array();
-$crmQueueLast = array();
-$crmQueueSelected = array();
+$crmQueueSelectedCodes = [];
+$crmQueueSelected = [];
 if ($arParams['CRM_AVAILABLE'])
 {
 	foreach ($arParams['CRM_QUEUE'] as $item)
 	{
-		$id = sprintf('U%u', $item['ID']);
+		$userCode = sprintf('U%u', $item['ID']);
 
-		$crmQueueList[$id] = array(
-			'id'       => $id,
-			'entityId' => $item['ID'],
-			'name'     => \CUser::formatName(\CSite::getNameFormat(), $item, true),
-			'avatar'   => '',
-			'desc'     => $item['WORK_POSITION'] ?: $item['PERSONAL_PROFESSION'] ?: '&nbsp;'
-		);
-		$crmQueueLast[$id] = $id;
-		$crmQueueSelected[$id] = 'users';
+		$crmQueueSelectedCodes[] = $userCode;
+		$crmQueueSelected[] = ['user', $item['ID']];
 	}
 }
 
 $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
+
+$shareAccessSelectorContainerId = 'mail-share-access-selector-container';
+$shareAccessValueContainerId = 'mail-share-access-value-container';
+
+$crmQueueSelectorContainerId = 'mail-crm-queue-selector-container';
+$crmQueueValueContainerId = 'mail-crm-queue-value-container';
+
+$isCrmSwitcherChecked = !empty($mailbox['__crm']);
+
+$senderNameBlockHtml = '
+<div class="mail-connect-form-item ui-form-content">
+	<div class="ui-form-row">
+		<div class="ui-form-label" data-form-row-hidden="">
+			<label class="ui-ctl ui-ctl-checkbox ui-ctl-w100">
+				<input class="ui-ctl-element mail-connect-form-input mail-connect-form-input-check" type="checkbox"
+					name="fields[use_sender_name]" id="mail_connect_mb_use_sender_name_field" value="Y"
+					' . ($arParams['USE_SENDER_NAME'] ? ' checked' : '') . '
+				>
+				<div class="ui-ctl-label-text">' . htmlspecialcharsbx(Loc::getMessage('MAIL_CLIENT_CONFIG_MAILBOX_USE_SENDER_NAME')) . '</div>
+			</label>
+		</div>
+		<div class="mail-connect-form-limit-hidden-input ui-form-row-hidden">
+			<div class="mail-connect-form-limit-input ui-form-row">
+				<label class="mail-connect-form-label" for="mail_connect_mb_sender_field">' . Loc::getMessage('MAIL_CLIENT_CONFIG_MAILBOX_USERNAME') . '</label>
+				<input class="mail-connect-form-input ui-ctl-element" type="text"
+					name="fields[sender]" id="mail_connect_mb_sender_field"
+					value="' . htmlspecialcharsbx($arParams['SENDER_NAME']) . '"
+				>
+			</div>
+		</div>
+	</div>
+</div>';
 
 ?>
 
@@ -128,7 +148,9 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 				<? if (!empty($mailbox)): ?>
 					<div class="mail-connect-section-block">
 						<div class="mail-connect-mailbox-block">
-							<div class="mail-connect-mailbox-name"><?=htmlspecialcharsbx($mailbox['EMAIL'] ?: sprintf('#%u', $mailbox['ID'])) ?></div>
+							<div class="mail-connect-mailbox-name">
+								<?=htmlspecialcharsbx($mailbox['EMAIL'] ?: sprintf('#%u', $mailbox['ID'])) ?>
+							</div>
 							<? if ($arResult['LAST_MAIL_CHECK_DATE'] > 0): ?>
 								<div class="mail-connect-last-sync-wrapper">
 							<span class="mail-connect-last-sync-title">
@@ -141,10 +163,6 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 										)
 									)
 								) ?>
-							</span>
-									<? $isSuccessSyncStatus = $arResult['LAST_MAIL_CHECK_STATUS']; ?>
-									<span class="mail-connect-last-sync-status mail-connect-last-sync-<?= $isSuccessSyncStatus ? 'success' : 'error'; ?> <?= is_null($isSuccessSyncStatus) ? 'mail-hidden-element' : ''; ?> ">
-								<?= Loc::getMessage('MAIL_CLIENT_CONFIG_LAST_MAIL_CHECK_' . ($isSuccessSyncStatus ? 'SUCCESS' : 'ERROR')); ?>
 							</span>
 								</div>
 							<? endif ?>
@@ -280,10 +298,12 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 					<div class="mail-connect-section-block">
 						<a
 								class="mail-connect-dashed-switch"
-								href="<?php echo \CHTTP::urlAddParams(
-									$arParams['PATH_TO_MAIL_CONFIG_DIRS'],
-									['mailboxId' => $mailbox['ID']]
-								) ?>"
+								href="<?=(new Uri($arParams['PATH_TO_MAIL_CONFIG_DIRS']))
+									->addParams([
+										'mailboxId' => (int)$mailbox['ID'],
+									])
+									->getUri()
+								?>"
 						>
 							<?=Loc::getMessage('MAIL_CLIENT_CONFIG_IMAP_DIRS_LINK') ?>
 						</a>
@@ -302,6 +322,9 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 								   onchange="this['__filled'] = this.value.length > 0; "
 								<? if (!empty($mailbox)): ?> value="<?=htmlspecialcharsbx($mailbox['NAME']) ?>" <? endif ?>>
 						</div>
+						<?php if (empty($arParams['IS_SMTP_AVAILABLE'])): ?>
+							<?= $senderNameBlockHtml ?>
+						<?php endif ?>
 						<? if (empty($settings['link'])): ?>
 							<div class="mail-connect-form-item">
 								<label class="mail-connect-form-label" for="mail_connect_mb_link_field"><?=Loc::getMessage('MAIL_CLIENT_CONFIG_MAILBOX_LINK') ?></label>
@@ -324,11 +347,7 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 						<div id="mail-connect-smtp-settings-title"></div>
 					</div>
 					<div class="mail-connect-form-items">
-						<div class="mail-connect-form-item">
-							<label class="mail-connect-form-label" for="mail_connect_mb_sender_field"><?=Loc::getMessage('MAIL_CLIENT_CONFIG_MAILBOX_USERNAME') ?></label>
-							<input class="mail-connect-form-input" type="text" name="fields[sender]" id="mail_connect_mb_sender_field"
-								value="<?= htmlspecialcharsbx($arParams['SENDER_NAME']) ?>">
-						</div>
+						<?= $senderNameBlockHtml ?>
 						<div class="mail-connect-form-item ui-form-content">
 							<div class="ui-form-row">
 								<div class="ui-form-label" data-form-row-hidden="">
@@ -466,14 +485,28 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 							<a name="configcrm" id="configcrm"></a>
 							<?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM') ?>
 						</div>
-						<div id="mail-connect-crm-settings-title"></div>
+						<div
+							id="mail-connect-crm-settings-title"
+							<?php if (!$isCrmSwitcherChecked && $arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?>
+							data-hint="<?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_NO_ACCESS') ?>"
+							<?php endif ?>
+						>
+						</div>
 					</div>
 					<div class="mail-connect-form-hidden-block mail-connect-form-items">
+						<?php if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?>
+							<div class="ui-alert ui-alert-warning">
+								<span class="ui-alert-message">
+									<?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_NO_ACCESS') ?>
+								</span>
+							</div>
+						<?php endif ?>
 						<div class="mail-connect-option-email" hidden>
 							<input class="mail-connect-form-input mail-connect-form-input-check" type="checkbox"
 								   name="fields[use_crm]" value="Y" id="mail_connect_mb_crm_switch"
 								   onchange="BX('mail_connect_mb_crm_form').style.display = this.checked ? '' : 'none'; "
-								<? if (empty($mailbox) || !empty($mailbox['__crm'])): ?> checked <? endif ?>>
+								<?php if ($isCrmSwitcherChecked): ?> checked <?php endif ?>
+								<?php if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?> readonly <?php endif ?>>
 							<label class="mail-connect-form-label mail-connect-form-label-check" for="mail_connect_mb_crm_switch"><?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_ACTIVE') ?></label>
 						</div>
 						<div class="mail-connect-form-inner" id="mail_connect_mb_crm_form"
@@ -483,7 +516,8 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 									<? [$label1, $label2] = explode('#AGE#', Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_AGE_INFO_CRM'), 2); ?>
 									<input class="mail-connect-form-input mail-connect-form-input-check" type="checkbox"
 										   name="fields[crm_sync_old]" value="Y" id="mail_connect_mb_crm_sync_old"
-										<? if (empty($mailbox)): ?> checked <? endif ?>>
+										<? if (empty($mailbox)): ?> checked <? endif ?>
+										<? if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?> disabled <? endif ?>>
 									<label class="mail-connect-form-label mail-connect-form-label-check" for="mail_connect_mb_crm_sync_old">
 										<?=$label1 ?>
 									</label>
@@ -501,7 +535,8 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 							<div class="mail-connect-option-email mail-connect-form-check-hidden">
 								<input class="mail-connect-form-input mail-connect-form-input-check" type="checkbox"
 									   name="fields[crm_public]" value="Y" id="mail_connect_mb_crm_public"
-									<? if (!empty($mailbox) && in_array('crm_public_bind', $mailbox['OPTIONS']['flags'])): ?> checked <? endif ?>>
+									<?php if (!empty($mailbox) && in_array('crm_public_bind', $mailbox['OPTIONS']['flags'])): ?> checked <?php endif ?>
+									<?php if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?> disabled <?php endif ?>>
 								<label class="mail-connect-form-label mail-connect-form-label-check" for="mail_connect_mb_crm_public">
 									<?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_PUBLIC') ?>
 								</label>
@@ -510,7 +545,8 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 								<? [$label1, $label2] = explode('#ENTITY#', Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_NEW_ENTITY_IN'), 2); ?>
 								<input class="mail-connect-form-input mail-connect-form-input-check" type="checkbox"
 									   name="fields[crm_allow_entity_in]" value="Y" id="mail_connect_mb_crm_allow_entity_in"
-									<? if (empty($mailbox) || !array_intersect(array('crm_deny_new_lead', 'crm_deny_entity_in'), $mailbox['OPTIONS']['flags'])): ?> checked <? endif ?>>
+									<?php if (empty($mailbox) || !array_intersect(array('crm_deny_new_lead', 'crm_deny_entity_in'), $mailbox['OPTIONS']['flags'])): ?> checked <?php endif ?>
+									<?php if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?> disabled <?php endif ?>>
 								<label class="mail-connect-form-label mail-connect-form-label-check" for="mail_connect_mb_crm_allow_entity_in">
 									<?=$label1 ?>
 								</label>
@@ -528,7 +564,8 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 								<? [$label1, $label2] = explode('#ENTITY#', Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_NEW_ENTITY_OUT'), 2); ?>
 								<input class="mail-connect-form-input mail-connect-form-input-check" type="checkbox"
 									   name="fields[crm_allow_entity_out]" value="Y" id="mail_connect_mb_crm_allow_entity_out"
-									<? if (empty($mailbox) || !array_intersect(array('crm_deny_new_lead', 'crm_deny_entity_out'), $mailbox['OPTIONS']['flags'])): ?> checked <? endif ?>>
+									<?php if (empty($mailbox) || !array_intersect(array('crm_deny_new_lead', 'crm_deny_entity_out'), $mailbox['OPTIONS']['flags'])): ?> checked <?php endif ?>
+									<?php if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?> disabled <?php endif ?>>
 								<label class="mail-connect-form-label mail-connect-form-label-check" for="mail_connect_mb_crm_allow_entity_out">
 									<?=$label1 ?>
 								</label>
@@ -545,7 +582,8 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 							<div class="mail-connect-option-email mail-connect-form-check-hidden">
 								<input class="mail-connect-form-input mail-connect-form-input-check" type="checkbox"
 									   name="fields[crm_vcf]" value="Y" id="mail_connect_mb_crm_vcf"
-									<? if (empty($mailbox) || !in_array('crm_deny_new_contact', $mailbox['OPTIONS']['flags'])): ?> checked <? endif ?>>
+									<?php if (empty($mailbox) || !in_array('crm_deny_new_contact', $mailbox['OPTIONS']['flags'])): ?> checked <?php endif ?>
+									<?php if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?> disabled <?php endif ?>>
 								<label class="mail-connect-form-label mail-connect-form-label-check" for="mail_connect_mb_crm_vcf">
 									<?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_VCF') ?>
 								</label>
@@ -565,8 +603,12 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 								<label class="mail-connect-form-label mail-connect-form-label-check">
 									<?=$label1 ?>
 								</label>
-								<span class="mail-set-textarea-show <? if (!empty($arParams['NEW_LEAD_FOR'])): ?> mail-set-textarea-show-open<? endif ?>"
-									  id="mail_connect_mb_crm_new_lead_for_link"
+								<span class="
+										mail-set-textarea-show
+										<?php if ($arParams['HAS_ACCESS_TO_EDIT_CRM'] === false): ?> mail-set-textarea-show--disabled<?php endif ?>
+										<?php if (!empty($arParams['NEW_LEAD_FOR'])): ?> mail-set-textarea-show-open<?php endif ?>
+									"
+										id="mail_connect_mb_crm_new_lead_for_link"
 								><?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_NEW_LEAD_ALLWAYS_LIST') ?></span>
 								<label class="mail-connect-form-label mail-connect-form-label-check">
 									<?=$label2 ?>
@@ -583,25 +625,11 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 								<label class="mail-connect-form-label mail-connect-form-label-check">
 									<?=Loc::getMessage('MAIL_CLIENT_CONFIG_CRM_QUEUE') ?>
 								</label>
-								<?
-								$APPLICATION->IncludeComponent('bitrix:main.user.selector', '', [
-									"ID" => "mail_client_config_queue",
-									"API_VERSION" => 3,
-									"LIST" => array_keys($crmQueueSelected),
-									"INPUT_NAME" => "fields[crm_queue][]",
-									"USE_SYMBOLIC_ID" => true,
-									"BUTTON_SELECT_CAPTION" => Loc::getMessage("MAIL_CLIENT_CONFIG_CRM_QUEUE_ADD"),
-									"SELECTOR_OPTIONS" => [
-										'apiVersion' => 3,
-										"departmentSelectDisable" => "Y",
-										'context' => 'MAIL_CLIENT_CONFIG_QUEUE',
-										'multiple' => 'Y',
-										'contextCode' => 'U',
-										'enableAll' => 'N',
-										'userSearchArea' => 'I'
-									]
-								]);
-								?>
+								<div id="<?= $crmQueueSelectorContainerId ?>"></div>
+								<input type="hidden"
+								id="<?=$crmQueueValueContainerId ?>"
+								name="fields[crm_queue]"
+								value="<?=htmlspecialcharsbx(\Bitrix\Main\Web\Json::encode($crmQueueSelectedCodes))?>">
 							</div>
 						</div>
 					</div>
@@ -636,36 +664,50 @@ $APPLICATION->includeComponent('bitrix:main.mail.confirm', '', array());
 				</div>
 				<div class="mail-connect-notice-block">
 					<div class="mail-connect-notice-text">
-						<?=Loc::getMessage('MAIL_CLIENT_CONFIG_ACCESS_HINT_MSGVER_1') ?>
-						<!--span class="mail-connect-notice-more"><?=Loc::getMessage('MAIL_CLIENT_CONFIG_ACCESS_MORE') ?></span-->
+						<?php
+							if ($arParams['HAS_NO_ACCESS_TO_SHARE_MAILBOX'])
+							{
+								echo Loc::getMessage('MAIL_CLIENT_CONFIG_DENIED_SHARE_ACCESS_HINT');
+							}
+							else
+							{
+								echo Loc::getMessage('MAIL_CLIENT_CONFIG_ACCESS_HINT_MSGVER_1');
+							}
+						?>
 					</div>
 				</div>
-				<?
-				$APPLICATION->IncludeComponent('bitrix:main.user.selector', '', [
-					"ID" => "mail_client_config_access",
-					"API_VERSION" => 3,
-					"LOCK" => $arResult['FORBIDDEN_TO_SHARE_MAILBOX'],
-					"LIST" => array_keys($accessSelected),
-					"UNDELETABLE" => [ sprintf('U%u', empty($mailbox) ? $USER->getId() : $mailbox['USER_ID']) ],
-					"INPUT_NAME" => "fields[access_dest][]",
-					"USE_SYMBOLIC_ID" => true,
-					"BUTTON_SELECT_CAPTION" => Loc::getMessage("MAIL_CLIENT_CONFIG_ACCESS_ADD"),
-					"SELECTOR_OPTIONS" => [
-						"departmentSelectDisable" => "N",
-						'context' => 'MAIL_CLIENT_CONFIG_ACCESS',
-						'multiple' => 'Y',
-						'contextCode' => 'U',
-						'enableAll' => 'N',
-						'userSearchArea' => 'I'
-					],
-					"CALLBACK_BEFORE" => [
-						'openDialog' => 'BX.MailClientConfig.Edit.beforeOpenDialog',
-						'context' => 'BX.MailClientConfig.Edit'
-					]
-				]);
-				?>
+				<div id="<?= $shareAccessSelectorContainerId ?>"></div>
+				<input
+					type="hidden"
+					 id="<?= $shareAccessValueContainerId ?>"
+					name="fields[share_access]"
+					value="<?=htmlspecialcharsbx(\Bitrix\Main\Web\Json::encode($accessSelectedCodes))?>"
+				>
 			</div>
 		</div>
+
+		<?php if (
+			(\Bitrix\Main\Config\Option::get('mail', 'enable_mailbox_owner_change', 'N') === 'Y')
+		&& !empty($mailbox)
+		&& $USER->isAdmin()): ?>
+		<div class="ui-slider-section">
+			<div class="mail-connect-section-block">
+				<div class="mail-connect-title-block">
+					<div class="mail-connect-title"><?=Loc::getMessage('MAIL_CLIENT_CONFIG_OWNER') ?></div>
+				</div>
+				<div class="mail-connect-option-email mail-connect-form-check-hidden">
+					<div id="mail-owner-selector-container"></div>
+				</div>
+				<input
+					type="hidden"
+					id="mail-owner-id-input"
+					name="fields[owner_id]"
+					value="<?= $arParams['OWNER_ACCESS_CODE'] ?>"
+				>
+			</div>
+			</div>
+		</div>
+		<?php endif; ?>
 
 		<div class="mail-connect-footer mail-connect-footer-fixed">
 			<div id="mail_connect_form_error"></div>
@@ -733,6 +775,31 @@ if (empty($mailbox))
 	$crmSyncIntervals[$fullSyncPeriodKey] = htmlspecialcharsbx(Loc::getMessage('MAIL_CLIENT_CONFIG_IMAP_AGE_2_I'));
 }
 
+$ownerData = null;
+if (!empty($mailbox['USER_ID']))
+{
+	$user = \CUser::GetByID($mailbox['USER_ID'])->Fetch();
+	if ($user)
+	{
+		$avatarUrl = null;
+		if (!empty($user['PERSONAL_PHOTO']))
+		{
+			$avatarFile = CFile::GetFileArray($user['PERSONAL_PHOTO']);
+			if ($avatarFile)
+			{
+				$avatarUrl = $avatarFile['SRC'];
+			}
+		}
+
+		$ownerData = [
+			'id' => $user['ID'],
+			'entityId' => 'user',
+			'title' => \CUser::FormatName(\CSite::getNameFormat(false), $user, true, false),
+			'avatar' => $avatarUrl,
+		];
+	}
+}
+
 $arJsParams = [
 	'crmSyncIntervals' => $crmSyncIntervals,
 	'messageSyncIntervals' => $messageSyncIntervals,
@@ -747,10 +814,23 @@ $arJsParams = [
 	'isSmtpSwitcherChecked' => $settings['IS_SMTP_SWITCHER_CHECKED'],
 	'isSmtpSwitcherDisabled' => $arResult['LOCK_SMTP'] && $settings['IS_SMTP_SWITCHER_CHECKED'],
 	'isCrmIntegrationAvailable' => !empty($arParams['CRM_AVAILABLE']),
-	'isCrmSwitcherChecked' => empty($mailbox) || !empty($mailbox['__crm']),
+	'isCrmSwitcherChecked' => $isCrmSwitcherChecked,
+	'canEditCrmOptions' => !$arParams['HAS_ACCESS_TO_EDIT_CRM'],
 	'isSuccessSyncStatus' => $arResult['LAST_MAIL_CHECK_STATUS'],
 	'oauthUserIsEmpty' => empty($settings['oauth_user']),
 	'isOauthMode' => !empty($settings['oauth']),
+	'ownerId' => !empty($mailbox['USER_ID']) ? (int)$mailbox['USER_ID'] : null,
+	'owner' => $ownerData,
+	'ownerSelectText' => Loc::getMessage("MAIL_CLIENT_CONFIG_OWNER_CHANGE"),
+	'shareAccessSelectorId' => $shareAccessSelectorContainerId,
+	'shareAccessSelectorPreselectedIds' => $accessSelected,
+	'shareAccessValueContainerId' => $shareAccessValueContainerId,
+	'isShareAccessLocked' => $arParams["HAS_NO_ACCESS_TO_SHARE_MAILBOX"] ?? false,
+	'crmQueueSelectorId' => $crmQueueSelectorContainerId,
+	'crmQueueSelectorPreselectedIds' => $crmQueueSelected,
+	'crmQueueValueContainerId' => $crmQueueValueContainerId,
+	'serviceName' => $settings['name'],
+	'isNewMailbox' => empty($mailbox),
 ];
 ?>
 <script>
@@ -765,15 +845,77 @@ $arJsParams = [
 	}
 	else
 	{
-		top.BX.loadCSS('/bitrix/components/bitrix/mail.client.sidepanel/templates/.default/style.css');
 		top.BX.loadCSS('/bitrix/components/bitrix/mail.client.config/templates/.default/style.css');
 	}
 
 	BX.UI.Hint.init(BX('mail_connect_form'));
 
 	BX.ready(function() {
+		const initOwnerSelector = function (params) {
+			const ownerContainerNode = BX('mail-owner-selector-container');
+			const ownerInputNode = BX('mail-owner-id-input');
+
+			if (!ownerContainerNode || !ownerInputNode)
+			{
+				return;
+			}
+
+			ownerContainerNode.innerHTML = '';
+
+			const preselectedItems = [];
+			if (params.owner)
+			{
+				preselectedItems.push(['user', params.owner.id]);
+			}
+
+			const tagSelector = new BX.UI.EntitySelector.TagSelector({
+				addButtonCaptionMore: params.ownerSelectText,
+				multiple: false,
+				items: params.owner ? [params.owner] : [],
+				dialogOptions: {
+					context: 'MAIL_CLIENT_CONFIG_OWNER',
+					preselectedItems: preselectedItems,
+					entities: [{
+						id: 'user',
+						options: {
+							inviteEmployeeLink: false,
+							intranetUsersOnly: true
+						}
+					}],
+					events: {
+						'Item:onSelect': function (event) {
+							const selectedItem = event.getData().item;
+							ownerInputNode.value = 'U' + selectedItem.getId();
+						}
+					}
+				},
+				events: {
+					'onBeforeTagRemove': function () {
+						ownerInputNode.value = '';
+					}
+				}
+			});
+
+			tagSelector.renderTo(ownerContainerNode);
+		};
+
+		if (!BX.MailClientConfig?.Edit?.isOwnerSelectorInited)
+		{
+			BX.MailClientConfig.Edit.isOwnerSelectorInited = true;
+
+			BX.MailClientConfig.Edit.init = (function(originalInit) {
+				return function(params) {
+					originalInit.apply(this, arguments);
+					initOwnerSelector(params);
+				};
+			})(BX.MailClientConfig.Edit.init);
+		}
+	});
+
+	BX.ready(function(){
 		BX.MailClientConfig.Edit.init(<?=Json::encode($arJsParams)?>);
 	});
+
 
 	BX.message({
 		'MAIL_CLIENT_CONFIG_IMAP_DIRS_TITLE': '<?=\CUtil::jsEscape(Loc::getMessage('MAIL_CLIENT_CONFIG_IMAP_DIRS_TITLE')) ?>',
@@ -1102,6 +1244,15 @@ $arJsParams = [
 			});
 		}
 
+		const setSenderNameCheckbox = BX('mail_connect_mb_use_sender_name_field');
+		if (setSenderNameCheckbox)
+		{
+			BX.bind(setSenderNameCheckbox, 'click', () => {
+				const limitSmtpField = BX('mail_connect_mb_sender_field');
+				limitSmtpField.disabled = !setLimitCheckbox.checked;
+				setLimitCheckbox.value = setLimitCheckbox.checked === true ? 'Y' : 'N';
+			});
+		}
 
 		const setSmtpCheckbox = BX('mail_connect_mb_server_smtp_switch');
 		if (setSmtpCheckbox)
@@ -1447,6 +1598,8 @@ $arJsParams = [
 					{
 						if ('success' != json.status)
 						{
+							 BX.MailClientConfig.Edit.sendAnalyticsData('error');
+
 							button.disabled = false;
 							BX.removeClass(button, 'ui-btn-wait');
 
@@ -1490,6 +1643,8 @@ $arJsParams = [
 						}
 						else
 						{
+							BX.MailClientConfig.Edit.sendAnalyticsData('success');
+
 							<? if (!empty($mailbox)): ?>
 
 							if (json.data && json.data.id > 0)
@@ -1509,11 +1664,15 @@ $arJsParams = [
 							<? else: ?>
 
 							if (json.data && json.data.id > 0) {
+								const url = BX.util.add_url_param(
+  									'<?=\CUtil::jsEscape($arParams['PATH_TO_MAIL_CONFIG_DIRS'])?>',
+  									{
+										mailboxId: json.data.id,
+										INIT: 'Y',
+									}
+								);
 								top.BX.SidePanel.Instance.open(
-									'<?=\CUtil::jsEscape(\CHTTP::urlAddParams(
-										$arParams['PATH_TO_MAIL_CONFIG_DIRS'],
-										['mailboxId' => '#id#', 'INIT' => 'Y']
-									)) ?>'.replace('#id#', json.data.id),
+									url,
 									{
 										width: 640,
 										cacheable: false,
@@ -1541,6 +1700,8 @@ $arJsParams = [
 					},
 					onfailure: function(json)
 					{
+						BX.MailClientConfig.Edit.sendAnalyticsData('error');
+
 						button.disabled = false;
 						BX.removeClass(button, 'ui-btn-wait');
 						showError('<?=\CUtil::jsEscape(Loc::getMessage('MAIL_CLIENT_AJAX_ERROR')) ?>');

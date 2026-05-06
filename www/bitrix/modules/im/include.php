@@ -78,6 +78,8 @@ define("IM_NOTIFY_FEATURE_XMPP", "xmpp");
 define("IM_NOTIFY_FEATURE_MAIL", "mail");
 define("IM_NOTIFY_FEATURE_PUSH", "push");
 
+include __DIR__ . '/compatibility.php';
+
 CModule::AddAutoloadClasses(
 	"im",
 	array(
@@ -186,10 +188,6 @@ CJSCore::RegisterExt('im_page', array(
 	'js' => $jsIm,
 	'css' => array(
 		'/bitrix/js/im/css/im.css',
-		'/bitrix/js/im/css/call/keypad.css',
-		'/bitrix/js/im/css/call/view.css',
-		'/bitrix/js/im/css/call/sidebar.css',
-		'/bitrix/js/im/css/call/promo-popup.css',
 	),
 	'lang' => '/bitrix/modules/im/js_im.php',
 	'rel' => $jsCoreRelPage
@@ -211,7 +209,7 @@ CJSCore::RegisterExt('im_window', array(
 	'js' => '/bitrix/js/im/window.js',
 	'css' => '/bitrix/js/im/css/window.css',
 	'lang' => '/bitrix/modules/im/js_window.php',
-	'rel' => Array('ui.design-tokens', 'popup', 'fx', 'json', 'translit', 'im.component.conference.conference-create', 'ui.alerts'),
+	'rel' => Array('ui.design-tokens', 'popup', 'fx', 'translit', 'call.component.conference.conference-create', 'ui.alerts'),
 ));
 
 CJSCore::RegisterExt('im_desktop', array(
@@ -233,7 +231,7 @@ if ($isLegacyChatActivated)
 {
 	$asset = Asset::getInstance();
 	$asset->addJsKernelInfo('im', array_merge(['/bitrix/js/im/common.js', '/bitrix/js/im/window.js'], $jsIm));
-	$asset->addCssKernelInfo('im', array('/bitrix/js/im/css/common.css', '/bitrix/js/im/css/dark_im.css', '/bitrix/js/im/css/window.css', '/bitrix/js/im/css/im.css', '/bitrix/js/im/css/call/view.css', '/bitrix/js/im/css/call/sidebar.css', '/bitrix/js/im/css/call/promo-popup.css'));
+	$asset->addCssKernelInfo('im', array('/bitrix/js/im/css/common.css', '/bitrix/js/im/css/dark_im.css', '/bitrix/js/im/css/window.css', '/bitrix/js/im/css/im.css'));
 }
 
 /* Copyrights */
@@ -246,3 +244,10 @@ EventManager::getInstance()->addEventHandler('main', 'onGetThirdPartySoftware', 
 			->setLicence(Copyright::LICENCE_MIT)
 	]);
 });
+
+$documentRoot = \Bitrix\Main\Loader::getDocumentRoot();
+if (is_dir($documentRoot . '/bitrix/modules/im/dev/'))
+{
+	// developer mode
+	\Bitrix\Main\Loader::registerNamespace('Bitrix\Im\Dev', \Bitrix\Main\Loader::getDocumentRoot() . '/bitrix/modules/im/dev/lib/');
+}

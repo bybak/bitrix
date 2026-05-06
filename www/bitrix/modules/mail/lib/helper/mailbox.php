@@ -3,6 +3,7 @@
 namespace Bitrix\Mail\Helper;
 
 use Bitrix\Mail;
+use Bitrix\Mail\Helper\Mailbox\MailboxSyncManager;
 use Bitrix\Mail\Internals\MessageUploadQueueTable;
 use Bitrix\Mail\MailboxTable;
 use Bitrix\Mail\MailMessageUidTable;
@@ -10,6 +11,7 @@ use Bitrix\Mail\MailServicesTable;
 use Bitrix\Main;
 use Bitrix\Main\Config\Option;
 use Bitrix\Main\Loader;
+use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\ORM;
 use Bitrix\Main\ORM\Query\Query;
 use Bitrix\Mail\Helper;
@@ -21,9 +23,11 @@ abstract class Mailbox
 	const SYNC_TIMEOUT = 300;
 	const SYNC_TIME_QUOTA = 280;
 	const MESSAGE_RESYNCHRONIZATION_TIME = 360;
+	const INCOMPLETE_MESSAGE_REMOVE_TIMEOUT = 600;
 	const MESSAGE_DELETION_LIMIT_AT_A_TIME = 500;
 	const MESSAGE_SET_OLD_STATUS_LIMIT_AT_A_TIME = 500;
 	const NUMBER_OF_BROKEN_MESSAGES_TO_RESYNCHRONIZE = 2;
+	const NUMBER_OF_INCOMPLETE_MESSAGES_TO_REMOVE = 10;
 
 	const MAIL_SERVICES_ONLY_FOR_THE_RU_ZONE = [
 		'yandex',
@@ -140,15 +144,19 @@ abstract class Mailbox
 			->setSelect([
 				'ID',
 				'DIR_MD5',
+				'MESSAGE_COUNT',
 			])
 			->where('MAILBOX_ID', $mailboxId)
 			->exec();
-		while ($item = $res->fetch()) {
+		while ($item = $res->fetch())
+		{
 			$id = $item['ID'];
 			$dirMd5 = $item['DIR_MD5'];
 			$directoriesWithCounter[$dirMd5] = [
+				'MESSAGE_COUNT' => $item['MESSAGE_COUNT'],
 				'UNSEEN' => $countersById[$id] ?? 0,
 				'DIR_MD5' => $dirMd5,
+				'ID' => $item['ID'],
 			];
 		}
 
@@ -163,6 +171,7 @@ abstract class Mailbox
 			'mail_mailbox_' . $this->mailbox['ID'],
 			[
 				'params' => [
+					'mailboxId' => $this->mailbox['ID'],
 					'dirs' => $this->getDirsWithUnseenMailCounters(),
 				],
 				'module_id' => 'mail',
@@ -269,7 +278,7 @@ abstract class Mailbox
 
 		if (empty($mailbox))
 		{
-			throw new Main\ObjectException('no mailbox');
+			return false;
 		}
 
 		if (empty($mailbox['SERVER_TYPE']) || !array_key_exists($mailbox['SERVER_TYPE'], $types))
@@ -382,9 +391,56 @@ abstract class Mailbox
 		}
 	}
 
+	public function renewOauthTokens(): bool
+	{
+		if (empty($this->mailbox['PASSWORD']))
+		{
+			return false;
+		}
+
+		$oauth = OAuth::getInstanceByMeta($this->mailbox['PASSWORD']);
+
+		if (empty($oauth))
+		{
+			return false;
+		}
+
+		return $oauth->renewTokens();
+	}
+
 	public function getMailbox()
 	{
 		return $this->mailbox;
+	}
+
+	public function getServiceId(): int
+	{
+		return (int)($this->mailbox['SERVICE_ID'] ?? 0);
+	}
+
+	public function getProviderCode(): string
+	{
+		$serviceId = $this->getServiceId();
+
+		if ($serviceId <= 0)
+		{
+			return '';
+		}
+
+		$service = MailServicesTable::getByPrimary(
+			$serviceId,
+			[
+				'select' => ['NAME'],
+				'cache' => ['ttl' => 86400],
+			],
+		)->fetch();
+
+		if ($service && !empty($service['NAME']))
+		{
+			return mb_strtolower($service['NAME']);
+		}
+
+		return '';
 	}
 
 	public function getMailboxId(): int
@@ -469,11 +525,8 @@ abstract class Mailbox
 		);
 	}
 
-	private function findIncompleteMessages(int $count, array $additionalFilters = []): Main\ORM\Query\Result
+	private function getLostMessages(int $count, array $additionalFilters = []): Main\ORM\Query\Result
 	{
-		$resyncTime = new Main\Type\DateTime();
-		$resyncTime->add('- '.static::MESSAGE_RESYNCHRONIZATION_TIME.' seconds');
-
 		return MailMessageUidTable::getList([
 			'select' => array(
 				'MSG_UID',
@@ -481,12 +534,27 @@ abstract class Mailbox
 			),
 			'filter' => array_merge([
 				'=MAILBOX_ID' => $this->mailbox['ID'],
-				'=MESSAGE_ID' => '0',
-				'=IS_OLD' => 'D',
-				'<=DATE_INSERT' => $resyncTime,
+				'=IS_OLD' => \Bitrix\Mail\MailMessageUidTable::LOST,
 			], $additionalFilters),
 			'limit' => $count,
 		]);
+	}
+
+	private function removeOldUnderloadedMessages(int $limit, array $additionalFilters = []): bool
+	{
+		$resyncTime = new Main\Type\DateTime();
+		$resyncTime->add('- '.static::INCOMPLETE_MESSAGE_REMOVE_TIMEOUT.' seconds');
+
+		return MailMessageUidTable::deleteList(
+			array_merge([
+				'=MAILBOX_ID' => $this->mailbox['ID'],
+				'=MESSAGE_ID' => '0',
+				'=IS_OLD' => \Bitrix\Mail\MailMessageUidTable::DOWNLOADED,
+				'<=DATE_INSERT' => $resyncTime,
+			], $additionalFilters),
+			limit: $limit,
+			sendEvent: false
+		);
 	}
 
 	private function syncIncompleteMessages(Main\ORM\Query\Result $messages): void
@@ -496,7 +564,7 @@ abstract class Mailbox
 		while ($item = $messages->fetch())
 		{
 			$dirPath = $this->getDirsHelper()->getDirPathByHash($item['DIR_MD5']);
-			$this->syncMessages($mailboxId, $dirPath, [$item['MSG_UID']]);
+			$this->syncMessages($mailboxId, $dirPath, [$item['MSG_UID']], true);
 
 			if(Main\Loader::includeModule('pull'))
 			{
@@ -508,7 +576,7 @@ abstract class Mailbox
 							'mailboxId' => $mailboxId,
 						],
 						'module_id' => 'mail',
-						'command' => 'new_message_is_synchronized',
+						'command' => 'recovered_message_is_synchronized',
 					]
 				);
 				\Bitrix\Pull\Event::send();
@@ -527,8 +595,12 @@ abstract class Mailbox
 
 		foreach ($dirsSync as $dir)
 		{
-			$this->syncIncompleteMessages($this->findIncompleteMessages(static::NUMBER_OF_BROKEN_MESSAGES_TO_RESYNCHRONIZE, $this->getMessageInFolderFilter($dir)));
+			$messageInFolderFilter = $this->getMessageInFolderFilter($dir);
+			$this->removeOldUnderloadedMessages(static::NUMBER_OF_INCOMPLETE_MESSAGES_TO_REMOVE, $messageInFolderFilter);
+			$this->syncIncompleteMessages($this->getLostMessages(static::NUMBER_OF_BROKEN_MESSAGES_TO_RESYNCHRONIZE, $messageInFolderFilter));
 		}
+
+
 
 		\Bitrix\Mail\Helper\Message::reSyncBody($this->mailbox['ID'], $this->findMessagesWithAnEmptyBody(static::NUMBER_OF_BROKEN_MESSAGES_TO_RESYNCHRONIZE, $this->mailbox['ID']));
 	}
@@ -543,6 +615,156 @@ abstract class Mailbox
 		{
 			$this->updateGlobalCounter($userId);
 		}
+	}
+
+	/**
+	 * @param $id
+	 * @param $dir
+	 * @param $onlySyncCurrent
+	 * @return Main\Result
+	 * @throws Main\LoaderException
+	 */
+	public static function quickSync($id, $dir = null, $onlySyncCurrent = false): Main\Result
+	{
+		$finalResult = new \Bitrix\Main\Result();
+
+		$sessionId = md5(uniqid(''));
+
+		$response = array(
+			'complete' => false,
+			'status' => 0,
+			'sessid' => $sessionId,
+			'timestamp' => microtime(true),
+			'final' => true,
+			'is_fatal_error' => true,
+		);
+
+		$finalResult->setData($response);
+
+		if(!Loader::includeModule('mail'))
+		{
+			$finalResult->addError(new \Bitrix\Main\Error(Loc::getMessage('MAIL_MODULE_NOT_INSTALLED_1')));
+
+			//Stop attempts to resynchronize the mailbox
+			$response['is_fatal_error'] = true;
+			$response['complete'] = true;
+
+			$finalResult->setData($response);
+
+			return $finalResult;
+		}
+
+		if (!LicenseManager::isSyncAvailable())
+		{
+			$response['complete'] = true;
+			$response['is_fatal_error'] = true;
+
+			$finalResult->addError(new \Bitrix\Main\Error(Loc::getMessage('MAIL_SYNC_NOT_AVAILABLE_1')));
+			$finalResult->setData($response);
+
+			return $finalResult;
+		}
+
+		$mailbox = null;
+
+		if (MailboxAccess::hasCurrentUserAnyAccessToMailbox($id))
+		{
+			$mailbox = MailboxTable::getById($id)->fetch();
+		}
+
+		$mailboxHelper = Helper\Mailbox::createInstance($id);
+
+		if ($mailbox && !empty($mailboxHelper))
+		{
+			session_write_close();
+
+			if (is_null($dir))
+			{
+				$dir = $mailboxHelper->getDirsHelper()->getDefaultDirPath(true);
+			}
+
+			$mailboxHelper->setSyncParams(array(
+				'full' => true,
+				'currentDir' => $dir,
+				'sessid' => $sessionId,
+			));
+
+			$mailboxSyncManager = new MailboxSyncManager($mailbox['USER_ID']);
+			$mailboxSyncManager->setSyncStartedData($id);
+
+			$result = $mailboxHelper->syncDir($dir);
+
+			$response['timestamp'] = microtime(true);
+
+			if ($result === false)
+			{
+				$mailboxSyncManager->setSyncStatus($id, false, time());
+
+				$response['complete'] = true;
+				$response['is_fatal_error'] = true;
+
+				$finalResult->addErrors($mailboxHelper->getWarnings()->toArray());
+			}
+			else
+			{
+				/*
+					If the directory is not locked for synchronization,
+					then we will resynchronize the old messages
+					(delete the missing messages, synchronize the readability statuses).
+				*/
+				if ($result !== null)
+				{
+					$response['new'] = $result;
+
+					$lastSyncResult = $mailboxHelper->getLastSyncResult();
+
+					$response['updated'] = -$lastSyncResult['updatedMessages'];
+					$response['deleted'] = -$lastSyncResult['deletedMessages'];
+
+					$mailboxHelper->resyncDir($dir);
+
+					$lastSyncResult = $mailboxHelper->getLastSyncResult();
+
+					$response['updated'] += $lastSyncResult['updatedMessages'];
+					$response['deleted'] += $lastSyncResult['deletedMessages'];
+
+					$response['timestamp'] = microtime(true);
+				}
+
+				$onlySyncCurrent = filter_var($onlySyncCurrent, FILTER_VALIDATE_BOOLEAN);
+
+				if (!$onlySyncCurrent && count($mailboxHelper->getDirsHelper()->getSyncDirs()) > 1)
+				{
+					//If resynchronization of the entire mailbox is started
+					if($mailboxHelper->sync(false))
+					{
+						$response['complete'] = true;
+					}
+				}
+				else
+				{
+					$mailboxSyncManager->setSyncStatus($id, true, time());
+					$mailboxHelper->notifyNewMessages();
+					$response['complete'] = true;
+				}
+			}
+		}
+		else
+		{
+			$response['complete'] = true;
+			$response['is_fatal_error'] = true;
+			$finalResult->addError(new \Bitrix\Main\Error(Loc::getMessage('MAIL_THE_MAILBOX_HAS_BEEN_DELETED_1')));
+		}
+
+		if($mailbox && $response['new'] > 0 || $response['deleted'] > 0 || $response['updated'] > 0)
+		{
+			$mailboxHelper->syncCounters();
+			$mailboxHelper->sendCountersEvent();
+		}
+
+		$finalResult->setData($response);
+
+		return $finalResult;
 	}
 
 	public function sync($syncCounters = true)
@@ -931,6 +1153,7 @@ abstract class Mailbox
 		MailMessageUidTable::deleteList(
 			[
 				'=MAILBOX_ID'  => $this->mailbox['ID'],
+				'!=MESSAGE_ID' => 0,
 				'>DELETE_TIME' => 0,
 				/*The values in the tables are still used to delete related items (example: attachments):*/
 				'<DELETE_TIME' => $minSyncTime,
@@ -1038,7 +1261,7 @@ abstract class Mailbox
 		]);
 	}
 
-	protected function registerMessage(&$fields, $replaces = null, $isOutgoing = false, string $idFromHeaderMessage = '', $redefineInsertDate = true): bool
+	protected function registerMessage(&$fields, $replaces = null, $isOutgoing = false, string $idFromHeaderMessage = '', $redefineInsertDate = true, string $messageStatus = \Bitrix\Mail\MailMessageUidTable::DOWNLOADED): bool
 	{
 		$now = new Main\Type\DateTime();
 
@@ -1133,7 +1356,7 @@ abstract class Mailbox
 				],
 				$fields,
 				[
-					'IS_OLD' => 'D',
+					'IS_OLD' => $messageStatus,
 					'MAILBOX_ID'  => $this->mailbox['ID'],
 					'SESSION_ID'  => $this->session,
 					'TIMESTAMP_X' => $now,
@@ -1983,7 +2206,7 @@ abstract class Mailbox
 		$this->lastSyncResult = array_merge($this->lastSyncResult, $data);
 	}
 
-	public function getDirsHelper()
+	public function getDirsHelper(): Mail\Helper\MailboxDirectoryHelper
 	{
 		if (!$this->dirsHelper)
 		{
@@ -2067,7 +2290,7 @@ abstract class Mailbox
 
 			Mail\Integration\Im\Notification::add(
 				$this->mailbox['USER_ID'],
-				'new_message',
+				Mail\Integration\Im\Notification::notifierSchemeTypeMail,
 				array(
 					'mailboxOwnerId' => $this->mailbox['USER_ID'],
 					'mailboxId' => $this->mailbox['ID'],
@@ -2151,7 +2374,7 @@ abstract class Mailbox
 		return null;
 	}
 
-	final public static function findBy($id, $email): ?Mailbox
+	final public static function findBy($id, ?string $email = null): ?Mailbox
 	{
 		$instance = null;
 
@@ -2174,5 +2397,39 @@ abstract class Mailbox
 		}
 
 		return null;
+	}
+
+	public static function getIdByMessageId(int $messageId): int
+	{
+		if (!$messageId)
+		{
+			return 0;
+		}
+
+		$res = MailMessageTable::query()
+			->setSelect(['MAILBOX_ID'])
+			->where('ID', $messageId)
+			->exec()
+		;
+
+		if ($row = $res->fetch())
+		{
+			return (int)$row['MAILBOX_ID'];
+		}
+
+		return 0;
+	}
+
+	public static function findActiveMailbox($userId, $email, $lid)
+	{
+		return Mail\MailboxTable::getList([
+			'filter' => [
+				'=EMAIL' => $email,
+				'=USER_ID' => $userId,
+				'=ACTIVE' => 'Y',
+				'=LID' => $lid,
+			],
+			'limit' => 1,
+		])->fetch();
 	}
 }

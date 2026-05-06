@@ -39,7 +39,6 @@ final class TempFile extends EO_TempFile
 			$chunk->setFile($newFile);
 		}
 
-		$tempFile = null;
 		if ($chunk->isOnlyOne())
 		{
 			// Cloud and local files are processed by CFile::SaveFile.
@@ -91,6 +90,7 @@ final class TempFile extends EO_TempFile
 		$tempFile->setHeight($chunk->getHeight());
 		$tempFile->setModuleId($controller->getModuleId());
 		$tempFile->setController($controller->getName());
+		$tempFile->setControllerOptions($controller->getOptions());
 
 		if ($bucket)
 		{
@@ -114,6 +114,13 @@ final class TempFile extends EO_TempFile
 		$tempFile->save();
 
 		return $tempFile;
+	}
+
+	public function getControllerOptions(): array
+	{
+		$value = parent::getControllerOptions();
+
+		return is_array($value) ? $value : [];
 	}
 
 	public function append(Chunk $chunk): Result

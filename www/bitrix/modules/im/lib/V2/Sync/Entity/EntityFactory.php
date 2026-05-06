@@ -2,22 +2,21 @@
 
 namespace Bitrix\Im\V2\Sync\Entity;
 
+use Bitrix\Im\V2\Sync\Entities;
 use Bitrix\Im\V2\Sync\Event;
 
 class EntityFactory
 {
-	/**
-	 * @param Event[] $events
-	 * @return array
-	 */
-	public function createEntities(array $events): array
+	public function createEntities(array $logEvents): Entities
 	{
 		$messages = new Messages();
 		$chats = new Chats();
 		$pins = new PinMessages();
 
-		foreach ($events as $event)
+		foreach ($logEvents as $logEvent)
 		{
+			$event = Event::initByEntity($logEvent);
+
 			switch ($event->entityType)
 			{
 				case Event::CHAT_ENTITY:
@@ -33,8 +32,8 @@ class EntityFactory
 			}
 		}
 
-		$dialogIds = new DialogIds($messages, $pins, $chats);
+		$dialogIds = new DialogIds($chats);
 
-		return [$chats, $messages, $pins, $dialogIds];
+		return new Entities($chats, $messages, $pins, $dialogIds);
 	}
 }

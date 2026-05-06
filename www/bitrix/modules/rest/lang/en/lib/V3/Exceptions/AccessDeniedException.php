@@ -1,0 +1,2 @@
+<?php
+$MESS["REST_V3_EXCEPTIONS_ACCESSDENIEDEXCEPTION"] = 'Access denied.';

@@ -7,6 +7,7 @@ $MESS["MAIL_CLIENT_CONFIG_PROMPT"] = 'Работайте с почтой вну�
 
 $MESS["MAIL_CLIENT_CONFIG_MAILBOX_NAME"] = "Название ящика";
 $MESS["MAIL_CLIENT_CONFIG_MAILBOX_EMAIL"] = "E-mail";
+$MESS["MAIL_CLIENT_CONFIG_MAILBOX_USE_SENDER_NAME"] = "Использовать одно имя отправителя для всех сотрудников с доступом к этому ящику";
 $MESS["MAIL_CLIENT_CONFIG_MAILBOX_USERNAME"] = "Имя отправителя";
 $MESS["MAIL_CLIENT_CONFIG_MAILBOX_LINK"] = "Адрес веб-интерфейса почтового сервера";
 $MESS["MAIL_CLIENT_CONFIG_EXT_SWITCH"] = "Указать дополнительные параметры";
@@ -64,8 +65,10 @@ $MESS['MAIL_CLIENT_CONFIG_SMTP_USE_LIMIT_MSGVER_1'] = 'Ограничить ко
 
 $MESS["MAIL_CLIENT_CONFIG_ACCESS"] = "Доступ к почтовому ящику";
 $MESS["MAIL_CLIENT_CONFIG_ACCESS_HINT_MSGVER_1"] = "Разрешите другим сотрудникам получать письма из этого ящика и отвечать на них. Добавьте нужных сотрудников и организуйте совместную работу с почтой, например, для отдела продаж или службы поддержки клиентов.";
-$MESS["MAIL_CLIENT_CONFIG_ACCESS_MORE"] = "подробнее";
-$MESS["MAIL_CLIENT_CONFIG_ACCESS_ADD"] = "Добавить";
+$MESS["MAIL_CLIENT_CONFIG_DENIED_SHARE_ACCESS_HINT"] = "Управлять доступом может только владелец ящика. Чтобы открыть доступ другим коллегам, попросите владельца добавить вас в список сотрудников с правами на этот ящик";
+
+$MESS["MAIL_CLIENT_CONFIG_OWNER"] = "Изменение владельца";
+$MESS["MAIL_CLIENT_CONFIG_OWNER_CHANGE"] = "Сменить";
 
 $MESS["MAIL_CLIENT_CONFIG_CRM"] = "Интеграция с CRM";
 $MESS["MAIL_CLIENT_CONFIG_CRM_ACTIVE"] = "Связать с CRM";
@@ -94,7 +97,8 @@ $MESS["MAIL_CLIENT_CONFIG_PASS_EMPTY"] = "Введите пароль";
 
 $MESS["MAIL_CLIENT_CONFIG_EMAIL_BAD"] = "Укажите корректный e-mail";
 $MESS["MAIL_CLIENT_CONFIG_EMAIL_EMPTY"] = "Введите e-mail";
-$MESS["MAIL_CLIENT_CONFIG_EMAIL_EXISTS"] = "Вы уже подключили этот ящик";
+$MESS["MAIL_CLIENT_CONFIG_EMAIL_EXISTS"] = "Этот ящик уже подключён";
+$MESS["MAIL_CLIENT_CONFIG_EMAIL_EXISTS_NEW_OWNER"] = "Сотрудник уже пользуется этим ящиком. Попробуйте выбрать другого владельца или отключите ящик";
 
 $MESS["MAIL_CLIENT_CONFIG_IMAP_SERVER_BAD"] = "Недопустимый адрес IMAP-сервера";
 $MESS["MAIL_CLIENT_CONFIG_IMAP_PORT_BAD"] = "Недопустимый порт IMAP-сервера";
@@ -120,8 +124,6 @@ $MESS["MAIL_CLIENT_CONFIG_IMAP_AUTH_ERR_EXT"] = "Ошибка авторизац
 
 $MESS["MAIL_CLIENT_CONFIG_LAST_MAIL_CHECK_TITLE"] = "Последняя проверка #TIME_AGO#";
 $MESS["MAIL_CLIENT_CONFIG_LAST_MAIL_CHECK_NO_DATA"] = "Нет данных о состоянии ящика";
-$MESS["MAIL_CLIENT_CONFIG_LAST_MAIL_CHECK_SUCCESS"] = "Успешно";
-$MESS["MAIL_CLIENT_CONFIG_LAST_MAIL_CHECK_ERROR"] = "Ошибка";
 
 $MESS["MAIL_MAILBOX_LICENSE_AGE_LIMIT_TITLE"] = "Загрузка почты из почтового ящика";
 
@@ -158,3 +160,13 @@ $MESS["MAIL_CLIENT_CONFIG_CRM_AGE_INFO_CRM"] = "Синхронизировать
 $MESS["MAIL_CLIENT_CONFIG_CRM_AGE_INFO_CRM_ATTENTION"] = "Письма, полученные за выбранный период, появятся в CRM и будут доступны по умолчанию всем сотрудникам, если права доступа не ограничивают просмотр";
 $MESS["MAIL_CLIENT_CONFIG_CRM_NEW_ENTITY_IN_INFO_CRM_ATTENTION"] = "Созданные из писем элементы CRM будут доступны по умолчанию всем сотрудникам, если права доступа не ограничивают просмотр";
 $MESS["MAIL_CLIENT_CONFIG_CRM_NEW_ENTITY_OUT_INFO_CRM_ATTENTION"] = "Созданные из писем элементы CRM будут доступны по умолчанию всем сотрудникам, если права доступа не ограничивают просмотр";
+
+$MESS["MAIL_CLIENT_CONFIG_OWNER_CHANGE_FROM_NOTIFY_MESSAGE"] = "Сменил владельца ящика #EMAIL#. Вы больше не владелец";
+$MESS["MAIL_CLIENT_CONFIG_OWNER_CHANGE_FROM_NOTIFY_MESSAGE_PARAMS"] = "#AUTHOR# сменил владельца ящика #EMAIL#";
+$MESS["MAIL_CLIENT_CONFIG_OWNER_CHANGE_FROM_NOTIFY_MESSAGE_PARAMS_PLAIN_TEXT"] = "Вы больше не владелец";
+$MESS["MAIL_CLIENT_CONFIG_OWNER_CHANGE_TO_NOTIFY_MESSAGE"] = "Сменил владельца ящика #EMAIL#. Вы теперь владелец";
+$MESS["MAIL_CLIENT_CONFIG_OWNER_CHANGE_TO_NOTIFY_MESSAGE_PARAMS"] = "#AUTHOR# сменил владельца ящика #EMAIL#";
+$MESS["MAIL_CLIENT_CONFIG_OWNER_CHANGE_TO_NOTIFY_MESSAGE_PARAMS_PLAIN_TEXT"] = "Вы теперь владелец";
+
+$MESS['MAIL_CLIENT_CONFIG_TOOLBAR_MAILBOXES_LIST'] = 'Групповое управление ящиками';
+$MESS['MAIL_CLIENT_CONFIG_TOOLBAR_MAILBOXES_MASS_CONNECT'] = 'Подключить сразу несколько ящиков';

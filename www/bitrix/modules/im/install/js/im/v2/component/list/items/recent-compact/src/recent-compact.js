@@ -1,24 +1,27 @@
-import { Core } from 'im.v2.application.core';
-import { ChatType, Settings } from 'im.v2.const';
-import { Utils } from 'im.v2.lib.utils';
-import { RecentService } from 'im.v2.provider.service';
-import { RecentMenu } from 'im.v2.lib.menu';
-import { Messenger } from 'im.public';
-import 'im.v2.css.tokens';
+import { type JsonObject } from 'main.core';
+import { type EventEmitter } from 'main.core.events';
 
-import { RecentItem } from './components/recent-item';
-import { ActiveCall } from './components/active-call';
+import { Messenger } from 'im.public';
+import { Core } from 'im.v2.application.core';
+import { RecentType } from 'im.v2.const';
+import 'im.v2.css.tokens';
+import { RecentMenu } from 'im.v2.lib.menu';
+import { RecentManager } from 'im.v2.lib.recent';
+import { Utils } from 'im.v2.lib.utils';
+import { type ImModelRecentItem, ImModelCallItem } from 'im.v2.model';
+import { LegacyRecentService } from 'im.v2.provider.service.recent';
+
+import { CompactActiveCallList } from './components/compact-active-call-list';
+import { CompactNavigation } from './components/compact-navigation';
 import { EmptyState } from './components/empty-state';
+import { RecentItem } from './components/recent-item';
 
 import './css/recent-list.css';
-
-import type { JsonObject } from 'main.core';
-import type { ImModelRecentItem, ImModelCallItem } from 'im.v2.model';
 
 // @vue/component
 export const RecentList = {
 	name: 'RecentList',
-	components: { RecentItem, ActiveCall, EmptyState },
+	components: { RecentItem, EmptyState, CompactNavigation, CompactActiveCallList },
 	emits: ['chatClick'],
 	data(): JsonObject
 	{
@@ -26,33 +29,11 @@ export const RecentList = {
 	},
 	computed:
 	{
-		collection(): ImModelRecentItem[]
-		{
-			return this.getRecentService().getCollection();
-		},
 		preparedItems(): ImModelRecentItem[]
 		{
-			const filteredCollection = this.collection.filter((item) => {
-				let result = true;
-				if (!this.showBirthdays && item.isBirthdayPlaceholder)
-				{
-					result = false;
-				}
+			const collection = this.$store.getters['recent/getSortedCollection']({ type: RecentType.default });
 
-				if (item.isFakeElement && !this.isFakeItemNeeded(item))
-				{
-					result = false;
-				}
-
-				return result;
-			});
-
-			return [...filteredCollection].sort((a, b) => {
-				const firstDate = this.$store.getters['recent/getSortDate'](a.dialogId);
-				const secondDate = this.$store.getters['recent/getSortDate'](b.dialogId);
-
-				return secondDate - firstDate;
-			});
+			return collection.filter((item) => RecentManager.needToShowItem(item));
 		},
 		activeCalls(): ImModelCallItem[]
 		{
@@ -60,28 +41,20 @@ export const RecentList = {
 		},
 		pinnedItems(): ImModelRecentItem[]
 		{
-			return this.preparedItems.filter((item) => {
-				return item.pinned === true;
-			});
+			return this.preparedItems.filter((item) => item.pinned === true);
 		},
 		generalItems(): ImModelRecentItem[]
 		{
-			return this.preparedItems.filter((item) => {
-				return item.pinned === false;
-			});
+			return this.preparedItems.filter((item) => item.pinned === false);
 		},
-		showBirthdays(): boolean
+		isEmptyCollection(): boolean
 		{
-			return this.$store.getters['application/settings/get'](Settings.recent.showBirthday);
-		},
-		showInvited(): boolean
-		{
-			return this.$store.getters['application/settings/get'](Settings.recent.showInvited);
+			return this.preparedItems.length === 0;
 		},
 	},
 	async created()
 	{
-		this.contextMenuManager = new RecentMenu();
+		this.contextMenuManager = new RecentMenu({ emitter: this.getEmitter() });
 
 		this.managePreloadedList();
 
@@ -105,7 +78,8 @@ export const RecentList = {
 			}
 
 			const context = {
-				...item,
+				dialogId: item.dialogId,
+				recentItem: item,
 				compactMode: true,
 			};
 
@@ -123,22 +97,18 @@ export const RecentList = {
 
 			this.getRecentService().setPreloadedData(preloadedList);
 		},
-		isFakeItemNeeded(item: ImModelRecentItem): boolean
-		{
-			const dialog = this.$store.getters['chats/get'](item.dialogId, true);
-			const isUser = dialog.type === ChatType.user;
-			const hasBirthday = isUser && this.showBirthdays && this.$store.getters['users/hasBirthday'](item.dialogId);
-
-			return this.showInvited || hasBirthday;
-		},
-		getRecentService(): RecentService
+		getRecentService(): LegacyRecentService
 		{
 			if (!this.service)
 			{
-				this.service = RecentService.getInstance();
+				this.service = LegacyRecentService.getInstance();
 			}
 
 			return this.service;
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 		loc(phraseCode: string): string
 		{
@@ -147,14 +117,8 @@ export const RecentList = {
 	},
 	template: `
 		<div class="bx-im-messenger__scope bx-im-list-recent-compact__container">
-			<div v-if="activeCalls.length > 0" class="bx-im-list-recent-compact__calls_container">
-				<ActiveCall
-					v-for="activeCall in activeCalls"
-					:key="activeCall.dialogId"
-					:item="activeCall"
-					@click="onClick"
-				/>
-			</div>
+			<CompactNavigation />
+			<CompactActiveCallList @click="onClick" />
 			<div class="bx-im-list-recent-compact__scroll-container">
 				<div v-if="pinnedItems.length > 0" class="bx-im-list-recent-compact__pinned_container">
 					<RecentItem
@@ -174,7 +138,7 @@ export const RecentList = {
 						@click.right="onRightClick(item, $event)"
 					/>
 				</div>	
-				<EmptyState v-if="collection.length === 0" />
+				<EmptyState v-if="isEmptyCollection" />
 			</div>
 		</div>
 	`,

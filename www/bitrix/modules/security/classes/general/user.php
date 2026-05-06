@@ -1,6 +1,9 @@
-<?
-use \Bitrix\Security\Mfa\Otp;
+<?php
+
+use Bitrix\Security\Mfa\Otp;
+use Bitrix\Security\Mfa\OtpType;
 use Bitrix\Security\Mfa\OtpException;
+use Bitrix\Security\Mfa\UserTable;
 
 /**
  * @deprecated use \Bitrix\Security\Mfa\Otp
@@ -9,7 +12,7 @@ class CSecurityUser
 {
 	const BX_SECURITY_SYNC_WINDOW = 15000;
 
-	/** @var \Bitrix\Security\Mfa\Otp[]*/
+	/** @var Otp[] */
 	protected static $cacheOtp = array();
 
 	/**
@@ -90,7 +93,7 @@ class CSecurityUser
 				return false;
 			}
 
-			$secret = mb_substr(trim($arFields['SECRET']), 0, 64);
+			$secret = substr(trim($arFields['SECRET']), 0, 64);
 			if (!$secret)
 			{
 				if ($canAdminOtp)
@@ -109,7 +112,7 @@ class CSecurityUser
 			}
 			if ($arFields['TYPE'])
 			{
-				$otp->setType($arFields['TYPE']);
+				$otp->setType(OtpType::from($arFields['TYPE']));
 			}
 
 			$sync1 = trim($arFields['SYNC1']);
@@ -149,8 +152,17 @@ class CSecurityUser
 	 */
 	public static function onUserDelete($userId)
 	{
-		\Bitrix\Security\Mfa\UserTable::delete($userId);
-		return true;
+		UserTable::delete($userId);
+		Otp::cleanCache($userId);
+	}
+
+	public static function onAfterUserUpdate($fields)
+	{
+		if (isset($fields['ACTIVE']))
+		{
+			// see \Bitrix\Security\Mfa\Otp::getUserData()
+			Otp::cleanCache($fields['ID']);
+		}
 	}
 
 	/**

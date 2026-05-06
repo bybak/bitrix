@@ -1537,7 +1537,7 @@ class CAllSearch extends CDBResult
 				}
 				else
 				{
-					$content .= $arResult['TAGS'];
+					$content .= $arResult['TAGS'] ?? '';
 				}
 
 				$content = preg_replace_callback('/&#(\\d+);/', ['CSearch', 'chr'], $content);
@@ -2506,7 +2506,7 @@ class CAllSearch extends CDBResult
 		unset($update['ITEM_ID']);
 
 		$merge = $helper->prepareMerge('b_search_content', ['MODULE_ID', 'ITEM_ID'], $arFields, $update);
-		if ($merge)
+		if ($merge && $merge[0])
 		{
 			$DB->Query($merge[0]);
 		}
@@ -2614,14 +2614,16 @@ class CAllSearch extends CDBResult
 		$DB = CDatabase::GetModuleConnection('search');
 		$index_id = intval($index_id);
 
+		$arToDelete = [];
 		$arToInsert = [];
 		foreach ($arGroups as $group_code)
 		{
 			if ($group_code <> '')
 			{
-				$arToInsert[$group_code] = $group_code;
+				$arToInsert[$group_code] = '(' . $index_id . ", '" . $DB->ForSQL($group_code) . "')";
 			}
 		}
+		ksort($arToInsert);
 
 		//Read database
 		$rs = $DB->Query('
@@ -2637,23 +2639,26 @@ class CAllSearch extends CDBResult
 			}
 			else
 			{
-				$DB->Query('
-					DELETE FROM b_search_content_right
-					WHERE
-					SEARCH_CONTENT_ID = ' . $index_id . "
-					AND GROUP_CODE = '" . $DB->ForSQL($group_code) . "'
-				"); //And this should be deleted
+				$arToDelete[] = "'" . $DB->ForSQL($group_code) . "'";  //And this should be deleted
 			}
 		}
 
-		foreach ($arToInsert as $group_code)
+		if ($arToDelete)
+		{
+			$DB->Query('
+				DELETE FROM b_search_content_right
+				WHERE SEARCH_CONTENT_ID = ' . $index_id . '
+				AND GROUP_CODE IN (' . implode(',', $arToDelete) . ')
+			');
+		}
+
+		if ($arToInsert)
 		{
 			$DB->Query('
 				INSERT INTO b_search_content_right
 				(SEARCH_CONTENT_ID, GROUP_CODE)
-				VALUES
-				(' . $index_id . ", '" . $DB->ForSQL($group_code, 100) . "')
-			", true);
+				VALUES ' . implode(',', $arToInsert)
+			);
 		}
 	}
 
@@ -2998,8 +3003,6 @@ class CAllSearch extends CDBResult
 			$arFields['DATE_CHANGE'] = $DB->FormatDate($arFields['DATE_CHANGE'], 'DD.MM.YYYY HH:MI:SS', CLang::GetDateFormat());
 		}
 
-		unset($arFields['SEARCHABLE_CONTENT']);
-
 		if (array_key_exists('SITE_ID', $arFields))
 		{
 			CSearch::UpdateSite($ID, $arFields['SITE_ID']);
@@ -3033,16 +3036,7 @@ class CAllSearch extends CDBResult
 		$strUpdate = $DB->PrepareUpdate('b_search_content', $arFields);
 		if ($strUpdate <> '')
 		{
-			$arBinds = [];
-			if (is_set($arFields, 'BODY'))
-			{
-				$arBinds['BODY'] = $arFields['BODY'];
-			}
-			if (is_set($arFields, 'TAGS'))
-			{
-				$arBinds['TAGS'] = $arFields['TAGS'];
-			}
-			$DB->QueryBind('UPDATE b_search_content SET ' . $strUpdate . ' WHERE ID=' . intval($ID), $arBinds);
+			$DB->Query('UPDATE b_search_content SET ' . $strUpdate . ' WHERE ID = ' . intval($ID));
 			$bUpdate = true;
 		}
 

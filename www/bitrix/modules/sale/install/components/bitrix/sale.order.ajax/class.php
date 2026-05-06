@@ -78,6 +78,8 @@ class SaleOrderAjax extends \CBitrixComponent
 	{
 		global $APPLICATION;
 
+		$arParams['USER_CONSENTS'] = $this->prepareUserConsents($arParams);
+
 		if (isset($arParams['CUSTOM_SITE_ID']))
 		{
 			$this->setSiteId($arParams['CUSTOM_SITE_ID']);
@@ -529,6 +531,37 @@ class SaleOrderAjax extends \CBitrixComponent
 		$arParams['USE_PHONE_NORMALIZATION'] = ($arParams['USE_PHONE_NORMALIZATION'] ?? 'Y') === 'N' ? 'N' : 'Y';
 
 		return $arParams;
+	}
+
+	private function prepareUserConsents($params): array
+	{
+		if (isset($params['USER_CONSENTS']))
+		{
+			return is_array($params['USER_CONSENTS']) ? $params['USER_CONSENTS'] : [];
+		}
+
+		$userConsents = [];
+		if (isset($params['USER_CONSENT_IDS']) && is_array($params['USER_CONSENT_IDS']))
+		{
+			foreach ($params['USER_CONSENT_IDS'] as $userConsentId)
+			{
+				$userConsents[] = [
+					'ID' => (int)$userConsentId,
+					'CHECKED' => $params['USER_CONSENT_IS_CHECKED_' . $userConsentId] ?? 'Y',
+					'REQUIRED' => $params['USER_CONSENT_REQUIRED_' . $userConsentId] ?? 'Y',
+				];
+			}
+		}
+		elseif (isset($params['USER_CONSENT_ID']) && (int)$params['USER_CONSENT_ID'] > 0)
+		{
+			$userConsents[] = [
+				'ID' => $params['USER_CONSENT_ID'],
+				'CHECKED' => $params['USER_CONSENT_IS_CHECKED'] ?? 'Y',
+				'REQUIRED' => 'Y',
+			];
+		}
+
+		return $userConsents;
 	}
 
 	/**
@@ -3560,15 +3593,16 @@ class SaleOrderAjax extends \CBitrixComponent
 		$arResult['BASKET_PRICE_DISCOUNT_DIFF_VALUE'] = $basket->getBasePrice() - $basket->getPrice();
 		$arResult['BASKET_PRICE_DISCOUNT_DIFF'] = SaleFormatCurrency($arResult['BASKET_PRICE_DISCOUNT_DIFF_VALUE'], $this->order->getCurrency());
 
-		$arResult['DISCOUNT_PRICE'] = Sale\PriceMaths::roundPrecision(
-			$this->order->getDiscountPrice() + ($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] - $arResult['ORDER_PRICE'])
+		$arResult['DISCOUNT_PRICE'] = Sale\PriceMaths::roundByFormatCurrency(
+			$this->order->getDiscountPrice() + ($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] - $arResult['ORDER_PRICE']),
+			$this->order->getCurrency(),
 		);
 		$arResult['DISCOUNT_PRICE_FORMATED'] = SaleFormatCurrency($arResult['DISCOUNT_PRICE'], $this->order->getCurrency());
 
-		$arResult['DELIVERY_PRICE'] = Sale\PriceMaths::roundPrecision($this->order->getDeliveryPrice());
+		$arResult['DELIVERY_PRICE'] = Sale\PriceMaths::roundByFormatCurrency($this->order->getDeliveryPrice(), $this->order->getCurrency());
 		$arResult['DELIVERY_PRICE_FORMATED'] = SaleFormatCurrency($arResult['DELIVERY_PRICE'], $this->order->getCurrency());
 
-		$arResult['ORDER_TOTAL_PRICE'] = Sale\PriceMaths::roundPrecision($this->order->getPrice());
+		$arResult['ORDER_TOTAL_PRICE'] = Sale\PriceMaths::roundByFormatCurrency($this->order->getPrice(), $this->order->getCurrency());
 		$arResult['ORDER_TOTAL_PRICE_FORMATED'] = SaleFormatCurrency($arResult['ORDER_TOTAL_PRICE'], $this->order->getCurrency());
 	}
 
@@ -4617,10 +4651,10 @@ class SaleOrderAjax extends \CBitrixComponent
 				{
 					if ($calcResult->isSuccess())
 					{
-						$arDelivery['PRICE'] = Sale\PriceMaths::roundPrecision($calcResult->getPrice());
+						$arDelivery['PRICE'] = Sale\PriceMaths::roundByFormatCurrency($calcResult->getPrice(), $calcOrder->getCurrency());
 						$arDelivery['PRICE_FORMATED'] = SaleFormatCurrency($arDelivery['PRICE'], $calcOrder->getCurrency());
 
-						$currentCalcDeliveryPrice = Sale\PriceMaths::roundPrecision($calcOrder->getDeliveryPrice());
+						$currentCalcDeliveryPrice = Sale\PriceMaths::roundByFormatCurrency($calcOrder->getDeliveryPrice(), $calcOrder->getCurrency());
 						if ($currentCalcDeliveryPrice >= 0 && $arDelivery['PRICE'] != $currentCalcDeliveryPrice)
 						{
 							$arDelivery['DELIVERY_DISCOUNT_PRICE'] = $currentCalcDeliveryPrice;
@@ -6416,6 +6450,23 @@ class SaleOrderAjax extends \CBitrixComponent
 			$arResult["ACCOUNT_NUMBER"] = $orderId;
 	}
 
+	private function getUserConsentsFromRequest(): array
+	{
+		$userConsentsFromRequest = $this->request->get('userConsents');
+		if (!is_array($userConsentsFromRequest))
+		{
+			return [];
+		}
+
+		$mappedUserConsentsFromRequest = [];
+		foreach ($userConsentsFromRequest as $userConsent)
+		{
+			$mappedUserConsentsFromRequest[$userConsent['id']] = $userConsent;
+		}
+
+		return $mappedUserConsentsFromRequest;
+	}
+
 	/**
 	 * Action - saves order if there are no errors
 	 * Execution of 'OnSaleComponentOrderOneStepComplete' event
@@ -6437,9 +6488,19 @@ class SaleOrderAjax extends \CBitrixComponent
 
 			if ($this->arParams['USER_CONSENT'] === 'Y')
 			{
-				Main\UserConsent\Consent::addByContext(
-					$this->arParams['USER_CONSENT_ID'], 'sale/order', $arResult['ORDER_ID']
-				);
+				$userConsentFromRequest = $this->getUserConsentsFromRequest();
+				foreach ($this->arParams['USER_CONSENTS'] as $userConsent)
+				{
+					if (
+						$userConsent['REQUIRED'] === 'Y'
+						|| ($userConsentFromRequest[$userConsent['ID']]['checked'] ?? 'N') === 'Y'
+					)
+					{
+						Main\UserConsent\Consent::addByContext(
+							(int)$userConsent['ID'], 'sale/order', $arResult['ORDER_ID']
+						);
+					}
+				}
 			}
 
 			$fUserId = Sale\Fuser::getId();

@@ -2,8 +2,8 @@
 
 use Bitrix\Bizproc\Api\Request\WorkflowAccessService\CanViewTimelineRequest;
 use Bitrix\Bizproc\Api\Service\WorkflowAccessService;
-use Bitrix\Bizproc\UI\WorkflowUserView;
 use Bitrix\Bizproc\Workflow\Entity\WorkflowStateTable;
+use Bitrix\Bizproc\Internal\Model\TaskArchive\TaskArchiveTasksTable;
 use Bitrix\Bizproc\Workflow\Task\TaskTable;
 use Bitrix\Main;
 use Bitrix\Main\Localization\Loc;
@@ -228,18 +228,42 @@ class BizprocWorkflowInfo extends \CBitrixComponent
 			return;
 		}
 
-		$workflowView = new WorkflowUserView($workflowState, $userId);
+		$workflowView = new \Bitrix\Bizproc\UI\WorkflowUserDetailView($workflowState, $userId);
+		$workflowView->setTaskId($this->getTaskId());
 
-		$this->arResult['workflow'] = $workflowView;
-		$this->arResult['documentUrl'] = \CBPDocument::getDocumentAdminPage($workflowState->getComplexDocumentId());
-		$this->arResult['documentType'] = $this->getDocumentType($workflowState->getComplexDocumentId());
+		$fastClose = true;
+		$task = $workflowView->getTaskById($this->getTaskId());
+		if ($task && $task['activityName'] && $task['status'] === CBPTaskStatus::Running)
+		{
+			if (count($workflowView->getTasks()) > 1)
+			{
+				$fastClose = false;
+			}
+			else
+			{
+				$fastClose = CBPTaskService::isLastTaskForUserByActivity(
+					$task['activityName'],
+					$userId,
+					$workflowState->getWorkflowTemplateId(),
+					$task['activity']
+				);
+			}
+		}
 
+		$this->arResult['workflow'] = $workflowView->toArray();
+
+		$documentType = $this->getDocumentType($workflowState->getComplexDocumentId());
+		if (!$documentType && isset($this->arResult['workflow']['task']['controls']['fields']))
+		{
+			$this->arResult['errors'] = [Loc::getMessage('BPWFI_DOCUMENT_NOT_FOUND')];
+
+			return;
+		}
+
+		$this->arResult['documentType'] = $documentType;
 		$this->arResult['isMyTask'] = $currentUserId === $userId;
-		$this->arResult['userName'] = $this->getUserFormatName($userId);
-
-		$this->arResult['task'] = $this->extractTask($workflowView);
-
 		$this->arResult['isAdmin'] = $isAdmin;
+		$this->arResult['fastClose'] = $fastClose;
 	}
 
 	private function getCurrentUserId()
@@ -261,38 +285,26 @@ class BizprocWorkflowInfo extends \CBitrixComponent
 	{
 		$taskId = $this->getTaskId();
 
-		$row = TaskTable::query()
-			->where('ID', $taskId)
-			->setSelect(['WORKFLOW_ID'])
-			->fetch()
+		$row =
+			TaskTable::query()
+				->where('ID', $taskId)
+				->setSelect(['WORKFLOW_ID'])
+				->fetch()
+		;
+
+		if ($row && $row['WORKFLOW_ID'])
+		{
+			return $row['WORKFLOW_ID'];
+		}
+
+		$row =
+			TaskArchiveTasksTable::query()
+				->where('TASK_ID', $taskId)
+				->setSelect(['WORKFLOW_ID' => 'ARCHIVE.WORKFLOW_ID'])
+				->fetch()
 		;
 
 		return $row['WORKFLOW_ID'] ?? null;
-	}
-
-	private function getUserFormatName(int $userId)
-	{
-		$format = \CSite::GetNameFormat(false);
-		$user = \CUser::GetList(
-			'id',
-			'asc',
-			['ID_EQUAL_EXACT' => $userId],
-			[
-				'FIELDS' => [
-					'TITLE',
-					'NAME',
-					'LAST_NAME',
-					'SECOND_NAME',
-					'NAME_SHORT',
-					'LAST_NAME_SHORT',
-					'SECOND_NAME_SHORT',
-					'EMAIL',
-					'ID',
-				],
-			]
-		)->Fetch();
-
-		return $user ? \CUser::FormatName($format, $user, false, false) : '';
 	}
 
 	private function getDocumentType(array $documentId): ?array
@@ -306,20 +318,5 @@ class BizprocWorkflowInfo extends \CBitrixComponent
 		{}
 
 		return null;
-	}
-
-	private function extractTask(WorkflowUserView $workflowUserView): ?array
-	{
-		$taskId = $this->getTaskId();
-		if ($taskId > 0)
-		{
-			$task = $workflowUserView->getTaskById($taskId);
-			if ($task)
-			{
-				return $task;
-			}
-		}
-
-		return $workflowUserView->getTasks()[0] ?? null;
 	}
 }

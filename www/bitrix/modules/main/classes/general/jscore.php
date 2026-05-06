@@ -321,7 +321,11 @@ class CJSCore
 				? " bx-retina"
 				: " bx-no-retina";
 
-			if (/AppleWebKit/.test(ua))
+			if (/Safari/i.test(ua) && !/Chrome/i.test(ua))
+			{
+				cl += " bx-safari";
+			}
+			else if (/AppleWebKit/.test(ua))
 			{
 				cl += " bx-chrome";
 			}
@@ -369,8 +373,6 @@ JS;
 	private static function _loadExt($ext, $bReturn)
 	{
 		$ret = '';
-
-		$ext = preg_replace('/[^a-z0-9_\.\-]/i', '', $ext);
 
 		if (!self::IsExtRegistered($ext))
 		{
@@ -537,7 +539,6 @@ JS;
 
 	public static function IsExtRegistered($ext)
 	{
-		$ext = preg_replace('/[^a-z0-9_\.\-]/i', '', $ext);
 		return isset(self::$arRegisteredExt[$ext]) && is_array(self::$arRegisteredExt[$ext]);
 	}
 
@@ -699,5 +700,10 @@ JS;
 		$files = is_array($files) ? $files : array($files);
 
 		Asset::getInstance()->addCssKernelInfo($bundleName, $files);
+	}
+
+	public static function resetLoadedExtensionsList()
+	{
+		static::$arCurrentlyLoadedExt = [];
 	}
 }

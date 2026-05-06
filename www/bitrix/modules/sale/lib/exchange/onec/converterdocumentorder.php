@@ -2,6 +2,7 @@
 namespace Bitrix\Sale\Exchange\OneC;
 
 use Bitrix\Main\ArgumentException;
+use Bitrix\Main\DI\ServiceLocator;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Type\DateTime;
 use Bitrix\Sale\Exchange\ImportBase;
@@ -11,6 +12,7 @@ use Bitrix\Sale\Exchange\ISettingsExport;
 use Bitrix\Sale\Exchange\ISettingsImport;
 use Bitrix\Sale\Internals\StatusLangTable;
 use Bitrix\Sale;
+use Bitrix\Sale\Public\Dto\BasketItemCalculationInput;
 
 /**
  * Class ConverterDocumentOrder
@@ -176,12 +178,7 @@ class ConverterDocumentOrder extends Converter
 					break;
 				case 'NUMBER':
 					/** TODO: only EntityType::ORDER */
-					$accRaw = isset($traits['ACCOUNT_NUMBER']) ? (string)$traits['ACCOUNT_NUMBER'] : '';
-					$uidRaw = isset($traits['USER_ID']) ? (int)$traits['USER_ID'] : 0;
-					$accForNumber = function_exists('mf_order_account_number_for_display')
-						? mf_order_account_number_for_display($uidRaw, $accRaw)
-						: $accRaw;
-					$value = $settings->prefixFor($this->getEntityTypeId()).$accForNumber;
+					$value = $settings->prefixFor($this->getEntityTypeId()).$traits['ACCOUNT_NUMBER'];
 					break;
 				case 'ID_1C':
 					$value = ($traits[$k]<>'' ? $traits[$k]:'');
@@ -505,7 +502,14 @@ class ConverterDocumentOrder extends Converter
 										$taxValue = DocumentBase::getLangByCodeField('VAT');
 										break;
 									case 'TAX_VALUE':
-										$taxValue = (($item["PRICE"] / ($item["VAT_RATE"]+1)) * $item["VAT_RATE"]);
+										$taxCalculator = ServiceLocator::getInstance()->get('sale.basketItemCalculator');
+										$taxInput = new BasketItemCalculationInput(
+											basePrice: (float)$item["PRICE"],
+											quantity: 1.0,
+											vatRate: (float)$item["VAT_RATE"] * 100,
+											vatIncluded: true,
+										);
+										$taxValue = $taxCalculator->calculate($taxInput)->vatAmount;
 										break;
 									case 'IN_PRICE':
 										$taxValue = 'Y';

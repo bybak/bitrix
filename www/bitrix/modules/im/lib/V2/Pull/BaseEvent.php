@@ -25,9 +25,14 @@ abstract class BaseEvent implements Event
 		return $this->sender->send($this);
 	}
 
-	final public function getBase(): array
+	final protected function getBase(): array
 	{
 		return $this->wrapPullParams($this->getBasePullParams());
+	}
+
+	public function getPullForPublic(): array
+	{
+		return $this->getBase();
 	}
 
 	/**
@@ -62,19 +67,23 @@ abstract class BaseEvent implements Event
 	private function getPullParamsByUsers(): array
 	{
 		$recipients = $this->getRecipients();
-		$basePull = $this->getBasePullParams();
 		$skippedUserIds = $this->getSkippedUserIds();
 		if (!empty($skippedUserIds))
 		{
 			$recipients = array_diff($recipients, $skippedUserIds);
 		}
+		if (empty($recipients))
+		{
+			return [];
+		}
 
+		$basePull = $this->getBasePullParams();
 		$pullParamsByUsers = [];
 		foreach ($recipients as $userId)
 		{
 			$diff = $this->getDiffByUser($userId);
 			$key = $diff->getKey();
-			$pullParamsByUsers[$key] ??= new Group(params: array_merge($basePull, $diff->params));
+			$pullParamsByUsers[$key] ??= new Group(params: static::applyDiff($basePull, $diff->params));
 			$pullParamsByUsers[$key]->addUser($userId);
 		}
 
@@ -85,6 +94,8 @@ abstract class BaseEvent implements Event
 	 * @return int[]
 	 */
 	abstract protected function getRecipients(): array;
+
+	abstract public function shouldSendToOnlySpecificRecipients(): bool;
 
 	protected function getDiffByUser(int $userId): Diff
 	{
@@ -147,13 +158,36 @@ abstract class BaseEvent implements Event
 		return false;
 	}
 
-	public function shouldSendToOnlySpecificRecipients(): bool
+	public function shouldSendMobilePush(): bool
 	{
 		return false;
 	}
 
-	public function shouldSendMobilePush(): bool
+	public function shouldSendImmediately(): bool
 	{
 		return false;
+	}
+
+	public function shouldSendSharedPull(): bool
+	{
+		return true;
+	}
+
+	final protected static function applyDiff(array $base, array $diff): array
+	{
+		foreach ($diff as $key => $value)
+		{
+			$isValueAssoc = is_array($value) && !array_is_list($value);
+			if ($isValueAssoc && isset($base[$key]) && is_array($base[$key]))
+			{
+				$base[$key] = static::applyDiff($base[$key], $value);
+			}
+			else
+			{
+				$base[$key] = $value;
+			}
+		}
+
+		return $base;
 	}
 }

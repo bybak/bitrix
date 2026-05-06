@@ -2,13 +2,11 @@
 
 namespace Bitrix\Im\V2\Link\File;
 
-use Bitrix\Disk\TypeFile;
 use Bitrix\Im\Model\LinkFileTable;
 use Bitrix\Im\Model\EO_LinkFile;
 use Bitrix\Im\V2\Common\MigrationStatusCheckerTrait;
 use Bitrix\Im\V2\Entity;
 use Bitrix\Im\V2\Link\BaseLinkItem;
-use Bitrix\Im\V2\Entity\File\FileError;
 use Bitrix\Im\V2\Rest\PopupData;
 use Bitrix\Im\V2\Rest\RestEntity;
 use Bitrix\Im\V2\Result;
@@ -23,21 +21,12 @@ class FileItem extends BaseLinkItem
 	public const BRIEF_SUBTYPE = 'BRIEF';
 	public const OTHER_SUBTYPE = 'OTHER';
 	public const DOCUMENT_SUBTYPE = 'DOCUMENT';
-
-	public const ALLOWED_SUBTYPE = [
-		self::MEDIA_SUBTYPE,
-		self::AUDIO_SUBTYPE,
-		self::BRIEF_SUBTYPE,
-		self::OTHER_SUBTYPE,
-		self::DOCUMENT_SUBTYPE,
-	];
-
 	public const BRIEF_CODE = 'resume';
 	public const MEDIA_ORIGINAL_CODE = 'media_original';
 
 	protected static string $migrationOptionName = 'im_link_file_migration';
 
-	protected string $subtype;
+	protected Subtype $subtype;
 
 	/**
 	 * @param int|array|EO_LinkFile|null $source
@@ -62,24 +51,14 @@ class FileItem extends BaseLinkItem
 		return parent::save();
 	}
 
-	protected function validateSubtype(): Result
+	protected function resolveSubtype(): Result
 	{
-		if (static::isSubtypeValid($this->getSubtype()))
+		if (!isset($this->subtype))
 		{
-			return new Result;
+			$this->getSubtype();
 		}
 
-		return (new Result())->addError(new FileError(FileError::UNKNOWN_FILE_SUBTYPE));
-	}
-
-	public static function isSubtypeValid(string $subtype): bool
-	{
-		return in_array($subtype, static::ALLOWED_SUBTYPE, true);
-	}
-
-	public static function getSubtypeFromJsonFormat(string $subtypeInJsonFormat): string
-	{
-		return mb_strtoupper($subtypeInJsonFormat);
+		return new Result();
 	}
 
 	public static function getEntityClassName(): string
@@ -92,62 +71,65 @@ class FileItem extends BaseLinkItem
 		return 'link';
 	}
 
-	public function setSubtype(string $subtype): self
+	protected function saveSubtypeValueFilter(Subtype $subtype): string
 	{
-		$this->subtype = $subtype;
+		return $subtype->value;
+	}
+
+	protected function loadSubtypeValueFilter(string $subtype): Subtype
+	{
+		return Subtype::tryFromOrDefault($subtype);
+	}
+
+	public function setSubtype(Subtype|string $subtype): self
+	{
+		if (is_string($subtype))
+		{
+			$this->subtype = Subtype::tryFromOrDefault($subtype);
+		}
+		else
+		{
+			$this->subtype = $subtype;
+		}
+
 		return $this;
 	}
 
-	public function getSubtype(): string
+	public function getSubtype(): Subtype
 	{
 		$this->subtype ??= $this->calculateSubtype();
 
 		return $this->subtype;
 	}
 
-	protected function calculateSubtype(): string
+	protected function calculateSubtype(): Subtype
 	{
 		$this->fillFile();
 
 		if (!isset($this->entity))
 		{
-			return self::OTHER_SUBTYPE;
+			return Subtype::Other;
 		}
 
 		$diskFile = $this->getEntity()->getDiskFile();
-		$realFile = $diskFile->getRealObject() ?? $diskFile;
+		$realFile = $diskFile?->getRealObject() ?? $diskFile;
 
-		if ($realFile->getCode() === static::BRIEF_CODE)
+		if ($realFile?->getCode() === static::BRIEF_CODE)
 		{
-			return static::BRIEF_SUBTYPE;
+			return Subtype::Brief;
 		}
 
-		if ($realFile->getCode() === static::MEDIA_ORIGINAL_CODE)
+		if ($realFile?->getCode() === static::MEDIA_ORIGINAL_CODE)
 		{
-			return static::OTHER_SUBTYPE;
+			return Subtype::Other;
 		}
 
-		return $this->getSubtypeByDiskFileType($diskFile->getTypeFile());
+		return Subtype::tryFromDiskFileType($diskFile?->getTypeFile());
 	}
 
-	protected function getSubtypeByDiskFileType(string $diskFileType): string
+	public function getSubtypeGroup(): ?SubtypeGroup
 	{
-		switch ($diskFileType)
-		{
-			case TypeFile::IMAGE:
-			case TypeFile::VIDEO:
-				return static::MEDIA_SUBTYPE;
-
-			case TypeFile::DOCUMENT:
-			case TypeFile::PDF:
-				return static::DOCUMENT_SUBTYPE;
-
-			case TypeFile::AUDIO:
-				return static::AUDIO_SUBTYPE;
-
-			default:
-				return static::OTHER_SUBTYPE;
-		}
+		return SubtypeGroup::tryFromSubtype($this->getSubtype());
 	}
 
 	public function fillFile(): self
@@ -157,7 +139,7 @@ class FileItem extends BaseLinkItem
 			return $this;
 		}
 
-		$fileEntity = \Bitrix\Im\V2\Entity\File\FileItem::initByDiskFileId($this->getEntityId(), $this->getChatId());
+		$fileEntity = Entity\File\FileItem::initByDiskFileId($this->getEntityId(), $this->getChatId());
 
 		if ($fileEntity !== null)
 		{
@@ -170,6 +152,24 @@ class FileItem extends BaseLinkItem
 	public static function getDataClass(): string
 	{
 		return LinkFileTable::class;
+	}
+
+	/**
+	 * @return null|string|string[]
+	 */
+	public static function normalizeFilterFromJsonFormat(null|string|array $filter): null|string|array
+	{
+		if (is_string($filter))
+		{
+			return mb_strtoupper($filter);
+		}
+
+		if (is_array($filter))
+		{
+			return array_map('mb_strtoupper', $filter);
+		}
+
+		return null;
 	}
 
 	public static function getByDiskFileId(int $diskFileId): ?self
@@ -200,9 +200,9 @@ class FileItem extends BaseLinkItem
 	}
 
 	/**
-	 * @return Entity|\Bitrix\Im\V2\Entity\File\FileItem
+	 * @return Entity|Entity\File\FileItem
 	 */
-	public function getEntity(): \Bitrix\Im\V2\Entity\File\FileItem
+	public function getEntity(): Entity\File\FileItem
 	{
 		$this->fillFile();
 
@@ -216,12 +216,25 @@ class FileItem extends BaseLinkItem
 	 */
 	public function setEntity(RestEntity $entity): self
 	{
-		if (!($entity instanceof \Bitrix\Im\V2\Entity\File\FileItem))
+		if (!($entity instanceof Entity\File\FileItem))
 		{
 			throw new ArgumentTypeException(get_class($entity));
 		}
 
 		return parent::setEntity($entity->setChatId($this->chatId ?? null));
+	}
+
+	public function needToAddLink(): bool
+	{
+		if (
+			$this->getAuthorId() === Entity\User\User::SYSTEM_USER_ID
+			|| $this->getEntity()->isVideoNote()
+		)
+		{
+			return false;
+		}
+
+		return parent::needToAddLink();
 	}
 
 	public function getPopupData(array $excludedList = []): PopupData
@@ -241,7 +254,9 @@ class FileItem extends BaseLinkItem
 				'field' => 'subtype',
 				'set' => 'setSubtype', /** @see FileItem::setSubtype */
 				'get' => 'getSubtype', /** @see FileItem::getSubtype */
-				'beforeSave' => 'validateSubtype', /** @see FileItem::validateSubtype */
+				'beforeSave' => 'resolveSubtype', /** @see FileItem::resolveSubtype */
+				'saveFilter' => 'saveSubtypeValueFilter', /** @see FileItem::saveSubtypeValueFilter */
+				'loadFilter' => 'loadSubtypeValueFilter' /** @see  FileItem::loadSubtypeValueFilter */
 			]
 		];
 
@@ -257,7 +272,8 @@ class FileItem extends BaseLinkItem
 			'authorId' => $this->getAuthorId(),
 			'dateCreate' => $this->getDateCreate()->format('c'),
 			'fileId' => $this->getEntityId(),
-			'subType' => mb_strtolower($this->getSubtype()),
+			'subType' => $this->getSubtype(),
+			'group' => $this->getSubtypeGroup(),
 		];
 	}
 }

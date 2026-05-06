@@ -96,7 +96,7 @@ class Image
 	 * @param Image\Color|null $bgColor
 	 * @return bool
 	 */
-	public function rotate($angle, Image\Color $bgColor = null)
+	public function rotate($angle, ?Image\Color $bgColor = null)
 	{
 		if($bgColor === null)
 		{
@@ -182,6 +182,16 @@ class Image
 	public function resize(Image\Rectangle $source, Image\Rectangle $destination)
 	{
 		return $this->engine->resize($source, $destination);
+	}
+
+	/**
+	 * Blurs the image.
+	 * @param int $sigma
+	 * @return bool
+	 */
+	public function blur(int $sigma): bool
+	{
+		return $this->engine->blur($sigma);
 	}
 
 	/**

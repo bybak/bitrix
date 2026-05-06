@@ -4,8 +4,8 @@ namespace Bitrix\Rest\Infrastructure\Market;
 
 use Bitrix\Main\Application;
 use Bitrix\Main\Type\Date;
+use Bitrix\Rest\Internal\Integration\Bitrix24\MarketUrlProvider;
 use Bitrix\Rest\Marketplace\Client;
-use Bitrix\Rest\Marketplace\Url;
 use Bitrix\Rest\Service\RestOption;
 use Bitrix\Rest\Service\ServiceContainer;
 
@@ -75,9 +75,13 @@ class MarketSubscription
 		return Client::getSubscriptionFinalDate();
 	}
 
-	public function isDiscountAvailable(): bool
+	public function getDiscount(): MarketDiscount
 	{
-		return $this->marketOption->isDiscountAvailable();
+		return new MarketDiscount(
+			isAvailable: $this->marketOption->isDiscountAvailable(),
+			percentage: $this->marketOption->getDiscountPercentage(),
+			termsUrl: $this->marketOption->getDiscountTermsUrl(),
+		);
 	}
 
 	public function isPaidAppsOrIntegrationsInstalled(): bool
@@ -107,20 +111,12 @@ class MarketSubscription
 
 	public function getBuyUrl(): string
 	{
-		return Url::getSubscriptionBuyUrl();
+		return (new MarketUrlProvider)->getBuyUrl()->getUri();
 	}
 
 	public function getTransitionPeriodEndDate(): Date
 	{
-		$demoEndDate = $this->isDemo() ? $this->getEndDate() : null;
-		$endDate = $this->marketOption->getSavedTransitionPeriodEndDate();
-
-		if ($demoEndDate)
-		{
-			return max($demoEndDate, $endDate);
-		}
-
-		return $endDate;
+		return $this->marketOption->getSavedTransitionPeriodEndDate();
 	}
 
 	public function isTransitionPeriodEnds(): bool

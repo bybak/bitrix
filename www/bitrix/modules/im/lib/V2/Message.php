@@ -3,12 +3,21 @@
 namespace Bitrix\Im\V2;
 
 use ArrayAccess;
+use Bitrix\Im\V2\Application\Features;
+use Bitrix\Im\V2\Integration\AI\RoleManager;
 use Bitrix\Im\V2\Message\Delete\DeletionMode;
 use Bitrix\Im\V2\Message\MessageError;
 use Bitrix\Im\V2\Message\Reaction\ReactionMessage;
+use Bitrix\Im\V2\Message\Send\ImportantUsers;
+use Bitrix\Im\V2\Message\Sticker\PackType;
+use Bitrix\Im\V2\Message\Sticker\StickerItem;
+use Bitrix\Im\V2\Message\Sticker\StickerService;
+use Bitrix\Im\V2\Reading\Counter\CountersProvider;
+use Bitrix\Im\V2\Reading\View\ViewProvider;
 use Bitrix\Im\V2\TariffLimit\DateFilterable;
 use Bitrix\Im\V2\TariffLimit\FilterResult;
 use Bitrix\Im\V2\TariffLimit\Limit;
+use Bitrix\Main\DI\ServiceLocator;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\ORM\Data\DataManager;
 use Bitrix\Main\Type\DateTime;
@@ -38,11 +47,12 @@ use Bitrix\Im\V2\Message\MessageParameter;
 use Bitrix\Im\V2\Rest\PopupData;
 use Bitrix\Im\V2\Rest\RestEntity;
 use Bitrix\Im\V2\Rest\PopupDataAggregatable;
+use Bitrix\Im\V2\Permission\ChatActionAccessCheckable;
 
 /**
  * Chat version #2
  */
-class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, PopupDataAggregatable, DateFilterable
+class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, PopupDataAggregatable, DateFilterable, AccessCheckable, ChatActionAccessCheckable
 {
 	use FieldAccessImplementation;
 	use ActiveRecordImplementation
@@ -63,7 +73,7 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 
 	/** Created by Id */
 	protected int $authorId = 0;
-	protected array $userIdsFromMention;
+	protected ?array $mentionedUserIds = null;
 
 	/** Message to send */
 	protected ?string $message = null;
@@ -146,7 +156,7 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 	/** Display message as a system notification. */
 	protected bool $isSystem = false;
 
-	protected ?UrlItem $url;
+	protected ?UrlItem $url = null;
 
 	protected int $botId = 0;
 
@@ -168,9 +178,11 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 
 	protected ?bool $isImportant = false;
 
-	protected ?array $importantFor = null;
+	protected ?ImportantUsers $importantFor = null;
 	protected ?string $dialogId = null;
 	protected ?int $prevId = null;
+
+	protected ?bool $hasMentionAll = null;
 
 	/**
 	 * @param int|array|EO_Message|null $source
@@ -209,6 +221,11 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 			}
 
 			$this->params = new Params();
+
+			if ($this->getRegistry() instanceof MessageCollection)
+			{
+				$this->getRegistry()->invalidateParamsFillState();
+			}
 		}
 
 		return $result;
@@ -252,7 +269,27 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 
 	public function isImportant(): ?bool
 	{
-		return $this->isImportant;
+		return $this->isImportant || $this->hasMentionAll();
+	}
+
+	public function hasMentionAll(): bool
+	{
+		if (isset($this->hasMentionAll))
+		{
+			return $this->hasMentionAll;
+		}
+
+		$hasMention = (bool)preg_match("/\[USER=(all)( REPLACE)?](.*?)\[\/USER]/i", $this->getParsedMessage());
+		$this->setHasMentionAll($hasMention);
+
+		return $this->hasMentionAll;
+	}
+
+	public function setHasMentionAll(bool $hasMentionAll): self
+	{
+		$this->hasMentionAll = $hasMentionAll;
+
+		return $this;
 	}
 
 	public function markAsImportant(?bool $isImportant = true): self
@@ -264,12 +301,17 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 
 	public function getImportantFor(): array
 	{
-		return $this->importantFor ?? array_values($this->getUserIdsFromMention());
+		if ($this->importantFor === null)
+		{
+			$this->importantFor = ImportantUsers::createByMessage($this);
+		}
+
+		return $this->importantFor->userIds;
 	}
 
 	public function setImportantFor(array $importantFor): self
 	{
-		$this->importantFor = $importantFor;
+		$this->importantFor = new ImportantUsers($importantFor);
 
 		return $this;
 	}
@@ -285,6 +327,13 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		{
 			$this->forwardUuid = $forwardUuid;
 		}
+
+		return $this;
+	}
+
+	public function addParam(string $name, mixed $value): self
+	{
+		$this->getParams()->get($name)->setValue($value);
 
 		return $this;
 	}
@@ -330,6 +379,20 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return $this->params;
 	}
 
+	public function enableNotify(): self
+	{
+		$this->getParams()->remove(Message\Params::NOTIFY);
+
+		return $this;
+	}
+
+	public function disableNotify(): self
+	{
+		$this->getParams()->get(Message\Params::NOTIFY)->setValue(false);
+
+		return $this;
+	}
+
 	/**
 	 * @param array|Param $attach
 	 * @return $this
@@ -372,6 +435,16 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return null;
 	}
 
+	public function getReplyId(): ?int
+	{
+		return $this->getParams()->get(Params::REPLY_ID)->getValue();
+	}
+
+	public function hasReply(): bool
+	{
+		return $this->getParams()->isSet(Params::REPLY_ID);
+	}
+
 	public function setUnread(bool $isUnread): self
 	{
 		$this->isUnread = $isUnread;
@@ -387,7 +460,10 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		}
 
 		$messageIds = [$this->getMessageId()];
-		$this->isUnread = !(new ReadService())->getReadStatusesByMessageIds($messageIds)[$this->getMessageId()];
+		$userId = $this->getContext()->getUserId();
+		$provider = ServiceLocator::getInstance()->get(CountersProvider::class);
+		$unreadStatuses = $provider->getUnreadStatuses($messageIds, $userId);
+		$this->isUnread = $unreadStatuses[$this->getMessageId()] ?? false;
 
 		return $this->isUnread;
 	}
@@ -413,8 +489,11 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 			return $this->isViewed;
 		}
 
+		$userId = $this->getContext()->getUserId();
 		$messageIds = [$this->getMessageId()];
-		$this->isViewed = (new ReadService())->getViewStatusesByMessageIds($messageIds)[$this->getMessageId()];
+		$provider = ServiceLocator::getInstance()->get(ViewProvider::class);
+		$viewStatuses = $provider->getViewStatuses($messageIds, $userId);
+		$this->isViewed = $viewStatuses[$this->getMessageId()];
 
 		return $this->isViewed;
 	}
@@ -638,6 +717,26 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return $this->files;
 	}
 
+	public function getSticker(): ?StickerItem
+	{
+		$stickerParam = $this->getParams()->get(Params::STICKER_PARAMS)->getValue();
+		if (empty($stickerParam))
+		{
+			return null;
+		}
+
+		$stickerId = (int)$stickerParam['ID'];
+		$packId = (int)$stickerParam['PACK_ID'];
+		$packType = PackType::tryFrom((string)$stickerParam['PACK_TYPE']);
+
+		if ($packType === null)
+		{
+			return null;
+		}
+
+		return (new StickerService())->getStickerById($stickerId, $packId, $packType);
+	}
+
 	public function getPrevId(): int
 	{
 		if ($this->prevId !== null)
@@ -717,33 +816,15 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return $files;
 	}
 
-	/**
-	 * @return array
-	 */
-	public function getFilesDiskData(): array
-	{
-		if ($this->hasFiles())
-		{
-			return $this->getFiles()->getFileDiskAttributes($this->getChatId());
-		}
-
-		return  [];
-	}
-
 	//endregion
-
-	public function getReminder(): ?Link\Reminder\ReminderItem
-	{
-		return Link\Reminder\ReminderItem::getByMessageAndUserId($this, $this->getContext()->getUserId());
-	}
 
 	public function getAdditionalMessageIds(): array
 	{
 		$ids = [];
 
-		if ($this->getParams()->isSet(Params::REPLY_ID))
+		if ($this->hasReply())
 		{
-			$ids[] = $this->getParams()->get(Params::REPLY_ID)->getValue();
+			$ids[] = $this->getReplyId();
 		}
 
 		return $ids;
@@ -756,6 +837,7 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 			new Im\V2\Entity\File\FilePopupItem(),
 			new Im\V2\Link\Reminder\ReminderPopupItem(),
 			new Im\V2\Message\Reaction\ReactionPopupItem($this->getReactions()),
+			Im\V2\Message\Sticker\StickerCollection::createByStickers([$this->getSticker()]),
 		], $excludedList);
 
 		if (!in_array(Im\V2\Entity\File\FilePopupItem::class, $excludedList, true))
@@ -877,7 +959,17 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		}
 
 		$this->message = $value ?? '';
-		unset($this->parsedMessage, $this->formattedMessage, $this->url);
+		$this->parsedMessage = null;
+		$this->formattedMessage = null;
+		$this->url = null;
+		$this->mentionedUserIds = null;
+		$this->hasMentionAll = null;
+
+		if (!$this->importantFor?->immutable)
+		{
+			$this->importantFor = null;
+		}
+
 		return $this;
 	}
 
@@ -911,8 +1003,6 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 
 	public function getQuotedMessage(?int $messageSize = null): string
 	{
-		$user = $this->getAuthor();
-		$userName = $user?->getName() ?? '';
 		$date = FormatDate('X', $this->getDateCreate(), time() + \CTimeZone::GetOffset());
 		$contextTag = $this->getContextTag();
 		$quoteDelimiter = '------------------------------------------------------';
@@ -921,7 +1011,7 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		$quotedMessage =
 			$quoteDelimiter
 			. "\n"
-			. "{$userName} [{$date}] $contextTag\n"
+			. "{$this->getUserNameForQuotedMessage()} [{$date}] $contextTag\n"
 			. $messageContent
 			. "\n"
 			. $quoteDelimiter
@@ -930,9 +1020,11 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return $quotedMessage;
 	}
 
-	public function getReplaceMap(): array
+	protected function getUserNameForQuotedMessage(): string
 	{
-		return Im\Text::getReplaceMap($this->getFormattedMessage());
+		$userName = $this->isSystem() ? Loc::getMessage("IM_MESSAGE_SYSTEM") : $this->getAuthor()?->getName();
+
+		return $userName ?? '';
 	}
 
 	// formatted rich message to output
@@ -1453,6 +1545,10 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 			'TO_CHAT_ID' => [
 				'alias' => 'CHAT_ID',
 			],
+			'IMPORTANT_FOR' => [
+				'set' => 'setImportantFor', /** @see Message::setImportantFor() */
+				'get' => 'getImportantFor', /** @see Message::getImportantFor() */
+			],
 		];
 	}
 
@@ -1544,6 +1640,11 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 
 	public function getPreviewMessage(?int $messageSize = 200): string
 	{
+		if ($this->getParams()->isSet(Params::STICKER_PARAMS))
+		{
+			return StickerService::getPlaceholder();
+		}
+
 		$previewMessage = trim($this->getFormattedMessage());
 		$hasFiles = $this->hasFiles();
 		$hasAttach = mb_strpos($previewMessage, '[ATTACH=') !== false;
@@ -1559,7 +1660,7 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 			foreach ($files as $file)
 			{
 				$hasFiles = true;
-				$previewMessage .= " [{$file->getDiskFile()->getName()}]";
+				$previewMessage .= " [{$file->getDiskFile()->getName()}] ";
 			}
 		}
 
@@ -1596,32 +1697,6 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return $previewMessage;
 	}
 
-	public function getForPush(?int $messageSize = 200): string
-	{
-		if ($this->getRegistry() instanceof MessageCollection)
-		{
-			$this->getRegistry()->fillFiles();
-		}
-
-		$files = [];
-
-		foreach ($this->getFiles() as $file)
-		{
-			$files[] = ['name' => $file->getDiskFile()->getName()];
-		}
-
-		$message = ['MESSAGE' => $this->getMessage(), 'FILES' => $files];
-		$text = \CIMMessenger::PrepareParamsForPush($message);
-
-		if ($messageSize !== null)
-		{
-			$dots = mb_strlen($text) >= $messageSize ? '...' : '';
-			$text = mb_substr($text, 0, $messageSize - 1) . $dots;
-		}
-
-		return $text;
-	}
-
 	public function checkAccess(?int $userId = null): Result
 	{
 		$userId ??= $this->getContext()->getUserId();
@@ -1652,6 +1727,11 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return $result;
 	}
 
+	public function canDo(Im\V2\Permission\Action $action, mixed $target = null): bool
+	{
+		return $this->getChat()->canDo($action, $target);
+	}
+
 	public static function getRestEntityName(): string
 	{
 		return 'message';
@@ -1659,7 +1739,7 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 
 	public function getUserIds(): array
 	{
-		$userIds = $this->getUserIdsFromMention();
+		$userIds = $this->getMentionedUserIds();
 
 		if ($this->getAuthorId() !== 0)
 		{
@@ -1675,30 +1755,61 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		return $userIds;
 	}
 
-	public function getUserIdsFromMention(): array
+	public function getMentionedUserIds(): array
 	{
-		if (isset($this->userIdsFromMention))
+		if (isset($this->mentionedUserIds))
 		{
-			return $this->userIdsFromMention;
+			return $this->mentionedUserIds;
 		}
 
-		$this->userIdsFromMention = [];
-		if (preg_match_all("/\[USER=([0-9]+)( REPLACE)?](.*?)\[\/USER]/i", $this->getParsedMessage(), $matches))
+		$this->mentionedUserIds = $this->parseMentions();
+
+		return $this->mentionedUserIds;
+	}
+
+	private function parseMentions(): array
+	{
+		$mentionedUserIds = [];
+		$this->setHasMentionAll(false);
+
+		if (!preg_match_all("/\[USER=([0-9]+|all)( REPLACE)?](.*?)\[\/USER]/i", $this->getParsedMessage(), $matches))
 		{
-			foreach ($matches[1] as $userId)
+			return [];
+		}
+
+		$isMentionAllFound = false;
+
+		foreach ($matches[1] as $userId)
+		{
+			if ($userId === 'all')
 			{
-				$this->userIdsFromMention[(int)$userId] = (int)$userId;
+				$isMentionAllFound = true;
+				continue;
 			}
+
+			$mentionedUserIds[(int)$userId] = (int)$userId;
 		}
 
-		return $this->userIdsFromMention;
+		if ($isMentionAllFound)
+		{
+			$mentionedUserIds += $this->getChat()->getAllUserIdsForMention();
+			$this->setHasMentionAll(true);
+		}
+
+		return $mentionedUserIds;
 	}
 
 	public function getUserIdsToSendMentions(): array
 	{
-		$mentionedUsers = $this->getUserIdsFromMention();
+		$chat = $this->getChat();
+		$mentionedUsers = $this->getMentionedUserIds();
 
-		return $this->getChat()->filterUsersToMention($mentionedUsers);
+		if (!$chat->allowMentionAllChatNotification() && $this->hasMentionAll())
+		{
+			$mentionedUsers = [];
+		}
+
+		return $chat->filterUsersToMention($mentionedUsers);
 	}
 
 	public function getEnrichedParams(bool $withUrl = true): Params
@@ -1729,22 +1840,13 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 			&& !$this->getParams()->isSet(Params::FILE_ID)
 			&& !$this->getParams()->isSet(Params::KEYBOARD)
 			&& !$this->getParams()->isSet(Params::ATTACH)
+			&& !$this->getParams()->isSet(Params::STICKER_PARAMS)
 		);
 	}
 
 	public function getContextId(): string
 	{
-		$chat = $this->getChat();
-
-		if ($chat instanceof Im\V2\Chat\PrivateChat)
-		{
-			$userIds = $chat->getRelations()->getUserIds();
-			$implodeUserIds = implode(':', $userIds);
-
-			return "{$implodeUserIds}/{$this->getMessageId()}";
-		}
-
-		return "{$chat->getDialogId()}/{$this->getMessageId()}";
+		return "{$this->getChat()->getDialogContextId()}/{$this->getMessageId()}";
 	}
 
 	protected function getContextTag(): string
@@ -1787,12 +1889,13 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		$messageShortInfo = $option['MESSAGE_SHORT_INFO'] ?? false;
 		$onlyCommonRest = [
 			'id' => $this->getId(),
+			'chatId' => $this->getChatId(),
 			'chat_id' => $this->getChatId(),
+			'authorId' => $authorId,
 			'author_id' => $authorId,
 			'date' => isset($dateCreate) ? $dateCreate->format('c') : null,
 			'text' => $this->getFormattedMessage(),
 			'isSystem' => $this->isSystem(),
-			'replaces' => $this->getReplaceMap(),
 			'uuid' => $this->getUuid(),
 			'forward' => $this->getForwardInfo(),
 			'params' => $this->getEnrichedParams(!$messageShortInfo)->toRestFormat(),
@@ -1852,42 +1955,6 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		}
 	}
 
-	/**
-	 * Parse dates from message.
-	 * @return self
-	 */
-	public function parseDates(): self
-	{
-		if ($this->getMessage())
-		{
-			$dateConvertResult = Text::getDateConverterParams($this->getMessage());
-			foreach ($dateConvertResult as $row)
-			{
-				$this->getParams()->get(Params::DATE_TEXT)->addValue($row->getText());
-				$this->getParams()->get(Params::DATE_TS)->addValue($row->getDate()->getTimestamp());
-			}
-		}
-
-		return $this;
-	}
-
-	/**
-	 * Parse dates from message.
-	 * @return self
-	 */
-	public function checkEmoji(): self
-	{
-		if ($this->getMessage())
-		{
-			if (Text::isOnlyEmoji($this->getMessage()))
-			{
-				$this->getParams()->get(Params::LARGE_FONT)->setValue(true);
-			}
-		}
-
-		return $this;
-	}
-
 	public function autocompleteParams(Im\V2\Message\Send\SendingConfig $config): self
 	{
 		$this->getParams()->get(Params::LARGE_FONT)->setValue(Text::isOnlyEmoji($this->getMessage() ?? ''));
@@ -1934,33 +2001,61 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 	public function getCopilotData(): ?array
 	{
 		$chat = $this->getChat();
-		$roleManager = new \Bitrix\Im\V2\Integration\AI\RoleManager();
+		$roleManager = (new RoleManager())->setContextUser($this->getAuthorId());
 
-		if (
-			!$this->getParams()->isSet(Params::COPILOT_ROLE)
-			&& !$chat instanceof Im\V2\Chat\CopilotChat
-		)
+		if (!$this->isCopilotMessage())
 		{
 			return null;
 		}
 
 		$roles = [];
-		$messageRole = $this->getParams()->get(Params::COPILOT_ROLE)->getValue() ?? $this->getDefaultCopilotRole();
+		$messageRole = $this->getCopilotRole();
 		$roles[] = $messageRole;
-		$chatRoleInfo = null;
+		$chatData = null;
+		$engineData = null;
 
 		if ($chat instanceof Im\V2\Chat\CopilotChat)
 		{
+			$engineManager = new Im\V2\Integration\AI\EngineManager();
+			$engineCode = $chat->getEngineCode();
+			$engineName = $engineManager->getEngineNameByCode($engineCode);
+
 			$chatRole = $roleManager->getMainRole($this->getChatId());
 			$roles[] = $chatRole;
-			$chatRoleInfo = [['dialogId' => $this->getChat()->getDialogId(), 'role' => $chatRole]];
+			$chatData = [[
+				'dialogId' => $this->getChat()->getDialogId(),
+				'role' => $chatRole,
+				'engine' => $engineCode,
+			]];
+
+			$engineData =
+				isset($engineCode, $engineName)
+					? [['code' => $engineCode, 'name' => $engineName]]
+					: null
+			;
 		}
 
 		return [
-			'chats' => $chatRoleInfo,
+			'chats' => $chatData,
 			'messages' => $messageRole ? [['id' => $this->getId(), 'role' => $messageRole]] : null,
-			'roles' => $roleManager->getRoles($roles, $this->getAuthorId()),
+			'roles' => $roleManager->getRoles($roles),
+			'engines' => $engineData,
 		];
+	}
+
+	public function getCopilotRole(): ?string
+	{
+		if (!$this->isCopilotMessage())
+		{
+			return null;
+		}
+
+		return $this->getParams()->get(Params::COPILOT_ROLE)->getValue() ?? $this->getDefaultCopilotRole();
+	}
+
+	public function isCopilotMessage(): bool
+	{
+		return $this->getParams()->isSet(Params::COPILOT_ROLE);
 	}
 
 	protected function getDefaultCopilotRole(): ?string
@@ -1969,7 +2064,7 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 			&& $this->getAuthorId() === \Bitrix\Imbot\Bot\CopilotChatBot::getBotId()
 		)
 		{
-			return \Bitrix\Im\V2\Integration\AI\RoleManager::getDefaultRoleCode();
+			return RoleManager::getDefaultRoleCode();
 		}
 
 		return null;
@@ -1990,18 +2085,6 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		$messageWithoutUrl = str_replace($url->getUrl(), '', $this->getMessage() ?? '');
 
 		return trim($messageWithoutUrl) === '';
-	}
-
-	/**
-	 * Update search index record.
-	 * @return void
-	 */
-	public function updateSearchIndex(): void
-	{
-		if ($this->getMessageId())
-		{
-			MessageTable::indexRecord($this->getMessageId());
-		}
 	}
 
 	/**
@@ -2050,5 +2133,44 @@ class Message implements ArrayAccess, RegistryEntry, ActiveRecord, RestEntity, P
 		{
 			$this->setMessage(Text::filterUserBbCodes($this->getMessage(), $this->getContext()->getUserId()));
 		}
+	}
+
+	public function getActionContextUserId(): int
+	{
+		return $this->getAuthorId() ?: $this->getContext()->getUserId();
+	}
+
+	public function isVoiceNote(): bool
+	{
+		$files = $this->getFiles();
+
+		if ($files->count() !== 1)
+		{
+			return false;
+		}
+
+		foreach ($files as $file)
+		{
+			return $file->isVoiceNote();
+		}
+
+		return false;
+	}
+
+	public function isVideoNote(): bool
+	{
+		$files = $this->getFiles();
+
+		if ($files->count() !== 1)
+		{
+			return false;
+		}
+
+		foreach ($files as $file)
+		{
+			return $file->isVideoNote();
+		}
+
+		return false;
 	}
 }

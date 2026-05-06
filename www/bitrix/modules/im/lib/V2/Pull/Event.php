@@ -9,7 +9,7 @@ use Bitrix\Im\V2\Result;
 interface Event
 {
 	public function send(): Result;
-	public function getBase(): array;
+	public function getPullForPublic(): array;
 
 	/**
 	 * @return Group[]
@@ -24,4 +24,6 @@ interface Event
 	public function isGlobal(): bool;
 	public function shouldSendToOnlySpecificRecipients(): bool;
 	public function shouldSendMobilePush(): bool;
+	public function shouldSendImmediately(): bool;
+	public function shouldSendSharedPull(): bool;
 }

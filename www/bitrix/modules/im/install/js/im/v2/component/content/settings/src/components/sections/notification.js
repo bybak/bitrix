@@ -1,14 +1,11 @@
-import { Settings, NotificationSettingsMode } from 'im.v2.const';
-import { SettingsService } from 'im.v2.provider.service';
+import { Settings, NotificationSettingsMode, UserStatus } from 'im.v2.const';
+import { SettingsService } from 'im.v2.provider.service.settings';
 import { showNotificationsModeSwitchConfirm } from 'im.v2.lib.confirm';
 
 import { CheckboxOption } from '../elements/checkbox';
 import { RadioOption, type RadioOptionItem } from '../elements/radio';
 import { SimpleNotificationList } from './components/simple-notification-list';
 import { ExpertNotificationList } from './components/expert-mode/expert-notification-list';
-import { NotificationService } from './classes/notification-service';
-
-import type { JsonObject } from 'main.core';
 
 type NotificationMode = $Keys<typeof NotificationSettingsMode>;
 
@@ -16,10 +13,6 @@ type NotificationMode = $Keys<typeof NotificationSettingsMode>;
 export const NotificationSection = {
 	name: 'NotificationSection',
 	components: { CheckboxOption, RadioOption, SimpleNotificationList, ExpertNotificationList },
-	data(): JsonObject
-	{
-		return {};
-	},
 	computed:
 	{
 		enableSound(): boolean
@@ -29,6 +22,10 @@ export const NotificationSection = {
 		enableAutoRead(): boolean
 		{
 			return this.$store.getters['application/settings/get'](Settings.notification.enableAutoRead);
+		},
+		isDndEnabled(): boolean
+		{
+			return this.$store.getters['application/settings/get'](Settings.user.status) === UserStatus.dnd;
 		},
 		notificationMode(): NotificationMode
 		{
@@ -64,6 +61,11 @@ export const NotificationSection = {
 		{
 			this.getSettingsService().changeSetting(Settings.notification.enableAutoRead, newValue);
 		},
+		onEnableDnDChange(newValue: boolean): void
+		{
+			const preparedValue = newValue ? UserStatus.dnd : UserStatus.online;
+			this.getSettingsService().changeStatus(preparedValue);
+		},
 		async onNotificationModeChange(newValue: NotificationMode): void
 		{
 			const isChangingToSimple = newValue === NotificationSettingsMode.simple;
@@ -79,7 +81,7 @@ export const NotificationSection = {
 				}
 			}
 
-			void NotificationService.switchScheme(newValue);
+			void this.getSettingsService().switchScheme(newValue);
 		},
 		async changeLocalNotificationMode(newValue: NotificationMode): void
 		{
@@ -105,24 +107,30 @@ export const NotificationSection = {
 		<div class="bx-im-settings-section-content__body">
 			<div class="bx-im-settings-section-content__block">
 				<div class="bx-im-settings-section-content__block_title">
-					{{ loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_BLOCK_FOCUS') }}
+					{{ loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_BLOCK_FOCUS_MSGVER_1') }}
 				</div>
 				<CheckboxOption
 					:value="enableSound"
-					:text="loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_ENABLE_SOUND')"
+					:text="loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_ENABLE_SOUND_MSGVER_1')"
 					@change="onEnableSoundChange"
 				/>
 				<CheckboxOption
 					:value="enableAutoRead"
-					:text="loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_AUTO_READ')"
+					:text="loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_AUTO_READ_MSGVER_1')"
 					@change="onEnableAutoReadChange"
+				/>
+				<CheckboxOption
+					:value="isDndEnabled"
+					:text="loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_DND')"
+					:hintText="loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_DND_HINT')"
+					@change="onEnableDnDChange"
 				/>
 			</div>
 		</div>
 		<div class="bx-im-settings-section-content__body">
 			<div class="bx-im-settings-section-content__block">
 				<div class="bx-im-settings-section-content__block_title">
-					{{ loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_BLOCK_MODE') }}
+					{{ loc('IM_CONTENT_SETTINGS_OPTION_NOTIFICATION_BLOCK_MODE_MSGVER_1') }}
 				</div>
 				<RadioOption :items="notificationModeOptions" @change="onNotificationModeChange" />
 			</div>

@@ -14,7 +14,7 @@ if(!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
  * @global CMain $APPLICATION
  * @global CUser $USER
  */
-if($arResult['ERROR'])
+if(!empty($arResult['ERROR']))
 {
 	ShowError($arResult['ERROR']);
 	return false;
@@ -25,10 +25,11 @@ if($arResult['ERROR'])
 	$APPLICATION->IncludeComponent(
 		'bitrix:rest.configuration.import',
 		'',
-		array(
+		[
 			'SET_TITLE' => 'Y',
 			'MANIFEST_CODE' => $arResult['MANIFEST_CODE'],
 			'FROM' => $arResult['FROM'],
-		)
+			'ADDITIONAL' => $arResult['VARIABLES']['ADDITIONAL_PARAMS'] ?? null,
+		]
 	);
 ?>

@@ -14,9 +14,9 @@ return [
 		'im.v2.const',
 		'im.v2.lib.analytics',
 		'im.v2.lib.logger',
-		'im.v2.provider.service',
+		'im.v2.provider.service.copilot',
 		'im.v2.lib.permission',
-		'im.v2.component.elements',
+		'im.v2.lib.copilot',
 	],
 	'skip_core' => true,
 ];

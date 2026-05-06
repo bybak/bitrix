@@ -5,17 +5,21 @@ namespace Bitrix\Socialnetwork\Integration\UI\EntitySelector;
 use Bitrix\Intranet\Settings\Tools\ToolsManager;
 use Bitrix\Main\Application;
 use Bitrix\Main\Config\Option;
+use Bitrix\Main\ORM\Fields\BooleanField;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\ModuleManager;
 use Bitrix\Main\ORM\Fields\ExpressionField;
+use Bitrix\Main\ORM\Fields\IntegerField;
 use Bitrix\Main\ORM\Fields\Relations\Reference;
 use Bitrix\Main\ORM\Query\Filter;
 use Bitrix\Main\ORM\Query\Join;
 use Bitrix\Main\ORM\Query\Query;
 use Bitrix\Main\Search\Content;
 use Bitrix\Socialnetwork\Collab\CollabFeature;
+use Bitrix\Socialnetwork\Collab\Control\Option\Type\WhoCanInviteOption;
 use Bitrix\Socialnetwork\Collab\Integration\IM;
+use Bitrix\Socialnetwork\Collab\Internals\CollabOptionTable;
 use Bitrix\Socialnetwork\EO_Workgroup;
 use Bitrix\Socialnetwork\EO_Workgroup_Collection;
 use Bitrix\Socialnetwork\FeaturePermTable;
@@ -157,6 +161,16 @@ class ProjectProvider extends BaseProvider
 			$this->options['shouldSelectDialogId'] = $options['shouldSelectDialogId'];
 		}
 
+		$this->options['checkCollabInviteOption'] = false;
+		if (isset($options['checkCollabInviteOption']) && is_bool($options['checkCollabInviteOption']))
+		{
+			$this->options['checkCollabInviteOption'] = $options['checkCollabInviteOption'];
+		}
+
+		/**
+		 * @deprecated
+		 * @see ProjectAccessCodesProvider use this instead
+		 */
 		$this->options['addProjectMetaUsers'] = false;
 		if (isset($options['addProjectMetaUsers']) && is_bool($options['addProjectMetaUsers']))
 		{
@@ -216,35 +230,20 @@ class ProjectProvider extends BaseProvider
 				'title' => Loc::getMessage('SOCNET_ENTITY_SELECTOR_COLLAB_TAB_TITLE'),
 				'stub' => true,
 				'icon' => [
-					'default' => '/bitrix/js/socialnetwork/entity-selector/src/images/collab-tab-icon.svg',
-					'selected' => '/bitrix/js/socialnetwork/entity-selector/src/images/collab-tab-icon-selected.svg'
+					'default' => 'o-collab',
+					'selected' => 's-collab',
 				]
 			]));
 		}
 		else
 		{
-		$icon =
-			'data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2223%22%20height%3D%2223%22%20'.
-			'fill%3D%22none%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M11'.
-			'.934%202.213a.719.719%200%2001.719%200l3.103%201.79c.222.13.36.367.36.623V8.21a.719.71'.
-			'9%200%2001-.36.623l-3.103%201.791a.72.72%200%2001-.719%200L8.831%208.832a.719.719%200%'.
-			'2001-.36-.623V4.627c0-.257.138-.495.36-.623l3.103-1.791zM7.038%2010.605a.719.719%200%2'.
-			'001.719%200l3.103%201.792a.72.72%200%2001.359.622v3.583a.72.72%200%2001-.36.622l-3.102'.
-			'%201.792a.719.719%200%2001-.72%200l-3.102-1.791a.72.72%200%2001-.36-.623v-3.583c0-.257'.
-			'.138-.494.36-.622l3.103-1.792zM20.829%2013.02a.719.719%200%2000-.36-.623l-3.102-1.792a'.
-			'.719.719%200%2000-.72%200l-3.102%201.792a.72.72%200%2000-.36.622v3.583a.72.72%200%2000'.
-			'.36.622l3.103%201.792a.719.719%200%2000.719%200l3.102-1.791a.719.719%200%2000.36-.623v'.
-			'-3.583z%22%20fill%3D%22%23ABB1B8%22/%3E%3C/svg%3E';
-
 		$dialog->addTab(new Tab([
 			'id' => 'projects',
 			'title' => Loc::getMessage('SOCNET_ENTITY_SELECTOR_PROJECTS_TAB_TITLE'),
 			'stub' => true,
 			'icon' => [
-				'default' => $icon,
-				'selected' => str_replace('ABB1B8', 'fff', $icon),
-				//'default' => '/bitrix/js/socialnetwork/entity-selector/images/project-tab-icon.svg',
-				//'selected' => '/bitrix/js/socialnetwork/entity-selector/images/project-tab-icon-selected.svg'
+				'default' => 'o-department',
+				'selected' => 's-department',
 			]
 		]));
 		}
@@ -346,6 +345,7 @@ class ProjectProvider extends BaseProvider
 			'AVATAR_TYPE',
 			'LANDING',
 			'TYPE',
+			'SCRUM_MASTER_ID',
 		];
 
 		if (
@@ -474,6 +474,63 @@ class ProjectProvider extends BaseProvider
 					['join_type' => 'INNER']
 				)
 			);
+		}
+
+		if ($options['checkCollabInviteOption'] ?? false)
+		{
+			if ($currentUserModuleAdmin)
+			{
+				// include UserToGroupTable for admin, but don't include it twice for anyone else
+				$query->registerRuntimeField(
+					new Reference(
+						'MY_PROJECT',
+						UserToGroupTable::class,
+						Join::on('this.ID', 'ref.GROUP_ID')
+							->where('ref.USER_ID', $currentUserId),
+						['join_type' => Join::TYPE_INNER]
+					)
+				);
+			}
+
+			$query->registerRuntimeField(
+				new Reference(
+					'COLLAB_OPTIONS',
+					CollabOptionTable::class,
+					Join::on('this.ID', 'ref.COLLAB_ID')
+						->where('ref.NAME', WhoCanInviteOption::DB_NAME),
+					['join_type' => Join::TYPE_INNER]
+				)
+			);
+
+			$ownerRole = UserToGroupTable::ROLE_OWNER;
+			$managerRole = UserToGroupTable::ROLE_MODERATOR;
+			$userRole = UserToGroupTable::ROLE_USER;
+			$query->registerRuntimeField((new ExpressionField(
+				'NEED_ROLE_WEIGHT',
+				"CASE
+					WHEN %s = '{$ownerRole}' THEN 2
+					WHEN %s = '{$managerRole}' THEN 1
+					ELSE 0
+				END",
+				['COLLAB_OPTIONS.VALUE', 'COLLAB_OPTIONS.VALUE']
+			))->configureValueType(IntegerField::class));
+
+			$query->registerRuntimeField((new ExpressionField(
+				'ROLE_WEIGHT',
+				"CASE
+					WHEN %s = '{$ownerRole}' THEN 2
+					WHEN %s = '{$managerRole}' THEN 1
+					WHEN %s = '{$userRole}' THEN 0
+					ELSE -1
+				END",
+				['MY_PROJECT.ROLE', 'MY_PROJECT.ROLE', 'MY_PROJECT.ROLE']
+			))->configureValueType(IntegerField::class));
+
+			$query->where((new ExpressionField(
+				'HAS_ACCESS_BY_ROLE',
+				'%s >= %s',
+				['ROLE_WEIGHT', 'NEED_ROLE_WEIGHT']
+			))->configureValueType(BooleanField::class), 'expr', true);
 		}
 
 		$extranetSiteId = Option::get('extranet', 'extranet_site');
@@ -999,11 +1056,7 @@ class ProjectProvider extends BaseProvider
 		$item = new Item([
 			'id' => $project->getId(),
 			'entityId' => static::ENTITY_ID,
-			'entityType' => (
-			$isCollab
-				? 'collab'
-				: ($isExtranet ? 'extranet' : 'project')
-			),
+			'entityType' => self::makeProjectEntityType($project),
 			'title' => $project->getName(),
 			'avatar' => self::makeProjectAvatar($project),
 			'customData' => [
@@ -1104,6 +1157,16 @@ class ProjectProvider extends BaseProvider
 		}
 
 		return null;
+	}
+
+	public static function makeProjectEntityType(EO_Workgroup $project): ?string
+	{
+		$extranetSiteId = Option::get('extranet', 'extranet_site');
+		$extranetSiteId = ($extranetSiteId && ModuleManager::isModuleInstalled('extranet') ? $extranetSiteId : false);
+		$isExtranet = ($extranetSiteId && $project->get('IS_EXTRANET') === 'Y');
+		$isCollab = $project->getType() === Type::Collab->value;
+
+		return ($isExtranet && !$isCollab) ? 'extranet' : $project->getType();
 	}
 
 	public static function getProjectUrl(?int $projectId = null, ?int $currentUserId = null): string

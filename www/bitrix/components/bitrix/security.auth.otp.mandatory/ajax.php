@@ -7,6 +7,7 @@ require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/prolog_befo
 use Bitrix\Main\Web\Json;
 use Bitrix\Security\Mfa\Otp;
 use Bitrix\Main\Localization\Loc;
+use Bitrix\Security\Mfa\OtpType;
 
 Loc::loadMessages(__FILE__);
 /**
@@ -71,7 +72,14 @@ switch($request->getPost('action'))
 				'SECRET' => $_POST['secret'],
 				'SYNC1' => $_POST['sync1'],
 				'SYNC2' => $_POST['sync2'],
+				'TYPE' => $_POST['type'],
+				'INIT_PARAMS' => [],
 			);
+
+			if (!empty($request->getPost('deviceInfo')))
+			{
+				$fields['INIT_PARAMS']['deviceInfo'] = $request->getPost('deviceInfo');
+			}
 
 			$result = checkAndActivate($fields);
 		}
@@ -103,14 +111,23 @@ function checkAndActivate($fields)
 
 		$otp = Otp::getByUser($deferredParams['USER_ID']);
 		$binarySecret = pack('H*', $fields['SECRET']);
+		$type = OtpType::tryFrom($fields['TYPE']) ?: $otp->getType();
 		$otp
-			->regenerate($binarySecret)
+			->regenerate($binarySecret, $type)
+			->setInitParams($fields['INIT_PARAMS'])
 			->syncParameters($fields['SYNC1'], $fields['SYNC2'])
 			->save()
 		;
 
-		$deferredParams[Otp::REJECTED_KEY] = OTP::REJECT_BY_CODE;
-		Otp::setDeferredParams($deferredParams);
+		if ($otp->getType() === OtpType::Push)
+		{
+			Otp::setDeferredParams(null);
+		}
+		else
+		{
+			$deferredParams[Otp::REJECTED_KEY] = OTP::REJECT_BY_CODE;
+			Otp::setDeferredParams($deferredParams);
+		}
 
 		$result = array(
 			'status' => 'ok'

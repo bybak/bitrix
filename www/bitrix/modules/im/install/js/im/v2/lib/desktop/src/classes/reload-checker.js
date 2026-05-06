@@ -1,9 +1,15 @@
+import { Event } from 'main.core';
+import { BaseEvent, EventEmitter } from 'main.core.events';
+
+import { EventType } from 'im.v2.const';
 import { CallManager } from 'im.v2.lib.call';
+import { DesktopManager } from 'im.v2.lib.desktop';
 import { Logger } from 'im.v2.lib.logger';
 import { Utils } from 'im.v2.lib.utils';
 import { DesktopApi } from 'im.v2.lib.desktop-api';
 
 import { CheckUtils } from './check-utils';
+import { DesktopDataUpdater } from '../helpers/data-updater';
 
 const ONE_HOUR = 60 * 60 * 1000;
 
@@ -21,16 +27,27 @@ export class ReloadChecker
 	{
 		this.#initDate = new Date();
 		this.#startReloadCheck();
+		this.#subscribeToReloadEvent();
 	}
 
 	#startReloadCheck(): void
 	{
 		setInterval(async () => {
 			const isReloadNeeded = await this.#isReloadNeeded();
-			if (isReloadNeeded)
+
+			if (!isReloadNeeded)
 			{
-				this.#reloadWindow();
+				return;
 			}
+
+			if (!DesktopManager.getInstance().canReloadWindow())
+			{
+				await DesktopDataUpdater.reloadChatInfo();
+
+				return;
+			}
+
+			this.#reloadWindow();
 		}, ONE_HOUR);
 	}
 
@@ -62,5 +79,13 @@ export class ReloadChecker
 	{
 		Logger.desktop('Checker: checkDayForReload, new day - reload window');
 		DesktopApi.reloadWindow();
+	}
+
+	#subscribeToReloadEvent()
+	{
+		Event.bind(window, 'beforeunload', () => {
+			const event = new BaseEvent();
+			EventEmitter.emit(window, EventType.desktop.onReload, event);
+		});
 	}
 }

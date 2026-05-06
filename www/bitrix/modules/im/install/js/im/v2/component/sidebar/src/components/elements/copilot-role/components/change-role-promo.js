@@ -1,14 +1,13 @@
 import { PromoVideoPopup, PromoVideoPopupEvents } from 'ui.promo-video-popup';
 import { Loc } from 'main.core';
 
-import { MessengerPopup } from 'im.v2.component.elements';
+import { CopilotManager } from 'im.v2.lib.copilot';
 
 import '../css/change-role-promo.css';
 
 // @vue/component
 export const ChangeRolePromo = {
 	name: 'ChangeRolePromo',
-	components: { MessengerPopup },
 	props:
 	{
 		bindElement: {
@@ -21,9 +20,10 @@ export const ChangeRolePromo = {
 	{
 		text(): string
 		{
-			return Loc.getMessage('IM_SIDEBAR_COPILOT_CHANGE_ROLE_PROMO_TEXT', {
+			return Loc.getMessage('IM_SIDEBAR_COPILOT_CHANGE_ROLE_PROMO_TEXT_MSGVER_1', {
 				'[copilot_color]': '<em class="bx-im-copilot-change-role-promo__copilot">',
 				'[/copilot_color]': '</em>',
+				'#COPILOT_NAME#': this.copilotManager.getName(),
 			});
 		},
 		videoSource(): string
@@ -41,9 +41,12 @@ export const ChangeRolePromo = {
 	},
 	created()
 	{
+		this.copilotManager = new CopilotManager();
 		this.promoPopup = new PromoVideoPopup({
 			videoSrc: this.videoSource,
-			title: 'Copilot',
+			title: this.loc('IM_SIDEBAR_COPILOT_CHANGE_ROLE_PROMO_TITLE_MSGVER_1', {
+				'#COPILOT_NAME#': this.copilotManager.getName(),
+			}),
 			text: this.text,
 			targetOptions: this.bindElement,
 			angleOptions: {

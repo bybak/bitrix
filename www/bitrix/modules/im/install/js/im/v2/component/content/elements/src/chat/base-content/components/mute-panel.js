@@ -1,9 +1,8 @@
 import { Core } from 'im.v2.application.core';
-import { Button as ChatButton, ButtonSize } from 'im.v2.component.elements';
+import { ChatButton, ButtonSize, type CustomColorScheme } from 'im.v2.component.elements.button';
 import { Color } from 'im.v2.const';
-import { ChatService } from 'im.v2.provider.service';
+import { ChatService } from 'im.v2.provider.service.chat';
 
-import type { CustomColorScheme } from 'im.v2.component.elements';
 import type { ImModelChat } from 'im.v2.model';
 
 const BUTTON_BACKGROUND_COLOR = 'rgba(0, 0, 0, 0.1)';
@@ -31,16 +30,12 @@ export const MutePanel = {
 		{
 			return this.$store.getters['chats/get'](this.dialogId, true);
 		},
-		isMuted(): boolean
-		{
-			return this.dialog.muteList.includes(Core.getUserId());
-		},
 		buttonText(): string
 		{
 			const mutedCode = this.loc('IM_CONTENT_BLOCKED_TEXTAREA_ENABLE_NOTIFICATIONS');
 			const unmutedCode = this.loc('IM_CONTENT_BLOCKED_TEXTAREA_DISABLE_NOTIFICATIONS');
 
-			return this.isMuted ? mutedCode : unmutedCode;
+			return this.dialog.isMuted ? mutedCode : unmutedCode;
 		},
 		buttonColorScheme(): CustomColorScheme
 		{
@@ -57,7 +52,7 @@ export const MutePanel = {
 	{
 		onButtonClick()
 		{
-			if (this.isMuted)
+			if (this.dialog.isMuted)
 			{
 				this.getChatService().unmuteChat(this.dialogId);
 

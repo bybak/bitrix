@@ -14,7 +14,6 @@ use Bitrix\Main\ORM\Fields\IntegerField;
 class PgsqlConnection extends Connection
 {
 	protected int $transactionLevel = 0;
-	const FULLTEXT_MAXIMUM_LENGTH = 900000;
 
 	public function connectionErrorHandler($errno, $errstr, $errfile = '', $errline = 0, $errcontext = null)
 	{
@@ -94,7 +93,7 @@ class PgsqlConnection extends Connection
 			}
 			catch (\Throwable)
 			{
-				// Ignore misterious error
+				// Ignore mysterious error
 				// pg_close(): supplied resource is not a valid PostgreSQL link resource (0)
 			}
 		}
@@ -108,7 +107,7 @@ class PgsqlConnection extends Connection
 	/**
 	 * @inheritDoc
 	 */
-	protected function queryInternal($sql, array $binds = null, Diag\SqlTrackerQuery $trackerQuery = null)
+	protected function queryInternal($sql, ?array $binds = null, ?Diag\SqlTrackerQuery $trackerQuery = null)
 	{
 		$this->connectInternal();
 
@@ -138,7 +137,7 @@ class PgsqlConnection extends Connection
 	/**
 	 * @inheritDoc
 	 */
-	protected function createResult($result, Diag\SqlTrackerQuery $trackerQuery = null)
+	protected function createResult($result, ?Diag\SqlTrackerQuery $trackerQuery = null)
 	{
 		return new PgsqlResult($result, $this, $trackerQuery);
 	}
@@ -258,7 +257,7 @@ class PgsqlConnection extends Connection
 			if ($a['FULL_TEXT'])
 			{
 				$match = [];
-				if (preg_match_all('/,\s*([a-z0-9_]+)/i', $a['FULL_TEXT'], $match))
+				if (preg_match_all('/,\s*\(?([a-z0-9_]+)(?:\)::text)?/i', $a['FULL_TEXT'], $match))
 				{
 					foreach ($match[1] as $i => $colName)
 					{
@@ -327,9 +326,9 @@ class PgsqlConnection extends Connection
 			if ($row['FULL_TEXT'])
 			{
 				$match = [];
-				if (preg_match_all('/,\s*([a-z0-9_]+)/i', $row['FULL_TEXT'], $match))
+				if (preg_match_all('/,\s*\(?([a-z0-9_]+)(?:\)::text)?/i', $row['FULL_TEXT'], $match))
 				{
-					foreach ($match[1] as $i => $colName)
+					foreach ($match[1] as $colName)
 					{
 						$fullTextColumns[mb_strtoupper($colName)] = true;
 					}
@@ -345,7 +344,7 @@ class PgsqlConnection extends Connection
 	 */
 	public function getTableFields($tableName)
 	{
-		if (!isset($this->tableColumnsCache[$tableName]) || empty($this->tableColumnsCache[$tableName]))
+		if (empty($this->tableColumnsCache[$tableName]))
 		{
 			$this->connectInternal();
 
@@ -376,35 +375,14 @@ class PgsqlConnection extends Connection
 				$field = $sqlHelper->getFieldByColumnType($fieldName, $fieldType);
 				if (is_a($field, '\Bitrix\Main\ORM\Fields\StringField'))
 				{
-					if (!$fieldInfo['CHARACTER_MAXIMUM_LENGTH'])
+					if ($fieldInfo['CHARACTER_MAXIMUM_LENGTH'])
 					{
-						if (array_key_exists($fieldName, $fullTextColumns))
-						{
-							$maximumLength = static::FULLTEXT_MAXIMUM_LENGTH;
-						}
-						else
-						{
-							$maximumLength = false; // "Infinite"
-						}
-					}
-					else
-					{
-						if (
-							array_key_exists($fieldName, $fullTextColumns)
-							&& $fieldInfo['CHARACTER_MAXIMUM_LENGTH'] > static::FULLTEXT_MAXIMUM_LENGTH
-						)
-						{
-							$maximumLength = static::FULLTEXT_MAXIMUM_LENGTH;
-						}
-						else
-						{
-							$maximumLength = $fieldInfo['CHARACTER_MAXIMUM_LENGTH'];
-						}
+						$field->configureSize($fieldInfo['CHARACTER_MAXIMUM_LENGTH']);
 					}
 
-					if ($maximumLength)
+					if (array_key_exists($fieldName, $fullTextColumns))
 					{
-						$field->configureSize($maximumLength);
+						$field->configureFulltext();
 					}
 				}
 
@@ -516,6 +494,7 @@ class PgsqlConnection extends Connection
 	public function renameTable($currentName, $newName)
 	{
 		$this->query('ALTER TABLE ' . $this->getSqlHelper()->quote($currentName) . ' RENAME TO ' . $this->getSqlHelper()->quote($newName));
+		$this->clearCaches($currentName);
 	}
 
 	/**
@@ -524,6 +503,7 @@ class PgsqlConnection extends Connection
 	public function dropTable($tableName)
 	{
 		$this->query('DROP TABLE ' . $this->getSqlHelper()->quote($tableName));
+		$this->clearCaches($tableName);
 	}
 
 	/**

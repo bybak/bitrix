@@ -1,25 +1,24 @@
-import type { JsonObject } from 'main.core';
-import { Type } from 'main.core';
+import { Type, type JsonObject } from 'main.core';
 import { BuilderModel } from 'ui.vue3.vuex';
+import { type GetterTree, ActionTree, MutationTree } from 'ui.vue3.vuex';
 
 import { Core } from 'im.v2.application.core';
-import { Utils } from 'im.v2.lib.utils';
+import { MessageComponent, MessageType, UserIdNetworkPrefix, type AttachConfig } from 'im.v2.const';
 import { Logger } from 'im.v2.lib.logger';
-import { MessageComponent, MessageType, UserIdNetworkPrefix } from 'im.v2.const';
 import { UserManager } from 'im.v2.lib.user';
+import { Utils } from 'im.v2.lib.utils';
 import { formatFieldsWithConfig } from 'im.v2.model';
+import { type ImModelMessage, ImModelFile } from 'im.v2.model';
+import { MessageManager } from 'im.v2.lib.message';
 
+import { type RawMessage } from '../type/message';
 import { convertToNumber } from '../utils/format';
 import { messageFieldsConfig } from './format/field-config';
+import { AnchorsModel } from './nested-modules/anchors/anchors';
+import { CommentsModel } from './nested-modules/comments/comments';
 import { PinModel } from './nested-modules/pin';
 import { ReactionsModel } from './nested-modules/reactions';
-import { CommentsModel } from './nested-modules/comments/comments';
 import { SelectModel } from './nested-modules/select';
-
-import type { GetterTree, ActionTree, MutationTree } from 'ui.vue3.vuex';
-import type { ImModelMessage, ImModelFile } from 'im.v2.model';
-import type { AttachConfig } from 'im.v2.const';
-import type { RawMessage } from '../type/message';
 
 type MessageId = string | number;
 
@@ -49,6 +48,7 @@ export class MessagesModel extends BuilderModel
 			reactions: ReactionsModel,
 			comments: CommentsModel,
 			select: SelectModel,
+			anchors: AnchorsModel,
 		};
 	}
 
@@ -151,6 +151,16 @@ export class MessagesModel extends BuilderModel
 				}
 
 				return Type.isStringFilled(message.forward.id);
+			},
+			/** @function messages/isVideoNote */
+			isVideoNote: (state: MessagesState, getters: GetterTree) => (id: number | string) => {
+				const message = state.collection[id];
+				if (!message)
+				{
+					return false;
+				}
+
+				return getters.getMessageFiles(id).some((file: ImModelFile) => file.isVideoNote);
 			},
 			/** @function messages/isExists */
 			isExists: (state: MessagesState) => (id: number | string) => {
@@ -273,6 +283,7 @@ export class MessagesModel extends BuilderModel
 
 				return state.collection[desiredMessageId];
 			},
+			/** @function messages/findPreviousMessageId */
 			findPreviousMessageId: (state, getters) => (payload: { messageId: MessageId, chatId: number }): MessageId => {
 				const chatCollection: Array<ImModelMessage> = getters.getByChatId(payload.chatId);
 				const currentMessageIndex: number = chatCollection.findIndex((message: ImModelMessage) => {
@@ -286,21 +297,25 @@ export class MessagesModel extends BuilderModel
 
 				return -1;
 			},
-			findLastChatMessageId: (state, getters) => (chatId: number): MessageId => {
+			/** @function messages/findLastChatMessageId */
+			findLastChatMessageId: (state, getters) => (chatId: number): MessageId | null => {
 				const lastMessage: ?ImModelMessage = getters.getByChatId(chatId).pop();
 				if (lastMessage)
 				{
 					return lastMessage.id;
 				}
 
-				return -1;
+				return null;
 			},
+			/** @function messages/hasLoadingMessageByPreviousSiblingId */
 			hasLoadingMessageByPreviousSiblingId: (state: MessagesState) => (messageId: MessageId): boolean => {
 				return Boolean(state.loadingMessages[messageId]);
 			},
+			/** @function messages/getLoadingMessageByPreviousSiblingId */
 			getLoadingMessageByPreviousSiblingId: (state: MessagesState) => (messageId: MessageId): ?ImModelMessage => {
 				return state.loadingMessages[messageId] ?? null;
 			},
+			/** @function messages/getLoadingMessageByMessageId */
 			getLoadingMessageByMessageId: (state: MessagesState) => (messageId: MessageId): ?ImModelMessage => {
 				const message: ImModelMessage = Object
 					.values(state.loadingMessages)
@@ -315,11 +330,13 @@ export class MessagesModel extends BuilderModel
 
 				return null;
 			},
+			/** @function messages/hasLoadingMessageByMessageId */
 			hasLoadingMessageByMessageId: (state: MessagesState, getters) => (messageId: MessageId): boolean => {
 				return getters.getLoadingMessageByMessageId(messageId) !== null;
 			},
+			/** @function messages/isRealMessage */
 			isRealMessage: () => (messageId: MessageId): boolean => {
-				return !Utils.text.isTempMessage(messageId);
+				return !MessageManager.isTempMessage(messageId);
 			},
 		};
 	}
@@ -534,8 +551,8 @@ export class MessagesModel extends BuilderModel
 				}
 
 				const previousSiblingId: ?MessageId = (() => {
-					const id: number | string = store.getters.findLastChatMessageId(message.chatId);
-					if (id === -1)
+					const id: number | string | null = store.getters.findLastChatMessageId(message.chatId);
+					if (Type.isNull(id))
 					{
 						return this.#makeFakePreviousSiblingId(message.chatId);
 					}
@@ -769,7 +786,7 @@ export class MessagesModel extends BuilderModel
 				firstId = element.id;
 			}
 
-			if (Utils.text.isTempMessage(element.id))
+			if (MessageManager.isTempMessage(element.id))
 			{
 				continue;
 			}
@@ -790,7 +807,7 @@ export class MessagesModel extends BuilderModel
 		for (const messageId of messages)
 		{
 			const element = state.collection[messageId];
-			if (Utils.text.isTempMessage(element.id))
+			if (MessageManager.isTempMessage(element.id))
 			{
 				continue;
 			}
@@ -811,7 +828,7 @@ export class MessagesModel extends BuilderModel
 		for (const messageId of messages)
 		{
 			const element = state.collection[messageId];
-			if (Utils.text.isTempMessage(element.id))
+			if (MessageManager.isTempMessage(element.id))
 			{
 				continue;
 			}

@@ -3,6 +3,7 @@ import { Browser, Event, Loc, Type, Validation } from 'main.core';
 
 import type { BBCodeElementNode } from 'ui.bbcode.model';
 import type { BaseEvent } from 'main.core.events';
+import { Outline } from 'ui.icon-set.api.core';
 import type {
 	BBCodeConversion,
 	BBCodeConversionFn,
@@ -21,9 +22,11 @@ import type { SchemeValidationOptions } from '../../types/scheme-validation-opti
 import { TextEditorLexicalNode } from '../../types/text-editor-lexical-node';
 import BasePlugin from '../base-plugin';
 import { LinkEditor } from './link-editor';
+import { $createCustomLinkNode, CustomLinkNode } from './custom-link-node';
 
 import { sanitizeUrl } from '../../helpers/sanitize-url';
-import { validateUrl } from '../../helpers/validate-url';
+import { EMAIL_REGEX, URL_REGEX, validateUrl } from '../../helpers/validate-url';
+import { $restoreSelection } from '../../helpers/restore-selection';
 
 import {
 	COMMAND_PRIORITY_LOW,
@@ -33,7 +36,6 @@ import {
 	$isTextNode,
 	$isElementNode,
 	$getSelection,
-	$setSelection,
 	$isRangeSelection,
 	$insertNodes,
 	$isRootOrShadowRoot,
@@ -45,6 +47,7 @@ import {
 	type RangeSelection,
 	type NodeKey,
 	type LexicalCommand,
+	type LexicalNodeReplacement,
 } from 'ui.lexical.core';
 
 import { $wrapNodeInElement, $findMatchingParent, mergeRegister } from 'ui.lexical.utils';
@@ -84,9 +87,26 @@ export class LinkPlugin extends BasePlugin
 		return 'Link';
 	}
 
-	static getNodes(editor: TextEditor): Array<Class<LexicalNode>>
+	static getNodes(editor: TextEditor): Array<Class<LexicalNode> | LexicalNodeReplacement>
 	{
-		return [LinkNode];
+		return [
+			LinkNode,
+			CustomLinkNode,
+			{
+				replace: LinkNode,
+				with: (node: LinkNode) => {
+					return $createCustomLinkNode(
+						node.__url,
+						{
+							rel: node.__rel,
+							target: node.__target,
+							title: node.__title,
+						},
+					);
+				},
+				withClass: CustomLinkNode,
+			},
+		];
 	}
 
 	importBBCode(): BBCodeImportConversion
@@ -118,27 +138,8 @@ export class LinkPlugin extends BasePlugin
 	exportBBCode(): BBCodeExportConversion
 	{
 		return {
-			link: (lexicalNode: LinkNode): BBCodeExportOutput => {
-				const url = lexicalNode.getURL();
-				const children = lexicalNode.getChildren();
-				const isSimpleText = (
-					children.length === 1
-					&& $isTextNode(children[0])
-					&& children[0].getFormat() === 0
-				);
-
-				const scheme = this.getEditor().getBBCodeScheme();
-				if (isSimpleText && children[0].getTextContent() === url)
-				{
-					return {
-						node: scheme.createElement({ name: 'url' }),
-					};
-				}
-
-				return {
-					node: scheme.createElement({ name: 'url', value: url }),
-				};
-			},
+			link: (lexicalNode: LinkNode): BBCodeExportOutput => exportLinkNode(lexicalNode, this.getEditor()),
+			'custom-link': (lexicalNode: LinkNode): BBCodeExportOutput => exportLinkNode(lexicalNode, this.getEditor()),
 		};
 	}
 
@@ -146,10 +147,11 @@ export class LinkPlugin extends BasePlugin
 	{
 		return {
 			nodes: [{
-				nodeClass: LinkNode,
+				nodeClass: CustomLinkNode,
 			}],
 			bbcodeMap: {
 				link: 'url',
+				'custom-link': 'url',
 			},
 		};
 	}
@@ -298,7 +300,7 @@ export class LinkPlugin extends BasePlugin
 						}
 					}
 
-					this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND);
+					this.getEditor().dispatchCommand(HIDE_DIALOG_COMMAND, { sender: 'link-dialog' });
 
 					this.#linkEditor = new LinkEditor({
 						linkUrl,
@@ -409,7 +411,14 @@ export class LinkPlugin extends BasePlugin
 			),
 			this.getEditor().registerCommand(
 				HIDE_DIALOG_COMMAND,
-				(): boolean => {
+				(payload): boolean => {
+					if (payload?.sender === 'link-dialog')
+					{
+						return false;
+					}
+
+					this.#lastSelection = null;
+
 					if (this.#linkEditor !== null)
 					{
 						this.#linkEditor.destroy();
@@ -429,31 +438,26 @@ export class LinkPlugin extends BasePlugin
 		);
 	}
 
-	#restoreSelection(): boolean
+	#restoreSelection(): void
 	{
-		const selection = $getSelection();
-		if (!$isRangeSelection(selection) && this.#lastSelection !== null)
-		{
-			$setSelection(this.#lastSelection);
-			this.#lastSelection = null;
-
-			return true;
-		}
-
-		return false;
+		$restoreSelection(this.#lastSelection);
+		this.#lastSelection = null;
 	}
 
 	#handleDialogDestroy(): void
 	{
+		if (this.#linkEditor === null)
+		{
+			return;
+		}
+
 		this.#linkEditor = null;
 		Event.unbind(this.getEditor().getScrollerContainer(), 'scroll', this.#onEditorScroll);
 		this.getEditor().resetHighlightSelection();
 
 		this.getEditor().update(() => {
-			if (!this.#restoreSelection())
-			{
-				this.getEditor().focus();
-			}
+			this.#restoreSelection();
+			// this.getEditor().focus();
 		});
 	}
 
@@ -493,7 +497,6 @@ export class LinkPlugin extends BasePlugin
 				const selection: RangeSelection = $getSelection();
 				if (
 					!$isRangeSelection(selection)
-					|| selection.isCollapsed()
 					|| !(event instanceof ClipboardEvent)
 					|| event.clipboardData === null
 				)
@@ -502,15 +505,25 @@ export class LinkPlugin extends BasePlugin
 				}
 
 				const clipboardText = event.clipboardData.getData('text');
-				if (!validateUrl(clipboardText))
+				if (!URL_REGEX.test(clipboardText))
 				{
 					return false;
 				}
 
-				// If we select nodes that are elements then avoid applying the link.
-				if (!selection.getNodes().some((node) => $isElementNode(node)))
+				const url = clipboardText.startsWith('http') ? clipboardText : `https://${clipboardText}`;
+				if (selection.isCollapsed())
 				{
-					$toggleLink(clipboardText);
+					const success = this.getEditor().dispatchCommand(TOGGLE_LINK_COMMAND, { url });
+					if (success)
+					{
+						event.preventDefault();
+
+						return true;
+					}
+				}
+				else if (!selection.getNodes().some((node) => $isElementNode(node)))
+				{
+					$toggleLink(url);
 					event.preventDefault();
 
 					return true;
@@ -594,7 +607,7 @@ export class LinkPlugin extends BasePlugin
 	{
 		this.getEditor().getComponentRegistry().register('link', (): Button => {
 			const button: Button = new Button();
-			button.setContent('<span class="ui-icon-set --link-3"></span>');
+			button.setIcon(Outline.LINK);
 			button.setTooltip(Loc.getMessage('TEXT_EDITOR_BTN_LINK'));
 			button.setBlockType('link');
 			button.disableInsideUnformatted();
@@ -625,4 +638,27 @@ export class LinkPlugin extends BasePlugin
 			this.#linkEditor.destroy();
 		}
 	}
+}
+
+export function exportLinkNode(lexicalNode: LinkNode, editor: TextEditor): BBCodeExportOutput
+{
+	const url = lexicalNode.getURL();
+	const children = lexicalNode.getChildren();
+	const isSimpleText = (
+		children.length === 1
+		&& $isTextNode(children[0])
+		&& children[0].getFormat() === 0
+	);
+
+	const scheme = editor.getBBCodeScheme();
+	if (isSimpleText && children[0].getTextContent() === url)
+	{
+		return {
+			node: scheme.createElement({ name: 'url' }),
+		};
+	}
+
+	return {
+		node: scheme.createElement({ name: 'url', value: url }),
+	};
 }

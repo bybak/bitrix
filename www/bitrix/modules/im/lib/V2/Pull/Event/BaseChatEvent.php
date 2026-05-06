@@ -20,8 +20,8 @@ abstract class BaseChatEvent extends BaseEvent
 		return $this->chat;
 	}
 
-	protected function getRecipients(): array
+	protected function getBaseDialogId(): string
 	{
-		return $this->chat->getRelations()->filterActive()->getUserIds();
+		return 'chat' . $this->chat->getId();
 	}
 }

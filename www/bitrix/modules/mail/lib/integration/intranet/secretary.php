@@ -1,12 +1,14 @@
 <?php
 namespace Bitrix\Mail\Integration\Intranet;
 
+use Bitrix\Mail\Helper\AnalyticsHelper;
 use Bitrix\Mail\Helper\Message;
 use Bitrix\Mail\Helper\MessageAccess;
 use Bitrix\Mail\Internals\MessageAccessTable;
 use Bitrix\Mail\MailMessageTable;
 use Bitrix\Mail\IMessageStorage;
 use Bitrix\Main\Loader;
+use Bitrix\Main\Web\Uri;
 
 class Secretary
 {
@@ -30,10 +32,15 @@ class Secretary
 		return self::getMessageUrl($messageId, Message::ENTITY_TYPE_CALENDAR_EVENT, $eventId);
 	}
 
-	// public static function getMessageUrlForUser(int $messageId, int $userId): ?string
-	// {
-	// 	return self::getMessageUrl($messageId, null, null, $userId);
-	// }
+	public static function getMessageUrlForChatMessage(int $messageId, int $chatId): ?string
+	{
+		return self::getMessageUrl($messageId, Message::ENTITY_TYPE_CHAT_MESSAGE, $chatId);
+	}
+
+	public static function getMessageUrlForUserMessage(int $messageId, int $userId): ?string
+	{
+		return self::getMessageUrl($messageId, Message::ENTITY_TYPE_USER_MESSAGE, $userId);
+	}
 
 	public static function getMailboxIdForMessage(int $messageId)
 	{
@@ -52,6 +59,96 @@ class Secretary
 		}
 
 		return false;
+	}
+
+
+	public static function isAccessProvidedToMessage(int $mailMessageId, int $mailMailBoxId, string $entityType, int $entityId): bool
+	{
+		$filter = [
+			'=MAILBOX_ID' => $mailMailBoxId,
+			'=MESSAGE_ID' => $mailMessageId,
+			'=ENTITY_TYPE' => $entityType,
+			'=ENTITY_ID' => $entityId,
+		];
+
+		$accessResult = MessageAccessTable::getList([
+			'filter' => $filter,
+			'limit' => 1,
+		])->fetch();
+
+		return (bool)$accessResult;
+	}
+
+	public static function provideAccessToMessage(int $mailMessageId, string $entityType, int $entityId, int $userId): bool
+	{
+		$message = MailMessageTable::getList([
+			'select' => [
+				'ID', 'MAILBOX_ID',
+			],
+			'filter' => [
+				'=ID' => $mailMessageId,
+			],
+		])->fetch();
+
+		if (MessageAccess::isMailboxOwner($message['MAILBOX_ID'], $userId))
+		{
+			/** @see \Bitrix\Mail\MessageUserType */
+			MessageAccessTable::add([
+				'TOKEN' => MessageAccess::createToken($message['MAILBOX_ID'], $mailMessageId, $entityType, $entityId, '0'),
+				'MAILBOX_ID' => $message['MAILBOX_ID'],
+				'MESSAGE_ID' => $mailMessageId,
+				'ENTITY_UF_ID' => '0',
+				'ENTITY_TYPE' => $entityType,
+				'ENTITY_ID' => $entityId,
+				'SECRET' => MessageAccess::createSecret(),
+				'OPTIONS' => [],
+			]);
+
+			return true;
+		}
+
+		return false;
+	}
+
+	public static function onTaskDelete($taskId)
+	{
+		$messageAccessQuery = MessageAccessTable::query()
+			->setSelect([
+				'TOKEN',
+				'MESSAGE_ID',
+				'MAILBOX_ID',
+			])
+			->setFilter([
+				'=ENTITY_TYPE' => MessageAccessTable::ENTITY_TYPE_TASKS_TASK,
+				'=ENTITY_ID' => $taskId,
+			]);;
+
+		while ($messageAccess = $messageAccessQuery->fetch())
+		{
+			$messageId = $messageAccess['MESSAGE_ID'];
+			$mailboxId = $messageAccess['MAILBOX_ID'];
+			MessageAccessTable::delete(['TOKEN' => $messageAccess['TOKEN']]);
+
+			if (Loader::includeModule('pull'))
+			{
+				if($mailboxId)
+				{
+					\CPullWatch::addToStack(
+						'mail_mailbox_' . $mailboxId,
+						[
+							'module_id' => 'mail',
+							'command' => 'messageBindingDeleted',
+							'params' => [
+								'messageId' => $messageId,
+								'mailboxId' => $mailboxId,
+								'entityType' => MessageAccessTable::ENTITY_TYPE_TASKS_TASK,
+								'entityId' => $taskId,
+							],
+						],
+					);
+				}
+			}
+		}
 	}
 
 	private static function getMessageUrl(int $messageId, string $entityType, int $entityId, ?int $userId = null): ?string
@@ -95,102 +192,26 @@ class Secretary
 			return null;
 		}
 
-		\Bitrix\Mail\Helper\Message::prepare($message);
+
+		Message::prepare($message);
+		$message['__href'] = AnalyticsHelper::addSourceAnalyticsToMessage($message['__href'], $entityType);
 
 		$signer = new \Bitrix\Main\Security\Sign\Signer(new \Bitrix\Main\Security\Sign\HmacAlgorithm('md5'));
 
-		$message['__href'] = \CHTTP::urlAddParams(
-			$message['__href'],
-			array(
-				'mail_uf_message_token' => sprintf(
-					'%s:%s',
-					$access['TOKEN'],
-					$signer->getSignature($access['SECRET'], Message::getSaltByEntityType($entityType, $entityId, $userId))
-				),
+		$uri = new Uri($message['__href']);
+		$uri->addParams([
+			'mail_uf_message_token' => sprintf(
+				'%s:%s',
+				$access['TOKEN'],
+				$signer->getSignature($access['SECRET'], Message::getSaltByEntityType($entityType, $entityId, $userId)),
 			),
-			array(
-				'encode' => true,
-			)
-		);
+		]);
 
-		return $message['__href'];
-	}
-
-	public static function provideAccessToMessage(int $mailMessageId, string $entityType, int $entityId, int $userId): bool
-	{
-		$message = MailMessageTable::getList([
-			'select' => [
-				'ID', 'MAILBOX_ID',
-			],
-			'filter' => [
-				'=ID' => $mailMessageId,
-			],
-		])->fetch();
-
-		if (MessageAccess::isMailboxOwner($message['MAILBOX_ID'], $userId))
-		{
-			/** @see \Bitrix\Mail\MessageUserType */
-			MessageAccessTable::add([
-				'TOKEN' => MessageAccess::createToken($message['MAILBOX_ID'], $mailMessageId, $entityType, $entityId, '0'),
-				'MAILBOX_ID' => $message['MAILBOX_ID'],
-				'MESSAGE_ID' => $mailMessageId,
-				'ENTITY_UF_ID' => '0',
-				'ENTITY_TYPE' => $entityType,
-				'ENTITY_ID' => $entityId,
-				'SECRET' => MessageAccess::createSecret(),
-				'OPTIONS' => [],
-			]);
-
-			return true;
-		}
-
-		return false;
-	}
-
-	public static function onTaskDelete($taskId)
-	{
-		$messageAccessQuery = MessageAccessTable::query()
-			->setSelect([
-				'TOKEN',
-				'MESSAGE_ID',
-				'MAILBOX_ID',
-				])
-			->setFilter([
-				'=ENTITY_TYPE' => MessageAccessTable::ENTITY_TYPE_TASKS_TASK,
-				'=ENTITY_ID' => $taskId,
-			]);;
-
-		while ($messageAccess = $messageAccessQuery->fetch())
-		{
-			$messageId = $messageAccess['MESSAGE_ID'];
-			$mailboxId = $messageAccess['MAILBOX_ID'];
-			MessageAccessTable::delete(['TOKEN' => $messageAccess['TOKEN']]);
-
-			if (Loader::includeModule('pull'))
-			{
-				if($mailboxId)
-				{
-					\CPullWatch::addToStack(
-						'mail_mailbox_' . $mailboxId,
-						[
-							'module_id' => 'mail',
-							'command' => 'messageBindingDeleted',
-							'params' => [
-								'messageId' => $messageId,
-								'mailboxId' => $mailboxId,
-								'entityType' => MessageAccessTable::ENTITY_TYPE_TASKS_TASK,
-								'entityId' => $taskId,
-							],
-						]
-					);
-				}
-			}
-		}
+		return $uri->getUri();
 	}
 
 	private static function getMessageStorage(): IMessageStorage
 	{
 		return new \Bitrix\Mail\Storage\Message();
 	}
-
 }

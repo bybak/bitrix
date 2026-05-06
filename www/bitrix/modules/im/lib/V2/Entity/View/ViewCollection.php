@@ -5,6 +5,8 @@ namespace Bitrix\Im\V2\Entity\View;
 use Bitrix\Im\Model\EO_MessageViewed_Collection;
 use Bitrix\Im\Model\MessageViewedTable;
 use Bitrix\Im\V2\Entity\EntityCollection;
+use Bitrix\Im\V2\Entity\User\UserPopupItem;
+use Bitrix\Im\V2\Rest\PopupData;
 use Bitrix\Im\V2\Service\Context;
 use Bitrix\Main\ORM\Query\Query;
 
@@ -12,27 +14,28 @@ class ViewCollection extends EntityCollection
 {
 	public static function find(
 		array $filter,
-		array $order = ['ID' => 'ASC'],
+		array $order = ['ID' => 'DESC'],
 		?int $limit = null,
 		?Context $context = null
-	)
+	): self
 	{
-		$viewOrder = ['ID' => 'ASC'];
+		$viewOrder = ['ID' => 'DESC'];
 
 		if (isset($order['ID']))
 		{
 			$viewOrder['ID'] = $order['ID'];
 		}
 
-		$query = MessageViewedTable::query()->setSelect(['ID', 'USER_ID', 'MESSAGE_ID', 'DATE_CREATE']);
-		if ($viewOrder['ID'] === 'DESC')
-		{
-			$query->setOrder($viewOrder);
-		}
+		$query = MessageViewedTable::query()
+			->setSelect(['ID', 'USER_ID', 'MESSAGE_ID', 'DATE_CREATE'])
+			->setOrder($viewOrder)
+		;
+
 		if (isset($limit))
 		{
 			$query->setLimit($limit);
 		}
+
 		static::processFilters($query, $filter, $viewOrder);
 
 		return (new static())->initByEntityCollection($query->fetchCollection());
@@ -41,6 +44,14 @@ class ViewCollection extends EntityCollection
 	public static function getRestEntityName(): string
 	{
 		return 'views';
+	}
+
+	public function getPopupData(array $excludedList = []): PopupData
+	{
+		$basePopupData = new PopupData([new UserPopupItem()], $excludedList);
+		$entitiesPopupData = parent::getPopupData($excludedList);
+
+		return $basePopupData->merge($entitiesPopupData);
 	}
 
 	private function initByEntityCollection(EO_MessageViewed_Collection $collection): self

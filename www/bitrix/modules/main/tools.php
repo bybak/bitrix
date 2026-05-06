@@ -307,7 +307,7 @@ function Calendar($fieldName, $formName = "")
 			'SHOW_INPUT' => 'N',
 			'INPUT_NAME' => $fieldName,
 			'FORM_NAME' => $formName,
-			'SHOW_TIME' => 'N'
+			'SHOW_TIME' => 'N',
 		],
 		null,
 		['HIDE_ICONS' => 'Y']
@@ -494,6 +494,12 @@ function CheckDateTime($datetime, $format = false)
 	if ($hour > 24 || $hour < 0 || $min < 0 || $min > 59 || $sec < 0 || $sec > 59)
 	{
 		return false;
+	}
+
+	if (!isset($ar["SS"]))
+	{
+		// skip seconds
+		$format = str_replace(':SS', '', $format);
 	}
 
 	$s1 = preg_replace("~([^:\\\\/\\s.,0-9-]+|[^:\\\\/\\s.,a-z-]+)[\n\r\t ]*~iu", "P", $datetime);
@@ -3019,6 +3025,25 @@ function IsFileUnsafe($name)
 	return in_array(mb_strtolower(TrimUnsafe($name)), $arFiles);
 }
 
+function IsConfigFile(string $path): bool
+{
+	$path = TrimUnsafe($path);
+
+	static $list = [
+		"/bitrix/.settings.php",
+		"/.access.php",
+	];
+
+	foreach ($list as $file)
+	{
+		if (str_ends_with($path, $file))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 function GetFileType($path)
 {
 	$extension = GetFileExtension(mb_strtolower($path));
@@ -3293,7 +3318,7 @@ function Rel2Abs($curdir, $relpath)
 		$res = $curdir . $relpath;
 	}
 
-	if (($p = mb_strpos($res, "\0")) !== false)
+	if ((mb_strpos($res, "\0")) !== false)
 	{
 		throw new Main\IO\InvalidPathException($res);
 	}
@@ -3915,44 +3940,41 @@ function SendError($error)
 
 function AddMessage2Log($text, $module = '', $traceDepth = 6, $showArgs = false)
 {
-	if (defined('LOG_FILENAME') && LOG_FILENAME <> '')
+	$logger = (new \Bitrix\Main\Diag\LoggerFactory(false))->createDefault($showArgs);
+	if (empty($logger))
 	{
-		$logger = Diag\Logger::create('main.Default', [LOG_FILENAME, $showArgs]);
-		if ($logger === null)
-		{
-			$logger = new Diag\FileLogger(LOG_FILENAME, 0);
-			$formatter = new Diag\LogFormatter($showArgs);
-			$logger->setFormatter($formatter);
-		}
-
-		$trace = '';
-		if ($traceDepth > 0)
-		{
-			$trace = Main\Diag\Helper::getBackTrace($traceDepth, ($showArgs ? null : DEBUG_BACKTRACE_IGNORE_ARGS));
-		}
-
-		$context = [
-			'module' => $module,
-			'message' => $text,
-			'trace' => $trace,
-		];
-
-		$message = "Host: {host}\n"
-			. "Date: {date}\n"
-			. ($module != '' ? "Module: {module}\n" : '')
-			. "{message}\n"
-			. "{trace}"
-			. "{delimiter}\n";
-
-		$logger->debug($message, $context);
+		return;
 	}
+
+	$trace = '';
+	if ($traceDepth > 0)
+	{
+		$trace = Main\Diag\Helper::getBackTrace($traceDepth, ($showArgs ? null : DEBUG_BACKTRACE_IGNORE_ARGS));
+	}
+
+	$context = [
+		'module' => $module,
+		'message' => $text,
+		'trace' => $trace,
+	];
+
+	$message = "Host: {host}\n"
+		. "Date: {date}\n"
+		. ($module != '' ? "Module: {module}\n" : '')
+		. "{message}\n"
+		. "{trace}"
+		. "{delimiter}\n";
+
+	$logger->debug($message, $context);
 }
 
 function AddEventToStatFile($module, $action, $tag, $label, $action_type = '', $user_id = null)
 {
 	global $USER;
+
 	static $search = ["\t", "\n", "\r"];
 	static $replace = " ";
+
 	if (defined('ANALYTICS_FILENAME') && is_writable(ANALYTICS_FILENAME))
 	{
 		if ($user_id === null && is_object($USER) && !defined("BX_CHECK_AGENT_START"))
@@ -3960,8 +3982,8 @@ function AddEventToStatFile($module, $action, $tag, $label, $action_type = '', $
 			$user_id = $USER->GetID();
 		}
 		$content =
-			date('Y-m-d H:i:s')
-			. "\t" . str_replace($search, $replace, $_SERVER["HTTP_HOST"])
+			'{date}'
+			. "\t" . '{host}'
 			. "\t" . str_replace($search, $replace, $module)
 			. "\t" . str_replace($search, $replace, $action)
 			. "\t" . str_replace($search, $replace, $tag)
@@ -3969,17 +3991,9 @@ function AddEventToStatFile($module, $action, $tag, $label, $action_type = '', $
 			. "\t" . str_replace($search, $replace, $action_type)
 			. "\t" . intval($user_id)
 			. "\n";
-		$fp = @fopen(ANALYTICS_FILENAME, "ab");
-		if ($fp)
-		{
-			if (flock($fp, LOCK_EX))
-			{
-				@fwrite($fp, $content);
-				@fflush($fp);
-				@flock($fp, LOCK_UN);
-				@fclose($fp);
-			}
-		}
+
+		$logger = new Diag\FileLogger(ANALYTICS_FILENAME, 0);
+		$logger->debug($content);
 	}
 }
 
@@ -4702,7 +4716,7 @@ function IncludeAJAX()
 	/** @global CMain $APPLICATION */
 	global $APPLICATION;
 
-	$APPLICATION->AddHeadString('<script>var ajaxMessages = {wait:"' . CUtil::JSEscape(GetMessage('AJAX_WAIT')) . '"}</script>', true);
+	$APPLICATION->AddHeadString('<script>var ajaxMessages = {wait:"' . CUtil::JSEscape(GetMessage('AJAX_WAIT')) . '"};</script>', true);
 	$APPLICATION->AddHeadScript('/bitrix/js/main/cphttprequest.js', true);
 }
 
@@ -4977,7 +4991,7 @@ function NormalizePhone($number, $minLength = 10)
 	return $number;
 }
 
-function bxmail($to, $subject, $message, $additional_headers = "", $additional_parameters = "", Main\Mail\Context $context = null)
+function bxmail($to, $subject, $message, $additional_headers = "", $additional_parameters = "", ?Main\Mail\Context $context = null)
 {
 	if (empty($context))
 	{

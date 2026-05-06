@@ -1,0 +1,64 @@
+<?php
+
+namespace Bitrix\Rest\V3\Interaction;
+
+use Bitrix\Rest\V3\Dto\Dto;
+use Bitrix\Rest\V3\Interaction\Request\Request;
+use Bitrix\Rest\V3\Interaction\Response\ResponseWithRelations;
+
+class Relation
+{
+	private ?ResponseWithRelations $response = null;
+
+	public function __construct(
+		private string $name,
+		private Dto $dto,
+		private string $fromField,
+		private string $toField,
+		private Request $request,
+		private bool $multiply,
+	) {
+	}
+
+	public function getName(): string
+	{
+		return $this->name;
+	}
+
+	public function getFromField(): string
+	{
+		return $this->fromField;
+	}
+
+	public function getToField(): string
+	{
+		return $this->toField;
+	}
+
+	public function getRequest(): Request
+	{
+		return $this->request;
+	}
+
+	public function isMultiply(): bool
+	{
+		return $this->multiply;
+	}
+
+	public function getDto(): Dto
+	{
+		return $this->dto;
+	}
+
+	public function getResponse(): ?ResponseWithRelations
+	{
+		return $this->response;
+	}
+
+	public function setResponse(ResponseWithRelations $response): self
+	{
+		$this->response = $response;
+
+		return $this;
+	}
+}

@@ -1,20 +1,23 @@
+import { Type } from 'main.core';
+import { type EventEmitter } from 'main.core.events';
+
 import { Core } from 'im.v2.application.core';
-import { Parser } from 'im.v2.lib.parser';
 import { ContextMenu, RetryButton, MessageKeyboard, ReactionSelector } from 'im.v2.component.message.elements';
-import { ActionByRole } from 'im.v2.const';
-import { PermissionManager } from 'im.v2.lib.permission';
+import { ActionByRole, EventType } from 'im.v2.const';
 import { ChannelManager } from 'im.v2.lib.channel';
+import { MessageMenuManager } from 'im.v2.lib.menu';
+import { Parser } from 'im.v2.lib.parser';
+import { PermissionManager } from 'im.v2.lib.permission';
+import { Utils } from 'im.v2.lib.utils';
+import { type ImModelChat, type ImModelMessage } from 'im.v2.model';
 
 import './css/base-message.css';
-
-import type { ImModelChat, ImModelMessage } from 'im.v2.model';
 
 // @vue/component
 export const BaseMessage = {
 	name: 'BaseMessage',
 	components: { ContextMenu, RetryButton, MessageKeyboard, ReactionSelector },
-	props:
-	{
+	props: {
 		item: {
 			type: Object,
 			required: true,
@@ -39,17 +42,16 @@ export const BaseMessage = {
 			type: Boolean,
 			default: true,
 		},
-		menuIsActiveForId: {
-			type: [Number, String],
-			default: 0,
-		},
 		afterMessageWidthLimit: {
 			type: Boolean,
 			default: true,
 		},
+		withError: {
+			type: Boolean,
+			default: false,
+		},
 	},
-	computed:
-	{
+	computed: {
 		dialog(): ImModelChat
 		{
 			return this.$store.getters['chats/get'](this.dialogId, true);
@@ -86,13 +88,14 @@ export const BaseMessage = {
 		{
 			const hasAfterContent = Boolean(this.$slots['after-message']);
 
-			return !this.withBackground || this.isChannelPost || hasAfterContent;
+			return !this.isTransparentBackground && !this.isChannelPost && !hasAfterContent;
 		},
 		containerClasses(): {[className: string]: boolean}
 		{
 			return {
 				'--self': this.isSelfMessage,
 				'--opponent': this.isOpponentMessage,
+				'--system': this.isSystemMessage,
 				'--has-error': this.hasError,
 				'--has-after-content': Boolean(this.$slots['after-message']),
 				'--selected': this.isMessageSelected,
@@ -102,9 +105,13 @@ export const BaseMessage = {
 		bodyClasses(): {[className: string]: boolean}
 		{
 			return {
-				'--transparent': !this.withBackground,
-				'--no-angle': this.showMessageAngle,
+				'--transparent': this.isTransparentBackground,
+				'--no-angle': !this.showMessageAngle,
 			};
+		},
+		isTransparentBackground(): boolean
+		{
+			return !this.withBackground || this.isSystemMessage;
 		},
 		showRetryButton(): boolean
 		{
@@ -120,14 +127,62 @@ export const BaseMessage = {
 		},
 		hasError(): boolean
 		{
-			return this.message.error;
+			return this.withError || this.message.error;
 		},
 	},
-	methods:
-	{
+	methods: {
 		onContainerClick(event: PointerEvent)
 		{
-			Parser.executeClickEvent(event);
+			Parser.executeClickEvent(event, { emitter: this.getEmitter() });
+		},
+		openContextMenu(event: PointerEvent & { target: HTMLElement })
+		{
+			const isContextMenuClick = Boolean(event.target.closest('.bx-im-message-context-menu__container'));
+			if (!this.withContextMenu || isContextMenuClick || this.hasSelectedText())
+			{
+				return;
+			}
+
+			const messageMenuManager = MessageMenuManager.getInstance();
+			const shouldUseNativeContextMenu = messageMenuManager.shouldUseNativeContextMenu(event.target);
+
+			if (shouldUseNativeContextMenu)
+			{
+				messageMenuManager.destroyMenuInstance();
+
+				return;
+			}
+
+			event.preventDefault();
+
+			this.getEmitter().emit(EventType.dialog.onClickMessageContextMenu, {
+				message: this.message,
+				dialogId: this.dialogId,
+				event,
+			});
+		},
+		async onMessageMouseUp(message: ImModelMessage, event: MouseEvent)
+		{
+			await Utils.browser.waitForSelectionToUpdate();
+			if (!this.hasSelectedText())
+			{
+				return;
+			}
+
+			this.getEmitter().emit(EventType.dialog.showQuoteButton, {
+				message,
+				event,
+			});
+		},
+		hasSelectedText(): boolean
+		{
+			const selection = window.getSelection().toString().trim();
+
+			return Type.isStringFilled(selection);
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 	},
 	template: `
@@ -135,6 +190,8 @@ export const BaseMessage = {
 			<div
 				class="bx-im-message-base__container" 
 				@click="onContainerClick"
+				@contextmenu="openContextMenu"
+				@mouseup="onMessageMouseUp(message, $event)"
 			>
 				<!-- Before content -->
 				<slot name="before-message"></slot>
@@ -150,7 +207,6 @@ export const BaseMessage = {
 						:showContextMenu="showContextMenu"
 						:dialogId="dialogId"
 						:message="message" 
-						:menuIsActiveForId="menuIsActiveForId" 
 					/>
 				</div>
 				<!-- After content -->

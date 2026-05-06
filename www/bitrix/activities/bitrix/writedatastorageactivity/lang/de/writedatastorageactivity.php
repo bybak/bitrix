@@ -1,0 +1,27 @@
+<?php
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_ANOTHER_FIELD"] = "Anderes Feld";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_AUTHOR_NOT_FOUND"] = "Der im Feld \"Eintrag hinzufügen als\" ausgewählte Nutzer wurde nicht gefunden.";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_CREATE_NEW_STORAGE"] = "Neuen Speicher erstellen";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_FIELDS_ADD_FIELD"] = "Feld hinzufügen";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_FIELDS_NOT_EXIST"] = "Mindestens ein Feld ist erforderlich.";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_FILTER_FIELDS_COLLAPSED_TEXT"] = "Filter angewendet, zum Anzeigen auf Maximieren klicken";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_FILTER_FIELDS_PROPERTY"] = "Filter nach Feldern:";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_ITEM_NOT_FOUND"] = "Eintrag mit ID #ITEM_ID# wurde im Speicher nicht gefunden.";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_MERGE_FIELDS"] = "Eintrag aktualisieren (zu bestehenden Daten hinzufügen)";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_NEW_ITEM"] = "Neuen Eintrag erstellen";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_NOT_EXIST"] = "Der erforderliche Parameter \"#PROPERTY#\" ist leer.";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_OPEN_STORAGE_LIST"] = "Speicherdaten";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_RECORD_AUTHOR"] = "Eintrag hinzufügen unter:";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_RECORD_CODE"] = "Symbolischer Code";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_RECORD_MODE"] = "Schreibmodus:";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_RECORD_NAME"] = "Name";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_RECORD_SORT"] = "Sortierreihenfolge";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_REWRITE_FIELDS"] = "Eintrag ersetzen";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_SELECT_STORAGE"] = "Speicher auswählen:";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_STORAGE_CODE"] = "Symbolischer Code des Speichers";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_STORAGE_NOT_FOUND"] = "Speicher konnte nicht gefunden werden.";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_STORAGE_TAB_TITLE"] = "Speicher";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_UNKNOWN_MODE"] = "Unbekannter Schreibmodus: \"#MODE#\".";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_WRONG_FIELD_VALUE"] = "Nicht korrekte Daten ausgewählt, um sie in den Speicher einzutragen.";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_WRONG_ITEM_ID"] = "ID des Speichereintrags muss eine positive Zahl sein.";
+$MESS["BIZPROC_WRITE_DATA_ACTIVITY_WRONG_STORAGE_ID"] = "Speicher-ID muss eine positive Zahl sein.";

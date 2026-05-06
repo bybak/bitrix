@@ -1,9 +1,11 @@
-<?
+<?php
+
 namespace Bitrix\Sale\Cashbox\AdminPage\Settings
 {
 	use Bitrix\Main\Localization\Loc;
 	use Bitrix\Sale\Internals\Input;
 	use Bitrix\Sale\Cashbox;
+	use Bitrix\Main\Application;
 
 	if (!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)
 		die();
@@ -49,7 +51,7 @@ namespace Bitrix\Sale\Cashbox\AdminPage\Settings
 					if ($group === 'VAT')
 					{
 						$result .= '<tr><td colspan="2" style="text-align: center">';
-						$result .= BeginNote().Loc::getMessage('SALE_CASHBOX_VAT_ATTENTION').EndNote();
+						$result .= BeginNote() . Loc::getMessage('SALE_CASHBOX_VAT_ATTENTION') . EndNote();
 						$result .= '</td></tr>';
 					}
 

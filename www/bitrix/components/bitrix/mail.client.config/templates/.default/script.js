@@ -1,10 +1,12 @@
-BX.namespace("BX.MailClientConfig");
+BX.namespace('BX.MailClientConfig');
 BX.MailClientConfig.Edit = {
 
 	isSuccessSyncStatus: null,
 	oauthUserIsEmpty: true,
 	isOauthMode: false,
 	isForbiddenToShare: false,
+	serviceName: 'other',
+	isNewMailbox: true,
 	smtp: {
 		switcherChecked: false,
 		switcherDisabled: false,
@@ -12,9 +14,11 @@ BX.MailClientConfig.Edit = {
 	crm: {
 		integrationAvailable: false,
 		switcherChecked: false,
+		switcherDisabled: false,
 	},
 	isCrmIntegrationAvailable: false,
 	isCrmSwitcherChecked: false,
+	canEditCrmOptions: false,
 
 	init: function(params)
 	{
@@ -24,10 +28,25 @@ BX.MailClientConfig.Edit = {
 			this.smtp.switcherChecked = params.isSmtpSwitcherChecked || false;
 			this.smtp.switcherDisabled = params.isSmtpSwitcherDisabled || false;
 			this.crm.switcherChecked = params.isCrmSwitcherChecked || false;
+			this.crm.switcherDisabled = params.canEditCrmOptions || false;
 			this.crm.integrationAvailable = params.isCrmIntegrationAvailable || false;
+			this.canEditCrmOptions = params.canEditCrmOptions || false;
 			this.oauthUserIsEmpty = params.oauthUserIsEmpty || false;
 			this.isSuccessSyncStatus = null;
 			this.isOauthMode = params.isOauthMode || false;
+
+			this.ownerId = params.ownerId || 0;
+			this.shareAccessSelectorId = params.shareAccessSelectorId || '';
+			this.shareAccessValueContainerId = params.shareAccessValueContainerId || '';
+			this.shareAccessSelectorPreselectedIds = params.shareAccessSelectorPreselectedIds || [];
+			this.isShareAccessLocked = params.isShareAccessLocked || false;
+
+			this.crmQueueSelectorId = params.crmQueueSelectorId || '';
+			this.crmQueueValueContainerId = params.crmQueueValueContainerId || '';
+			this.crmQueueSelectorPreselectedIds = params.crmQueueSelectorPreselectedIds || [];
+
+			this.serviceName = params.serviceName || 'other';
+			this.isNewMailbox = (params.isNewMailbox === true);
 
 			if (params.isSuccessSyncStatus !== undefined)
 			{
@@ -54,6 +73,7 @@ BX.MailClientConfig.Edit = {
 					settingsMap: crmEntityList,
 					selectedOptionKey: defaultNewEntityInKey,
 					inputName: 'fields[crm_entity_in]',
+					disabled: this.canEditCrmOptions,
 				});
 				connectCrmAllowEntityInSelector.renderTo(connectCrmAllowEntityInSelectorWrapper);
 			}
@@ -66,6 +86,7 @@ BX.MailClientConfig.Edit = {
 					settingsMap: crmEntityList,
 					selectedOptionKey: defaultNewEntityOutKey,
 					inputName: 'fields[crm_entity_out]',
+					disabled: this.canEditCrmOptions,
 				});
 				connectCrmAllowEntityOutSelector.renderTo(connectCrmAllowEntityOutSelectorWrapper);
 			}
@@ -83,6 +104,7 @@ BX.MailClientConfig.Edit = {
 						height: 300,
 						enableSearch: true,
 					},
+					disabled: this.canEditCrmOptions,
 				});
 				connectCrmLeadSourceSelector.renderTo(connectCrmLeadSourceSelectorWrapper);
 			}
@@ -107,8 +129,22 @@ BX.MailClientConfig.Edit = {
 					settingsMap: crmSyncIntervals,
 					selectedOptionKey: defaultMaxCrmSyncKey,
 					inputName: 'fields[crm_max_age]',
+					disabled: this.canEditCrmOptions,
 				});
 				mailCrmMaxAgeSelector.renderTo(mailCrmMaxAgeSelectorWrapper);
+			}
+		}
+
+		if (this.isSuccessSyncStatus === false)
+		{
+			if (this.isOauthMode)
+			{
+				this.showOauthAuthorizationBlock();
+				this.showOauthErrorTour();
+			}
+			else
+			{
+				this.showPasswordErrorTour();
 			}
 		}
 
@@ -142,6 +178,8 @@ BX.MailClientConfig.Edit = {
 
 		this.setSmtpSwitcher();
 		this.setCrmSwitcher();
+		this.initShareAccessSelector();
+		this.initCrmQueueSelector();
 	},
 
 	singleselect: function(input)
@@ -357,13 +395,16 @@ BX.MailClientConfig.Edit = {
 
 	setSmtpSwitcher()
 	{
-		this.setBlockSwitcher(
-			'mail-connect-smtp-settings-title',
-			'mail_connect_mb_server_smtp_switch',
-			'mail-connect-section-smtp-block',
-			this.smtp.switcherChecked,
-			this.smtp.switcherDisabled,
-		);
+		if (!this.smtp.switcherDisabled)
+		{
+			this.setBlockSwitcher(
+				'mail-connect-smtp-settings-title',
+				'mail_connect_mb_server_smtp_switch',
+				'mail-connect-section-smtp-block',
+				this.smtp.switcherChecked,
+				this.smtp.switcherDisabled,
+			);
+		}
 	},
 
 	setCrmSwitcher() {
@@ -377,6 +418,193 @@ BX.MailClientConfig.Edit = {
 			'mail_connect_mb_crm_switch',
 			'mail-connect-section-crm-block',
 			this.crm.switcherChecked,
+			this.crm.switcherDisabled,
 		);
+	},
+
+	initShareAccessSelector()
+	{
+		const ownerContainerNode = document.getElementById(this.shareAccessSelectorId);
+		if (!ownerContainerNode)
+		{
+			return;
+		}
+
+		ownerContainerNode.innerHTML = '';
+		const selectItem = () => {
+			const selectedItems = tagSelector.getDialog().getSelectedItems();
+			if (BX.type.isArray(selectedItems))
+			{
+				const result = selectedItems
+					.map((item) => {
+						let type = null;
+						switch (item.entityId)
+						{
+							case 'department':
+								type = item.id.toString().split(':')[1] === 'F' ? 'D' : 'DR';
+								break;
+							case 'user':
+								type = 'U';
+								break;
+							default:
+								break;
+						}
+
+						return type ? type + item.id.toString().split(':')[0] : null;
+					})
+					.filter((code) => code !== null);
+
+				const shareAccessValueContainer = document.getElementById(this.shareAccessValueContainerId);
+				if (shareAccessValueContainer)
+				{
+					shareAccessValueContainer.value = JSON.stringify(result);
+				}
+			}
+		};
+
+		const tagSelector = new BX.UI.EntitySelector.TagSelector({
+			multiple: true,
+			dialogOptions: {
+				context: 'MAIL_CLIENT_CONFIG_SHARE_ACCESS',
+				preselectedItems: this.shareAccessSelectorPreselectedIds,
+				undeselectedItems: [['user', this.ownerId]],
+				entities: [
+					{
+						id: 'department',
+						options: {
+							selectMode: 'usersAndDepartments',
+							allowSelectRootDepartment: true,
+							allowFlatDepartments: true,
+						},
+					},
+				],
+				events: {
+					'Item:onSelect': selectItem,
+					'Item:onDeselect': selectItem,
+					onLoad: () => {
+						if (this.isForbiddenToShare || this.isShareAccessLocked)
+						{
+							tagSelector.lock();
+						}
+					},
+				},
+			},
+		});
+
+		tagSelector.renderTo(ownerContainerNode);
+	},
+
+	initCrmQueueSelector()
+	{
+		const queueContainerNode = document.getElementById(this.crmQueueSelectorId);
+		if (!queueContainerNode)
+		{
+			return;
+		}
+
+		queueContainerNode.innerHTML = '';
+		const selectItem = () => {
+			const selectedItems = tagSelector.getDialog().getSelectedItems();
+			if (BX.type.isArray(selectedItems))
+			{
+				const result = selectedItems
+					.map((item) => {
+						return item.entityId === 'user' ? `U${item.id}` : null;
+					})
+					.filter((code) => code !== null);
+
+				const queueValueContainer = document.getElementById(this.crmQueueValueContainerId);
+				if (queueValueContainer)
+				{
+					queueValueContainer.value = JSON.stringify(result);
+				}
+			}
+		};
+
+		const tagSelector = new BX.UI.EntitySelector.TagSelector({
+			multiple: true,
+			dialogOptions: {
+				context: 'MAIL_CLIENT_CONFIG_CRM_QUEUE',
+				preselectedItems: this.crmQueueSelectorPreselectedIds,
+				entities: [
+					{
+						id: 'user',
+						options: {
+							inviteEmployeeLink: false,
+							intranetUsersOnly: true,
+						},
+					},
+				],
+				events: {
+					'Item:onSelect': selectItem,
+					'Item:onDeselect': selectItem,
+					onLoad: () => {
+						if (this.canEditCrmOptions)
+						{
+							tagSelector.lock();
+						}
+					},
+				},
+			},
+		});
+
+		tagSelector.renderTo(queueContainerNode);
+	},
+
+	/**
+	 * @param {string} status
+	 * @return void
+	 */
+	sendAnalyticsData(status)
+	{
+		if (!BX.UI.Analytics)
+		{
+			return;
+		}
+
+		const form = document.getElementById('mail_connect_form');
+		if (!form)
+		{
+			return;
+		}
+
+		const eventName = this.isNewMailbox ? 'mailbox_connect' : 'mailbox_edit';
+
+		const useCrmField = form.elements['fields[use_crm]'];
+		const useIcalField = form.elements['fields[ical_access]'];
+
+		const isCrm = useCrmField && useCrmField.checked;
+		const isIcal = useIcalField && useIcalField.checked;
+
+		const shareAccessField = form.elements['fields[share_access]'];
+		let isShared = false;
+
+		if (shareAccessField && shareAccessField.value)
+		{
+			try
+			{
+				const accessList = JSON.parse(shareAccessField.value);
+				if (Array.isArray(accessList) && accessList.length > 1)
+				{
+					isShared = true;
+				}
+			}
+			catch (e)
+			{
+				console.error('Analytics: share_access parse error', e);
+			}
+		}
+
+		BX.UI.Analytics.sendData({
+			tool: 'mail',
+			event: eventName,
+			type: this.serviceName,
+			category: 'mail_general_ops',
+			c_section: 'menu',
+			status,
+			p1: `integrationCalendar_${isIcal ? 'true' : 'false'}`,
+			p2: `integrationCRM_${isCrm ? 'true' : 'false'}`,
+			p3: `shared_${isShared ? 'true' : 'false'}`,
+		});
 	},
 };

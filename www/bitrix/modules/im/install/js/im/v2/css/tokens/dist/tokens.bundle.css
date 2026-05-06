@@ -62,7 +62,7 @@
 
 	--im-font-family-open-sans: var(--ui-font-family-open-sans, var(--im-messenger__font_open-sans));
 	--im-font-family-helvetica: var(--ui-font-family-helvetica, var(--im-messenger__font_helvetica));
-	--im-font-family-system: var(--ui-font-family-system, var(--im-messenger__font_system));
+	--im-font-family-system: var(--ui-font-family-primary, var(--im-messenger__font_system));
 
 	--im-font-size-5xl: var(--ui-font-size-5xl, 28px);
 	--im-font-size-4xl: var(--ui-font-size-4xl, 24px);
@@ -98,6 +98,7 @@
 	--im-color-palette-black-solid-rgb: 0, 0, 0;
 	--im-color-palette-black-base: var(--ui-color-palette-black-base, #333);
 	--im-color-palette-black-base-rgb: 51, 51, 51;
+	--im-color-palette-gray-01: var(--ui-color-gray-01, #fcfdfe);
 	--im-color-palette-gray-02: var(--ui-color-palette-gray-02, #f8fafb);
 	--im-color-palette-gray-02-rgb: 248, 250, 251;
 	--im-color-palette-gray-03: var(--ui-color-palette-gray-03, #f5f7f8);
@@ -152,7 +153,7 @@
 	--im-color-palette-blue-90-rgb: 0, 100, 132;
 	--im-color-palette-blue-70: var(--ui-color-palette-blue-70, #008dba);
 	--im-color-palette-blue-70-rgb: 0, 141, 186;
-	--im-color-palette-blue-60: var(--ui-color-palette-blue-60, #1aa9d9);
+	--im-color-palette-blue-60: var(--ui-color-palette-blue-60, #11a9d9);
 	--im-color-palette-blue-60-rgb: 17, 169, 217;
 	--im-color-palette-blue-50: var(--ui-color-palette-blue-50, #2fc6f6);
 	--im-color-palette-blue-50-rgb: 47, 198, 246;
@@ -164,6 +165,7 @@
 	--im-color-palette-blue-15-rgb: 236, 250, 254;
 	--im-color-palette-copilot-primary: var(--ui-color-copilot-primary);
 	--im-color-palette-copilot-dark: var(--ui-color-copilot-dark);
+	--im-color-palette-copilot-light: #ECDEFF;
 	--im-color-palette-copilot-secondary: var(--ui-color-copilot-secondary);
 	--im-color-palette-copilot-secondary-rgb: var(--ui-color-copilot-secondary-rgb);
 	--im-color-accent-light-blue: var(--ui-color-accent-light-blue, #559be6);
@@ -177,6 +179,8 @@
 	--im-color-accent-red-rgb: var(--ui-color-palette-red-70-rgb);
 	--im-color-accent-blue: #00ace3;
 	--im-color-accent-blue-rgb: 0, 172, 227;
+	--im-color-accent-soft-blue-1: #c4e6ff;
+	--im-color-accent-soft-blue-3: #edf7ff;
 
 	--im-color-collab-90: #065217;
 	--im-color-collab-80: #1e8d36;
@@ -191,5 +195,6 @@
 	--im-color-collab-10: #f2fee2;
 
 	--im-color-extranet-orange-60: #e89b06;
-
+	--im-color-accent-main-primary: #0075ff;
+	--im-color-accent-main-link: #0154C8;
 }

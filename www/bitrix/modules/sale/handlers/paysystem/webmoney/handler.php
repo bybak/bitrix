@@ -39,7 +39,7 @@ class WebMoneyHandler extends PaySystem\ServiceHandler
 	 * @param Request|null $request
 	 * @return PaySystem\ServiceResult
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		$extraParams = array(
 			'URL' => $this->getUrl($payment, 'pay'),
@@ -153,7 +153,7 @@ class WebMoneyHandler extends PaySystem\ServiceHandler
 	 * @param Payment $payment
 	 * @return mixed
 	 */
-	protected function isTestMode(Payment $payment = null)
+	protected function isTestMode(?Payment $payment = null)
 	{
 		return $this->getBusinessValue($payment, 'PS_IS_TEST');
 	}
@@ -177,8 +177,9 @@ class WebMoneyHandler extends PaySystem\ServiceHandler
 	 */
 	protected function checkSum(Payment $payment, Request $request)
 	{
-		$paymentShouldPay = round($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'), 2);
-		$lmiPaymentAmount = round($request->get('LMI_PAYMENT_AMOUNT'), 2);
+		$currency = $payment->getField('CURRENCY');
+		$paymentShouldPay = PriceMaths::roundByFormatCurrency($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'), $currency, 2);
+		$lmiPaymentAmount = PriceMaths::roundByFormatCurrency($request->get('LMI_PAYMENT_AMOUNT'), $currency, 2);
 
 		return $paymentShouldPay == $lmiPaymentAmount;
 	}

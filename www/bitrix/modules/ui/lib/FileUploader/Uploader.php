@@ -4,6 +4,7 @@ namespace Bitrix\UI\FileUploader;
 
 use Bitrix\Main\ORM\Objectify\State;
 use Bitrix\Main\Security\Sign\Signer;
+use Bitrix\Main\UI\Viewer\ItemAttributes;
 use Bitrix\UI\FileUploader\Contracts\CustomFingerprint;
 use Bitrix\UI\FileUploader\Contracts\CustomLoad;
 use Bitrix\UI\FileUploader\Contracts\CustomRemove;
@@ -52,7 +53,8 @@ class Uploader
 			}
 
 			// Controller Validation
-			$validationResult = $chunk->validate($controller->getConfiguration());
+			$configurationValidator = new ConfigurationValidator($controller->getConfiguration());
+			$validationResult = $configurationValidator->validateChunk($chunk);
 			if (!$validationResult->isSuccess())
 			{
 				return $this->handleUploadError($uploadResult->addErrors($validationResult->getErrors()), $controller);
@@ -120,7 +122,6 @@ class Uploader
 			$tempFile = TempFileTable::getList([
 				'filter' => [
 					'=GUID' => $guid,
-					'=UPLOADED' => false,
 				],
 			])->fetchObject();
 
@@ -132,17 +133,29 @@ class Uploader
 				);
 			}
 
-			$uploadResult->setTempFile($tempFile);
-			$uploadResult->setToken($token);
-
-			$appendResult = $tempFile->append($chunk);
-			if (!$appendResult->isSuccess())
+			if ($tempFile->getUploaded())
 			{
-				return $this->handleUploadError($uploadResult->addErrors($appendResult->getErrors()), $controller);
+				// We already have the whole file
+				$uploadResult->setToken($token);
+
+				$fileInfo = $this->createFileInfo($uploadResult->getToken());
+				$uploadResult->setFileInfo($fileInfo);
+				$uploadResult->setDone(true);
+			}
+			else
+			{
+				$uploadResult->setTempFile($tempFile);
+				$uploadResult->setToken($token);
+
+				$appendResult = $tempFile->append($chunk);
+				if (!$appendResult->isSuccess())
+				{
+					return $this->handleUploadError($uploadResult->addErrors($appendResult->getErrors()), $controller);
+				}
 			}
 		}
 
-		if ($uploadResult->isSuccess() && $chunk->isLast())
+		if ($uploadResult->isSuccess() && $chunk->isLast() && !$uploadResult->isDone())
 		{
 			$commitResult = $tempFile->commit($controller->getCommitOptions());
 			if (!$commitResult->isSuccess())
@@ -411,6 +424,41 @@ class Uploader
 		return $pendingFiles;
 	}
 
+	public function getStatus(string $token): StatusResult
+	{
+		$statusResult = new StatusResult();
+		$guid = $this->getGuidFromToken($token);
+
+		if (!$guid)
+		{
+			return $statusResult->addError(new UploaderError(UploaderError::INVALID_SIGNATURE));
+		}
+
+		$tempFile = TempFileTable::getList([
+			'filter' => [
+				'=GUID' => $guid,
+			],
+		])->fetchObject();
+
+		if (!$tempFile)
+		{
+			return $statusResult->addError(new UploaderError(UploaderError::UNKNOWN_TOKEN));
+		}
+
+		$statusResult->setDone($tempFile->getUploaded());
+		$statusResult->setToken($token);
+		$statusResult->setSize($tempFile->getSize());
+		$statusResult->setReceivedSize($tempFile->getReceivedSize());
+
+		if ($tempFile->getUploaded())
+		{
+			$fileInfo = $this->createFileInfo($statusResult->getToken());
+			$statusResult->setFileInfo($fileInfo);
+		}
+
+		return $statusResult;
+	}
+
 	private function loadFile(int $fileId): LoadResult
 	{
 		$result = new LoadResult($fileId);
@@ -473,6 +521,9 @@ class Uploader
 		{
 			$downloadUrl = (string)UrlManager::getDownloadUrl($this->getController(), $fileInfo);
 			$fileInfo->setDownloadUrl($downloadUrl);
+
+			$fileInfo->setViewerAttrs($this->prepareViewerAttrs($fileInfo, $downloadUrl));
+
 			if ($fileInfo->isImage())
 			{
 				$config = $this->getController()->getConfiguration();
@@ -492,6 +543,23 @@ class Uploader
 		}
 
 		return $fileInfo;
+	}
+
+	private function prepareViewerAttrs(FileInfo $fileInfo, string $downloadUrl): array
+	{
+		$fileData = [
+			'ID' => $fileInfo->getId(),
+			'CONTENT_TYPE' => $fileInfo->getContentType(),
+			'ORIGINAL_NAME' => $fileInfo->getName(),
+			'WIDTH' => $fileInfo->getWidth(),
+			'HEIGHT' => $fileInfo->getHeight(),
+			'FILE_SIZE' => $fileInfo->getSize(),
+		];
+
+		return ItemAttributes::buildByFileData($fileData, $downloadUrl)
+			->setTitle($fileInfo->getName())
+			->toDataSet()
+		;
 	}
 
 	private function splitIds(array $ids): array

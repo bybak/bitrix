@@ -1,0 +1,3 @@
+<?php
+$MESS["LANDING_BLOCK_WIDGET_VIBE_COLLABORATION_STEPS_NAME"] = "Vibe der Zusammenarbeit, Schritte";
+$MESS["LANDING_BLOCK_WIDGET_VIBE_COLLABORATION_STEPS_NAME_NEW"] = "Vorlage: Zusammenarbeit";

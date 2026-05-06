@@ -1,18 +1,24 @@
-import { Type, Extension, Reflection, type JsonObject, Loc } from 'main.core';
+import { Type, Extension, Reflection, type JsonObject } from 'main.core';
+
+import { type NavigationMenuItemParams } from 'im.v2.lib.navigation';
+import { type CreatableChatType, type OpenChatCreationParams } from 'im.v2.component.content.chat-forms.forms';
+import { type ChatEmbeddedApplicationType, type ChatEmbeddedApplicationInstance } from 'im.v2.application.launch';
 
 import { legacyMessenger, legacyDesktop } from './legacy';
-import { desktop } from './desktop';
+import { Desktop } from './classes/desktop';
 import { prepareSettingsSection } from './functions/settings';
-
-import type { ForwardedEntityConfig } from 'im.v2.provider.service';
-import type { CreatableChatType } from 'im.v2.component.content.chat-forms.forms';
-import type { ChatEmbeddedApplicationType, ChatEmbeddedApplicationInstance } from 'im.v2.application.launch';
+import { Textarea } from './classes/textarea';
+import { SharedLinkService, type JoinChatResult } from './classes/shared-link';
 
 type Opener = {
-	openChat: (dialogId?: string, text?: string) => Promise,
-	forwardEntityToChat: (dialogId: string, entityConfig: ForwardedEntityConfig) => Promise,
+	openChat: (dialogId?: string, messageId?: number) => Promise,
+	openNavigationItem: (menuItem: NavigationMenuItemParams) => Promise,
+	openChatWithBotContext: (dialogId: string, context: JsonObject) => Promise,
 	openLines: (dialogId?: string) => Promise,
 	openCopilot: (dialogId?: string) => Promise,
+	openCollab: (dialogId?: string) => Promise,
+	openChannel: (dialogId?: string) => Promise,
+	openTaskComments: (dialogId?: string) => Promise,
 	openLinesHistory: (dialogId?: string) => Promise,
 	openNotifications: () => Promise,
 	openRecentSearch: () => Promise,
@@ -24,17 +30,20 @@ type Opener = {
 	startCallList: (callListId: number, params: JsonObject) => Promise,
 	enableDesktopRedirect: () => void,
 	disableDesktopRedirect: () => void,
+	isChatOpened: (dialogId: string) => boolean,
 };
 
 class Messenger
 {
 	v2enabled: boolean = false;
 
+	desktop: Desktop = new Desktop();
+	textarea: Textarea = new Textarea();
+
 	constructor()
 	{
 		const settings = Extension.getSettings('im.public');
 		this.v2enabled = settings.get('v2enabled', false);
-		this.desktop = desktop;
 	}
 
 	async openChat(dialogId: string = '', messageId: number = 0): Promise
@@ -56,16 +65,23 @@ class Messenger
 		return getOpener()?.openChat(dialogId, messageId);
 	}
 
-	async forwardEntityToChat(dialogId: string, entityConfig: ForwardedEntityConfig): Promise
+	async openChatWithBotContext(dialogId: string = '', context: JsonObject = {}): Promise
 	{
+		if (!this.v2enabled)
+		{
+			window.BXIM.openMessenger(dialogId);
+
+			return Promise.resolve();
+		}
+
 		const DesktopManager = Reflection.getClass('BX.Messenger.v2.Lib.DesktopManager');
 		const isRedirectAllowed = await DesktopManager?.getInstance().checkForRedirect();
 		if (isRedirectAllowed)
 		{
-			// return DesktopManager?.getInstance().redirectToEntityForward(dialogId, messageId);
+			return DesktopManager?.getInstance().redirectToChatWithBotContext(dialogId, context);
 		}
 
-		return getOpener()?.forwardEntityToChat(dialogId, entityConfig);
+		return getOpener()?.openChatWithBotContext(dialogId, context);
 	}
 
 	async openLines(dialogId: string = ''): Promise
@@ -117,6 +133,37 @@ class Messenger
 		}
 
 		return getOpener()?.openCollab(dialogId);
+	}
+
+	async openChannel(dialogId: string = ''): Promise
+	{
+		const DesktopManager = Reflection.getClass('BX.Messenger.v2.Lib.DesktopManager');
+		const isRedirectAllowed = await DesktopManager?.getInstance().checkForRedirect();
+		if (isRedirectAllowed)
+		{
+			return DesktopManager?.getInstance().redirectToChannel(dialogId);
+		}
+
+		return getOpener()?.openChannel(dialogId);
+	}
+
+	async openTaskComments(dialogId: string = '', messageId: number = 0): Promise
+	{
+		const FeatureManager = Reflection.getClass('BX.Messenger.v2.Lib.FeatureManager');
+		const Feature = Reflection.getClass('BX.Messenger.v2.Lib.Feature');
+		if (!FeatureManager?.isFeatureAvailable(Feature.isTasksRecentListAvailable))
+		{
+			return Promise.resolve();
+		}
+
+		const DesktopManager = Reflection.getClass('BX.Messenger.v2.Lib.DesktopManager');
+		const isRedirectAllowed = await DesktopManager?.getInstance().checkForRedirect();
+		if (isRedirectAllowed)
+		{
+			return DesktopManager?.getInstance().redirectToTaskComments(dialogId, messageId);
+		}
+
+		return getOpener()?.openTaskComments(dialogId, messageId);
 	}
 
 	async openLinesHistory(dialogId: string = ''): Promise
@@ -247,7 +294,10 @@ class Messenger
 		return getOpener()?.openConference(code);
 	}
 
-	async openChatCreation(chatType: CreatableChatType): Promise
+	async openChatCreation(
+		chatType: CreatableChatType,
+		params: OpenChatCreationParams = {},
+	): Promise
 	{
 		const DesktopManager = Reflection.getClass('BX.Messenger.v2.Lib.DesktopManager');
 		const isRedirectAllowed = await DesktopManager?.getInstance().checkForRedirect();
@@ -256,7 +306,7 @@ class Messenger
 			return DesktopManager?.getInstance().redirectToChatCreation(chatType);
 		}
 
-		return getOpener()?.openChatCreation(chatType);
+		return getOpener()?.openChatCreation(chatType, params);
 	}
 
 	async startVideoCall(dialogId: string = '', withVideo: boolean = true): Promise
@@ -289,7 +339,7 @@ class Messenger
 
 		const DesktopManager = Reflection.getClass('BX.Messenger.v2.Lib.DesktopManager');
 		const desktopIsActive = await DesktopManager?.getInstance().checkStatusInDifferentContext();
-		if (desktopIsActive)
+		if (desktopIsActive && !DesktopManager.isDesktop())
 		{
 			return DesktopManager?.getInstance().redirectToPhoneCall(number, params);
 		}
@@ -308,7 +358,7 @@ class Messenger
 
 		const DesktopManager = Reflection.getClass('BX.Messenger.v2.Lib.DesktopManager');
 		const desktopIsActive = await DesktopManager?.getInstance().checkStatusInDifferentContext();
-		if (desktopIsActive)
+		if (desktopIsActive && !DesktopManager.isDesktop())
 		{
 			return DesktopManager?.getInstance().redirectToCallList(callListId, params);
 		}
@@ -342,6 +392,26 @@ class Messenger
 		CallManager?.getInstance().toggleDebugFlag(debug);
 	}
 
+	async joinChatByCode(code: string): Promise<void>
+	{
+		const { Notifier } = Reflection.getClass('BX.Messenger.v2.Lib');
+
+		try
+		{
+			const { dialogId }: JoinChatResult = await (new SharedLinkService()).joinChatByCode(code);
+			void this.openChat(dialogId);
+		}
+		catch
+		{
+			if (Notifier)
+			{
+				Notifier.sharedLink.onClickInvalidLinkError();
+			}
+
+			console.error('Messenger.joinChatByCode error');
+		}
+	}
+
 	async saveFileToDisk(fileId: number | string): Promise<void>
 	{
 		const { DiskService } = Reflection.getClass('BX.Messenger.v2.Service');
@@ -354,14 +424,61 @@ class Messenger
 			console.error('Messenger.saveFileToDisk error:', error);
 		});
 
-		BX.UI.Notification.Center.notify({
-			content: Loc.getMessage('IM_SERVICE_FILE_SAVED_ON_DISK_SUCCESS_MSGVER_1'),
-		});
+		const Notifier = Reflection.getClass('BX.Messenger.v2.Lib.Notifier');
+		Notifier?.file.onDiskSaveComplete();
+	}
+
+	async openNavigationItem(payload: NavigationMenuItemParams): Promise<void>
+	{
+		const { id, entityId } = payload;
+		const DesktopManager = Reflection.getClass('BX.Messenger.v2.Lib.DesktopManager');
+		const LayoutManager = Reflection.getClass('BX.Messenger.v2.Lib.LayoutManager');
+
+		const isRedirectAllowed = await DesktopManager?.getInstance().checkForRedirect();
+		const isLayout = LayoutManager?.getInstance().isValidLayout(id);
+		if (isRedirectAllowed && isLayout)
+		{
+			return DesktopManager?.getInstance().redirectToLayout({ id, entityId });
+		}
+
+		if (DesktopManager?.isChatWindow())
+		{
+			return getOpener()?.openNavigationItem({ ...payload, asLink: false });
+		}
+
+		return getOpener()?.openNavigationItem(payload);
+	}
+
+	isEmbeddedMode(): boolean
+	{
+		const LayoutManager = Reflection.getClass('BX.Messenger.v2.Lib.LayoutManager');
+		if (!LayoutManager)
+		{
+			return false;
+		}
+
+		return LayoutManager.getInstance().isEmbeddedMode();
+	}
+
+	isMessengerSliderOpened(): boolean
+	{
+		const MessengerSlider = Reflection.getClass('BX.Messenger.v2.Lib.MessengerSlider');
+		if (!MessengerSlider)
+		{
+			return false;
+		}
+
+		return MessengerSlider.getInstance().isOpened();
+	}
+
+	isChatOpened(dialogId: string): boolean
+	{
+		return getOpener()?.isChatOpened(dialogId);
 	}
 
 	async initApplication(
 		applicationName: ChatEmbeddedApplicationType,
-		config: JsonObject,
+		config: JsonObject = {},
 	): Promise<ChatEmbeddedApplicationInstance>
 	{
 		const launch = Reflection.getClass('BX.Messenger.v2.Application.Launch');

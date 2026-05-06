@@ -4,17 +4,19 @@ import { Loc } from 'main.core';
 import { SidebarMenu } from '../sidebar-base-menu';
 import { LinkManager } from './link-manager';
 
-import type { MenuItem } from 'im.v2.lib.menu';
+import type { MenuItemOptions } from 'ui.system.menu';
+import type { ApplicationContext } from 'im.v2.const';
 
 export class LinkMenu extends SidebarMenu
 {
-	constructor()
+	constructor(applicationContext: ApplicationContext)
 	{
-		super();
+		super(applicationContext);
+
 		this.linkManager = new LinkManager();
 	}
 
-	getMenuItems(): MenuItem[]
+	getMenuItems(): MenuItemOptions | null[]
 	{
 		return [
 			this.getOpenContextMessageItem(),
@@ -23,7 +25,7 @@ export class LinkMenu extends SidebarMenu
 		];
 	}
 
-	getDeleteLinkItem(): ?MenuItem
+	getDeleteLinkItem(): ?MenuItemOptions
 	{
 		if (this.context.authorId !== this.getCurrentUserId())
 		{
@@ -31,8 +33,8 @@ export class LinkMenu extends SidebarMenu
 		}
 
 		return {
-			text: Loc.getMessage('IM_SIDEBAR_MENU_DELETE_FROM_LINKS'),
-			onclick: function() {
+			title: Loc.getMessage('IM_SIDEBAR_MENU_DELETE_FROM_LINKS'),
+			onClick: function() {
 				this.linkManager.delete(this.context);
 				this.menuInstance.close();
 			}.bind(this),

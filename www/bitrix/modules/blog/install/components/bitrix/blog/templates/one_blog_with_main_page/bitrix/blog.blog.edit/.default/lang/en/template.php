@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS ['BLOG_TITLE'] = "Blog name:";
 $MESS ['BLOG_TITLE_DESCR'] = "Specify a unique name which would describe your blog";
 $MESS ['BLOG_DESCR'] = "Blog description:";
@@ -27,4 +27,3 @@ $MESS ['BLOG_EMAIL_NOTIFY'] = "Notifications";
 $MESS ['BLOG_EMAIL_NOTIFY_TITLE'] = "Send notifications by email";
 $MESS ['BLOG_EMAIL_NOTIFY_HELP'] = "Turning this option on means that you will receive notifications about comments and new posts in your blog.";
 $MESS ['STOF_REQUIED_FIELDS_NOTE'] = "Required fields are marked with asterisk (<font color=\"#FF0000\">*</font>).";
-?>

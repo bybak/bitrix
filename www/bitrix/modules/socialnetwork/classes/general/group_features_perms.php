@@ -445,6 +445,13 @@ class CAllSocNetFeaturesPerms
 			return false;
 		}
 
+		$user = CUser::GetByID($userID)->Fetch();
+		if (!$user)
+		{
+			$APPLICATION->ThrowException(GetMessage("SONET_GF_EMPTY_ENTITY_ID"), "ERROR_EMPTY_USER_ID");
+			return false;
+		}
+
 		$featureOperationPerms = CSocNetFeaturesPerms::GetOperationPerm($type, $id, $feature, $operation);
 
 		if ($type === SONET_ENTITY_GROUP)
@@ -552,7 +559,10 @@ class CAllSocNetFeaturesPerms
 
 					if ($featureOperationPerms[$arGroupTmp["ID"]] === SONET_ROLES_AUTHORIZED)
 					{
-						if ($userID > 0)
+						if (
+							$userID > 0
+							&& !in_array($user['EXTERNAL_AUTH_ID'], \Bitrix\Main\UserTable::getExternalUserTypes(), true)
+						)
 						{
 							$arReturn[$arGroupTmp["ID"]] = true;
 							continue;
@@ -628,7 +638,7 @@ class CAllSocNetFeaturesPerms
 			])->fetch();
 
 			if (
-				$arGroupTmp["CLOSED"] === "Y"
+				($arGroupTmp["CLOSED"] ?? null) === "Y"
 				&& !in_array($operation, $arSocNetFeaturesSettings[$feature]["minoperation"])
 			)
 			{
@@ -659,7 +669,15 @@ class CAllSocNetFeaturesPerms
 
 			if ($featureOperationPerms === SONET_ROLES_AUTHORIZED)
 			{
-				return ($userID > 0);
+				if (
+					$userID > 0
+					&& !in_array($user['EXTERNAL_AUTH_ID'], \Bitrix\Main\UserTable::getExternalUserTypes(), true)
+				)
+				{
+					return true;
+				}
+
+				return false;
 			}
 
 			if ($featureOperationPerms === SONET_ROLES_EMPLOYEE)
@@ -1166,8 +1184,8 @@ class CAllSocNetFeaturesPerms
 					])->fetch();
 
 					$arSonetGroupCache[$id] = [
-						'OPENED' => $sonetGroup['OPENED'],
-						'VISIBLE' => $sonetGroup['VISIBLE']
+						'OPENED' => $sonetGroup['OPENED'] ?? null,
+						'VISIBLE' => $sonetGroup['VISIBLE'] ?? null,
 					];
 				}
 

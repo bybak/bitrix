@@ -12,9 +12,9 @@ use Bitrix\Main\ORM\Data\Internal\DeleteByFilterTrait;
  *
  * <<< ORMENTITYANNOTATION
  * @method static EO_MessageAccess_Query query()
- * @method static EO_MessageAccess_Result getByPrimary($primary, array $parameters = array())
+ * @method static EO_MessageAccess_Result getByPrimary($primary, array $parameters = [])
  * @method static EO_MessageAccess_Result getById($id)
- * @method static EO_MessageAccess_Result getList(array $parameters = array())
+ * @method static EO_MessageAccess_Result getList(array $parameters = [])
  * @method static EO_MessageAccess_Entity getEntity()
  * @method static \Bitrix\Mail\Internals\EO_MessageAccess createObject($setDefaultValues = true)
  * @method static \Bitrix\Mail\Internals\EO_MessageAccess_Collection createCollection()
@@ -30,6 +30,8 @@ class MessageAccessTable extends Entity\DataManager
 	const ENTITY_TYPE_CRM_ACTIVITY = 'CRM_ACTIVITY';
 	const ENTITY_TYPE_BLOG_POST = 'BLOG_POST';
 	const ENTITY_TYPE_IM_CHAT = 'IM_CHAT';
+	const ENTITY_TYPE_USER_MESSAGE = 'USER_MESSAGE';
+	const ENTITY_TYPE_CHAT_MESSAGE = 'CHAT_MESSAGE';
 	const ENTITY_TYPE_CALENDAR_EVENT = 'CALENDAR_EVENT';
 
 	public static function getFilePath()

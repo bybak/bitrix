@@ -24,7 +24,7 @@ class YandexInvoiceHandler extends PaySystem\ServiceHandler
 	 * @param Request|null $request
 	 * @return PaySystem\ServiceResult
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		$errors = '';
 
@@ -237,8 +237,9 @@ class YandexInvoiceHandler extends PaySystem\ServiceHandler
 			'shopArticleId' => $this->getBusinessValue($payment, 'YANDEX_INVOICE_SHOP_ARTICLE_ID'),
 		);
 
-		$paymentPrice = PriceMaths::roundPrecision($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'));
-		$yandexPrice = PriceMaths::roundPrecision($payload['order']['amount']);
+		$paymentCurrency = $this->getBusinessValue($payment, 'PAYMENT_CURRENCY');
+		$paymentPrice = PriceMaths::roundByFormatCurrency($this->getBusinessValue($payment, 'PAYMENT_SHOULD_PAY'), $paymentCurrency);
+		$yandexPrice = PriceMaths::roundByFormatCurrency($payload['order']['amount'], $paymentCurrency);
 		if ($yandexPrice === $paymentPrice)
 		{
 			$serviceResult->setOperationType($serviceResult::MONEY_COMING);
@@ -460,7 +461,7 @@ class YandexInvoiceHandler extends PaySystem\ServiceHandler
 	 * @param Payment|null $payment
 	 * @return bool
 	 */
-	protected function isTestMode(Payment $payment = null)
+	protected function isTestMode(?Payment $payment = null)
 	{
 		return $this->getBusinessValue($payment, 'PS_IS_TEST') == 'Y';
 	}

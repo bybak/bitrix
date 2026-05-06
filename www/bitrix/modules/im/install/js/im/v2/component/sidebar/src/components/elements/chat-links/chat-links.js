@@ -1,12 +1,13 @@
-import { EventEmitter } from 'main.core.events';
 import { hint } from 'ui.vue3.directives.hint';
 
 import { SidebarDetailBlock, EventType } from 'im.v2.const';
+import { CounterManager } from 'im.v2.lib.counter';
 
 import './chat-links.css';
 
-import type { ImModelChat } from 'im.v2.model';
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
+import type { ImModelChat } from 'im.v2.model';
 
 // @vue/component
 export const ChatLinks = {
@@ -65,13 +66,7 @@ export const ChatLinks = {
 	{
 		getCounterString(counter: number): string
 		{
-			const MAX_COUNTER = 100;
-			if (counter >= MAX_COUNTER)
-			{
-				return '99+';
-			}
-
-			return counter.toString();
+			return CounterManager.formatCounter(counter);
 		},
 		onLinkClick()
 		{
@@ -80,10 +75,14 @@ export const ChatLinks = {
 				return;
 			}
 
-			EventEmitter.emit(EventType.sidebar.open, {
+			this.getEmitter().emit(EventType.sidebar.open, {
 				panel: SidebarDetailBlock.link,
 				dialogId: this.dialogId,
 			});
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 		loc(phraseCode: string): string
 		{

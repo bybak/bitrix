@@ -1,16 +1,11 @@
-import type { reactionType as Reaction } from 'ui.reactions-select';
-
-import { CounterType } from 'im.v2.const';
-
+import type { RecentTypeItem } from 'im.v2.const';
 import type { RawChat, RawFile, RawUser, RawMessage, RawMultidialog, RawLines, MultipleRawMessage } from './common';
-
-type CounterTypeItem = $Values<typeof CounterType>;
 
 export type MessageAddParams = {
 	chat?: {[chatId: string]: RawChat} | [],
 	chatId: number,
 	counter: number,
-	dialogId: string,
+	dialogId: string | number,
 	files: {[fileId: string]: RawFile} | [],
 	lines: RawLines | null,
 	message: RawMessage,
@@ -18,6 +13,12 @@ export type MessageAddParams = {
 	userBlockChat: {[chatId: string]: {[userId: string]: boolean}} | [],
 	userInChat: {[chatId: string]: number[]} | [],
 	users: {[userId: string]: RawUser} | null,
+	messagesAutoDeleteConfigs: { delay: number, chatId: number }[],
+	recentConfig: {
+		chatId: number,
+		sections: RecentTypeItem[],
+	},
+	stickers: RawSticker[]
 };
 
 export type MessageUpdateParams = {
@@ -50,7 +51,6 @@ export type PrepareDeleteMessageParams = Partial<MessageDeleteCompleteParams> & 
 export type MultipleMessageDeleteParams = {
 	chatId: number,
 	counter: number,
-	counterType: CounterTypeItem,
 	dialogId: number,
 	lastMessageViews?: LastMessageViewsParams,
 	newLastMessageViews?: Object,
@@ -59,6 +59,11 @@ export type MultipleMessageDeleteParams = {
 	unread: boolean,
 	newLastMessage?: RawMessage,
 	type: string,
+	parentChatId: number,
+	recentConfig: {
+		chatId: number,
+		sections: RecentTypeItem[],
+	},
 };
 
 export type MessageDeleteCompleteParams = {
@@ -74,7 +79,6 @@ export type MessageDeleteCompleteParams = {
 	senderId: number,
 	text: string,
 	type: string,
-	counterType: CounterTypeItem
 };
 
 export type MessageDeleteParams = {
@@ -118,7 +122,10 @@ export type ReadMessageParams = {
 	viewedMessages: number[],
 	type: string,
 	parentChatId: number,
-	counterType: CounterTypeItem
+	recentConfig: {
+		chatId: number,
+		sections: RecentTypeItem[],
+	},
 };
 
 export type MessageParams = {
@@ -135,7 +142,6 @@ export type MessageParams = {
 	userBlockChat: {[chatId: string]: {[userId: string]: boolean}} | [],
 	userInChat: {[chatId: string]: number[]} | [],
 	users: {[userId: string]: RawUser} | null,
-	counterType: CounterTypeItem
 };
 
 export type MessageChatParams = {
@@ -152,7 +158,6 @@ export type MessageChatParams = {
 	userBlockChat: {[chatId: string]: {[userId: string]: boolean}} | [],
 	userInChat: {[chatId: string]: number[]} | [],
 	users: {[userId: string]: RawUser} | null,
-	counterType: CounterTypeItem
 };
 
 export type ReadMessageChatParams = {
@@ -166,7 +171,6 @@ export type ReadMessageChatParams = {
 	viewedMessages: number[],
 	type: string,
 	parentChatId: number,
-	counterType: CounterTypeItem
 };
 
 export type UnreadMessageParams = {
@@ -174,7 +178,6 @@ export type UnreadMessageParams = {
 	counter: number,
 	dialogId: string,
 	lines: boolean,
-	counterType: CounterTypeItem
 };
 
 export type ReadMessageOpponentParams = {
@@ -213,7 +216,7 @@ export type AddReactionParams = {
 		reaction: RawReaction,
 		usersShort: ReactionUser[]
 	},
-	reaction: ReactionType,
+	reaction: string,
 	userId: number,
 	dialogId: string
 };
@@ -223,21 +226,32 @@ export type DeleteReactionParams = {
 		reaction: RawReaction,
 		usersShort: ReactionUser[]
 	},
-	reaction: ReactionType,
+	reaction: string,
 	userId: number
 };
 
-type ReactionType = $Values<typeof Reaction>;
-
-type RawReaction = {
+export type RawReaction = {
 	messageId: number,
 	reactionCounters: {[reactionType: string]: number},
 	reactionUsers: {[reactionType: string]: number[]},
-	ownReactions?: ReactionType[]
+	ownReactions?: string[]
 };
 
 type ReactionUser = {
 	id: number,
 	name: string,
 	avatar: string
+};
+
+type RawStickerPackType = 'vendor' | 'custom';
+
+type RawSticker = {
+	id: number,
+	packId: number,
+	packType: RawStickerPackType,
+	type: 'image',
+	uri: string,
+	width: number,
+	height: number,
+	sort: number,
 };

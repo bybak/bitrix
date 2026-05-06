@@ -1,13 +1,12 @@
 <?php
 
-/*
-##############################################
-# Bitrix: SiteManager                        #
-# Copyright (c) 2002-2005 Bitrix             #
-# https://www.bitrixsoft.com                 #
-# mailto:admin@bitrixsoft.com                #
-##############################################
-*/
+/**
+ * Bitrix Framework
+ * @package bitrix
+ * @subpackage fileman
+ * @copyright 2001-2025 Bitrix
+ */
+
 IncludeModuleLangFile(__FILE__);
 define("DEBUG_FILE_MAN", false);
 if(!defined("CACHED_stickers_count")) define("CACHED_stickers_count", 36000000);
@@ -2211,44 +2210,6 @@ class CFileMan
 				return $arConfig;
 		}
 		return false;
-	}
-
-	public static function decodePdfViewerLangFiles()
-	{
-		$localePath = \Bitrix\Main\Application::getDocumentRoot().'/bitrix/components/bitrix/pdf.viewer/pdfjs/locale/';
-		if(!\Bitrix\Main\IO\Directory::isDirectoryExists($localePath))
-		{
-			return;
-		}
-		$filesToDecode = [
-			$localePath.'de/viewer.properties' => 'iso-8859-1',
-			$localePath.'ru/viewer.properties' => 'windows-1251',
-			$localePath.'ua/viewer.properties' => 'windows-1251',
-		];
-		foreach($filesToDecode as $path => $charset)
-		{
-			static::decodeLangFile($path, $charset);
-		}
-	}
-
-	/**
-	 * @param $path
-	 * @param $charsetFrom
-	 * @throws \Bitrix\Main\IO\FileNotFoundException
-	 */
-	protected static function decodeLangFile($path, $charsetFrom)
-	{
-		$file = new \Bitrix\Main\IO\File($path);
-		if($file->isExists())
-		{
-			$content = $file->getContents();
-			if(\Bitrix\Main\Text\Encoding::detectUtf8($content))
-			{
-				return;
-			}
-			$content = \Bitrix\Main\Text\Encoding::convertEncoding($content, $charsetFrom, 'UTF-8');
-			$file->putContents($content);
-		}
 	}
 }
 

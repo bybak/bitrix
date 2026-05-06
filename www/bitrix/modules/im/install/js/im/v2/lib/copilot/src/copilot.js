@@ -1,9 +1,10 @@
 import { ChatType, MessageComponent } from 'im.v2.const';
 import { Core } from 'im.v2.application.core';
+import { Feature, FeatureManager } from 'im.v2.lib.feature';
 
 import type { JsonObject } from 'main.core';
 import type { Store } from 'ui.vue3.vuex';
-import type { ImModelMessage, ImModelUser } from 'im.v2.model';
+import type { ImModelMessage, ImModelChat, ImModelCopilotRole } from 'im.v2.model';
 
 export class CopilotManager
 {
@@ -28,7 +29,7 @@ export class CopilotManager
 		}
 
 		return Promise.all([
-			this.store.dispatch('copilot/chats/add', chats),
+			this.store.dispatch('copilot/chats/set', chats),
 			this.store.dispatch('copilot/roles/add', roles),
 			this.store.dispatch('copilot/setRecommendedRoles', recommendedRoles),
 			this.store.dispatch('copilot/messages/add', messages),
@@ -51,7 +52,7 @@ export class CopilotManager
 		return Promise.all([
 			this.store.dispatch('copilot/setProvider', aiProvider),
 			this.store.dispatch('copilot/roles/add', roles),
-			this.store.dispatch('copilot/chats/add', chats),
+			this.store.dispatch('copilot/chats/set', chats),
 			this.store.dispatch('copilot/messages/add', messages),
 		]);
 	}
@@ -66,7 +67,7 @@ export class CopilotManager
 
 		return Promise.all([
 			this.store.dispatch('copilot/roles/add', roles),
-			this.store.dispatch('copilot/chats/add', chats),
+			this.store.dispatch('copilot/chats/set', chats),
 		]);
 	}
 
@@ -80,19 +81,25 @@ export class CopilotManager
 
 		return Promise.all([
 			this.store.dispatch('copilot/roles/add', roles),
-			this.store.dispatch('copilot/chats/add', chats),
+			this.store.dispatch('copilot/chats/set', chats),
 			this.store.dispatch('copilot/messages/add', messages),
 		]);
 	}
 
-	getRoleAvatarUrl({ avatarDialogId, contextDialogId }: { avatarDialogId: string, contextDialogId: string }): ?string
+	getRoleAvatarUrl(payload: { avatarDialogId: string, contextDialogId: string }): string
 	{
+		const { avatarDialogId, contextDialogId } = payload;
 		if (!this.isCopilotChatOrBot(avatarDialogId))
 		{
 			return '';
 		}
 
 		return this.store.getters['copilot/chats/getRoleAvatar'](contextDialogId);
+	}
+
+	getDefaultAvatarUrl(): string
+	{
+		return this.store.getters['copilot/roles/getDefaultAvatar']();
 	}
 
 	isCopilotBot(userId: string | number): boolean
@@ -110,17 +117,11 @@ export class CopilotManager
 		return this.isCopilotChat(dialogId) || this.isCopilotBot(dialogId);
 	}
 
-	getMessageRoleAvatar(messageId: number): ?string
+	isGroupCopilotChat(dialogId: string): boolean
 	{
-		return this.store.getters['copilot/messages/getRole'](messageId)?.avatar?.medium;
-	}
+		const { userCounter }: ImModelChat = this.store.getters['chats/get'](dialogId);
 
-	getNameWithRole({ dialogId, messageId }): string
-	{
-		const user: ImModelUser = this.store.getters['users/get'](dialogId);
-		const roleName = this.store.getters['copilot/messages/getRole'](messageId).name;
-
-		return `${user.name} (${roleName})`;
+		return this.isCopilotChat(dialogId) && userCounter > 2;
 	}
 
 	isCopilotMessage(messageId: number): boolean
@@ -137,5 +138,45 @@ export class CopilotManager
 		}
 
 		return message.componentId === MessageComponent.copilotCreation;
+	}
+
+	getMessageRoleAvatar(messageId: number): ?string
+	{
+		return this.store.getters['copilot/messages/getRole'](messageId)?.avatar?.medium;
+	}
+
+	getNameWithRole(messageId: string | number): string
+	{
+		const copilotName = this.getName();
+		const {
+			default: isDefaultRole,
+			name: roleName,
+		}: ImModelCopilotRole = this.store.getters['copilot/messages/getRole'](messageId);
+
+		if (isDefaultRole)
+		{
+			return copilotName;
+		}
+
+		return `${copilotName} (${roleName})`;
+	}
+
+	getName(): string
+	{
+		return this.store.getters['copilot/getName'];
+	}
+
+	getAIModelName(dialogId: string): string
+	{
+		const isAIModelChangeAllowed = FeatureManager.isFeatureAvailable(Feature.isAIModelChangeAllowed);
+
+		if (isAIModelChangeAllowed)
+		{
+			const currentAIModel = Core.getStore().getters['copilot/chats/getAIModel'](dialogId);
+
+			return currentAIModel.name;
+		}
+
+		return Core.getStore().getters['copilot/getProvider'];
 	}
 }

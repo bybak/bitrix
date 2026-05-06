@@ -1,0 +1,19 @@
+<?php
+$MESS["VOTE_ANONYMOUS"] = "Anonyme Umfrage";
+$MESS["VOTE_BUTTON"] = "Abstimmen";
+$MESS["VOTE_NOTICE_COMPLETED"] = "Umfrage beendet";
+$MESS["VOTE_NOTICE_ERROR_MESSAGE_COMPLETE"] = "Umfrage konnte nicht beendet werden.";
+$MESS["VOTE_NOTICE_ERROR_MESSAGE_REVOKE"] = "Erneute Abstimmung fehlgeschlagen.";
+$MESS["VOTE_NOTICE_ERROR_MESSAGE_SUBMIT"] = "Konnte nicht abstimmen. Versuchen Sie es bitte erneut.";
+$MESS["VOTE_NOTICE_REVOKE_IS_NOT_AVAILABLE"] = "Erneute Abstimmung nicht verfügbar";
+$MESS["VOTE_POPUP_BTN_CANCEL"] = "Abbrechen";
+$MESS["VOTE_POPUP_BTN_COMPLETE"] = "Umfrage beenden";
+$MESS["VOTE_POPUP_TEXT"] = "Umfrageergebnisse werden gespeichert; Abstimmung wird auf Dauer geschlossen, sie kann dann nicht wieder aufgenommen werden. Möchten Sie die Umfrage beenden?";
+$MESS["VOTE_POPUP_TITLE"] = "Umfrage beenden";
+$MESS["VOTE_PUBLIC"] = "Öffentliche Umfrage";
+$MESS["VOTE_RESULT_COUNT_PLURAL_0"] = "#COUNT# Stimme";
+$MESS["VOTE_RESULT_COUNT_PLURAL_1"] = "#COUNT# Stimmen";
+$MESS["VOTE_RESULT_COUNT_PLURAL_2"] = "#COUNT# Stimmen";
+$MESS["VOTE_REVOKE"] = "Erneut abstimmen";
+$MESS["VOTE_SHOW_RESULTS"] = "Umfrageergebnisse anzeigen";
+$MESS["VOTE_SUMMARY_COUNT_NO_VOTES"] = "Keine Stimmen";

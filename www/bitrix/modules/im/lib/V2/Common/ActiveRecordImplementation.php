@@ -341,7 +341,7 @@ trait ActiveRecordImplementation
 
 			if (
 				isset($field['field'])
-				&& (isset($this->{$field['field']}) || $field['nullable'] === true)
+				&& (isset($this->{$field['field']}) || ($field['nullable'] ?? false) === true)
 			)
 			{
 				if (
@@ -379,13 +379,20 @@ trait ActiveRecordImplementation
 		{
 			return $result->setResult(['IS_CHANGES' => false]);
 		}
+		if ($result->getData()['SKIP_SAVE'] ?? false)
+		{
+			return $result;
+		}
 
 		$saveResult = $this->getDataEntity()->save();
 		if ($saveResult->isSuccess())
 		{
 			$this->updateState();
 
-			$this->setPrimaryId((int)$saveResult->getId());
+			if ($saveResult->getPrimary())
+			{
+				$this->setPrimaryId((int)$saveResult->getId());
+			}
 
 			if (
 				$this instanceof RegistryEntry

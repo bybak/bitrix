@@ -25,19 +25,18 @@ class Sender
 			return (new Result())->addError(new \Bitrix\Im\V2\Error(\Bitrix\Im\V2\Error::PULL_NOT_INSTALLED));
 		}
 
-		$basePull = $event->getBase();
 		$results = [];
 
 		if ($event->isGlobal())
 		{
-			return $this->sendGlobal($basePull);
+			return $this->sendGlobal($event);
 		}
 
 		$chat = $event->getTarget();
 
 		if ($chat !== null && !$event->shouldSendToOnlySpecificRecipients())
 		{
-			$results = $this->processPublicSending($chat, $basePull);
+			$results = $this->processPublicSending($chat, $event);
 		}
 
 		foreach ($event->getPullByUsers() as $group)
@@ -53,24 +52,30 @@ class Sender
 			}
 		}
 
+		if ($event->shouldSendImmediately())
+		{
+			$results[] = $this->sendImmediately();
+		}
+
 		return Result::merge(...$results);
 	}
 
-	protected function processPublicSending(Chat $chat, array $basePull): array
+	protected function processPublicSending(Chat $chat, Event $event): array
 	{
 		$results = [];
+		$pull = $event->getPullForPublic();
 
 		if ($chat->needToSendPublicPull())
 		{
-			$results[] = $this->sendByTag('IM_PUBLIC_'. $chat->getChatId(), $basePull);
+			$results[] = $this->sendByTag('IM_PUBLIC_'. $chat->getChatId(), $pull);
 		}
-		if ($chat->getType() === Chat::IM_TYPE_OPEN_CHANNEL)
+		if ($chat->getType() === Chat::IM_TYPE_OPEN_CHANNEL && $event->shouldSendSharedPull())
 		{
-			$results[] = $this->sendSharedPull($basePull);
+			$results[] = $this->sendSharedPull($pull);
 		}
 		if ($chat->getType() === Chat::IM_TYPE_COMMENT)
 		{
-			$results[] = $this->sendByTag('IM_PUBLIC_COMMENT_' . $chat->getParentChatId(), $basePull);
+			$results[] = $this->sendByTag('IM_PUBLIC_COMMENT_' . $chat->getParentChatId(), $pull);
 		}
 
 		return $results;
@@ -85,9 +90,9 @@ class Sender
 		;
 	}
 
-	protected function sendGlobal(array $pull): Result
+	protected function sendGlobal(Event $event): Result
 	{
-		return self::getPullEventResult(\CPullStack::AddShared($pull));
+		return self::getPullEventResult(\CPullStack::AddShared($event->getPullForPublic()));
 	}
 
 	protected function sendByTag(string $tag, array $pull): Result
@@ -124,5 +129,21 @@ class Sender
 		}
 
 		return new Result();
+	}
+
+	protected function sendImmediately(): Result
+	{
+		$result = new Result();
+
+		try
+		{
+			\Bitrix\Pull\Event::send();
+		}
+		catch (\Exception $exception)
+		{
+			$result->addError(new \Bitrix\Main\Error($exception->getMessage(), $exception->getCode()));
+		}
+
+		return $result;
 	}
 }

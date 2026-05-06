@@ -50,6 +50,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  openLink(link, target = '_blank') {
 	    window.open(link, target);
 	  },
+	  redirectTo(url) {
+	    location.href = url;
+	  },
 	  waitForSelectionToUpdate() {
 	    return new Promise(resolve => {
 	      setTimeout(() => {
@@ -89,6 +92,18 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  },
 	  isSameHour(firstDate, secondDate) {
 	    return firstDate.getFullYear() === secondDate.getFullYear() && firstDate.getMonth() === secondDate.getMonth() && firstDate.getDate() === secondDate.getDate() && firstDate.getHours() === secondDate.getHours();
+	  },
+	  formatMediaDurationTime(seconds) {
+	    const padZero = num => {
+	      return num.toString().padStart(2, '0');
+	    };
+	    const hours = Math.floor(seconds / 3600);
+	    const minutes = Math.floor(seconds % 3600 / 60);
+	    const remainingSeconds = Math.floor(seconds % 60);
+	    const formattedHours = hours > 0 ? `${hours}:` : '';
+	    const formattedMinutes = padZero(minutes);
+	    const formattedSeconds = padZero(remainingSeconds);
+	    return `${formattedHours}${formattedMinutes}:${formattedSeconds}`;
 	  }
 	};
 
@@ -255,9 +270,12 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    }).innerText;
 	  },
 	  convertSnakeToCamelCase(text) {
-	    return text.replace(/(_[a-z])/gi, $1 => {
+	    return text.replaceAll(/(_[a-z])/gi, $1 => {
 	      return $1.toUpperCase().replace('_', '');
 	    });
+	  },
+	  convertCamelToSnakeCase(text) {
+	    return text.replaceAll(/([A-Z])/g, match => `_${match.toLowerCase()}`);
 	  },
 	  escapeRegex(string) {
 	    return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -324,9 +342,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    const uuidV4pattern = new RegExp(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i);
 	    return uuid.search(uuidV4pattern) === 0;
 	  },
-	  isTempMessage(messageId) {
-	    return TextUtil.isUuidV4(messageId) || messageId.toString().startsWith(im_v2_const.FakeMessagePrefix) || messageId.toString().startsWith(im_v2_const.FakeDraftMessagePrefix);
-	  },
 	  checkUrl(url) {
 	    const allowList = ["http:", "https:", "ftp:", "file:", "tel:", "callto:", "mailto:", "skype:", "viber:"];
 	    const checkCorrectStartLink = ['/', ...allowList].find(protocol => {
@@ -370,9 +385,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      return `[CHAT=${dialogId.slice(4)}]${name}[/CHAT]`;
 	    }
 	    return `[USER=${dialogId}]${name}[/USER]`;
-	  },
-	  getMessageLink(dialogId, messageId) {
-	    return `${location.origin}/online/?${im_v2_const.GetParameter.openChat}=${dialogId}&${im_v2_const.GetParameter.openMessage}=${messageId}`;
 	  },
 	  async copyToClipboard(textToCopy) {
 	    var _BX$clipboard;
@@ -619,6 +631,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        break;
 	      case 'mp3':
 	      case 'ogg':
+	      case 'm4a':
 	        type = im_v2_const.FileType.audio;
 	        break;
 	      default:
@@ -673,7 +686,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      return dataAttributes;
 	    }
 	    Object.entries(viewerAttributes).forEach(([key, value]) => {
-	      dataAttributes[`data-${main_core.Text.toKebabCase(key)}`] = value;
+	      dataAttributes[`data-${main_core.Text.toKebabCase(key)}`] = value === null ? '' : value;
 	    });
 
 	    // it should be the same link, which we use in src attribute in <img> or <video> tag
@@ -683,7 +696,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    if (context) {
 	      dataAttributes['data-viewer-group-by'] = `${context}${dataAttributes['data-viewer-group-by']}`;
 	    }
-	    dataAttributes['data-viewer'] = true;
+	    dataAttributes['data-viewer'] = '';
 	    return dataAttributes;
 	  },
 	  createDownloadLink(text, urlDownload, fileName) {
@@ -752,6 +765,30 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    };
 	    downloadFileWithDelay(0);
 	    main_core.Dom.remove(a);
+	  },
+	  getViewerDataForImageSrc({
+	    src,
+	    viewerGroupBy,
+	    objectId = null,
+	    context = im_v2_const.FileViewerContext.dialog,
+	    actions = '[]',
+	    title = '',
+	    viewer = null
+	  }) {
+	    const defaultAttributes = {
+	      viewerAttributes: {
+	        actions,
+	        objectId,
+	        src,
+	        title,
+	        viewer,
+	        viewerGroupBy,
+	        viewerType: 'image'
+	      },
+	      previewImageSrc: src,
+	      context
+	    };
+	    return this.getViewerDataAttributes(defaultAttributes);
 	  }
 	};
 

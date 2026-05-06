@@ -19,7 +19,7 @@ class QiwiHandler extends PaySystem\ServiceHandler implements PaySystem\ICheckab
 	 * @param Request|null $request
 	 * @return PaySystem\ServiceResult
 	 */
-	public function initiatePay(Payment $payment, Request $request = null)
+	public function initiatePay(Payment $payment, ?Request $request = null)
 	{
 		if ($request === null)
 		{
@@ -208,7 +208,7 @@ class QiwiHandler extends PaySystem\ServiceHandler implements PaySystem\ICheckab
 	 * @param Payment $payment
 	 * @return bool
 	 */
-	protected function isTestMode(Payment $payment = null)
+	protected function isTestMode(?Payment $payment = null)
 	{
 		return false;
 	}
@@ -379,8 +379,9 @@ class QiwiHandler extends PaySystem\ServiceHandler implements PaySystem\ICheckab
 			foreach($bill as $key => $value)
 				$psData['PS_STATUS_DESCRIPTION'] .= "{$key}:{$value}, ";
 
-			$billAmount = PriceMaths::roundPrecision($bill['amount']);
-			$paymentSum = PriceMaths::roundPrecision($payment->getSum());
+			$currency = $payment->getCurrency();
+			$billAmount = PriceMaths::roundByFormatCurrency($bill['amount'], $currency);
+			$paymentSum = PriceMaths::roundByFormatCurrency($payment->getSum(), $currency);
 
 			if($bill['status'] == "paid" && $billAmount == $paymentSum && $this->getBusinessValue($payment, 'PS_CHANGE_STATUS_PAY'))
 				$result->setOperationType(PaySystem\ServiceResult::MONEY_COMING);

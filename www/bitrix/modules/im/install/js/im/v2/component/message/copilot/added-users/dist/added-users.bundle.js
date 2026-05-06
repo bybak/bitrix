@@ -3,7 +3,7 @@ this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
-(function (exports,im_public,im_v2_component_message_base,im_v2_component_elements) {
+(function (exports,im_public,im_v2_component_message_base,im_v2_component_elements_userListPopup,im_v2_lib_copilot) {
 	'use strict';
 
 	// @vue/component
@@ -11,7 +11,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  name: 'ChatCopilotAddedUsersMessage',
 	  components: {
 	    BaseMessage: im_v2_component_message_base.BaseMessage,
-	    UserListPopup: im_v2_component_elements.UserListPopup
+	    UserListPopup: im_v2_component_elements_userListPopup.UserListPopup
 	  },
 	  props: {
 	    item: {
@@ -53,10 +53,14 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      });
 	    },
 	    preparedDescription() {
-	      return this.loc('IM_MESSAGE_COPILOT_ADDED_USERS_DESCRIPTION_MENTION_MSGVER_1', {
-	        '#BR#': '\n'
+	      return this.loc('IM_MESSAGE_COPILOT_ADDED_USERS_DESCRIPTION_MENTION_MSGVER_2', {
+	        '#BR#': '\n',
+	        '#COPILOT_NAME#': this.copilotManager.getName()
 	      });
 	    }
+	  },
+	  created() {
+	    this.copilotManager = new im_v2_lib_copilot.CopilotManager();
 	  },
 	  methods: {
 	    loc(phraseCode, replacements = {}) {
@@ -107,7 +111,6 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 			<UserListPopup
 				:showPopup="showMoreUsers"
 				:userIds="addedUsers.restUsers"
-				:contextDialogId="dialogId"
 				:bindElement="$refs.addedUsersLink || {}"
 				:withAngle="false"
 				:forceTop="true"
@@ -119,5 +122,5 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 
 	exports.ChatCopilotAddedUsersMessage = ChatCopilotAddedUsersMessage;
 
-}((this.BX.Messenger.v2.Component.Message = this.BX.Messenger.v2.Component.Message || {}),BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Message,BX.Messenger.v2.Component.Elements));
+}((this.BX.Messenger.v2.Component.Message = this.BX.Messenger.v2.Component.Message || {}),BX.Messenger.v2.Lib,BX.Messenger.v2.Component.Message,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Lib));
 //# sourceMappingURL=added-users.bundle.js.map

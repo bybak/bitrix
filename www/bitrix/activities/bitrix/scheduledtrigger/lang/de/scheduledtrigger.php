@@ -1,0 +1,21 @@
+<?php
+$MESS["BPSCT_INTERVAL"] = "Wartezeit zwischen Instanzen (Intervalle):";
+$MESS["BPSCT_INTERVAL_INVALID"] = "Der Wert \"Wartezeit zwischen Instanzen\" muss von 1 bis 12 sein.";
+$MESS["BPSCT_MONTH_DAY"] = "Kalendertag:";
+$MESS["BPSCT_MONTH_DAY_INVALID"] = "Kalendertag ist nicht korrekt (mögliche Werte sind 1 bis 31).";
+$MESS["BPSCT_RUN_AT"] = "Starten um/am:";
+$MESS["BPSCT_RUN_AT_EMPTY"] = "Das Feld \"Starten um/am\" ist erforderlich.";
+$MESS["BPSCT_SCHEDULE_TYPE"] = "Zeitrahmen für Zeitplan:";
+$MESS["BPSCT_SCHEDULE_TYPE_DAILY"] = "Tag";
+$MESS["BPSCT_SCHEDULE_TYPE_EMPTY"] = "Zeitrahmen für den Zeitplan ist nicht angegeben.";
+$MESS["BPSCT_SCHEDULE_TYPE_HOURLY"] = "Stunde";
+$MESS["BPSCT_SCHEDULE_TYPE_MONTHLY"] = "Monat";
+$MESS["BPSCT_SCHEDULE_TYPE_ONCE"] = "Nur einmal starten";
+$MESS["BPSCT_SCHEDULE_TYPE_WEEKLY"] = "Woche";
+$MESS["BPSCT_SCHEDULE_TYPE_YEARLY"] = "Jahr";
+$MESS["BPSCT_WEEK_DAYS"] = "Tage der Woche:";
+$MESS["BPSCT_WEEK_DAYS_EMPTY"] = "Wählen Sie mindestens einen Tag der Woche aus.";
+$MESS["BPSCT_YEAR_MONTH"] = "Monat:";
+$MESS["BPSCT_YEAR_MONTH_DAY"] = "Kalendertag:";
+$MESS["BPSCT_YEAR_MONTH_DAY_INVALID"] = "Kalendertag ist nicht korrekt (mögliche Werte sind 1 bis 31).";
+$MESS["BPSCT_YEAR_MONTH_INVALID"] = "Monat ist nicht korrekt (mögliche Werte sind 1 bis 12).";

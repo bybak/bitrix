@@ -3,6 +3,8 @@
 namespace Bitrix\Im\V2\Chat;
 
 use Bitrix\Im\V2\Chat;
+use Bitrix\Im\V2\Message;
+use Bitrix\Im\V2\Result;
 
 class OpenLineLiveChat extends EntityChat
 {
@@ -24,14 +26,19 @@ class OpenLineLiveChat extends EntityChat
 		'entityData3' => [],
 	];
 
+	protected function validateAuthorId(int $authorId): Result
+	{
+		if ($authorId === 0)
+		{
+			return new Result();
+		}
+
+		return parent::validateAuthorId($authorId);
+	}
+
 	protected function sendMessageAuthorChange(\Bitrix\Im\V2\Entity\User\User $author): void
 	{
 		return;
-	}
-
-	protected function needToSendMessageUserDelete(): bool
-	{
-		return true;
 	}
 
 	protected function getDefaultEntityType(): string
@@ -62,5 +69,10 @@ class OpenLineLiveChat extends EntityChat
 	protected function addIndex(): Chat
 	{
 		return $this;
+	}
+
+	protected function transcribeFilesAfterMessageSend(Message $message): void
+	{
+		return;
 	}
 }

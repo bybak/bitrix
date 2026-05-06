@@ -1,4 +1,3 @@
-import 'ui.notification';
 import { Dom, Loc, Type } from 'main.core';
 
 import { Utils } from 'im.v2.lib.utils';
@@ -6,6 +5,8 @@ import { Parser } from 'im.v2.lib.parser';
 import { BaseMessage } from 'im.v2.component.message.base';
 import { ReactionList, MessageStatus, AuthorTitle } from 'im.v2.component.message.elements';
 import { openHelpdeskArticle } from 'im.v2.lib.helpdesk';
+import { Notifier } from 'im.v2.lib.notifier';
+import { CopilotManager } from 'im.v2.lib.copilot';
 
 import './css/copilot-answer.css';
 
@@ -55,22 +56,25 @@ export const CopilotMessage = {
 		warningText(): string
 		{
 			return this.loc(
-				'IM_MESSAGE_COPILOT_ANSWER_WARNING',
+				'IM_MESSAGE_COPILOT_ANSWER_WARNING_MSGVER_1',
 				{
 					'#LINK_START#': '<a class="bx-im-message-copilot-answer__warning_more">',
 					'#LINK_END#': '</a>',
+					'#COPILOT_NAME#': this.copilotManager.getName(),
 				},
 			);
 		},
+	},
+	created()
+	{
+		this.copilotManager = new CopilotManager();
 	},
 	methods:
 	{
 		async onCopyClick()
 		{
 			await Utils.text.copyToClipboard(this.message.text);
-			BX.UI.Notification.Center.notify({
-				content: Loc.getMessage('IM_MESSAGE_COPILOT_ANSWER_ACTION_COPY_SUCCESS'),
-			});
+			Notifier.onCopyTextComplete();
 		},
 		onWarningDetailsClick(event: PointerEvent)
 		{
@@ -96,7 +100,6 @@ export const CopilotMessage = {
 					<ReactionList
 						v-if="canSetReactions"
 						:messageId="message.id"
-						:contextDialogId="dialogId"
 						class="bx-im-message-default-content__reaction-list"
 					/>
 					<div v-if="isError" class="bx-im-message-default-content__bottom-panel">

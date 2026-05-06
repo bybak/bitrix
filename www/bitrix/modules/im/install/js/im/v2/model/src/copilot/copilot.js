@@ -10,12 +10,16 @@ import { MessagesModel } from './nested-modules/messages/messages';
 import { RolesModel } from './nested-modules/roles/roles';
 
 import type { JsonObject } from 'main.core';
-import type { CopilotRole } from '../type/copilot';
-import type { GetterTree, ActionTree, MutationTree, NestedModuleTree } from 'ui.vue3.vuex';
+import type { ImModelCopilotRole, ImModelCopilotAIModel } from '../registry';
+import type { GetterTree, ActionTree, MutationTree, NestedModuleTree, Store } from 'ui.vue3.vuex';
 
 type CopilotModelState = {
 	recommendedRoles: string[],
 	aiProvider: string,
+	availableAIModels: {
+		[code: string]: ImModelCopilotAIModel[]
+	},
+	name: string,
 };
 
 const RECOMMENDED_ROLES_LIMIT = 4;
@@ -42,6 +46,8 @@ export class CopilotModel extends BuilderModel
 		return {
 			recommendedRoles: [],
 			aiProvider: '',
+			availableAIModels: {},
+			name: '',
 		};
 	}
 
@@ -49,16 +55,44 @@ export class CopilotModel extends BuilderModel
 	{
 		return {
 			/** @function copilot/getProvider */
-			getProvider: (state): string => {
+			getProvider: (state: CopilotModelState): string => {
 				return state.aiProvider;
 			},
+			/** @function copilot/getAIModels */
+			getAIModels: (state: CopilotModelState): ImModelCopilotAIModel[] => {
+				return Object.values(state.availableAIModels);
+			},
 			/** @function copilot/getRecommendedRoles */
-			getRecommendedRoles: (state) => (): CopilotRole[] => {
+			getRecommendedRoles: (state: CopilotModelState) => (): ImModelCopilotRole[] => {
 				const roles = state.recommendedRoles.map((roleCode) => {
 					return Core.getStore().getters['copilot/roles/getByCode'](roleCode);
 				});
 
 				return roles.slice(0, RECOMMENDED_ROLES_LIMIT);
+			},
+			/** @function copilot/getDefaultModelName */
+			getDefaultModelName: (state: CopilotModelState): string => {
+				const allModels = Object.values(state.availableAIModels);
+				if (allModels.length === 0)
+				{
+					return '';
+				}
+
+				const defaultModel: ?ImModelCopilotAIModel = allModels.find((model) => model.default === true);
+				if (!defaultModel)
+				{
+					return '';
+				}
+
+				return defaultModel.name;
+			},
+			/** @function copilot/isReasoningAvailableInModel */
+			isReasoningAvailableInModel: (state: CopilotModelState) => (code: string): boolean => {
+				return Boolean(state.availableAIModels[code]?.supportsReasoning);
+			},
+			/** @function copilot/getName */
+			getName: (state: CopilotModelState): string => {
+				return state.name;
 			},
 		};
 	}
@@ -67,7 +101,7 @@ export class CopilotModel extends BuilderModel
 	{
 		return {
 			/** @function copilot/setRecommendedRoles */
-			setRecommendedRoles: (store, payload) => {
+			setRecommendedRoles: (store: Store, payload) => {
 				if (!Type.isArrayFilled(payload))
 				{
 					return;
@@ -76,7 +110,7 @@ export class CopilotModel extends BuilderModel
 				store.commit('setRecommendedRoles', payload);
 			},
 			/** @function copilot/setProvider */
-			setProvider: (store, payload) => {
+			setProvider: (store: Store, payload: string) => {
 				if (!Type.isStringFilled(payload))
 				{
 					return;
@@ -84,17 +118,43 @@ export class CopilotModel extends BuilderModel
 
 				store.commit('setProvider', payload);
 			},
+			/** @function copilot/setAvailableAIModels */
+			setAvailableAIModels: (store: Store, payload: ImModelCopilotAIModel[]) => {
+				if (!Type.isArrayFilled(payload))
+				{
+					return;
+				}
+
+				payload.forEach((model) => {
+					store.commit('setAvailableAIModel', this.formatFields(model));
+				});
+			},
+			/** @function copilot/setName */
+			setName: (store: Store, payload: string) => {
+				if (!Type.isStringFilled(payload))
+				{
+					return;
+				}
+
+				store.commit('setName', payload);
+			},
 		};
 	}
 
 	getMutations(): MutationTree
 	{
 		return {
-			setRecommendedRoles: (state, payload) => {
+			setRecommendedRoles: (state: CopilotModelState, payload) => {
 				state.recommendedRoles = payload;
 			},
-			setProvider: (state, payload) => {
+			setProvider: (state: CopilotModelState, payload) => {
 				state.aiProvider = payload;
+			},
+			setAvailableAIModel: (state: CopilotModelState, payload: ImModelCopilotAIModel) => {
+				state.availableAIModels[payload.code] = payload;
+			},
+			setName: (state: CopilotModelState, payload: string) => {
+				state.name = payload;
 			},
 		};
 	}

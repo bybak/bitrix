@@ -1,0 +1,1 @@
+<?$MESS['REST_V3_EXCEPTION_VALIDATION_DTOVALIDATIONEXCEPTION'] = 'Ошибка при валидации объекта';

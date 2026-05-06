@@ -2,15 +2,14 @@
 namespace Bitrix\Im\Integration\UI\EntitySelector;
 
 use Bitrix\Im\Bot;
-use Bitrix\Im\Integration\UI\EntitySelector\Helper;
 use Bitrix\Im\Model\BotTable;
 use Bitrix\Im\User;
+use Bitrix\Im\V2\Chat\Background\Background;
+use Bitrix\Im\V2\Chat\TextField\TextFieldEnabled;
 use Bitrix\Im\V2\Entity\User\Data\BotData;
 use Bitrix\Im\V2\Entity\User\UserBot;
-use Bitrix\Imbot\Bot\CopilotChatBot;
 use Bitrix\Main\EO_User;
 use Bitrix\Main\EO_User_Collection;
-use Bitrix\Main\Loader;
 use Bitrix\Main\ModuleManager;
 use Bitrix\Main\ORM\Fields\Relations\Reference;
 use Bitrix\Main\ORM\Query\Join;
@@ -249,25 +248,29 @@ class BotProvider extends BaseProvider
 		$result = [];
 		$isBitrix24 = ModuleManager::isModuleInstalled('bitrix24');
 
+		$currentUserId = \Bitrix\Im\V2\Entity\User\User::getCurrent()->getId() ?? 0;
+		$chatIds = \Bitrix\Im\Dialog::getChatIds($bots->getIdList(), $currentUserId);
+
 		foreach ($bots as $bot)
 		{
-			$botData = Bot::getCache($bot->getId());
+			$botData = BotData::getInstance($bot->getId());
 			if (
 				$isBitrix24
-				&& $botData['TYPE'] === Bot::TYPE_NETWORK
-				&& $botData['CLASS'] === 'Bitrix\ImBot\Bot\Support24'
+				&& $botData->exists()
+				&& $botData->getType() === Bot::TYPE_NETWORK
+				&& $botData->getClass() === 'Bitrix\ImBot\Bot\Support24'
 			)
 			{
 				continue;
 			}
 
-			$result[] = self::makeItem($bot, $options);
+			$result[] = self::makeItem($bot, $options, ($chatIds[$bot->getId()] ?? 0));
 		}
 
 		return $result;
 	}
 
-	public static function makeItem(EO_User $bot, array $options = []): Item
+	public static function makeItem(EO_User $bot, array $options = [], int $chatId = 0): Item
 	{
 		$defaultIcon =
 			'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2228%22%20'
@@ -298,28 +301,31 @@ class BotProvider extends BaseProvider
 			. '.9628342%2016.0191544%2C14.4269902%20Z%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E%0A'
 		;
 
-		$imBot = Bot::getCache($bot->getId());
+		$botDataInstance = BotData::getInstance($bot->getId());
+		$botData = $botDataInstance->toArray();
+
 		$customData = [
+			'imChat' => [
+				'TEXT_FIELD_ENABLED' => (new TextFieldEnabled($chatId))->get(),
+				'BACKGROUND_ID' => (new Background($chatId))->get(),
+			],
 			'imUser' => User::getInstance($bot->getId())->getArray(),
 			'imBot' => [
-				'APP_ID' => $imBot['APP_ID'] ?? null,
-				'BOT_ID' => $imBot['BOT_ID'] ?? null,
-				'CODE' => $imBot['CODE'] ?? null,
-				'HIDDEN' => $imBot['HIDDEN'] ?? null,
-				'LANG' => $imBot['LANG'] ?? null,
-				'MODULE_ID' => $imBot['MODULE_ID'] ?? null,
-				'OPENLINE' => $imBot['OPENLINE'] ?? null,
-				'TYPE' => $imBot['TYPE'] ?? null,
-				'VERIFIED' => $imBot['VERIFIED'] ?? null,
+				'APP_ID' => $botData['APP_ID'] ?? null,
+				'BOT_ID' => $botData['BOT_ID'] ?? null,
+				'CODE' => $botData['CODE'] ?? null,
+				'HIDDEN' => $botData['HIDDEN'] ?? null,
+				'LANG' => $botData['LANG'] ?? null,
+				'MODULE_ID' => $botData['MODULE_ID'] ?? null,
+				'OPENLINE' => $botData['OPENLINE'] ?? null,
+				'TYPE' => $botData['TYPE'] ?? null,
+				'VERIFIED' => $botData['VERIFIED'] ?? null,
 			],
 		];
 
-		if ($bot->getId() !== null)
-		{
-			$botData = BotData::getInstance($bot->getId())->toRestFormat();
-		}
+		$botDataFormatted = $botDataInstance->toRestFormat();
 
-		$customData['imUser']['BOT_DATA'] = (!empty($botData)) ? $botData : null;
+		$customData['imUser']['BOT_DATA'] = (!empty($botDataFormatted)) ? $botDataFormatted : null;
 
 		$avatar = Helper\User::makeAvatar($bot);
 		if (!$avatar)
@@ -341,7 +347,7 @@ class BotProvider extends BaseProvider
 		return new Item([
 			'id' => $bot->getId(),
 			'entityId' => 'im-bot',
-			'entityType' => Bot::getListForJs()[$bot->getId()]['type'],
+			'entityType' => $botDataFormatted['type'],
 			'title' => Helper\User::formatName($bot, $options),
 			'avatar' => $avatar,
 			'customData' => $customData,

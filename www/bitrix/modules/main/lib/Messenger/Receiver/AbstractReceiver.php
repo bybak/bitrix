@@ -4,33 +4,44 @@ declare(strict_types=1);
 
 namespace Bitrix\Main\Messenger\Receiver;
 
+use Bitrix\Main\Application;
+use Bitrix\Main\Diag\ExceptionHandlerLog;
+use Bitrix\Main\Diag\LoggerFactory;
 use Bitrix\Main\Messenger\Broker\BrokerInterface;
 use Bitrix\Main\Messenger\Entity\MessageBox;
 use Bitrix\Main\Messenger\Entity\MessageInterface;
 use Bitrix\Main\Messenger\Internals\Exception\Broker\AckFailedException;
 use Bitrix\Main\Messenger\Internals\Exception\Broker\BrokerReadException;
 use Bitrix\Main\Messenger\Internals\Exception\Broker\RejectFailedException;
+use Bitrix\Main\Messenger\Internals\Exception\Receiver\NoLoggableException;
 use Bitrix\Main\Messenger\Internals\Exception\Receiver\ProcessingException;
 use Bitrix\Main\Messenger\Internals\Exception\Receiver\RecoverableMessageException;
 use Bitrix\Main\Messenger\Internals\Exception\Receiver\UnprocessableMessageException;
 use Bitrix\Main\Messenger\Internals\Exception\Receiver\UnrecoverableMessageException;
-use Bitrix\Main\Messenger\Internals\Exception\ReceiverException;
 use Exception;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * @internal
  */
 abstract class AbstractReceiver implements ReceiverInterface
 {
-	protected int $limit = 50;
+	private const LOGGER_ID = 'main.Messenger.Receiver';
+
+	private const DEFAULT_LIMIT = 50;
+
+	protected int $limit = self::DEFAULT_LIMIT;
 
 	protected string $queueId;
 
 	protected BrokerInterface $broker;
 
+	private ?LoggerInterface $logger = null;
+
 	public function setLimit(int $limit): self
 	{
-		$this->limit = $limit > 0 ? $limit : 50;
+		$this->limit = $limit > 0 ? $limit : self::DEFAULT_LIMIT;
 
 		return $this;
 	}
@@ -47,6 +58,16 @@ abstract class AbstractReceiver implements ReceiverInterface
 		$this->broker = $broker;
 
 		return $this;
+	}
+
+	protected function getLogger(): LoggerInterface
+	{
+		if ($this->logger === null)
+		{
+			$this->logger = (new LoggerFactory())->createById(self::LOGGER_ID);
+		}
+
+		return $this->logger;
 	}
 
 	/**
@@ -91,12 +112,10 @@ abstract class AbstractReceiver implements ReceiverInterface
 
 	/**
 	 * @throws BrokerReadException
-	 * @throws ReceiverException
 	 * @throws RejectFailedException
 	 */
 	public function run(): void
 	{
-		$exceptions = [];
 		$messageBoxes = $this->getMessages();
 
 		/** @var MessageBox $messageBox */
@@ -110,46 +129,67 @@ abstract class AbstractReceiver implements ReceiverInterface
 			}
 			catch (UnprocessableMessageException $e)
 			{
-				$exceptions[] = $e;
-
 				$this->reject($messageBox);
+
+				Application::getInstance()->getExceptionHandler()->writeToLog(
+					$e,
+					ExceptionHandlerLog::CAUGHT_EXCEPTION,
+				);
 			}
 			catch (UnrecoverableMessageException $e)
 			{
-				$exceptions[] = $e;
-
 				$messageBox->kill();
 
 				$this->reject($messageBox);
+
+				$this->getLogger()->notice(
+					sprintf(
+						'Message has unrecoverable case: "%s". Message: "%s" (%s). Queue: "%s". ItemId: "%s"',
+						$e->getMessage(),
+						$messageBox->getClassName(),
+						$messageBox->getId(),
+						$messageBox->getQueueId(),
+						$messageBox->getItemId(),
+					),
+					[
+						'exception' => $e,
+					],
+				);
 			}
 			catch (RecoverableMessageException $e)
 			{
-				$exceptions[] = $e;
-
-				$messageBox->retry($e->getRetryDelay());
+				$messageBox->requeue($e->getRetryDelay());
 
 				$this->reject($messageBox);
-			}
-			catch (Exception $e)
-			{
-				$exceptions[] = new ProcessingException(
-					$messageBox,
-					$e->getMessage(),
-					$e->getCode(),
-					$e
+
+				$this->getLogger()->debug(
+					sprintf(
+						'Message has recoverable case: "%s". Message: "%s" (%s). Queue: "%s". ItemId: "%s"',
+						$e->getMessage(),
+						$messageBox->getClassName(),
+						$messageBox->getId(),
+						$messageBox->getQueueId(),
+						$messageBox->getItemId(),
+					),
+					[
+						'exception' => $e,
+					],
 				);
-
-				$this->reject($messageBox);
 			}
-		}
+			catch (Throwable $e)
+			{
+				$this->reject($messageBox);
 
-		if (!empty($exceptions))
-		{
-			throw new ReceiverException(
-				'Some messages could not be processed',
-				0,
-				exceptions: $exceptions
-			);
+				if (!$e instanceof NoLoggableException)
+				{
+					$e = new ProcessingException($messageBox, $e);
+
+					Application::getInstance()->getExceptionHandler()->writeToLog(
+						$e,
+						ExceptionHandlerLog::CAUGHT_EXCEPTION,
+					);
+				}
+			}
 		}
 	}
 }

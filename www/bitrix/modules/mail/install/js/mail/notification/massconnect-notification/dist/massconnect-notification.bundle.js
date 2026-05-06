@@ -1,0 +1,2 @@
+this.BX=this.BX||{},function(i,t,B,X){"use strict"}(this.BX.Mail=this.BX.Mail||{},BX,BX.UI,BX.Main);
+//# sourceMappingURL=massconnect-notification.bundle.js.map

@@ -24,7 +24,6 @@ if (\Bitrix\Main\Loader::includeModule('socialnetwork'))
 }
 
 return [
-	'css' => 'dist/html-formatter.bundle.css',
 	'js' => 'dist/html-formatter.bundle.js',
 	'rel' => [
 		'ui.smiley',
@@ -41,7 +40,7 @@ return [
 			'defaultScheme' => 'https',
 			'defaultTarget' => '_blank',
 			'shortLink' => [
-				'enabled' => true,
+				'enabled' => false,
 				'maxLength' => 40,
 				'lastFragmentLength' => 10,
 			],

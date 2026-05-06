@@ -1,14 +1,14 @@
-import { CopilotRolesDialog } from 'im.v2.component.elements';
+import { CopilotRolesDialog } from 'im.v2.component.elements.copilot-roles-dialog';
 import { PromoManager } from 'im.v2.lib.promo';
 import { PromoId } from 'im.v2.const';
 
-import { CopilotService } from './classes/copilot-serivce';
+import { CopilotService } from './classes/copilot-service';
 import { ChangeRolePromo } from './components/change-role-promo';
 
 import './css/copilot-role.css';
 
 import type { JsonObject } from 'main.core';
-import type { ImModelCopilotRole } from 'im.v2.model';
+import type { RawRole } from './classes/copilot-service';
 
 // @vue/component
 export const CopilotRole = {
@@ -46,11 +46,10 @@ export const CopilotRole = {
 		},
 		canShowChangeRolePromo(): boolean
 		{
-			// we don't want to show change role promo if we are still showing first promo (add users to copilot chat)
-			const needToShowAddUsersToChatHint = PromoManager.getInstance().needToShow(PromoId.addUsersToCopilotChat);
+			const needShowAddUsersToChatHint = PromoManager.getInstance().needToShow(PromoId.addUsersToCopilotChat);
 			const needToShowChangeRolePromo = PromoManager.getInstance().needToShow(PromoId.changeRoleCopilot);
 
-			return !needToShowAddUsersToChatHint && needToShowChangeRolePromo;
+			return !needShowAddUsersToChatHint && needToShowChangeRolePromo;
 		},
 	},
 	mounted()
@@ -80,11 +79,11 @@ export const CopilotRole = {
 			this.shouldShowChangeRolePromo = false;
 			void PromoManager.getInstance().markAsWatched(PromoId.changeRoleCopilot);
 		},
-		onCopilotDialogSelectRole(role)
+		onCopilotDialogSelectRole(role: RawRole)
 		{
 			void (new CopilotService()).updateRole({
 				dialogId: this.dialogId,
-				role,
+				newRole: role,
 			});
 		},
 	},

@@ -1,16 +1,12 @@
 <?php
-/**
- * Bitrix Framework
- * @package bitrix
- * @subpackage sale
- * @copyright 2001-2012 Bitrix
- */
+
 namespace Bitrix\Sale\Internals;
 
 use Bitrix\Main,
 	Bitrix\Main\Application,
 	Bitrix\Main\Config,
 	Bitrix\Main\Localization\Loc,
+	Bitrix\Main\ORM\Data\DataManager,
 	Bitrix\Sale\Discount\Actions,
 	Bitrix\Sale\Discount\Gift,
 	Bitrix\Sale\Discount\Index,
@@ -76,7 +72,7 @@ Loc::loadMessages(__FILE__);
  * @method static \Bitrix\Sale\Internals\EO_Discount wakeUpObject($row)
  * @method static \Bitrix\Sale\Internals\EO_Discount_Collection wakeUpCollection($rows)
  */
-class DiscountTable extends Main\Entity\DataManager
+class DiscountTable extends DataManager
 {
 	const VERSION_OLD = 0x0001;
 	const VERSION_NEW = 0x0002;
@@ -123,13 +119,13 @@ class DiscountTable extends Main\Entity\DataManager
 				'validation' => array(__CLASS__, 'validateName'),
 				'title' => Loc::getMessage('DISCOUNT_ENTITY_NAME_FIELD')
 			)),
-			'PRICE_FROM' => new Main\Entity\FloatField('PRICE_FROM', array()),
-			'PRICE_TO' => new Main\Entity\FloatField('PRICE_TO', array()),
+			'PRICE_FROM' => new Main\Entity\FloatField('PRICE_FROM', ['scale' => 8]),
+			'PRICE_TO' => new Main\Entity\FloatField('PRICE_TO', ['scale' => 8]),
 			'CURRENCY' => new Main\Entity\StringField('CURRENCY', array(
 				'validation' => array(__CLASS__, 'validateCurrency'),
 				'title' => Loc::getMessage('DISCOUNT_ENTITY_CURRENCY_FIELD')
 			)),
-			'DISCOUNT_VALUE' => new Main\Entity\FloatField('DISCOUNT_VALUE', array()),
+			'DISCOUNT_VALUE' => new Main\Entity\FloatField('DISCOUNT_VALUE', ['scale' => 8]),
 			'DISCOUNT_TYPE' => new Main\Entity\StringField('DISCOUNT_TYPE', array(
 				'default_value' => 'P',
 				'validation' => array(__CLASS__, 'validateDiscountType')

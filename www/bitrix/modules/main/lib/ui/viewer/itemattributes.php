@@ -29,6 +29,10 @@ class ItemAttributes
 	 */
 	protected $actions = [];
 	/**
+	 * @var array
+	 */
+	protected $sources = [];
+	/**
 	 * @var
 	 */
 	protected $sourceUri;
@@ -223,6 +227,45 @@ class ItemAttributes
 		return $this->getAttribute('data-viewer-group-by');
 	}
 
+	public function setSources(array $sources): self
+	{
+		$this->sources = $sources;
+
+		return $this;
+	}
+
+	public function clearSources(): self
+	{
+		$this->sources = [];
+
+		return $this;
+	}
+
+	public function getSources(): array
+	{
+		return $this->sources;
+	}
+
+	public function setWidth(int $width): self
+	{
+		return $this->setAttribute('data-viewer-width', $width);
+	}
+
+	public function getWidth(): int | null
+	{
+		return $this->getAttribute('data-viewer-width');
+	}
+
+	public function setHeight(int $height): self
+	{
+		return $this->setAttribute('data-viewer-height', $height);
+	}
+
+	public function getHeight(): int | null
+	{
+		return $this->getAttribute('data-viewer-height');
+	}
+
 	/**
 	 * @param array $action
 	 *
@@ -286,7 +329,7 @@ class ItemAttributes
 	 *
 	 * @return $this
 	 */
-	public function setAttribute($name, $value = null)
+	public function setAttribute($name, $value = '')
 	{
 		$this->attributes[$name] = $value;
 
@@ -418,6 +461,11 @@ class ItemAttributes
 			}
 		}
 
+		if (!empty($this->sources))
+		{
+			$string .= "data-sources='" . htmlspecialcharsbx(Json::encode($this->sources)) . "' ";
+		}
+
 		if ($this->actions)
 		{
 			$string .= "data-actions='" . htmlspecialcharsbx(Json::encode($this->actions)) . "'";
@@ -445,12 +493,50 @@ class ItemAttributes
 			}
 		}
 
+		if (!empty($this->sources))
+		{
+			$likeDataSet[$this->convertKeyToDataSet('data-sources')] = Json::encode($this->sources);
+		}
+
 		if ($this->actions)
 		{
 			$likeDataSet[$this->convertKeyToDataSet('data-actions')] = Json::encode($this->actions);
 		}
 
 		return $likeDataSet;
+	}
+
+	/**
+	 * Convert structure to array which we can use in vue.js (v-bind)
+	 *
+	 * @return array
+	 */
+	public function toVueBind(): array
+	{
+		$result = [];
+		foreach ($this->attributes as $key => $value)
+		{
+			if (is_int($key))
+			{
+				$result[$value] = '';
+			}
+			else
+			{
+				$result[$key] = $value ?? '';
+			}
+		}
+
+		if (!empty($this->sources))
+		{
+			$result['data-sources'] = Json::encode($this->sources);
+		}
+
+		if ($this->actions)
+		{
+			$result['data-actions'] = Json::encode($this->actions);
+		}
+
+		return $result;
 	}
 
 	protected function convertKeyToDataSet($key)

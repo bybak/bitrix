@@ -14,6 +14,7 @@ export class UserSelector extends BaseField
 	#enableUsers: boolean;
 	#enableAll: boolean;
 	#enableDepartments: boolean;
+	#dialogEvents: Object;
 
 	constructor(params)
 	{
@@ -25,6 +26,7 @@ export class UserSelector extends BaseField
 		this.#enableUsers = params.enableUsers !== false;
 		this.#enableAll = this.#enableUsers && params.enableAll !== false;
 		this.#enableDepartments = params.enableDepartments === true;
+		this.#dialogEvents = Type.isObject(params.dialogEvents) ? params.dialogEvents : null;
 
 		this.#initInput(params.values);
 
@@ -49,7 +51,9 @@ export class UserSelector extends BaseField
 					id: 'department',
 					options: {
 						selectMode: this.#getDepartamentsSelectMode(),
-						allowFlatDepartments: this.#enableDepartments,
+						allowFlatDepartments: Type.isNil(params.allowFlatDepartments)
+							? this.#enableDepartments
+							: params.allowFlatDepartments,
 						allowSelectRootDepartment: this.#enableDepartments,
 					},
 				},
@@ -75,6 +79,15 @@ export class UserSelector extends BaseField
 
 		const multiple = params.multiple !== false;
 
+		const onChangeSelector = this.onChangeSelector.bind(this);
+
+		const baseEvents = {
+			'Item:onSelect': onChangeSelector,
+			'Item:onDeselect': onChangeSelector,
+		};
+
+		const events = { ...baseEvents, ...this.#dialogEvents };
+
 		this.#entitySelector = new TagSelector({
 			id: this.getId(),
 			textBoxAutoHide: false,
@@ -85,10 +98,7 @@ export class UserSelector extends BaseField
 				preselectedItems: this.#defaultValues,
 				multiple: multiple,
 				hideOnDeselect: !multiple,
-				events: {
-					'Item:onSelect': this.onChangeSelector.bind(this),
-					'Item:onDeselect': this.onChangeSelector.bind(this),
-				},
+				events,
 				entities: entities,
 			},
 			multiple: multiple,

@@ -5,6 +5,7 @@ export const RawBotType = Object.freeze({
 	human: 'human',
 	openline: 'openline',
 	supervisor: 'supervisor',
+	personal: 'personal',
 });
 
 export const BotType = Object.freeze({
@@ -17,6 +18,7 @@ export const BotCode = Object.freeze({
 	marta: 'marta',
 	giphy: 'giphy',
 	copilot: 'copilot',
+	aiAssistant: 'AiAssistantBot',
 });
 
 export const BotCommand = Object.freeze({

@@ -496,7 +496,7 @@ export class Link extends BaseField
 	{
 		if (Type.isPlainObject(value))
 		{
-			this.input.setValue(BX.Landing.Utils.escapeText(value.text));
+			this.input.setValue(Text.decode(value.text));
 			this.hrefInput.setValue(value.href);
 			this.targetInput.setValue(BX.Landing.Utils.escapeText(value.target));
 		}
@@ -535,7 +535,7 @@ export class Link extends BaseField
 					this.targetInput.setValue(Link.TARGET_BLANK);
 				}
 			}
-			else if (type === 'MAINPAGE')
+			else if (type === 'VIBE')
 			{
 				this.targetInput.disable();
 				this.targetInput.setValue(Link.TARGET_BLANK);

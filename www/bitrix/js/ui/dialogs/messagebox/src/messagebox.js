@@ -1,7 +1,7 @@
 import { Type, Loc, Cache } from 'main.core';
 import { Popup } from 'main.popup';
 import MessageBoxButtons from './messageboxbuttons';
-import 'ui.buttons';
+import { AirButtonStyle } from 'ui.buttons';
 
 /**
  * @namespace {BX.UI.Dialogs}
@@ -20,6 +20,7 @@ export default class MessageBox
 	buttons = [];
 	mediumButtonSize: false;
 	cacheable: false;
+	useAirDesign: boolean = false;
 
 	okCallback = null;
 	cancelCallback = null;
@@ -44,6 +45,8 @@ export default class MessageBox
 		this.setCancelCallback(options.onCancel);
 		this.setYesCallback(options.onYes);
 		this.setNoCallback(options.onNo);
+		this.useAirDesign = options.useAirDesign === true;
+		this.useWideButtons = options.useAirDesign === true;
 
 		if (Type.isBoolean(options.mediumButtonSize))
 		{
@@ -54,7 +57,7 @@ export default class MessageBox
 			this.mediumButtonSize = true;
 		}
 
-		if (this.getTitle() !== null)
+		if (this.getTitle() !== null && Type.isUndefined(this.popupOptions.closeIcon))
 		{
 			this.popupOptions.closeIcon = true;
 		}
@@ -110,6 +113,9 @@ export default class MessageBox
 		const messageBox = this.create({
 			message,
 			title,
+			popupOptions: {
+				closeByEsc: true,
+			},
 			okCaption,
 			onOk: okCallback,
 			buttons: BX.UI.Dialogs.MessageBoxButtons.OK,
@@ -134,6 +140,7 @@ export default class MessageBox
 	 * BX.UI.Dialogs.MessageBox.confirm('Message', 'Title', () => {});
 	 * BX.UI.Dialogs.MessageBox.confirm('Message', 'Title', () => {}, 'Proceed', () => {});
 	 * BX.UI.Dialogs.MessageBox.confirm('Message', 'Title', () => {}, 'Proceed', () => {}, 'Cancel');
+	 * BX.UI.Dialogs.MessageBox.confirm('Message', 'Title', () => {}, 'Proceed', () => {}, 'Cancel', true);
 	 */
 	static confirm(message: string, ...args): MessageBox
 	{
@@ -142,16 +149,17 @@ export default class MessageBox
 		let okCaption = null;
 		let cancelCallback = null;
 		let cancelCaption = null;
+		let useAirDesign = false;
 
 		if (args.length > 0)
 		{
-			if (Type.isString(args[0]))
+			if (Type.isString(args[0]) || Type.isNull(args[0]))
 			{
-				[title, okCallback, okCaption, cancelCallback, cancelCaption] = args;
+				[title, okCallback, okCaption, cancelCallback, cancelCaption, useAirDesign] = args;
 			}
 			else
 			{
-				[okCallback, okCaption, cancelCallback, cancelCaption] = args;
+				[okCallback, okCaption, cancelCallback, cancelCaption, useAirDesign] = args;
 			}
 		}
 
@@ -160,6 +168,7 @@ export default class MessageBox
 			title,
 			okCaption,
 			cancelCaption,
+			useAirDesign,
 			onOk: okCallback,
 			onCancel: cancelCallback,
 			buttons: BX.UI.Dialogs.MessageBoxButtons.OK_CANCEL,
@@ -203,10 +212,26 @@ export default class MessageBox
 	{
 		if (this.popupWindow === null)
 		{
+			const content = this.getMessage();
+			const isAir = this.useAirDesign;
+			const isContentText = Type.isString(content);
+
+			const classBase = this.isMediumButtonSize()
+				? 'ui-message-box ui-message-box-medium-buttons'
+				: 'ui-message-box';
+			const classAir = isAir ? ' --air' : '';
+			const classWithCloser = isAir && this.popupOptions.closeIcon === true ? ' --with-closer' : '';
+			const classContentText = isAir && isContentText ? ' --content-text' : '';
+
+			const classSumm = classBase
+				+ classAir
+				+ classWithCloser
+				+ classContentText;
+
 			this.popupWindow = new Popup({
 				bindElement: null,
-				className: this.isMediumButtonSize() ? 'ui-message-box ui-message-box-medium-buttons' : 'ui-message-box',
-				content: this.getMessage(),
+				className: classSumm,
+				content,
 				titleBar: this.getTitle(),
 				minWidth: this.minWidth,
 				minHeight: this.minHeight,
@@ -217,7 +242,7 @@ export default class MessageBox
 				contentBackground: 'transparent',
 				padding: 0,
 				buttons: this.getButtons(),
-				...this.popupOptions
+				...this.popupOptions,
 			});
 		}
 
@@ -385,7 +410,9 @@ export default class MessageBox
 				text: Loc.getMessage('UI_MESSAGE_BOX_OK_CAPTION'),
 				events: {
 					click: this.handleButtonClick
-				}
+				},
+				useAirDesign: this.useAirDesign,
+				wide: this.useWideButtons,
 			});
 		});
 	}
@@ -394,7 +421,7 @@ export default class MessageBox
 	 *
 	 * @returns {BX.UI.Button}
 	 */
-	getCancelButton()
+	getCancelButton(options)
 	{
 		return this.cache.remember('cancelBtn', () => {
 			return new BX.UI.CancelButton({
@@ -403,7 +430,10 @@ export default class MessageBox
 				text: Loc.getMessage('UI_MESSAGE_BOX_CANCEL_CAPTION'),
 				events: {
 					click: this.handleButtonClick
-				}
+				},
+				useAirDesign: this.useAirDesign,
+				wide: this.useWideButtons,
+				style: (options?.style || AirButtonStyle.OUTLINE),
 			});
 		});
 	}
@@ -422,7 +452,9 @@ export default class MessageBox
 				text: Loc.getMessage('UI_MESSAGE_BOX_YES_CAPTION'),
 				events: {
 					click: this.handleButtonClick
-				}
+				},
+				useAirDesign: this.useAirDesign,
+				wide: this.useWideButtons,
 			});
 		});
 	}
@@ -441,7 +473,10 @@ export default class MessageBox
 				text: Loc.getMessage('UI_MESSAGE_BOX_NO_CAPTION'),
 				events: {
 					click: this.handleButtonClick
-				}
+				},
+				useAirDesign: this.useAirDesign,
+				wide: this.useWideButtons,
+				style: AirButtonStyle.OUTLINE,
 			});
 		});
 	}
@@ -490,7 +525,7 @@ export default class MessageBox
 				return [
 					this.getYesButton(),
 					this.getNoButton(),
-					this.getCancelButton()
+					this.getCancelButton({ style: AirButtonStyle.PLAIN })
 				];
 			default:
 				return [];

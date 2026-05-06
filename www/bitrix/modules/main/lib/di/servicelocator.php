@@ -3,18 +3,26 @@
 namespace Bitrix\Main\DI;
 
 use Bitrix\Main\Config\Configuration;
+use Bitrix\Main\DI\Exception\RegistrationException;
 use Bitrix\Main\DI\Exception\ServiceNotFoundException;
+use Bitrix\Main\DI\Exception\CircularDependencyException;
 use Bitrix\Main\ObjectNotFoundException;
-use Bitrix\Main\SystemException;
-use Psr\Container\ContainerExceptionInterface;
-use Psr\Container\NotFoundExceptionInterface;
+use Closure;
+use Psr\Container\ContainerInterface;
+use ReflectionClass;
+use ReflectionException;
+use ReflectionNamedType;
 
-final class ServiceLocator implements \Psr\Container\ContainerInterface
+final class ServiceLocator implements ContainerInterface
 {
 	/** @var string[][] */
 	private array $services = [];
 	private array $instantiated = [];
+	private array $nonSingletonServices = [];
+
 	private static ServiceLocator $instance;
+
+	private array $callStack = [];
 
 	private function __construct()
 	{}
@@ -34,6 +42,7 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 
 	/**
 	 * Adds service to locator.
+	 *
 	 * @param string $code
 	 * @param mixed $service
 	 */
@@ -44,27 +53,40 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 
 	/**
 	 * Adds service with lazy initialization.
+	 *
 	 * @param string $id
 	 * @param array $configuration
+	 *
 	 * @return void
-	 * @throws SystemException
+	 *
+	 * @throws RegistrationException
 	 */
 	public function addInstanceLazy(string $id, $configuration): void
 	{
 		if (!isset($configuration['className']) && !isset($configuration['constructor']))
 		{
-			throw $this->buildBadRegistrationExceptions($id);
+			throw new RegistrationException(
+				"Could not register service {{$id}}." .
+				"There is no {className} to find class or {constructor} to build instance."
+			);
 		}
 
 		$furtherClassMetadata = $configuration['className'] ?? $configuration['constructor'];
 
 		$this->services[$id] = [$furtherClassMetadata, $configuration['constructorParams'] ?? []];
+
+		if (isset($configuration['singleton']) && $configuration['singleton'] === false)
+		{
+			$this->nonSingletonServices[$id] = true;
+		}
 	}
 
 	/**
 	 * Registers services by module settings, which is stored in {moduleName}/.settings.php.
+	 *
 	 * @param string $moduleName
-	 * @throws SystemException
+	 *
+	 * @throws RegistrationException
 	 */
 	public function registerByModuleSettings(string $moduleName): void
 	{
@@ -85,7 +107,8 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 
 	/**
 	 * Registers services by project settings, which is stored .settings.php.
-	 * @throws SystemException
+	 *
+	 * @throws RegistrationException
 	 */
 	public function registerByGlobalSettings(): void
 	{
@@ -99,7 +122,9 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 
 	/**
 	 * Checks whether the service with code exists.
+	 *
 	 * @param string $id
+	 *
 	 * @return bool
 	 */
 	public function has(string $id): bool
@@ -110,60 +135,88 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 	/**
 	 * Returns services by code.
 	 *
-	 * @param string $id
-	 * @return mixed
-	 * @throws ObjectNotFoundException|NotFoundExceptionInterface
+	 * @template T
+	 *
+	 * @param string|class-string<T> $id
+	 *
+	 * @return T|object|null
+	 * @throws ObjectNotFoundException|ServiceNotFoundException|CircularDependencyException
 	 */
-	public function get(string $id)
+	public function get(string $id): mixed
 	{
 		if (isset($this->instantiated[$id]))
 		{
 			return $this->instantiated[$id];
 		}
 
-		if (!isset($this->services[$id]))
+		if ($this->isInterfaceKey($id) || $this->isAbstractClassKey($id))
 		{
-			if (!class_exists($id))
-			{
-				throw $this->buildNotFoundException("Could not find service by code {$id}.");
-			}
-
-			$object = $this->createItemByClassName($id);
+			$object = $this->resolveInterfaceOrAbstractClass($id);
+		}
+		elseif ($this->isClassKey($id))
+		{
+			$object = $this->resolveClass($id);
 		}
 		else
 		{
 			$object = $this->createItemByServiceName($id);
 		}
 
-		$this->instantiated[$id] = $object;
+		if (!isset($this->nonSingletonServices[$id]))
+		{
+			$this->instantiated[$id] = $object;
+		}
 
 		return $object;
 	}
 
-	private function buildNotFoundException(string $msg): ObjectNotFoundException|NotFoundExceptionInterface
+	/**
+	 * @template T
+	 *
+	 * @param string|class-string<T> $id
+	 *
+	 * @return T|object
+	 *
+	 * @throws ServiceNotFoundException|CircularDependencyException|ObjectNotFoundException
+	 */
+	private function resolveInterfaceOrAbstractClass(string $id): object
 	{
-		return new class($msg) extends ObjectNotFoundException
-			implements NotFoundExceptionInterface {}
-		;
-	}
+		[$classOrClosure, $args] = $this->services[$id];
+		if ($classOrClosure instanceof Closure)
+		{
+			return $classOrClosure(...(is_array($args) ? $args : []));
+		}
 
-	private function buildBadRegistrationExceptions(string $id): SystemException|ContainerExceptionInterface
-	{
-		$message =
-			"Could not register service {{$id}}." .
-			"There is no {className} to find class or {constructor} to build instance."
-		;
-
-		return new class($message) extends SystemException implements ContainerExceptionInterface {};
+		return $this->createItemByClassName($classOrClosure);
 	}
 
 	/**
-	 * Create object by className with all dependencies on construct
+	 * @template T
 	 *
-	 * @param string $className
-	 * @return object|mixed|string
-	 * @throws NotFoundExceptionInterface
-	 * @throws ObjectNotFoundException
+	 * @param string|class-string<T> $id
+	 *
+	 * @return T|object
+	 *
+	 * @throws ServiceNotFoundException|CircularDependencyException|ObjectNotFoundException
+	 */
+	private function resolveClass(string $id): object
+	{
+		if (!class_exists($id))
+		{
+			throw new ServiceNotFoundException("Could not find service by code {$id}.");
+		}
+
+		return $this->createItemByClassName($id);
+	}
+
+	/**
+	 * @template T
+	 *
+	 * @param string|class-string<T> $className
+	 *
+	 * @return T|object
+	 *
+	 * @throws ServiceNotFoundException|CircularDependencyException|ObjectNotFoundException
 	 */
 	private function createItemByClassName(string $className): object
 	{
@@ -171,7 +224,7 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 		{
 			return $this->createObjectWithFullConstruct($className);
 		}
-		catch (\ReflectionException $exception)
+		catch (ReflectionException $exception)
 		{
 			throw new ServiceNotFoundException(
 				$exception->getMessage()
@@ -182,16 +235,16 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 	/**
 	 * Returns object from service config
 	 */
-	private function createItemByServiceName(string $serviceName): mixed
+	private function createItemByServiceName(string $serviceName): object
 	{
 		[$class, $args] = $this->services[$serviceName];
 
-		if ($class instanceof \Closure)
+		if ($class instanceof Closure)
 		{
 			return $class();
 		}
 
-		if ($args instanceof \Closure)
+		if ($args instanceof Closure)
 		{
 			$args = $args();
 		}
@@ -200,38 +253,53 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 	}
 
 	/**
-	 * Returns object with dependencies on construct and save all dependencies and this object in container
-	 *
-	 * @param string $className
-	 * @return object|mixed|string
-	 * @throws NotFoundExceptionInterface
-	 * @throws ObjectNotFoundException
-	 * @throws \ReflectionException
+	 * @throws CircularDependencyException
 	 */
-	private function createObjectWithFullConstruct(string $className): object
+	private function checkCircularDependency(string $className): void
 	{
-		$class = new \ReflectionClass($className);
-
-		$constructor = $class->getConstructor();
-		if (!empty($constructor) && !$constructor->isPublic())
+		if ($this->isCallStacked($className))
 		{
-			throw new ServiceNotFoundException(
-				$className . ' constructor must be is public'
+			$path = implode(' -> ', $this->callStack) . " -> $className";
+
+			throw new CircularDependencyException(
+				'Cyclic dependency detected for service: ' . $path
 			);
 		}
 
-		$params = $constructor?->getParameters();
+		$this->addCallStack($className);
+	}
 
+	/**
+	 * @throws ServiceNotFoundException
+	 */
+	private function getConstructorParams(ReflectionClass $class): array
+	{
+		$constructor = $class->getConstructor();
+		if ($constructor !== null && !$constructor->isPublic())
+		{
+			throw new ServiceNotFoundException(
+				$class->getName() . ' constructor must be is public'
+			);
+		}
+
+		return $constructor?->getParameters() ?? [];
+	}
+
+	/**
+	 * @throws CircularDependencyException|ObjectNotFoundException|ServiceNotFoundException
+	 */
+	private function resolveConstructorDependencies(array $params, string $className): array
+	{
 		if (empty($params))
 		{
-			return new $className();
+			return [];
 		}
 
 		$paramsForClass = [];
 		foreach ($params as $param)
 		{
 			$type = $param->getType();
-			if (empty($type) || ($type instanceof \ReflectionNamedType) === false)
+			if (!$type instanceof ReflectionNamedType)
 			{
 				throw new ServiceNotFoundException(
 					$className . ' All parameters in the constructor must have real class type'
@@ -239,18 +307,37 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 			}
 
 			$classNameInParams = $type->getName();
-			if (!class_exists($classNameInParams))
+			if ($param->isDefaultValueAvailable())
+			{
+				$paramsForClass[] = $param->getDefaultValue();
+				continue;
+			}
+
+			if (!class_exists($classNameInParams) && !interface_exists($classNameInParams))
 			{
 				throw new ServiceNotFoundException(
-					"For {$className} error in params: {$classNameInParams} must be an existing class"
+					"For {$className} error in params: {$classNameInParams} must be an existing class, interface or abstract class"
 				);
 			}
 
 			$paramsForClass[] = $this->get($classNameInParams);
 		}
 
-		$object = $class->newInstanceArgs($paramsForClass);
+		return $paramsForClass;
+	}
 
+	/**
+	 * @template T
+	 *
+	 * @param  ReflectionClass        $class
+	 * @param  array                  $paramsForClass
+	 * @param  string|class-string<T> $className
+	 *
+	 * @return T|object
+	 */
+	private function createInstance(ReflectionClass $class, array $paramsForClass, string $className): object
+	{
+		$object = $class->newInstanceArgs($paramsForClass);
 		if (empty($object))
 		{
 			throw new ServiceNotFoundException(
@@ -259,5 +346,66 @@ final class ServiceLocator implements \Psr\Container\ContainerInterface
 		}
 
 		return $object;
+	}
+
+	/**
+	 * @template T
+	 * @param string|class-string<T> $className
+	 *
+	 * @return T|object
+	 *
+	 * @throws CircularDependencyException|ObjectNotFoundException|ReflectionException|ServiceNotFoundException
+	 */
+	private function createObjectWithFullConstruct(string $className): object
+	{
+		try
+		{
+			$this->checkCircularDependency($className);
+
+			$class = new ReflectionClass($className);
+			$params = $this->getConstructorParams($class);
+			if (empty($params))
+			{
+				return new $className();
+			}
+
+			$paramsForClass = $this->resolveConstructorDependencies($params, $className);
+
+			return $this->createInstance($class, $paramsForClass, $className);
+		}
+		finally
+		{
+			$this->popCallStack();
+		}
+	}
+
+	private function addCallStack(string $className): void
+	{
+		$this->callStack[] = $className;
+	}
+
+	private function popCallStack(): void
+	{
+		array_pop($this->callStack);
+	}
+
+	private function isCallStacked(string $className): bool
+	{
+		return in_array($className, $this->callStack, true);
+	}
+
+	private function isInterfaceKey(string $id): bool
+	{
+		return interface_exists($id) && isset($this->services[$id]);
+	}
+
+	private function isAbstractClassKey(string $id): bool
+	{
+		return isset($this->services[$id]) && class_exists($id) && (new ReflectionClass($id))->isAbstract();
+	}
+
+	private function isClassKey(string $id): bool
+	{
+		return !isset($this->services[$id]);
 	}
 }

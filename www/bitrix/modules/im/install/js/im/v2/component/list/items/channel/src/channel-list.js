@@ -1,16 +1,18 @@
-import { Utils } from 'im.v2.lib.utils';
-import { ListLoadingState as LoadingState } from 'im.v2.component.elements';
+import { type JsonObject } from 'main.core';
+import { type EventEmitter } from 'main.core.events';
 
+import { ListLoadingState as LoadingState } from 'im.v2.component.elements.list-loading-state';
+import { RecentType } from 'im.v2.const';
+import { Utils } from 'im.v2.lib.utils';
+import { type ImModelRecentItem } from 'im.v2.model';
+
+import { ChannelService } from './classes/channel-service';
+import { ChannelRecentMenu } from './classes/context-menu-manager';
+import { PullWatchManager } from './classes/pull-watch-manager';
 import { ChannelItem } from './components/channel-item/channel-item';
 import { EmptyState } from './components/empty-state';
-import { ChannelService } from './classes/channel-service';
-import { PullWatchManager } from './classes/pull-watch-manager';
-import { ChannelRecentMenu } from './classes/context-menu-manager';
 
 import './css/channel-list.css';
-
-import type { JsonObject } from 'main.core';
-import type { ImModelRecentItem, ImModelMessage } from 'im.v2.model';
 
 // @vue/component
 export const ChannelList = {
@@ -27,27 +29,18 @@ export const ChannelList = {
 	},
 	computed:
 	{
-		collection(): ImModelRecentItem[]
-		{
-			return this.$store.getters['recent/getChannelCollection'];
-		},
 		preparedItems(): ImModelRecentItem[]
 		{
-			return [...this.collection].sort((a, b) => {
-				const firstMessage: ImModelMessage = this.$store.getters['messages/getById'](a.messageId);
-				const secondMessage: ImModelMessage = this.$store.getters['messages/getById'](b.messageId);
-
-				return secondMessage.date - firstMessage.date;
-			});
+			return this.$store.getters['recent/getSortedCollection']({ type: RecentType.openChannel });
 		},
 		isEmptyCollection(): boolean
 		{
-			return this.collection.length === 0;
+			return this.preparedItems.length === 0;
 		},
 	},
 	created()
 	{
-		this.contextMenuManager = new ChannelRecentMenu();
+		this.contextMenuManager = new ChannelRecentMenu({ emitter: this.getEmitter() });
 	},
 	beforeUnmount()
 	{
@@ -70,7 +63,7 @@ export const ChannelList = {
 		async onScroll(event: Event)
 		{
 			this.contextMenuManager.close();
-			if (!Utils.dom.isOneScreenRemaining(event.target) || !this.getRecentService().hasMoreItemsToLoad)
+			if (!Utils.dom.isOneScreenRemaining(event.target) || !this.getRecentService().hasMoreItemsToLoad())
 			{
 				return;
 			}
@@ -86,7 +79,11 @@ export const ChannelList = {
 		onRightClick(item: ImModelRecentItem, event: PointerEvent)
 		{
 			event.preventDefault();
-			this.contextMenuManager.openMenu(item, event.currentTarget);
+			const context = {
+				dialogId: item.dialogId,
+				recentItem: item,
+			};
+			this.contextMenuManager.openMenu(context, event.currentTarget);
 		},
 		getRecentService(): ChannelService
 		{
@@ -105,6 +102,10 @@ export const ChannelList = {
 			}
 
 			return this.pullWatchManager;
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 		loc(phraseCode: string): string
 		{

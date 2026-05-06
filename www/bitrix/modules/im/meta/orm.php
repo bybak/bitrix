@@ -243,6 +243,16 @@ namespace Bitrix\Im\Model {
 	 * @method \Bitrix\Im\Model\EO_Relation resetReason()
 	 * @method \Bitrix\Im\Model\EO_Relation unsetReason()
 	 * @method \string fillReason()
+	 * @method \boolean getIsHidden()
+	 * @method \Bitrix\Im\Model\EO_Relation setIsHidden(\boolean|\Bitrix\Main\DB\SqlExpression $isHidden)
+	 * @method bool hasIsHidden()
+	 * @method bool isIsHiddenFilled()
+	 * @method bool isIsHiddenChanged()
+	 * @method \boolean remindActualIsHidden()
+	 * @method \boolean requireIsHidden()
+	 * @method \Bitrix\Im\Model\EO_Relation resetIsHidden()
+	 * @method \Bitrix\Im\Model\EO_Relation unsetIsHidden()
+	 * @method \boolean fillIsHidden()
 	 * @method \int getLastFileId()
 	 * @method \Bitrix\Im\Model\EO_Relation setLastFileId(\int|\Bitrix\Main\DB\SqlExpression $lastFileId)
 	 * @method bool hasLastFileId()
@@ -445,6 +455,8 @@ namespace Bitrix\Im\Model {
 	 * @method \int[] fillLastSendMessageId()
 	 * @method \string[] getReasonList()
 	 * @method \string[] fillReason()
+	 * @method \boolean[] getIsHiddenList()
+	 * @method \boolean[] fillIsHidden()
 	 * @method \int[] getLastFileIdList()
 	 * @method \int[] fillLastFileId()
 	 * @method \Bitrix\Main\Type\DateTime[] getLastReadList()
@@ -1276,6 +1288,16 @@ namespace Bitrix\Im\Model {
 	 * @method \Bitrix\Im\Model\EO_Bot resetMethodMessageDelete()
 	 * @method \Bitrix\Im\Model\EO_Bot unsetMethodMessageDelete()
 	 * @method \string fillMethodMessageDelete()
+	 * @method \string getMethodContextGet()
+	 * @method \Bitrix\Im\Model\EO_Bot setMethodContextGet(\string|\Bitrix\Main\DB\SqlExpression $methodContextGet)
+	 * @method bool hasMethodContextGet()
+	 * @method bool isMethodContextGetFilled()
+	 * @method bool isMethodContextGetChanged()
+	 * @method \string remindActualMethodContextGet()
+	 * @method \string requireMethodContextGet()
+	 * @method \Bitrix\Im\Model\EO_Bot resetMethodContextGet()
+	 * @method \Bitrix\Im\Model\EO_Bot unsetMethodContextGet()
+	 * @method \string fillMethodContextGet()
 	 * @method \string getMethodWelcomeMessage()
 	 * @method \Bitrix\Im\Model\EO_Bot setMethodWelcomeMessage(\string|\Bitrix\Main\DB\SqlExpression $methodWelcomeMessage)
 	 * @method bool hasMethodWelcomeMessage()
@@ -1386,6 +1408,16 @@ namespace Bitrix\Im\Model {
 	 * @method \Bitrix\Im\Model\EO_Bot resetHidden()
 	 * @method \Bitrix\Im\Model\EO_Bot unsetHidden()
 	 * @method \boolean fillHidden()
+	 * @method \string getBackgroundId()
+	 * @method \Bitrix\Im\Model\EO_Bot setBackgroundId(\string|\Bitrix\Main\DB\SqlExpression $backgroundId)
+	 * @method bool hasBackgroundId()
+	 * @method bool isBackgroundIdFilled()
+	 * @method bool isBackgroundIdChanged()
+	 * @method \string remindActualBackgroundId()
+	 * @method \string requireBackgroundId()
+	 * @method \Bitrix\Im\Model\EO_Bot resetBackgroundId()
+	 * @method \Bitrix\Im\Model\EO_Bot unsetBackgroundId()
+	 * @method \string fillBackgroundId()
 	 *
 	 * Common methods:
 	 * ---------------
@@ -1448,6 +1480,8 @@ namespace Bitrix\Im\Model {
 	 * @method \string[] fillMethodMessageUpdate()
 	 * @method \string[] getMethodMessageDeleteList()
 	 * @method \string[] fillMethodMessageDelete()
+	 * @method \string[] getMethodContextGetList()
+	 * @method \string[] fillMethodContextGet()
 	 * @method \string[] getMethodWelcomeMessageList()
 	 * @method \string[] fillMethodWelcomeMessage()
 	 * @method \string[] getTextPrivateWelcomeMessageList()
@@ -1470,6 +1504,8 @@ namespace Bitrix\Im\Model {
 	 * @method \boolean[] fillOpenline()
 	 * @method \boolean[] getHiddenList()
 	 * @method \boolean[] fillHidden()
+	 * @method \string[] getBackgroundIdList()
+	 * @method \string[] fillBackgroundId()
 	 *
 	 * Common methods:
 	 * ---------------
@@ -2825,139 +2861,6 @@ namespace Bitrix\Im\Model {
 	 * @method \Bitrix\Im\Model\EO_RecentInitQueue_Collection wakeUpCollection($rows)
 	 */
 	class EO_RecentInitQueue_Entity extends \Bitrix\Main\ORM\Entity {}
-}
-/* ORMENTITYANNOTATION:Bitrix\Im\Model\ConferenceUserRoleTable:im/lib/model/conferenceuserrole.php */
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_ConferenceUserRole
-	 * @see \Bitrix\Im\Model\ConferenceUserRoleTable
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int getConferenceId()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole setConferenceId(\int|\Bitrix\Main\DB\SqlExpression $conferenceId)
-	 * @method bool hasConferenceId()
-	 * @method bool isConferenceIdFilled()
-	 * @method bool isConferenceIdChanged()
-	 * @method \int getUserId()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole setUserId(\int|\Bitrix\Main\DB\SqlExpression $userId)
-	 * @method bool hasUserId()
-	 * @method bool isUserIdFilled()
-	 * @method bool isUserIdChanged()
-	 * @method \string getRole()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole setRole(\string|\Bitrix\Main\DB\SqlExpression $role)
-	 * @method bool hasRole()
-	 * @method bool isRoleFilled()
-	 * @method bool isRoleChanged()
-	 * @method \string remindActualRole()
-	 * @method \string requireRole()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole resetRole()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole unsetRole()
-	 * @method \string fillRole()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @property-read array $primary
-	 * @property-read int $state @see \Bitrix\Main\ORM\Objectify\State
-	 * @property-read \Bitrix\Main\Type\Dictionary $customData
-	 * @property \Bitrix\Main\Authentication\Context $authContext
-	 * @method mixed get($fieldName)
-	 * @method mixed remindActual($fieldName)
-	 * @method mixed require($fieldName)
-	 * @method bool has($fieldName)
-	 * @method bool isFilled($fieldName)
-	 * @method bool isChanged($fieldName)
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole set($fieldName, $value)
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole reset($fieldName)
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole unset($fieldName)
-	 * @method void addTo($fieldName, $value)
-	 * @method void removeFrom($fieldName, $value)
-	 * @method void removeAll($fieldName)
-	 * @method \Bitrix\Main\ORM\Data\Result delete()
-	 * @method mixed fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method mixed[] collectValues($valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL)
-	 * @method \Bitrix\Main\ORM\Data\AddResult|\Bitrix\Main\ORM\Data\UpdateResult|\Bitrix\Main\ORM\Data\Result save()
-	 * @method static \Bitrix\Im\Model\EO_ConferenceUserRole wakeUp($data)
-	 */
-	class EO_ConferenceUserRole {
-		/* @var \Bitrix\Im\Model\ConferenceUserRoleTable */
-		static public $dataClass = '\Bitrix\Im\Model\ConferenceUserRoleTable';
-		/**
-		 * @param bool|array $setDefaultValues
-		 */
-		public function __construct($setDefaultValues = true) {}
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_ConferenceUserRole_Collection
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int[] getConferenceIdList()
-	 * @method \int[] getUserIdList()
-	 * @method \string[] getRoleList()
-	 * @method \string[] fillRole()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @method void add(\Bitrix\Im\Model\EO_ConferenceUserRole $object)
-	 * @method bool has(\Bitrix\Im\Model\EO_ConferenceUserRole $object)
-	 * @method bool hasByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole getByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole[] getAll()
-	 * @method bool remove(\Bitrix\Im\Model\EO_ConferenceUserRole $object)
-	 * @method void removeByPrimary($primary)
-	 * @method array|\Bitrix\Main\ORM\Objectify\Collection|null fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method static \Bitrix\Im\Model\EO_ConferenceUserRole_Collection wakeUp($data)
-	 * @method \Bitrix\Main\ORM\Data\Result save($ignoreEvents = false)
-	 * @method void offsetSet() ArrayAccess
-	 * @method void offsetExists() ArrayAccess
-	 * @method void offsetUnset() ArrayAccess
-	 * @method void offsetGet() ArrayAccess
-	 * @method void rewind() Iterator
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole current() Iterator
-	 * @method mixed key() Iterator
-	 * @method void next() Iterator
-	 * @method bool valid() Iterator
-	 * @method int count() Countable
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole_Collection merge(?\Bitrix\Im\Model\EO_ConferenceUserRole_Collection $collection)
-	 * @method bool isEmpty()
-	 * @method array collectValues(int $valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool $recursive = false)
-	 */
-	class EO_ConferenceUserRole_Collection implements \ArrayAccess, \Iterator, \Countable {
-		/* @var \Bitrix\Im\Model\ConferenceUserRoleTable */
-		static public $dataClass = '\Bitrix\Im\Model\ConferenceUserRoleTable';
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @method EO_ConferenceUserRole_Result exec()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole fetchObject()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole_Collection fetchCollection()
-	 */
-	class EO_ConferenceUserRole_Query extends \Bitrix\Main\ORM\Query\Query {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole fetchObject()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole_Collection fetchCollection()
-	 */
-	class EO_ConferenceUserRole_Result extends \Bitrix\Main\ORM\Query\Result {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole createObject($setDefaultValues = true)
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole_Collection createCollection()
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole wakeUpObject($row)
-	 * @method \Bitrix\Im\Model\EO_ConferenceUserRole_Collection wakeUpCollection($rows)
-	 */
-	class EO_ConferenceUserRole_Entity extends \Bitrix\Main\ORM\Entity {}
 }
 /* ORMENTITYANNOTATION:Bitrix\Im\Model\ChatPinnedMessageTable:im/lib/model/chatpinnedmessage.php */
 namespace Bitrix\Im\Model {
@@ -4724,6 +4627,13 @@ namespace Bitrix\Im\Model {
 	 * @method bool isIsRealUserFilled()
 	 * @method \Bitrix\Im\Model\EO_User unsetIsRealUser()
 	 * @method \boolean fillIsRealUser()
+	 * @method \boolean getRealUser()
+	 * @method \boolean remindActualRealUser()
+	 * @method \boolean requireRealUser()
+	 * @method bool hasRealUser()
+	 * @method bool isRealUserFilled()
+	 * @method \Bitrix\Im\Model\EO_User unsetRealUser()
+	 * @method \boolean fillRealUser()
 	 * @method \Bitrix\Main\EO_UserIndex getIndex()
 	 * @method \Bitrix\Main\EO_UserIndex remindActualIndex()
 	 * @method \Bitrix\Main\EO_UserIndex requireIndex()
@@ -4953,6 +4863,8 @@ namespace Bitrix\Im\Model {
 	 * @method \boolean[] fillIsOnline()
 	 * @method \boolean[] getIsRealUserList()
 	 * @method \boolean[] fillIsRealUser()
+	 * @method \boolean[] getRealUserList()
+	 * @method \boolean[] fillRealUser()
 	 * @method \Bitrix\Main\EO_UserIndex[] getIndexList()
 	 * @method \Bitrix\Im\Model\EO_User_Collection getIndexCollection()
 	 * @method \Bitrix\Main\EO_UserIndex_Collection fillIndex()
@@ -5028,6 +4940,394 @@ namespace Bitrix\Im\Model {
 	 * @method \Bitrix\Im\Model\EO_User_Collection wakeUpCollection($rows)
 	 */
 	class EO_User_Entity extends \Bitrix\Main\ORM\Entity {}
+}
+/* ORMENTITYANNOTATION:Bitrix\Im\Model\NotifyGroupConditionTable:im/lib/model/notifygroupconditiontable.php */
+namespace Bitrix\Im\Model {
+	/**
+	 * EO_NotifyGroupCondition
+	 * @see \Bitrix\Im\Model\NotifyGroupConditionTable
+	 *
+	 * Custom methods:
+	 * ---------------
+	 *
+	 * @method \int getId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition setId(\int|\Bitrix\Main\DB\SqlExpression $id)
+	 * @method bool hasId()
+	 * @method bool isIdFilled()
+	 * @method bool isIdChanged()
+	 * @method \int getGroupId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition setGroupId(\int|\Bitrix\Main\DB\SqlExpression $groupId)
+	 * @method bool hasGroupId()
+	 * @method bool isGroupIdFilled()
+	 * @method bool isGroupIdChanged()
+	 * @method \int remindActualGroupId()
+	 * @method \int requireGroupId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition resetGroupId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition unsetGroupId()
+	 * @method \int fillGroupId()
+	 * @method \string getModule()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition setModule(\string|\Bitrix\Main\DB\SqlExpression $module)
+	 * @method bool hasModule()
+	 * @method bool isModuleFilled()
+	 * @method bool isModuleChanged()
+	 * @method \string remindActualModule()
+	 * @method \string requireModule()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition resetModule()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition unsetModule()
+	 * @method \string fillModule()
+	 * @method \string getEvent()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition setEvent(\string|\Bitrix\Main\DB\SqlExpression $event)
+	 * @method bool hasEvent()
+	 * @method bool isEventFilled()
+	 * @method bool isEventChanged()
+	 * @method \string remindActualEvent()
+	 * @method \string requireEvent()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition resetEvent()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition unsetEvent()
+	 * @method \string fillEvent()
+	 * @method \int getUserId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition setUserId(\int|\Bitrix\Main\DB\SqlExpression $userId)
+	 * @method bool hasUserId()
+	 * @method bool isUserIdFilled()
+	 * @method bool isUserIdChanged()
+	 * @method \int remindActualUserId()
+	 * @method \int requireUserId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition resetUserId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition unsetUserId()
+	 * @method \int fillUserId()
+	 * @method \Bitrix\Main\Type\DateTime getDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition setDateCreate(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $dateCreate)
+	 * @method bool hasDateCreate()
+	 * @method bool isDateCreateFilled()
+	 * @method bool isDateCreateChanged()
+	 * @method \Bitrix\Main\Type\DateTime remindActualDateCreate()
+	 * @method \Bitrix\Main\Type\DateTime requireDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition resetDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition unsetDateCreate()
+	 * @method \Bitrix\Main\Type\DateTime fillDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup getGroup()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup remindActualGroup()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup requireGroup()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition setGroup(\Bitrix\Im\Model\EO_NotifyGroup $object)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition resetGroup()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition unsetGroup()
+	 * @method bool hasGroup()
+	 * @method bool isGroupFilled()
+	 * @method bool isGroupChanged()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup fillGroup()
+	 *
+	 * Common methods:
+	 * ---------------
+	 *
+	 * @property-read \Bitrix\Main\ORM\Entity $entity
+	 * @property-read array $primary
+	 * @property-read int $state @see \Bitrix\Main\ORM\Objectify\State
+	 * @property-read \Bitrix\Main\Type\Dictionary $customData
+	 * @property \Bitrix\Main\Authentication\Context $authContext
+	 * @method mixed get($fieldName)
+	 * @method mixed remindActual($fieldName)
+	 * @method mixed require($fieldName)
+	 * @method bool has($fieldName)
+	 * @method bool isFilled($fieldName)
+	 * @method bool isChanged($fieldName)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition set($fieldName, $value)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition reset($fieldName)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition unset($fieldName)
+	 * @method void addTo($fieldName, $value)
+	 * @method void removeFrom($fieldName, $value)
+	 * @method void removeAll($fieldName)
+	 * @method \Bitrix\Main\ORM\Data\Result delete()
+	 * @method mixed fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
+	 * @method mixed[] collectValues($valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL)
+	 * @method \Bitrix\Main\ORM\Data\AddResult|\Bitrix\Main\ORM\Data\UpdateResult|\Bitrix\Main\ORM\Data\Result save()
+	 * @method static \Bitrix\Im\Model\EO_NotifyGroupCondition wakeUp($data)
+	 */
+	class EO_NotifyGroupCondition {
+		/* @var \Bitrix\Im\Model\NotifyGroupConditionTable */
+		static public $dataClass = '\Bitrix\Im\Model\NotifyGroupConditionTable';
+		/**
+		 * @param bool|array $setDefaultValues
+		 */
+		public function __construct($setDefaultValues = true) {}
+	}
+}
+namespace Bitrix\Im\Model {
+	/**
+	 * EO_NotifyGroupCondition_Collection
+	 *
+	 * Custom methods:
+	 * ---------------
+	 *
+	 * @method \int[] getIdList()
+	 * @method \int[] getGroupIdList()
+	 * @method \int[] fillGroupId()
+	 * @method \string[] getModuleList()
+	 * @method \string[] fillModule()
+	 * @method \string[] getEventList()
+	 * @method \string[] fillEvent()
+	 * @method \int[] getUserIdList()
+	 * @method \int[] fillUserId()
+	 * @method \Bitrix\Main\Type\DateTime[] getDateCreateList()
+	 * @method \Bitrix\Main\Type\DateTime[] fillDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup[] getGroupList()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection getGroupCollection()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup_Collection fillGroup()
+	 *
+	 * Common methods:
+	 * ---------------
+	 *
+	 * @property-read \Bitrix\Main\ORM\Entity $entity
+	 * @method void add(\Bitrix\Im\Model\EO_NotifyGroupCondition $object)
+	 * @method bool has(\Bitrix\Im\Model\EO_NotifyGroupCondition $object)
+	 * @method bool hasByPrimary($primary)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition getByPrimary($primary)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition[] getAll()
+	 * @method bool remove(\Bitrix\Im\Model\EO_NotifyGroupCondition $object)
+	 * @method void removeByPrimary($primary)
+	 * @method array|\Bitrix\Main\ORM\Objectify\Collection|null fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
+	 * @method static \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection wakeUp($data)
+	 * @method \Bitrix\Main\ORM\Data\Result save($ignoreEvents = false)
+	 * @method void offsetSet() ArrayAccess
+	 * @method void offsetExists() ArrayAccess
+	 * @method void offsetUnset() ArrayAccess
+	 * @method void offsetGet() ArrayAccess
+	 * @method void rewind() Iterator
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition current() Iterator
+	 * @method mixed key() Iterator
+	 * @method void next() Iterator
+	 * @method bool valid() Iterator
+	 * @method int count() Countable
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection merge(?\Bitrix\Im\Model\EO_NotifyGroupCondition_Collection $collection)
+	 * @method bool isEmpty()
+	 * @method array collectValues(int $valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool $recursive = false)
+	 */
+	class EO_NotifyGroupCondition_Collection implements \ArrayAccess, \Iterator, \Countable {
+		/* @var \Bitrix\Im\Model\NotifyGroupConditionTable */
+		static public $dataClass = '\Bitrix\Im\Model\NotifyGroupConditionTable';
+	}
+}
+namespace Bitrix\Im\Model {
+	/**
+	 * Common methods:
+	 * ---------------
+	 *
+	 * @method EO_NotifyGroupCondition_Result exec()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition fetchObject()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection fetchCollection()
+	 */
+	class EO_NotifyGroupCondition_Query extends \Bitrix\Main\ORM\Query\Query {}
+	/**
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition fetchObject()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection fetchCollection()
+	 */
+	class EO_NotifyGroupCondition_Result extends \Bitrix\Main\ORM\Query\Result {}
+	/**
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition createObject($setDefaultValues = true)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection createCollection()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition wakeUpObject($row)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection wakeUpCollection($rows)
+	 */
+	class EO_NotifyGroupCondition_Entity extends \Bitrix\Main\ORM\Entity {}
+}
+/* ORMENTITYANNOTATION:Bitrix\Im\Model\AnchorTable:im/lib/model/anchortable.php */
+namespace Bitrix\Im\Model {
+	/**
+	 * EO_Anchor
+	 * @see \Bitrix\Im\Model\AnchorTable
+	 *
+	 * Custom methods:
+	 * ---------------
+	 *
+	 * @method \int getId()
+	 * @method \Bitrix\Im\Model\EO_Anchor setId(\int|\Bitrix\Main\DB\SqlExpression $id)
+	 * @method bool hasId()
+	 * @method bool isIdFilled()
+	 * @method bool isIdChanged()
+	 * @method \int getMessageId()
+	 * @method \Bitrix\Im\Model\EO_Anchor setMessageId(\int|\Bitrix\Main\DB\SqlExpression $messageId)
+	 * @method bool hasMessageId()
+	 * @method bool isMessageIdFilled()
+	 * @method bool isMessageIdChanged()
+	 * @method \int remindActualMessageId()
+	 * @method \int requireMessageId()
+	 * @method \Bitrix\Im\Model\EO_Anchor resetMessageId()
+	 * @method \Bitrix\Im\Model\EO_Anchor unsetMessageId()
+	 * @method \int fillMessageId()
+	 * @method \int getChatId()
+	 * @method \Bitrix\Im\Model\EO_Anchor setChatId(\int|\Bitrix\Main\DB\SqlExpression $chatId)
+	 * @method bool hasChatId()
+	 * @method bool isChatIdFilled()
+	 * @method bool isChatIdChanged()
+	 * @method \int remindActualChatId()
+	 * @method \int requireChatId()
+	 * @method \Bitrix\Im\Model\EO_Anchor resetChatId()
+	 * @method \Bitrix\Im\Model\EO_Anchor unsetChatId()
+	 * @method \int fillChatId()
+	 * @method \int getUserId()
+	 * @method \Bitrix\Im\Model\EO_Anchor setUserId(\int|\Bitrix\Main\DB\SqlExpression $userId)
+	 * @method bool hasUserId()
+	 * @method bool isUserIdFilled()
+	 * @method bool isUserIdChanged()
+	 * @method \int remindActualUserId()
+	 * @method \int requireUserId()
+	 * @method \Bitrix\Im\Model\EO_Anchor resetUserId()
+	 * @method \Bitrix\Im\Model\EO_Anchor unsetUserId()
+	 * @method \int fillUserId()
+	 * @method \int getFromUserId()
+	 * @method \Bitrix\Im\Model\EO_Anchor setFromUserId(\int|\Bitrix\Main\DB\SqlExpression $fromUserId)
+	 * @method bool hasFromUserId()
+	 * @method bool isFromUserIdFilled()
+	 * @method bool isFromUserIdChanged()
+	 * @method \int remindActualFromUserId()
+	 * @method \int requireFromUserId()
+	 * @method \Bitrix\Im\Model\EO_Anchor resetFromUserId()
+	 * @method \Bitrix\Im\Model\EO_Anchor unsetFromUserId()
+	 * @method \int fillFromUserId()
+	 * @method \string getType()
+	 * @method \Bitrix\Im\Model\EO_Anchor setType(\string|\Bitrix\Main\DB\SqlExpression $type)
+	 * @method bool hasType()
+	 * @method bool isTypeFilled()
+	 * @method bool isTypeChanged()
+	 * @method \string remindActualType()
+	 * @method \string requireType()
+	 * @method \Bitrix\Im\Model\EO_Anchor resetType()
+	 * @method \Bitrix\Im\Model\EO_Anchor unsetType()
+	 * @method \string fillType()
+	 * @method null|\string getSubType()
+	 * @method \Bitrix\Im\Model\EO_Anchor setSubType(null|\string|\Bitrix\Main\DB\SqlExpression $subType)
+	 * @method bool hasSubType()
+	 * @method bool isSubTypeFilled()
+	 * @method bool isSubTypeChanged()
+	 * @method null|\string remindActualSubType()
+	 * @method null|\string requireSubType()
+	 * @method \Bitrix\Im\Model\EO_Anchor resetSubType()
+	 * @method \Bitrix\Im\Model\EO_Anchor unsetSubType()
+	 * @method null|\string fillSubType()
+	 * @method \Bitrix\Im\Model\EO_Message getMessage()
+	 * @method \Bitrix\Im\Model\EO_Message remindActualMessage()
+	 * @method \Bitrix\Im\Model\EO_Message requireMessage()
+	 * @method \Bitrix\Im\Model\EO_Anchor setMessage(\Bitrix\Im\Model\EO_Message $object)
+	 * @method \Bitrix\Im\Model\EO_Anchor resetMessage()
+	 * @method \Bitrix\Im\Model\EO_Anchor unsetMessage()
+	 * @method bool hasMessage()
+	 * @method bool isMessageFilled()
+	 * @method bool isMessageChanged()
+	 * @method \Bitrix\Im\Model\EO_Message fillMessage()
+	 *
+	 * Common methods:
+	 * ---------------
+	 *
+	 * @property-read \Bitrix\Main\ORM\Entity $entity
+	 * @property-read array $primary
+	 * @property-read int $state @see \Bitrix\Main\ORM\Objectify\State
+	 * @property-read \Bitrix\Main\Type\Dictionary $customData
+	 * @property \Bitrix\Main\Authentication\Context $authContext
+	 * @method mixed get($fieldName)
+	 * @method mixed remindActual($fieldName)
+	 * @method mixed require($fieldName)
+	 * @method bool has($fieldName)
+	 * @method bool isFilled($fieldName)
+	 * @method bool isChanged($fieldName)
+	 * @method \Bitrix\Im\Model\EO_Anchor set($fieldName, $value)
+	 * @method \Bitrix\Im\Model\EO_Anchor reset($fieldName)
+	 * @method \Bitrix\Im\Model\EO_Anchor unset($fieldName)
+	 * @method void addTo($fieldName, $value)
+	 * @method void removeFrom($fieldName, $value)
+	 * @method void removeAll($fieldName)
+	 * @method \Bitrix\Main\ORM\Data\Result delete()
+	 * @method mixed fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
+	 * @method mixed[] collectValues($valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL)
+	 * @method \Bitrix\Main\ORM\Data\AddResult|\Bitrix\Main\ORM\Data\UpdateResult|\Bitrix\Main\ORM\Data\Result save()
+	 * @method static \Bitrix\Im\Model\EO_Anchor wakeUp($data)
+	 */
+	class EO_Anchor {
+		/* @var \Bitrix\Im\Model\AnchorTable */
+		static public $dataClass = '\Bitrix\Im\Model\AnchorTable';
+		/**
+		 * @param bool|array $setDefaultValues
+		 */
+		public function __construct($setDefaultValues = true) {}
+	}
+}
+namespace Bitrix\Im\Model {
+	/**
+	 * EO_Anchor_Collection
+	 *
+	 * Custom methods:
+	 * ---------------
+	 *
+	 * @method \int[] getIdList()
+	 * @method \int[] getMessageIdList()
+	 * @method \int[] fillMessageId()
+	 * @method \int[] getChatIdList()
+	 * @method \int[] fillChatId()
+	 * @method \int[] getUserIdList()
+	 * @method \int[] fillUserId()
+	 * @method \int[] getFromUserIdList()
+	 * @method \int[] fillFromUserId()
+	 * @method \string[] getTypeList()
+	 * @method \string[] fillType()
+	 * @method null|\string[] getSubTypeList()
+	 * @method null|\string[] fillSubType()
+	 * @method \Bitrix\Im\Model\EO_Message[] getMessageList()
+	 * @method \Bitrix\Im\Model\EO_Anchor_Collection getMessageCollection()
+	 * @method \Bitrix\Im\Model\EO_Message_Collection fillMessage()
+	 *
+	 * Common methods:
+	 * ---------------
+	 *
+	 * @property-read \Bitrix\Main\ORM\Entity $entity
+	 * @method void add(\Bitrix\Im\Model\EO_Anchor $object)
+	 * @method bool has(\Bitrix\Im\Model\EO_Anchor $object)
+	 * @method bool hasByPrimary($primary)
+	 * @method \Bitrix\Im\Model\EO_Anchor getByPrimary($primary)
+	 * @method \Bitrix\Im\Model\EO_Anchor[] getAll()
+	 * @method bool remove(\Bitrix\Im\Model\EO_Anchor $object)
+	 * @method void removeByPrimary($primary)
+	 * @method array|\Bitrix\Main\ORM\Objectify\Collection|null fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
+	 * @method static \Bitrix\Im\Model\EO_Anchor_Collection wakeUp($data)
+	 * @method \Bitrix\Main\ORM\Data\Result save($ignoreEvents = false)
+	 * @method void offsetSet() ArrayAccess
+	 * @method void offsetExists() ArrayAccess
+	 * @method void offsetUnset() ArrayAccess
+	 * @method void offsetGet() ArrayAccess
+	 * @method void rewind() Iterator
+	 * @method \Bitrix\Im\Model\EO_Anchor current() Iterator
+	 * @method mixed key() Iterator
+	 * @method void next() Iterator
+	 * @method bool valid() Iterator
+	 * @method int count() Countable
+	 * @method \Bitrix\Im\Model\EO_Anchor_Collection merge(?\Bitrix\Im\Model\EO_Anchor_Collection $collection)
+	 * @method bool isEmpty()
+	 * @method array collectValues(int $valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool $recursive = false)
+	 */
+	class EO_Anchor_Collection implements \ArrayAccess, \Iterator, \Countable {
+		/* @var \Bitrix\Im\Model\AnchorTable */
+		static public $dataClass = '\Bitrix\Im\Model\AnchorTable';
+	}
+}
+namespace Bitrix\Im\Model {
+	/**
+	 * Common methods:
+	 * ---------------
+	 *
+	 * @method EO_Anchor_Result exec()
+	 * @method \Bitrix\Im\Model\EO_Anchor fetchObject()
+	 * @method \Bitrix\Im\Model\EO_Anchor_Collection fetchCollection()
+	 */
+	class EO_Anchor_Query extends \Bitrix\Main\ORM\Query\Query {}
+	/**
+	 * @method \Bitrix\Im\Model\EO_Anchor fetchObject()
+	 * @method \Bitrix\Im\Model\EO_Anchor_Collection fetchCollection()
+	 */
+	class EO_Anchor_Result extends \Bitrix\Main\ORM\Query\Result {}
+	/**
+	 * @method \Bitrix\Im\Model\EO_Anchor createObject($setDefaultValues = true)
+	 * @method \Bitrix\Im\Model\EO_Anchor_Collection createCollection()
+	 * @method \Bitrix\Im\Model\EO_Anchor wakeUpObject($row)
+	 * @method \Bitrix\Im\Model\EO_Anchor_Collection wakeUpCollection($rows)
+	 */
+	class EO_Anchor_Entity extends \Bitrix\Main\ORM\Entity {}
 }
 /* ORMENTITYANNOTATION:Bitrix\Im\Model\LinkFavoriteTable:im/lib/model/linkfavorite.php */
 namespace Bitrix\Im\Model {
@@ -5394,424 +5694,71 @@ namespace Bitrix\Im\Model {
 	 */
 	class EO_ChatParam_Entity extends \Bitrix\Main\ORM\Entity {}
 }
-/* ORMENTITYANNOTATION:Bitrix\Im\Model\BotChatTable:im/lib/model/botchat.php */
+/* ORMENTITYANNOTATION:Bitrix\Im\Model\NotifyGroupTable:im/lib/model/notifygrouptable.php */
 namespace Bitrix\Im\Model {
 	/**
-	 * EO_BotChat
-	 * @see \Bitrix\Im\Model\BotChatTable
+	 * EO_NotifyGroup
+	 * @see \Bitrix\Im\Model\NotifyGroupTable
 	 *
 	 * Custom methods:
 	 * ---------------
 	 *
 	 * @method \int getId()
-	 * @method \Bitrix\Im\Model\EO_BotChat setId(\int|\Bitrix\Main\DB\SqlExpression $id)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup setId(\int|\Bitrix\Main\DB\SqlExpression $id)
 	 * @method bool hasId()
 	 * @method bool isIdFilled()
 	 * @method bool isIdChanged()
-	 * @method \int getBotId()
-	 * @method \Bitrix\Im\Model\EO_BotChat setBotId(\int|\Bitrix\Main\DB\SqlExpression $botId)
-	 * @method bool hasBotId()
-	 * @method bool isBotIdFilled()
-	 * @method bool isBotIdChanged()
-	 * @method \int remindActualBotId()
-	 * @method \int requireBotId()
-	 * @method \Bitrix\Im\Model\EO_BotChat resetBotId()
-	 * @method \Bitrix\Im\Model\EO_BotChat unsetBotId()
-	 * @method \int fillBotId()
-	 * @method \int getChatId()
-	 * @method \Bitrix\Im\Model\EO_BotChat setChatId(\int|\Bitrix\Main\DB\SqlExpression $chatId)
-	 * @method bool hasChatId()
-	 * @method bool isChatIdFilled()
-	 * @method bool isChatIdChanged()
-	 * @method \int remindActualChatId()
-	 * @method \int requireChatId()
-	 * @method \Bitrix\Im\Model\EO_BotChat resetChatId()
-	 * @method \Bitrix\Im\Model\EO_BotChat unsetChatId()
-	 * @method \int fillChatId()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @property-read array $primary
-	 * @property-read int $state @see \Bitrix\Main\ORM\Objectify\State
-	 * @property-read \Bitrix\Main\Type\Dictionary $customData
-	 * @property \Bitrix\Main\Authentication\Context $authContext
-	 * @method mixed get($fieldName)
-	 * @method mixed remindActual($fieldName)
-	 * @method mixed require($fieldName)
-	 * @method bool has($fieldName)
-	 * @method bool isFilled($fieldName)
-	 * @method bool isChanged($fieldName)
-	 * @method \Bitrix\Im\Model\EO_BotChat set($fieldName, $value)
-	 * @method \Bitrix\Im\Model\EO_BotChat reset($fieldName)
-	 * @method \Bitrix\Im\Model\EO_BotChat unset($fieldName)
-	 * @method void addTo($fieldName, $value)
-	 * @method void removeFrom($fieldName, $value)
-	 * @method void removeAll($fieldName)
-	 * @method \Bitrix\Main\ORM\Data\Result delete()
-	 * @method mixed fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method mixed[] collectValues($valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL)
-	 * @method \Bitrix\Main\ORM\Data\AddResult|\Bitrix\Main\ORM\Data\UpdateResult|\Bitrix\Main\ORM\Data\Result save()
-	 * @method static \Bitrix\Im\Model\EO_BotChat wakeUp($data)
-	 */
-	class EO_BotChat {
-		/* @var \Bitrix\Im\Model\BotChatTable */
-		static public $dataClass = '\Bitrix\Im\Model\BotChatTable';
-		/**
-		 * @param bool|array $setDefaultValues
-		 */
-		public function __construct($setDefaultValues = true) {}
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_BotChat_Collection
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int[] getIdList()
-	 * @method \int[] getBotIdList()
-	 * @method \int[] fillBotId()
-	 * @method \int[] getChatIdList()
-	 * @method \int[] fillChatId()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @method void add(\Bitrix\Im\Model\EO_BotChat $object)
-	 * @method bool has(\Bitrix\Im\Model\EO_BotChat $object)
-	 * @method bool hasByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_BotChat getByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_BotChat[] getAll()
-	 * @method bool remove(\Bitrix\Im\Model\EO_BotChat $object)
-	 * @method void removeByPrimary($primary)
-	 * @method array|\Bitrix\Main\ORM\Objectify\Collection|null fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method static \Bitrix\Im\Model\EO_BotChat_Collection wakeUp($data)
-	 * @method \Bitrix\Main\ORM\Data\Result save($ignoreEvents = false)
-	 * @method void offsetSet() ArrayAccess
-	 * @method void offsetExists() ArrayAccess
-	 * @method void offsetUnset() ArrayAccess
-	 * @method void offsetGet() ArrayAccess
-	 * @method void rewind() Iterator
-	 * @method \Bitrix\Im\Model\EO_BotChat current() Iterator
-	 * @method mixed key() Iterator
-	 * @method void next() Iterator
-	 * @method bool valid() Iterator
-	 * @method int count() Countable
-	 * @method \Bitrix\Im\Model\EO_BotChat_Collection merge(?\Bitrix\Im\Model\EO_BotChat_Collection $collection)
-	 * @method bool isEmpty()
-	 * @method array collectValues(int $valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool $recursive = false)
-	 */
-	class EO_BotChat_Collection implements \ArrayAccess, \Iterator, \Countable {
-		/* @var \Bitrix\Im\Model\BotChatTable */
-		static public $dataClass = '\Bitrix\Im\Model\BotChatTable';
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @method EO_BotChat_Result exec()
-	 * @method \Bitrix\Im\Model\EO_BotChat fetchObject()
-	 * @method \Bitrix\Im\Model\EO_BotChat_Collection fetchCollection()
-	 */
-	class EO_BotChat_Query extends \Bitrix\Main\ORM\Query\Query {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_BotChat fetchObject()
-	 * @method \Bitrix\Im\Model\EO_BotChat_Collection fetchCollection()
-	 */
-	class EO_BotChat_Result extends \Bitrix\Main\ORM\Query\Result {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_BotChat createObject($setDefaultValues = true)
-	 * @method \Bitrix\Im\Model\EO_BotChat_Collection createCollection()
-	 * @method \Bitrix\Im\Model\EO_BotChat wakeUpObject($row)
-	 * @method \Bitrix\Im\Model\EO_BotChat_Collection wakeUpCollection($rows)
-	 */
-	class EO_BotChat_Entity extends \Bitrix\Main\ORM\Entity {}
-}
-/* ORMENTITYANNOTATION:Bitrix\Im\Model\ConferenceTable:im/lib/model/conference.php */
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_Conference
-	 * @see \Bitrix\Im\Model\ConferenceTable
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int getId()
-	 * @method \Bitrix\Im\Model\EO_Conference setId(\int|\Bitrix\Main\DB\SqlExpression $id)
-	 * @method bool hasId()
-	 * @method bool isIdFilled()
-	 * @method bool isIdChanged()
-	 * @method \int getAliasId()
-	 * @method \Bitrix\Im\Model\EO_Conference setAliasId(\int|\Bitrix\Main\DB\SqlExpression $aliasId)
-	 * @method bool hasAliasId()
-	 * @method bool isAliasIdFilled()
-	 * @method bool isAliasIdChanged()
-	 * @method \int remindActualAliasId()
-	 * @method \int requireAliasId()
-	 * @method \Bitrix\Im\Model\EO_Conference resetAliasId()
-	 * @method \Bitrix\Im\Model\EO_Conference unsetAliasId()
-	 * @method \int fillAliasId()
-	 * @method \string getPassword()
-	 * @method \Bitrix\Im\Model\EO_Conference setPassword(\string|\Bitrix\Main\DB\SqlExpression $password)
-	 * @method bool hasPassword()
-	 * @method bool isPasswordFilled()
-	 * @method bool isPasswordChanged()
-	 * @method \string remindActualPassword()
-	 * @method \string requirePassword()
-	 * @method \Bitrix\Im\Model\EO_Conference resetPassword()
-	 * @method \Bitrix\Im\Model\EO_Conference unsetPassword()
-	 * @method \string fillPassword()
-	 * @method \string getInvitation()
-	 * @method \Bitrix\Im\Model\EO_Conference setInvitation(\string|\Bitrix\Main\DB\SqlExpression $invitation)
-	 * @method bool hasInvitation()
-	 * @method bool isInvitationFilled()
-	 * @method bool isInvitationChanged()
-	 * @method \string remindActualInvitation()
-	 * @method \string requireInvitation()
-	 * @method \Bitrix\Im\Model\EO_Conference resetInvitation()
-	 * @method \Bitrix\Im\Model\EO_Conference unsetInvitation()
-	 * @method \string fillInvitation()
-	 * @method \Bitrix\Main\Type\DateTime getConferenceStart()
-	 * @method \Bitrix\Im\Model\EO_Conference setConferenceStart(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $conferenceStart)
-	 * @method bool hasConferenceStart()
-	 * @method bool isConferenceStartFilled()
-	 * @method bool isConferenceStartChanged()
-	 * @method \Bitrix\Main\Type\DateTime remindActualConferenceStart()
-	 * @method \Bitrix\Main\Type\DateTime requireConferenceStart()
-	 * @method \Bitrix\Im\Model\EO_Conference resetConferenceStart()
-	 * @method \Bitrix\Im\Model\EO_Conference unsetConferenceStart()
-	 * @method \Bitrix\Main\Type\DateTime fillConferenceStart()
-	 * @method \Bitrix\Main\Type\DateTime getConferenceEnd()
-	 * @method \Bitrix\Im\Model\EO_Conference setConferenceEnd(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $conferenceEnd)
-	 * @method bool hasConferenceEnd()
-	 * @method bool isConferenceEndFilled()
-	 * @method bool isConferenceEndChanged()
-	 * @method \Bitrix\Main\Type\DateTime remindActualConferenceEnd()
-	 * @method \Bitrix\Main\Type\DateTime requireConferenceEnd()
-	 * @method \Bitrix\Im\Model\EO_Conference resetConferenceEnd()
-	 * @method \Bitrix\Im\Model\EO_Conference unsetConferenceEnd()
-	 * @method \Bitrix\Main\Type\DateTime fillConferenceEnd()
-	 * @method \string getIsBroadcast()
-	 * @method \Bitrix\Im\Model\EO_Conference setIsBroadcast(\string|\Bitrix\Main\DB\SqlExpression $isBroadcast)
-	 * @method bool hasIsBroadcast()
-	 * @method bool isIsBroadcastFilled()
-	 * @method bool isIsBroadcastChanged()
-	 * @method \string remindActualIsBroadcast()
-	 * @method \string requireIsBroadcast()
-	 * @method \Bitrix\Im\Model\EO_Conference resetIsBroadcast()
-	 * @method \Bitrix\Im\Model\EO_Conference unsetIsBroadcast()
-	 * @method \string fillIsBroadcast()
-	 * @method \Bitrix\Im\Model\EO_Alias getAlias()
-	 * @method \Bitrix\Im\Model\EO_Alias remindActualAlias()
-	 * @method \Bitrix\Im\Model\EO_Alias requireAlias()
-	 * @method \Bitrix\Im\Model\EO_Conference setAlias(\Bitrix\Im\Model\EO_Alias $object)
-	 * @method \Bitrix\Im\Model\EO_Conference resetAlias()
-	 * @method \Bitrix\Im\Model\EO_Conference unsetAlias()
-	 * @method bool hasAlias()
-	 * @method bool isAliasFilled()
-	 * @method bool isAliasChanged()
-	 * @method \Bitrix\Im\Model\EO_Alias fillAlias()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @property-read array $primary
-	 * @property-read int $state @see \Bitrix\Main\ORM\Objectify\State
-	 * @property-read \Bitrix\Main\Type\Dictionary $customData
-	 * @property \Bitrix\Main\Authentication\Context $authContext
-	 * @method mixed get($fieldName)
-	 * @method mixed remindActual($fieldName)
-	 * @method mixed require($fieldName)
-	 * @method bool has($fieldName)
-	 * @method bool isFilled($fieldName)
-	 * @method bool isChanged($fieldName)
-	 * @method \Bitrix\Im\Model\EO_Conference set($fieldName, $value)
-	 * @method \Bitrix\Im\Model\EO_Conference reset($fieldName)
-	 * @method \Bitrix\Im\Model\EO_Conference unset($fieldName)
-	 * @method void addTo($fieldName, $value)
-	 * @method void removeFrom($fieldName, $value)
-	 * @method void removeAll($fieldName)
-	 * @method \Bitrix\Main\ORM\Data\Result delete()
-	 * @method mixed fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method mixed[] collectValues($valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL)
-	 * @method \Bitrix\Main\ORM\Data\AddResult|\Bitrix\Main\ORM\Data\UpdateResult|\Bitrix\Main\ORM\Data\Result save()
-	 * @method static \Bitrix\Im\Model\EO_Conference wakeUp($data)
-	 */
-	class EO_Conference {
-		/* @var \Bitrix\Im\Model\ConferenceTable */
-		static public $dataClass = '\Bitrix\Im\Model\ConferenceTable';
-		/**
-		 * @param bool|array $setDefaultValues
-		 */
-		public function __construct($setDefaultValues = true) {}
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_Conference_Collection
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int[] getIdList()
-	 * @method \int[] getAliasIdList()
-	 * @method \int[] fillAliasId()
-	 * @method \string[] getPasswordList()
-	 * @method \string[] fillPassword()
-	 * @method \string[] getInvitationList()
-	 * @method \string[] fillInvitation()
-	 * @method \Bitrix\Main\Type\DateTime[] getConferenceStartList()
-	 * @method \Bitrix\Main\Type\DateTime[] fillConferenceStart()
-	 * @method \Bitrix\Main\Type\DateTime[] getConferenceEndList()
-	 * @method \Bitrix\Main\Type\DateTime[] fillConferenceEnd()
-	 * @method \string[] getIsBroadcastList()
-	 * @method \string[] fillIsBroadcast()
-	 * @method \Bitrix\Im\Model\EO_Alias[] getAliasList()
-	 * @method \Bitrix\Im\Model\EO_Conference_Collection getAliasCollection()
-	 * @method \Bitrix\Im\Model\EO_Alias_Collection fillAlias()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @method void add(\Bitrix\Im\Model\EO_Conference $object)
-	 * @method bool has(\Bitrix\Im\Model\EO_Conference $object)
-	 * @method bool hasByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_Conference getByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_Conference[] getAll()
-	 * @method bool remove(\Bitrix\Im\Model\EO_Conference $object)
-	 * @method void removeByPrimary($primary)
-	 * @method array|\Bitrix\Main\ORM\Objectify\Collection|null fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method static \Bitrix\Im\Model\EO_Conference_Collection wakeUp($data)
-	 * @method \Bitrix\Main\ORM\Data\Result save($ignoreEvents = false)
-	 * @method void offsetSet() ArrayAccess
-	 * @method void offsetExists() ArrayAccess
-	 * @method void offsetUnset() ArrayAccess
-	 * @method void offsetGet() ArrayAccess
-	 * @method void rewind() Iterator
-	 * @method \Bitrix\Im\Model\EO_Conference current() Iterator
-	 * @method mixed key() Iterator
-	 * @method void next() Iterator
-	 * @method bool valid() Iterator
-	 * @method int count() Countable
-	 * @method \Bitrix\Im\Model\EO_Conference_Collection merge(?\Bitrix\Im\Model\EO_Conference_Collection $collection)
-	 * @method bool isEmpty()
-	 * @method array collectValues(int $valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool $recursive = false)
-	 */
-	class EO_Conference_Collection implements \ArrayAccess, \Iterator, \Countable {
-		/* @var \Bitrix\Im\Model\ConferenceTable */
-		static public $dataClass = '\Bitrix\Im\Model\ConferenceTable';
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @method EO_Conference_Result exec()
-	 * @method \Bitrix\Im\Model\EO_Conference fetchObject()
-	 * @method \Bitrix\Im\Model\EO_Conference_Collection fetchCollection()
-	 */
-	class EO_Conference_Query extends \Bitrix\Main\ORM\Query\Query {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_Conference fetchObject()
-	 * @method \Bitrix\Im\Model\EO_Conference_Collection fetchCollection()
-	 */
-	class EO_Conference_Result extends \Bitrix\Main\ORM\Query\Result {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_Conference createObject($setDefaultValues = true)
-	 * @method \Bitrix\Im\Model\EO_Conference_Collection createCollection()
-	 * @method \Bitrix\Im\Model\EO_Conference wakeUpObject($row)
-	 * @method \Bitrix\Im\Model\EO_Conference_Collection wakeUpCollection($rows)
-	 */
-	class EO_Conference_Entity extends \Bitrix\Main\ORM\Entity {}
-}
-/* ORMENTITYANNOTATION:Bitrix\Im\Model\CallUserTable:im/lib/model/calluser.php */
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_CallUser
-	 * @see \Bitrix\Im\Model\CallUserTable
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int getCallId()
-	 * @method \Bitrix\Im\Model\EO_CallUser setCallId(\int|\Bitrix\Main\DB\SqlExpression $callId)
-	 * @method bool hasCallId()
-	 * @method bool isCallIdFilled()
-	 * @method bool isCallIdChanged()
 	 * @method \int getUserId()
-	 * @method \Bitrix\Im\Model\EO_CallUser setUserId(\int|\Bitrix\Main\DB\SqlExpression $userId)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup setUserId(\int|\Bitrix\Main\DB\SqlExpression $userId)
 	 * @method bool hasUserId()
 	 * @method bool isUserIdFilled()
 	 * @method bool isUserIdChanged()
-	 * @method \string getState()
-	 * @method \Bitrix\Im\Model\EO_CallUser setState(\string|\Bitrix\Main\DB\SqlExpression $state)
-	 * @method bool hasState()
-	 * @method bool isStateFilled()
-	 * @method bool isStateChanged()
-	 * @method \string remindActualState()
-	 * @method \string requireState()
-	 * @method \Bitrix\Im\Model\EO_CallUser resetState()
-	 * @method \Bitrix\Im\Model\EO_CallUser unsetState()
-	 * @method \string fillState()
-	 * @method \Bitrix\Main\Type\DateTime getFirstJoined()
-	 * @method \Bitrix\Im\Model\EO_CallUser setFirstJoined(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $firstJoined)
-	 * @method bool hasFirstJoined()
-	 * @method bool isFirstJoinedFilled()
-	 * @method bool isFirstJoinedChanged()
-	 * @method \Bitrix\Main\Type\DateTime remindActualFirstJoined()
-	 * @method \Bitrix\Main\Type\DateTime requireFirstJoined()
-	 * @method \Bitrix\Im\Model\EO_CallUser resetFirstJoined()
-	 * @method \Bitrix\Im\Model\EO_CallUser unsetFirstJoined()
-	 * @method \Bitrix\Main\Type\DateTime fillFirstJoined()
-	 * @method \Bitrix\Main\Type\DateTime getLastSeen()
-	 * @method \Bitrix\Im\Model\EO_CallUser setLastSeen(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $lastSeen)
-	 * @method bool hasLastSeen()
-	 * @method bool isLastSeenFilled()
-	 * @method bool isLastSeenChanged()
-	 * @method \Bitrix\Main\Type\DateTime remindActualLastSeen()
-	 * @method \Bitrix\Main\Type\DateTime requireLastSeen()
-	 * @method \Bitrix\Im\Model\EO_CallUser resetLastSeen()
-	 * @method \Bitrix\Im\Model\EO_CallUser unsetLastSeen()
-	 * @method \Bitrix\Main\Type\DateTime fillLastSeen()
-	 * @method \boolean getIsMobile()
-	 * @method \Bitrix\Im\Model\EO_CallUser setIsMobile(\boolean|\Bitrix\Main\DB\SqlExpression $isMobile)
-	 * @method bool hasIsMobile()
-	 * @method bool isIsMobileFilled()
-	 * @method bool isIsMobileChanged()
-	 * @method \boolean remindActualIsMobile()
-	 * @method \boolean requireIsMobile()
-	 * @method \Bitrix\Im\Model\EO_CallUser resetIsMobile()
-	 * @method \Bitrix\Im\Model\EO_CallUser unsetIsMobile()
-	 * @method \boolean fillIsMobile()
-	 * @method \boolean getSharedScreen()
-	 * @method \Bitrix\Im\Model\EO_CallUser setSharedScreen(\boolean|\Bitrix\Main\DB\SqlExpression $sharedScreen)
-	 * @method bool hasSharedScreen()
-	 * @method bool isSharedScreenFilled()
-	 * @method bool isSharedScreenChanged()
-	 * @method \boolean remindActualSharedScreen()
-	 * @method \boolean requireSharedScreen()
-	 * @method \Bitrix\Im\Model\EO_CallUser resetSharedScreen()
-	 * @method \Bitrix\Im\Model\EO_CallUser unsetSharedScreen()
-	 * @method \boolean fillSharedScreen()
-	 * @method \boolean getRecorded()
-	 * @method \Bitrix\Im\Model\EO_CallUser setRecorded(\boolean|\Bitrix\Main\DB\SqlExpression $recorded)
-	 * @method bool hasRecorded()
-	 * @method bool isRecordedFilled()
-	 * @method bool isRecordedChanged()
-	 * @method \boolean remindActualRecorded()
-	 * @method \boolean requireRecorded()
-	 * @method \Bitrix\Im\Model\EO_CallUser resetRecorded()
-	 * @method \Bitrix\Im\Model\EO_CallUser unsetRecorded()
-	 * @method \boolean fillRecorded()
+	 * @method \int remindActualUserId()
+	 * @method \int requireUserId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup resetUserId()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup unsetUserId()
+	 * @method \int fillUserId()
+	 * @method \string getTitle()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup setTitle(\string|\Bitrix\Main\DB\SqlExpression $title)
+	 * @method bool hasTitle()
+	 * @method bool isTitleFilled()
+	 * @method bool isTitleChanged()
+	 * @method \string remindActualTitle()
+	 * @method \string requireTitle()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup resetTitle()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup unsetTitle()
+	 * @method \string fillTitle()
+	 * @method \Bitrix\Main\Type\DateTime getDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup setDateCreate(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $dateCreate)
+	 * @method bool hasDateCreate()
+	 * @method bool isDateCreateFilled()
+	 * @method bool isDateCreateChanged()
+	 * @method \Bitrix\Main\Type\DateTime remindActualDateCreate()
+	 * @method \Bitrix\Main\Type\DateTime requireDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup resetDateCreate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup unsetDateCreate()
+	 * @method \Bitrix\Main\Type\DateTime fillDateCreate()
+	 * @method null|\Bitrix\Main\Type\DateTime getDateUpdate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup setDateUpdate(null|\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $dateUpdate)
+	 * @method bool hasDateUpdate()
+	 * @method bool isDateUpdateFilled()
+	 * @method bool isDateUpdateChanged()
+	 * @method null|\Bitrix\Main\Type\DateTime remindActualDateUpdate()
+	 * @method null|\Bitrix\Main\Type\DateTime requireDateUpdate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup resetDateUpdate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup unsetDateUpdate()
+	 * @method null|\Bitrix\Main\Type\DateTime fillDateUpdate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection getConditions()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection requireConditions()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection fillConditions()
+	 * @method bool hasConditions()
+	 * @method bool isConditionsFilled()
+	 * @method bool isConditionsChanged()
+	 * @method void addToConditions(\Bitrix\Im\Model\EO_NotifyGroupCondition $notifyGroupCondition)
+	 * @method void removeFromConditions(\Bitrix\Im\Model\EO_NotifyGroupCondition $notifyGroupCondition)
+	 * @method void removeAllConditions()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup resetConditions()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup unsetConditions()
 	 *
 	 * Common methods:
 	 * ---------------
@@ -5827,9 +5774,9 @@ namespace Bitrix\Im\Model {
 	 * @method bool has($fieldName)
 	 * @method bool isFilled($fieldName)
 	 * @method bool isChanged($fieldName)
-	 * @method \Bitrix\Im\Model\EO_CallUser set($fieldName, $value)
-	 * @method \Bitrix\Im\Model\EO_CallUser reset($fieldName)
-	 * @method \Bitrix\Im\Model\EO_CallUser unset($fieldName)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup set($fieldName, $value)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup reset($fieldName)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup unset($fieldName)
 	 * @method void addTo($fieldName, $value)
 	 * @method void removeFrom($fieldName, $value)
 	 * @method void removeAll($fieldName)
@@ -5837,11 +5784,11 @@ namespace Bitrix\Im\Model {
 	 * @method mixed fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
 	 * @method mixed[] collectValues($valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL)
 	 * @method \Bitrix\Main\ORM\Data\AddResult|\Bitrix\Main\ORM\Data\UpdateResult|\Bitrix\Main\ORM\Data\Result save()
-	 * @method static \Bitrix\Im\Model\EO_CallUser wakeUp($data)
+	 * @method static \Bitrix\Im\Model\EO_NotifyGroup wakeUp($data)
 	 */
-	class EO_CallUser {
-		/* @var \Bitrix\Im\Model\CallUserTable */
-		static public $dataClass = '\Bitrix\Im\Model\CallUserTable';
+	class EO_NotifyGroup {
+		/* @var \Bitrix\Im\Model\NotifyGroupTable */
+		static public $dataClass = '\Bitrix\Im\Model\NotifyGroupTable';
 		/**
 		 * @param bool|array $setDefaultValues
 		 */
@@ -5850,57 +5797,55 @@ namespace Bitrix\Im\Model {
 }
 namespace Bitrix\Im\Model {
 	/**
-	 * EO_CallUser_Collection
+	 * EO_NotifyGroup_Collection
 	 *
 	 * Custom methods:
 	 * ---------------
 	 *
-	 * @method \int[] getCallIdList()
+	 * @method \int[] getIdList()
 	 * @method \int[] getUserIdList()
-	 * @method \string[] getStateList()
-	 * @method \string[] fillState()
-	 * @method \Bitrix\Main\Type\DateTime[] getFirstJoinedList()
-	 * @method \Bitrix\Main\Type\DateTime[] fillFirstJoined()
-	 * @method \Bitrix\Main\Type\DateTime[] getLastSeenList()
-	 * @method \Bitrix\Main\Type\DateTime[] fillLastSeen()
-	 * @method \boolean[] getIsMobileList()
-	 * @method \boolean[] fillIsMobile()
-	 * @method \boolean[] getSharedScreenList()
-	 * @method \boolean[] fillSharedScreen()
-	 * @method \boolean[] getRecordedList()
-	 * @method \boolean[] fillRecorded()
+	 * @method \int[] fillUserId()
+	 * @method \string[] getTitleList()
+	 * @method \string[] fillTitle()
+	 * @method \Bitrix\Main\Type\DateTime[] getDateCreateList()
+	 * @method \Bitrix\Main\Type\DateTime[] fillDateCreate()
+	 * @method null|\Bitrix\Main\Type\DateTime[] getDateUpdateList()
+	 * @method null|\Bitrix\Main\Type\DateTime[] fillDateUpdate()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection[] getConditionsList()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection getConditionsCollection()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroupCondition_Collection fillConditions()
 	 *
 	 * Common methods:
 	 * ---------------
 	 *
 	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @method void add(\Bitrix\Im\Model\EO_CallUser $object)
-	 * @method bool has(\Bitrix\Im\Model\EO_CallUser $object)
+	 * @method void add(\Bitrix\Im\Model\EO_NotifyGroup $object)
+	 * @method bool has(\Bitrix\Im\Model\EO_NotifyGroup $object)
 	 * @method bool hasByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_CallUser getByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_CallUser[] getAll()
-	 * @method bool remove(\Bitrix\Im\Model\EO_CallUser $object)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup getByPrimary($primary)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup[] getAll()
+	 * @method bool remove(\Bitrix\Im\Model\EO_NotifyGroup $object)
 	 * @method void removeByPrimary($primary)
 	 * @method array|\Bitrix\Main\ORM\Objectify\Collection|null fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method static \Bitrix\Im\Model\EO_CallUser_Collection wakeUp($data)
+	 * @method static \Bitrix\Im\Model\EO_NotifyGroup_Collection wakeUp($data)
 	 * @method \Bitrix\Main\ORM\Data\Result save($ignoreEvents = false)
 	 * @method void offsetSet() ArrayAccess
 	 * @method void offsetExists() ArrayAccess
 	 * @method void offsetUnset() ArrayAccess
 	 * @method void offsetGet() ArrayAccess
 	 * @method void rewind() Iterator
-	 * @method \Bitrix\Im\Model\EO_CallUser current() Iterator
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup current() Iterator
 	 * @method mixed key() Iterator
 	 * @method void next() Iterator
 	 * @method bool valid() Iterator
 	 * @method int count() Countable
-	 * @method \Bitrix\Im\Model\EO_CallUser_Collection merge(?\Bitrix\Im\Model\EO_CallUser_Collection $collection)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup_Collection merge(?\Bitrix\Im\Model\EO_NotifyGroup_Collection $collection)
 	 * @method bool isEmpty()
 	 * @method array collectValues(int $valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool $recursive = false)
 	 */
-	class EO_CallUser_Collection implements \ArrayAccess, \Iterator, \Countable {
-		/* @var \Bitrix\Im\Model\CallUserTable */
-		static public $dataClass = '\Bitrix\Im\Model\CallUserTable';
+	class EO_NotifyGroup_Collection implements \ArrayAccess, \Iterator, \Countable {
+		/* @var \Bitrix\Im\Model\NotifyGroupTable */
+		static public $dataClass = '\Bitrix\Im\Model\NotifyGroupTable';
 	}
 }
 namespace Bitrix\Im\Model {
@@ -5908,23 +5853,23 @@ namespace Bitrix\Im\Model {
 	 * Common methods:
 	 * ---------------
 	 *
-	 * @method EO_CallUser_Result exec()
-	 * @method \Bitrix\Im\Model\EO_CallUser fetchObject()
-	 * @method \Bitrix\Im\Model\EO_CallUser_Collection fetchCollection()
+	 * @method EO_NotifyGroup_Result exec()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup fetchObject()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup_Collection fetchCollection()
 	 */
-	class EO_CallUser_Query extends \Bitrix\Main\ORM\Query\Query {}
+	class EO_NotifyGroup_Query extends \Bitrix\Main\ORM\Query\Query {}
 	/**
-	 * @method \Bitrix\Im\Model\EO_CallUser fetchObject()
-	 * @method \Bitrix\Im\Model\EO_CallUser_Collection fetchCollection()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup fetchObject()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup_Collection fetchCollection()
 	 */
-	class EO_CallUser_Result extends \Bitrix\Main\ORM\Query\Result {}
+	class EO_NotifyGroup_Result extends \Bitrix\Main\ORM\Query\Result {}
 	/**
-	 * @method \Bitrix\Im\Model\EO_CallUser createObject($setDefaultValues = true)
-	 * @method \Bitrix\Im\Model\EO_CallUser_Collection createCollection()
-	 * @method \Bitrix\Im\Model\EO_CallUser wakeUpObject($row)
-	 * @method \Bitrix\Im\Model\EO_CallUser_Collection wakeUpCollection($rows)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup createObject($setDefaultValues = true)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup_Collection createCollection()
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup wakeUpObject($row)
+	 * @method \Bitrix\Im\Model\EO_NotifyGroup_Collection wakeUpCollection($rows)
 	 */
-	class EO_CallUser_Entity extends \Bitrix\Main\ORM\Entity {}
+	class EO_NotifyGroup_Entity extends \Bitrix\Main\ORM\Entity {}
 }
 /* ORMENTITYANNOTATION:Bitrix\Im\Model\LinkUrlIndexTable:im/lib/model/linkurlindex.php */
 namespace Bitrix\Im\Model {
@@ -8021,337 +7966,6 @@ namespace Bitrix\Im\Model {
 	 * @method \Bitrix\Im\Model\EO_MessageParam_Collection wakeUpCollection($rows)
 	 */
 	class EO_MessageParam_Entity extends \Bitrix\Main\ORM\Entity {}
-}
-/* ORMENTITYANNOTATION:Bitrix\Im\Model\CallTable:im/lib/model/call.php */
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_Call
-	 * @see \Bitrix\Im\Model\CallTable
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int getId()
-	 * @method \Bitrix\Im\Model\EO_Call setId(\int|\Bitrix\Main\DB\SqlExpression $id)
-	 * @method bool hasId()
-	 * @method bool isIdFilled()
-	 * @method bool isIdChanged()
-	 * @method \int getType()
-	 * @method \Bitrix\Im\Model\EO_Call setType(\int|\Bitrix\Main\DB\SqlExpression $type)
-	 * @method bool hasType()
-	 * @method bool isTypeFilled()
-	 * @method bool isTypeChanged()
-	 * @method \int remindActualType()
-	 * @method \int requireType()
-	 * @method \Bitrix\Im\Model\EO_Call resetType()
-	 * @method \Bitrix\Im\Model\EO_Call unsetType()
-	 * @method \int fillType()
-	 * @method \int getInitiatorId()
-	 * @method \Bitrix\Im\Model\EO_Call setInitiatorId(\int|\Bitrix\Main\DB\SqlExpression $initiatorId)
-	 * @method bool hasInitiatorId()
-	 * @method bool isInitiatorIdFilled()
-	 * @method bool isInitiatorIdChanged()
-	 * @method \int remindActualInitiatorId()
-	 * @method \int requireInitiatorId()
-	 * @method \Bitrix\Im\Model\EO_Call resetInitiatorId()
-	 * @method \Bitrix\Im\Model\EO_Call unsetInitiatorId()
-	 * @method \int fillInitiatorId()
-	 * @method \string getIsPublic()
-	 * @method \Bitrix\Im\Model\EO_Call setIsPublic(\string|\Bitrix\Main\DB\SqlExpression $isPublic)
-	 * @method bool hasIsPublic()
-	 * @method bool isIsPublicFilled()
-	 * @method bool isIsPublicChanged()
-	 * @method \string remindActualIsPublic()
-	 * @method \string requireIsPublic()
-	 * @method \Bitrix\Im\Model\EO_Call resetIsPublic()
-	 * @method \Bitrix\Im\Model\EO_Call unsetIsPublic()
-	 * @method \string fillIsPublic()
-	 * @method \string getPublicId()
-	 * @method \Bitrix\Im\Model\EO_Call setPublicId(\string|\Bitrix\Main\DB\SqlExpression $publicId)
-	 * @method bool hasPublicId()
-	 * @method bool isPublicIdFilled()
-	 * @method bool isPublicIdChanged()
-	 * @method \string remindActualPublicId()
-	 * @method \string requirePublicId()
-	 * @method \Bitrix\Im\Model\EO_Call resetPublicId()
-	 * @method \Bitrix\Im\Model\EO_Call unsetPublicId()
-	 * @method \string fillPublicId()
-	 * @method \string getProvider()
-	 * @method \Bitrix\Im\Model\EO_Call setProvider(\string|\Bitrix\Main\DB\SqlExpression $provider)
-	 * @method bool hasProvider()
-	 * @method bool isProviderFilled()
-	 * @method bool isProviderChanged()
-	 * @method \string remindActualProvider()
-	 * @method \string requireProvider()
-	 * @method \Bitrix\Im\Model\EO_Call resetProvider()
-	 * @method \Bitrix\Im\Model\EO_Call unsetProvider()
-	 * @method \string fillProvider()
-	 * @method \string getEntityType()
-	 * @method \Bitrix\Im\Model\EO_Call setEntityType(\string|\Bitrix\Main\DB\SqlExpression $entityType)
-	 * @method bool hasEntityType()
-	 * @method bool isEntityTypeFilled()
-	 * @method bool isEntityTypeChanged()
-	 * @method \string remindActualEntityType()
-	 * @method \string requireEntityType()
-	 * @method \Bitrix\Im\Model\EO_Call resetEntityType()
-	 * @method \Bitrix\Im\Model\EO_Call unsetEntityType()
-	 * @method \string fillEntityType()
-	 * @method \string getEntityId()
-	 * @method \Bitrix\Im\Model\EO_Call setEntityId(\string|\Bitrix\Main\DB\SqlExpression $entityId)
-	 * @method bool hasEntityId()
-	 * @method bool isEntityIdFilled()
-	 * @method bool isEntityIdChanged()
-	 * @method \string remindActualEntityId()
-	 * @method \string requireEntityId()
-	 * @method \Bitrix\Im\Model\EO_Call resetEntityId()
-	 * @method \Bitrix\Im\Model\EO_Call unsetEntityId()
-	 * @method \string fillEntityId()
-	 * @method \int getParentId()
-	 * @method \Bitrix\Im\Model\EO_Call setParentId(\int|\Bitrix\Main\DB\SqlExpression $parentId)
-	 * @method bool hasParentId()
-	 * @method bool isParentIdFilled()
-	 * @method bool isParentIdChanged()
-	 * @method \int remindActualParentId()
-	 * @method \int requireParentId()
-	 * @method \Bitrix\Im\Model\EO_Call resetParentId()
-	 * @method \Bitrix\Im\Model\EO_Call unsetParentId()
-	 * @method \int fillParentId()
-	 * @method \string getState()
-	 * @method \Bitrix\Im\Model\EO_Call setState(\string|\Bitrix\Main\DB\SqlExpression $state)
-	 * @method bool hasState()
-	 * @method bool isStateFilled()
-	 * @method bool isStateChanged()
-	 * @method \string remindActualState()
-	 * @method \string requireState()
-	 * @method \Bitrix\Im\Model\EO_Call resetState()
-	 * @method \Bitrix\Im\Model\EO_Call unsetState()
-	 * @method \string fillState()
-	 * @method \Bitrix\Main\Type\DateTime getStartDate()
-	 * @method \Bitrix\Im\Model\EO_Call setStartDate(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $startDate)
-	 * @method bool hasStartDate()
-	 * @method bool isStartDateFilled()
-	 * @method bool isStartDateChanged()
-	 * @method \Bitrix\Main\Type\DateTime remindActualStartDate()
-	 * @method \Bitrix\Main\Type\DateTime requireStartDate()
-	 * @method \Bitrix\Im\Model\EO_Call resetStartDate()
-	 * @method \Bitrix\Im\Model\EO_Call unsetStartDate()
-	 * @method \Bitrix\Main\Type\DateTime fillStartDate()
-	 * @method \Bitrix\Main\Type\DateTime getEndDate()
-	 * @method \Bitrix\Im\Model\EO_Call setEndDate(\Bitrix\Main\Type\DateTime|\Bitrix\Main\DB\SqlExpression $endDate)
-	 * @method bool hasEndDate()
-	 * @method bool isEndDateFilled()
-	 * @method bool isEndDateChanged()
-	 * @method \Bitrix\Main\Type\DateTime remindActualEndDate()
-	 * @method \Bitrix\Main\Type\DateTime requireEndDate()
-	 * @method \Bitrix\Im\Model\EO_Call resetEndDate()
-	 * @method \Bitrix\Im\Model\EO_Call unsetEndDate()
-	 * @method \Bitrix\Main\Type\DateTime fillEndDate()
-	 * @method \int getChatId()
-	 * @method \Bitrix\Im\Model\EO_Call setChatId(\int|\Bitrix\Main\DB\SqlExpression $chatId)
-	 * @method bool hasChatId()
-	 * @method bool isChatIdFilled()
-	 * @method bool isChatIdChanged()
-	 * @method \int remindActualChatId()
-	 * @method \int requireChatId()
-	 * @method \Bitrix\Im\Model\EO_Call resetChatId()
-	 * @method \Bitrix\Im\Model\EO_Call unsetChatId()
-	 * @method \int fillChatId()
-	 * @method \string getLogUrl()
-	 * @method \Bitrix\Im\Model\EO_Call setLogUrl(\string|\Bitrix\Main\DB\SqlExpression $logUrl)
-	 * @method bool hasLogUrl()
-	 * @method bool isLogUrlFilled()
-	 * @method bool isLogUrlChanged()
-	 * @method \string remindActualLogUrl()
-	 * @method \string requireLogUrl()
-	 * @method \Bitrix\Im\Model\EO_Call resetLogUrl()
-	 * @method \Bitrix\Im\Model\EO_Call unsetLogUrl()
-	 * @method \string fillLogUrl()
-	 * @method \string getUuid()
-	 * @method \Bitrix\Im\Model\EO_Call setUuid(\string|\Bitrix\Main\DB\SqlExpression $uuid)
-	 * @method bool hasUuid()
-	 * @method bool isUuidFilled()
-	 * @method bool isUuidChanged()
-	 * @method \string remindActualUuid()
-	 * @method \string requireUuid()
-	 * @method \Bitrix\Im\Model\EO_Call resetUuid()
-	 * @method \Bitrix\Im\Model\EO_Call unsetUuid()
-	 * @method \string fillUuid()
-	 * @method \string getSecretKey()
-	 * @method \Bitrix\Im\Model\EO_Call setSecretKey(\string|\Bitrix\Main\DB\SqlExpression $secretKey)
-	 * @method bool hasSecretKey()
-	 * @method bool isSecretKeyFilled()
-	 * @method bool isSecretKeyChanged()
-	 * @method \string remindActualSecretKey()
-	 * @method \string requireSecretKey()
-	 * @method \Bitrix\Im\Model\EO_Call resetSecretKey()
-	 * @method \Bitrix\Im\Model\EO_Call unsetSecretKey()
-	 * @method \string fillSecretKey()
-	 * @method \string getEndpoint()
-	 * @method \Bitrix\Im\Model\EO_Call setEndpoint(\string|\Bitrix\Main\DB\SqlExpression $endpoint)
-	 * @method bool hasEndpoint()
-	 * @method bool isEndpointFilled()
-	 * @method bool isEndpointChanged()
-	 * @method \string remindActualEndpoint()
-	 * @method \string requireEndpoint()
-	 * @method \Bitrix\Im\Model\EO_Call resetEndpoint()
-	 * @method \Bitrix\Im\Model\EO_Call unsetEndpoint()
-	 * @method \string fillEndpoint()
-	 * @method \boolean getRecordAudio()
-	 * @method \Bitrix\Im\Model\EO_Call setRecordAudio(\boolean|\Bitrix\Main\DB\SqlExpression $recordAudio)
-	 * @method bool hasRecordAudio()
-	 * @method bool isRecordAudioFilled()
-	 * @method bool isRecordAudioChanged()
-	 * @method \boolean remindActualRecordAudio()
-	 * @method \boolean requireRecordAudio()
-	 * @method \Bitrix\Im\Model\EO_Call resetRecordAudio()
-	 * @method \Bitrix\Im\Model\EO_Call unsetRecordAudio()
-	 * @method \boolean fillRecordAudio()
-	 * @method \boolean getAiAnalyze()
-	 * @method \Bitrix\Im\Model\EO_Call setAiAnalyze(\boolean|\Bitrix\Main\DB\SqlExpression $aiAnalyze)
-	 * @method bool hasAiAnalyze()
-	 * @method bool isAiAnalyzeFilled()
-	 * @method bool isAiAnalyzeChanged()
-	 * @method \boolean remindActualAiAnalyze()
-	 * @method \boolean requireAiAnalyze()
-	 * @method \Bitrix\Im\Model\EO_Call resetAiAnalyze()
-	 * @method \Bitrix\Im\Model\EO_Call unsetAiAnalyze()
-	 * @method \boolean fillAiAnalyze()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @property-read array $primary
-	 * @property-read int $state @see \Bitrix\Main\ORM\Objectify\State
-	 * @property-read \Bitrix\Main\Type\Dictionary $customData
-	 * @property \Bitrix\Main\Authentication\Context $authContext
-	 * @method mixed get($fieldName)
-	 * @method mixed remindActual($fieldName)
-	 * @method mixed require($fieldName)
-	 * @method bool has($fieldName)
-	 * @method bool isFilled($fieldName)
-	 * @method bool isChanged($fieldName)
-	 * @method \Bitrix\Im\Model\EO_Call set($fieldName, $value)
-	 * @method \Bitrix\Im\Model\EO_Call reset($fieldName)
-	 * @method \Bitrix\Im\Model\EO_Call unset($fieldName)
-	 * @method void addTo($fieldName, $value)
-	 * @method void removeFrom($fieldName, $value)
-	 * @method void removeAll($fieldName)
-	 * @method \Bitrix\Main\ORM\Data\Result delete()
-	 * @method mixed fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method mixed[] collectValues($valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL)
-	 * @method \Bitrix\Main\ORM\Data\AddResult|\Bitrix\Main\ORM\Data\UpdateResult|\Bitrix\Main\ORM\Data\Result save()
-	 * @method static \Bitrix\Im\Model\EO_Call wakeUp($data)
-	 */
-	class EO_Call {
-		/* @var \Bitrix\Im\Model\CallTable */
-		static public $dataClass = '\Bitrix\Im\Model\CallTable';
-		/**
-		 * @param bool|array $setDefaultValues
-		 */
-		public function __construct($setDefaultValues = true) {}
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * EO_Call_Collection
-	 *
-	 * Custom methods:
-	 * ---------------
-	 *
-	 * @method \int[] getIdList()
-	 * @method \int[] getTypeList()
-	 * @method \int[] fillType()
-	 * @method \int[] getInitiatorIdList()
-	 * @method \int[] fillInitiatorId()
-	 * @method \string[] getIsPublicList()
-	 * @method \string[] fillIsPublic()
-	 * @method \string[] getPublicIdList()
-	 * @method \string[] fillPublicId()
-	 * @method \string[] getProviderList()
-	 * @method \string[] fillProvider()
-	 * @method \string[] getEntityTypeList()
-	 * @method \string[] fillEntityType()
-	 * @method \string[] getEntityIdList()
-	 * @method \string[] fillEntityId()
-	 * @method \int[] getParentIdList()
-	 * @method \int[] fillParentId()
-	 * @method \string[] getStateList()
-	 * @method \string[] fillState()
-	 * @method \Bitrix\Main\Type\DateTime[] getStartDateList()
-	 * @method \Bitrix\Main\Type\DateTime[] fillStartDate()
-	 * @method \Bitrix\Main\Type\DateTime[] getEndDateList()
-	 * @method \Bitrix\Main\Type\DateTime[] fillEndDate()
-	 * @method \int[] getChatIdList()
-	 * @method \int[] fillChatId()
-	 * @method \string[] getLogUrlList()
-	 * @method \string[] fillLogUrl()
-	 * @method \string[] getUuidList()
-	 * @method \string[] fillUuid()
-	 * @method \string[] getSecretKeyList()
-	 * @method \string[] fillSecretKey()
-	 * @method \string[] getEndpointList()
-	 * @method \string[] fillEndpoint()
-	 * @method \boolean[] getRecordAudioList()
-	 * @method \boolean[] fillRecordAudio()
-	 * @method \boolean[] getAiAnalyzeList()
-	 * @method \boolean[] fillAiAnalyze()
-	 *
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @property-read \Bitrix\Main\ORM\Entity $entity
-	 * @method void add(\Bitrix\Im\Model\EO_Call $object)
-	 * @method bool has(\Bitrix\Im\Model\EO_Call $object)
-	 * @method bool hasByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_Call getByPrimary($primary)
-	 * @method \Bitrix\Im\Model\EO_Call[] getAll()
-	 * @method bool remove(\Bitrix\Im\Model\EO_Call $object)
-	 * @method void removeByPrimary($primary)
-	 * @method array|\Bitrix\Main\ORM\Objectify\Collection|null fill($fields = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL) flag or array of field names
-	 * @method static \Bitrix\Im\Model\EO_Call_Collection wakeUp($data)
-	 * @method \Bitrix\Main\ORM\Data\Result save($ignoreEvents = false)
-	 * @method void offsetSet() ArrayAccess
-	 * @method void offsetExists() ArrayAccess
-	 * @method void offsetUnset() ArrayAccess
-	 * @method void offsetGet() ArrayAccess
-	 * @method void rewind() Iterator
-	 * @method \Bitrix\Im\Model\EO_Call current() Iterator
-	 * @method mixed key() Iterator
-	 * @method void next() Iterator
-	 * @method bool valid() Iterator
-	 * @method int count() Countable
-	 * @method \Bitrix\Im\Model\EO_Call_Collection merge(?\Bitrix\Im\Model\EO_Call_Collection $collection)
-	 * @method bool isEmpty()
-	 * @method array collectValues(int $valuesType = \Bitrix\Main\ORM\Objectify\Values::ALL, int $fieldsMask = \Bitrix\Main\ORM\Fields\FieldTypeMask::ALL, bool $recursive = false)
-	 */
-	class EO_Call_Collection implements \ArrayAccess, \Iterator, \Countable {
-		/* @var \Bitrix\Im\Model\CallTable */
-		static public $dataClass = '\Bitrix\Im\Model\CallTable';
-	}
-}
-namespace Bitrix\Im\Model {
-	/**
-	 * Common methods:
-	 * ---------------
-	 *
-	 * @method EO_Call_Result exec()
-	 * @method \Bitrix\Im\Model\EO_Call fetchObject()
-	 * @method \Bitrix\Im\Model\EO_Call_Collection fetchCollection()
-	 */
-	class EO_Call_Query extends \Bitrix\Main\ORM\Query\Query {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_Call fetchObject()
-	 * @method \Bitrix\Im\Model\EO_Call_Collection fetchCollection()
-	 */
-	class EO_Call_Result extends \Bitrix\Main\ORM\Query\Result {}
-	/**
-	 * @method \Bitrix\Im\Model\EO_Call createObject($setDefaultValues = true)
-	 * @method \Bitrix\Im\Model\EO_Call_Collection createCollection()
-	 * @method \Bitrix\Im\Model\EO_Call wakeUpObject($row)
-	 * @method \Bitrix\Im\Model\EO_Call_Collection wakeUpCollection($rows)
-	 */
-	class EO_Call_Entity extends \Bitrix\Main\ORM\Entity {}
 }
 /* ORMENTITYANNOTATION:Bitrix\Im\Model\OptionUserTable:im/lib/model/optionusertable.php */
 namespace Bitrix\Im\Model {

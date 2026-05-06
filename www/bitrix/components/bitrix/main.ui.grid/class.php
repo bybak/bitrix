@@ -1987,7 +1987,9 @@ class CMainUIGrid extends CBitrixComponent
 				$cellClass .= " {$row["columnClasses"][$columnId]}";
 			}
 
-			$cellAttributes = [];
+			$cellAttributes = [
+				'data-column-id' => $columnId,
+			];
 			$cellStyle = "";
 			if (
 				$this->arParams["ENABLE_COLLAPSIBLE_ROWS"]
@@ -2039,7 +2041,7 @@ class CMainUIGrid extends CBitrixComponent
 				$isCellActionsEnabled = true;
 				foreach ($row['cellActions'][$columnId] as $action)
 				{
-					$buttonClass = $action['class'];
+					$buttonClass = $action['class'] ?? '';
 					if (is_array($buttonClass))
 					{
 						$buttonClass = implode(' ', $buttonClass);

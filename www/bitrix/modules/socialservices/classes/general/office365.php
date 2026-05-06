@@ -52,15 +52,15 @@ class CSocServOffice365OAuth extends CSocServAuth
 		$url = $this->getUrl('opener', null, $arParams);
 		if($arParams["FOR_INTRANET"])
 		{
-			return array("ON_CLICK" => 'onclick="BX.util.popup(\'' . htmlspecialcharsbx(CUtil::JSEscape($url)) . '\', 580, 400)"');
+			return array("ON_CLICK" => 'onclick="BX.util.popup(\'' . htmlspecialcharsbx(CUtil::JSEscape($url)) . '\', 680, 800)"');
 		}
-		return '<a href="javascript:void(0)" onclick="BX.util.popup(\''.htmlspecialcharsbx(CUtil::JSEscape($url)).'\', 580, 400)" class="bx-ss-button liveid-button"></a><span class="bx-spacer"></span><span>'.GetMessage("MAIN_OPTION_COMMENT").'</span>';
+		return '<a href="javascript:void(0)" onclick="BX.util.popup(\''.htmlspecialcharsbx(CUtil::JSEscape($url)).'\', 680, 800)" class="bx-ss-button liveid-button"></a><span class="bx-spacer"></span><span>'.GetMessage("MAIN_OPTION_COMMENT").'</span>';
 	}
 
 	public function GetOnClickJs($arParams)
 	{
 		$url = $this->getUrl('opener', null, $arParams);
-		return "BX.util.popup('".CUtil::JSEscape($url)."', 580, 400)";
+		return "BX.util.popup('".CUtil::JSEscape($url)."', 680, 800)";
 	}
 
 	public function getUrl($location = 'opener', $addScope = null, $arParams = array())
@@ -228,8 +228,29 @@ class CSocServOffice365OAuth extends CSocServAuth
 					{
 						$arFields = $this->prepareUser($office365User);
 						$bSuccess = $this->AuthorizeUser($arFields);
+
+						if ($bSuccess !== true)
+						{
+							$this->log(static::ID, 'Authorize user error: ' . $bSuccess);
+						}
+					}
+					else
+					{
+						$this->log(static::ID, 'Invalid tenant');
 					}
 				}
+				else
+				{
+					$this->log(
+						static::ID,
+						'Not found current user',
+						is_array($office365User) ? $office365User : null,
+					);
+				}
+			}
+			else
+			{
+				$this->log(static::ID, 'Cannot load access token');
 			}
 		}
 
@@ -305,7 +326,7 @@ class CSocServOffice365OAuth extends CSocServAuth
 		{
 			$this->onAfterMobileAuth();
 		}
-		else
+		elseif (!isset($_REQUEST['auth_service_error']))
 		{
 			$this->onAfterWebAuth($addParams, $mode, $url);
 		}

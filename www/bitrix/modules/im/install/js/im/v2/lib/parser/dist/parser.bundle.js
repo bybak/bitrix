@@ -2,7 +2,7 @@
 this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
-(function (exports,im_v2_lib_desktopApi,main_core_events,im_public,main_core) {
+(function (exports,im_v2_lib_desktopApi,im_public,main_core) {
 	'use strict';
 
 	const ParserSlashCommand = {
@@ -21,100 +21,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    }
 	    if (text.startsWith('/loud')) {
 	      return text.substr(6);
-	    }
-	    return text;
-	  }
-	};
-
-	const ParserRecursionPrevention = {
-	  _tagsReplacement: [],
-	  _putReplacement: [],
-	  _sendReplacement: [],
-	  _codeReplacement: [],
-	  clean() {
-	    this._tagsReplacement = [];
-	    this._putReplacement = [];
-	    this._sendReplacement = [];
-	    this._codeReplacement = [];
-	  },
-	  cutTags(text) {
-	    text = text.replaceAll(/\[(.+?)](.*?)\[\/(.+?)]/gi, tag => {
-	      const id = this._tagsReplacement.length;
-	      this._tagsReplacement.push(tag);
-	      return '####REPLACEMENT_TAG_' + id + '####';
-	    });
-	    return text;
-	  },
-	  recoverTags(text) {
-	    this._tagsReplacement.forEach((tag, index) => {
-	      text = text.replace('####REPLACEMENT_TAG_' + index + '####', tag);
-	    });
-	    return text;
-	  },
-	  cutPutTag(text) {
-	    text = text.replace(/\[PUT(?:=(.+?))?](.+?)?\[\/PUT]/gi, whole => {
-	      const id = this._putReplacement.length;
-	      this._putReplacement.push(whole);
-	      return '####REPLACEMENT_PUT_' + id + '####';
-	    });
-	    return text;
-	  },
-	  recoverPutTag(text) {
-	    this._putReplacement.forEach((value, index) => {
-	      text = text.replace('####REPLACEMENT_PUT_' + index + '####', value);
-	    });
-	    return text;
-	  },
-	  cutSendTag(text) {
-	    text = text.replace(/\[SEND(?:=(.+?))?](.+?)?\[\/SEND]/gi, whole => {
-	      const id = this._sendReplacement.length;
-	      this._sendReplacement.push(whole);
-	      return '####REPLACEMENT_SEND_' + id + '####';
-	    });
-	    return text;
-	  },
-	  recoverSendTag(text) {
-	    this._sendReplacement.forEach((value, index) => {
-	      text = text.replace('####REPLACEMENT_SEND_' + index + '####', value);
-	    });
-	    return text;
-	  },
-	  cutCodeTag(text) {
-	    text = text.replace(/\[CODE](<br \/>)?(.*?)\[\/CODE]/sig, whole => {
-	      const id = this._codeReplacement.length;
-	      this._codeReplacement.push(whole);
-	      return '####REPLACEMENT_CODE_' + id + '####';
-	    });
-	    return text;
-	  },
-	  recoverCodeTag(text) {
-	    this._codeReplacement.forEach((value, index) => {
-	      text = text.replace('####REPLACEMENT_CODE_' + index + '####', value);
-	    });
-	    if (this._sendReplacement.length > 0) {
-	      do {
-	        this._sendReplacement.forEach((value, index) => {
-	          text = text.replace('####REPLACEMENT_SEND_' + index + '####', value);
-	        });
-	      } while (text.includes('####REPLACEMENT_SEND_'));
-	    }
-	    return text;
-	  },
-	  recoverRecursionTag(text) {
-	    if (this._sendReplacement.length > 0) {
-	      do {
-	        this._sendReplacement.forEach((value, index) => {
-	          text = text.replace('####REPLACEMENT_SEND_' + index + '####', value);
-	        });
-	      } while (text.includes('####REPLACEMENT_SEND_'));
-	    }
-	    text = text.split('####REPLACEMENT_SP_').join('####REPLACEMENT_PUT_');
-	    if (this._putReplacement.length > 0) {
-	      do {
-	        this._putReplacement.forEach((value, index) => {
-	          text = text.replace('####REPLACEMENT_PUT_' + index + '####', value);
-	        });
-	      } while (text.includes('####REPLACEMENT_PUT_'));
 	    }
 	    return text;
 	  }
@@ -194,7 +100,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return dialogId;
 	  },
 	  getDialogIdByChatId(chatId) {
-	    const dialog = getCore().store.getters['chats/getByChatId'](chatId);
+	    const dialog = getCore().getStore().getters['chats/getByChatId'](chatId);
 	    if (!dialog) {
 	      return '';
 	    }
@@ -230,12 +136,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    } = config;
 	    const {
 	      attach,
-	      files
+	      files,
+	      isSticker
 	    } = config;
 	    if (main_core.Type.isArrayFilled(files) || files === true) {
 	      text = this.getTextForFile(text, files);
 	    } else if (attach === true || main_core.Type.isArrayFilled(attach) || main_core.Type.isStringFilled(attach)) {
 	      text = this.getTextForAttach(text, attach);
+	    } else if (isSticker) {
+	      text = this.getTextForSticker();
 	    }
 	    return text.trim();
 	  },
@@ -270,8 +179,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  getTextForFile(rawText, files) {
 	    let preparedText = rawText;
 	    if (main_core.Type.isArray(files) && files.length > 0) {
-	      const [firstFile] = files;
-	      preparedText = this.getIconTextForFile(rawText, firstFile);
+	      preparedText = this.getIconTextForFile(rawText, files);
 	    } else if (files === true) {
 	      preparedText = this.getIconTextForFileType(rawText, FileIconType.file);
 	    }
@@ -303,6 +211,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    }
 	    return `${text} ${attachDescription}`.trim();
 	  },
+	  getTextForSticker() {
+	    return `[${main_core.Loc.getMessage('IM_PARSER_ICON_TYPE_STICKER')}]`;
+	  },
 	  getIconTextForFileType(text, type = FileIconType.file) {
 	    let result = text;
 	    const icon = this.getIcon(type);
@@ -316,15 +227,19 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    }
 	    return result.trim();
 	  },
-	  getIconTextForFile(text, file) {
+	  getIconTextForFile(text, files) {
 	    const withText = text.replace(/(\s|\n)/gi, '').length > 0;
+	    const [file] = files;
 
 	    // todo: remove this hack after fix receiving messages with files on P&P
 	    if (!file || !file.type) {
 	      return text;
 	    }
-	    if (file.type === FileType.image) {
+	    const isGallery = files.every(file => [FileIconType.image, FileIconType.video].includes(file.type));
+	    if (file.type === FileType.image && files.length === 1) {
 	      return this.getIconTextForFileType(text, FileIconType.image);
+	    } else if (isGallery && files.length > 1) {
+	      return this.getIconTextForFileType(text, FileIconType.gallery);
 	    } else if (file.type === FileType.audio) {
 	      return this.getIconTextForFileType(text, FileIconType.audio);
 	    } else if (file.type === FileType.video) {
@@ -350,64 +265,83 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	} = getConst();
 	const QUOTE_SIGN = '&gt;&gt;';
 	const NO_CONTEXT_TAG = 'none';
+	const PREVIEW_LINE_LIMIT = 4;
+	const PREVIEW_CHARS_PER_LINE = 80;
+	const BR_HTML_TAG = '<br />';
+	const CLASS_QUOTE_BASE = 'bx-im-message-quote';
+	const CLASS_QUOTE_WRAP = 'bx-im-message-quote__wrap';
+	const CLASS_QUOTE_TEXT = 'bx-im-message-quote__text';
+	const CLASS_QUOTE_TOGGLE = 'bx-im-message-quote__toggle';
+	const CLASS_EXPANDED = '--expanded';
+	const CLASS_COLLAPSED = '--collapsed';
+	const CLASS_CLICKABLE = '--clickable';
 	const ParserQuote = {
 	  decodeArrowQuote(text) {
 	    if (!text.includes(QUOTE_SIGN)) {
 	      return text;
 	    }
 	    let isProcessed = false;
-	    const textLines = text.split('<br />');
+	    const quoteStartIndexes = new Set();
+	    const quoteEndIndexes = new Set();
+	    const textLines = text.split(BR_HTML_TAG);
 	    for (let i = 0; i < textLines.length; i++) {
 	      if (!textLines[i].startsWith(QUOTE_SIGN)) {
 	        continue;
 	      }
 	      const quoteStartIndex = i;
-	      const outerContainerStart = `<div data-context="${NO_CONTEXT_TAG}" class="bx-im-message-quote --inline">`;
-	      const innerContainerStart = '<div class="bx-im-message-quote__wrap">';
-	      const containerEnd = '</div>';
-	      textLines[quoteStartIndex] = textLines[quoteStartIndex].replace(QUOTE_SIGN, `${outerContainerStart}${innerContainerStart}`);
-	      // remove >> from all next lines
+	      quoteStartIndexes.add(quoteStartIndex);
+	      textLines[quoteStartIndex] = textLines[quoteStartIndex].replace(QUOTE_SIGN, '');
 	      while (++i < textLines.length && textLines[i].startsWith(QUOTE_SIGN)) {
 	        textLines[i] = textLines[i].replace(QUOTE_SIGN, '');
 	      }
 	      const quoteEndIndex = i - 1;
-	      textLines[quoteEndIndex] += `${containerEnd}${containerEnd}`;
+	      quoteEndIndexes.add(quoteEndIndex);
+	      const quoteTextLines = textLines.slice(quoteStartIndex, quoteEndIndex + 1);
+	      const quoteText = quoteTextLines.join(BR_HTML_TAG);
+	      const collapsedClass = isQuoteExpandableByText(quoteText) ? ` ${CLASS_COLLAPSED}` : '';
+	      const containerEnd = '</div>';
+	      textLines[quoteStartIndex] = `<div data-context="${NO_CONTEXT_TAG}" class="${CLASS_QUOTE_BASE}${collapsedClass}"><div class="${CLASS_QUOTE_WRAP}"><div class="${CLASS_QUOTE_TEXT}">${textLines[quoteStartIndex]}`;
+	      textLines[quoteEndIndex] += `${containerEnd}${getToggleButton({
+        quoteText
+      })}${containerEnd}${containerEnd}`;
 	      isProcessed = true;
 	    }
 	    if (!isProcessed) {
 	      return text;
 	    }
-	    return textLines.join('<br />');
+	    return joinArrowQuoteLines(textLines, quoteStartIndexes, quoteEndIndexes);
 	  },
 	  purifyArrowQuote(text, spaceLetter = ' ') {
-	    text = text.replace(new RegExp(`^(${QUOTE_SIGN}(.*))`, 'gim'), ParserIcon.getQuoteBlock() + spaceLetter);
-	    return text;
+	    return text.replaceAll(new RegExp(`^(${QUOTE_SIGN}(.*))`, 'gim'), ParserIcon.getQuoteBlock() + spaceLetter);
 	  },
 	  decodeQuote(text, {
 	    contextDialogId = ''
 	  } = {}) {
-	    const sanitizedText = ParserRecursionPrevention.cutTags(text);
-	    const decodedText = sanitizedText.replaceAll(/-{54}(<br \/>(.*?)\[(.*?)]( #(?:chat\d+|\d+:\d+)\/\d+)?)?<br \/>(.*?)-{54}(<br \/>)?/gs, (whole, userBlock, userName, timeTag, contextTag, quoteText) => {
+	    return text.replaceAll(/-{54}(<br \/>(.*?)\[(.*?)]( #(?:chat\d+|\d+:\d+)\/\d+)?)?<br \/>(.*?)-{54}(<br \/>)?/gs, (whole, userBlock, userName, timeTag, contextTag, quoteText) => {
 	      const preparedQuoteText = getQuoteText(userName, timeTag, quoteText);
 	      const userContainer = getUserBlock(userName, timeTag);
 	      const finalContextTag = getFinalContextTag(contextTag, contextDialogId);
+	      const clickableClass = finalContextTag === NO_CONTEXT_TAG ? '' : ` ${CLASS_CLICKABLE}`;
+	      const collapsedClass = isQuoteExpandableByText(preparedQuoteText) ? ` ${CLASS_COLLAPSED}` : '';
 	      const layout = main_core.Tag.render(_t || (_t = _`
-					<div class='bx-im-message-quote' data-context='${0}'>
-						<div class='bx-im-message-quote__wrap'>
+					<div class='${0}${0}${0}' data-context='${0}'>
+						<div class='${0}'>
 							${0}
-							<div class='bx-im-message-quote__text'>${0}</div>
+							<div class='${0}'>${0}</div>
+							${0}
 						</div>
 					</div>
-				`), finalContextTag, userContainer, preparedQuoteText);
+				`), CLASS_QUOTE_BASE, collapsedClass, clickableClass, finalContextTag, CLASS_QUOTE_WRAP, userContainer, CLASS_QUOTE_TEXT, preparedQuoteText, getToggleButton({
+	        quoteText: preparedQuoteText
+	      }));
 	      return layout.outerHTML;
 	    });
-	    return ParserRecursionPrevention.recoverTags(decodedText);
 	  },
 	  purifyQuote(text, spaceLetter = ' ') {
-	    return text.replace(/-{54}(.*?)-{54}/gims, ParserIcon.getQuoteBlock() + spaceLetter);
+	    return text.replaceAll(/-{54}(.*?)-{54}/gims, ParserIcon.getQuoteBlock() + spaceLetter);
 	  },
 	  decodeCode(text) {
-	    return text.replace(/\[code](<br \/>)?([\0-\uFFFF]*?)\[\/code](<br \/>)?/gis, (whole, br, code) => {
+	    return text.replaceAll(/\[code](<br \/>)?([\0-\uFFFF]*?)\[\/code](<br \/>)?/gis, (whole, br, code) => {
 	      return main_core.Dom.create({
 	        tag: 'div',
 	        attrs: {
@@ -418,18 +352,36 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    });
 	  },
 	  purifyCode(text, spaceLetter = ' ') {
-	    return text.replace(/\[code](<br \/>)?([\0-\uFFFF]*?)\[\/code]/gis, ParserIcon.getCodeBlock() + spaceLetter);
+	    return text.replaceAll(/\[code](<br \/>)?([\0-\uFFFF]*?)\[\/code]/gis, ParserIcon.getCodeBlock() + spaceLetter);
 	  },
-	  executeClickEvent(event) {
-	    if (!event.target.className.startsWith('bx-im-message-quote') && !(event.target.parentNode && event.target.parentNode.className.startsWith('bx-im-message-quote'))) {
+	  executeClickEvent(event, context) {
+	    const target = getUtils().dom.recursiveBackwardNodeSearch(event.target, CLASS_QUOTE_BASE);
+	    if (!target) {
 	      return;
 	    }
-	    const target = getUtils().dom.recursiveBackwardNodeSearch(event.target, 'bx-im-message-quote');
-	    if (!target || target.dataset.context === NO_CONTEXT_TAG) {
+	    if (shouldStopQuoteClick(event)) {
+	      event.stopPropagation();
+	      return;
+	    }
+	    const isExpandable = isQuoteExpandable(target);
+	    updateToggleButtonVisibility(target, isExpandable);
+	    if (target.dataset.context === NO_CONTEXT_TAG) {
+	      handleQuoteToggle(target, isExpandable);
+	      return;
+	    }
+	    const isToggleClick = isToggleButtonClick(event.target);
+	    if (isToggleClick) {
+	      if (!isExpandable) {
+	        return;
+	      }
+	      toggleQuoteState(target);
 	      return;
 	    }
 	    const [dialogId, messageId] = target.dataset.context.split('/');
-	    main_core_events.EventEmitter.emit(EventType.dialog.goToMessageContext, {
+	    const {
+	      emitter
+	    } = context;
+	    emitter.emit(EventType.dialog.goToMessageContext, {
 	      messageId: Number.parseInt(messageId, 10),
 	      dialogId: dialogId.toString()
 	    });
@@ -441,7 +393,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    // the case, when inside the quote we have only some string in square brackets
 	    return String(timeTag);
 	  }
-	  const BR_HTML_TAG = '<br />';
 	  if (text.endsWith(BR_HTML_TAG)) {
 	    return text.slice(0, -BR_HTML_TAG.length);
 	  }
@@ -470,11 +421,118 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	  return finalContextTag;
 	};
+	const joinArrowQuoteLines = (textLines, quoteStartIndexes, quoteEndIndexes) => {
+	  let result = '';
+	  for (let i = 0; i < textLines.length; i++) {
+	    const isCompactQuoteSeparator = textLines[i].trim() === '' && quoteEndIndexes.has(i - 1) && quoteStartIndexes.has(i + 1);
+	    if (!isCompactQuoteSeparator) {
+	      result += textLines[i];
+	    }
+	    const isLastLine = i >= textLines.length - 1;
+	    if (isLastLine || quoteEndIndexes.has(i) || isCompactQuoteSeparator) {
+	      continue;
+	    }
+	    result += BR_HTML_TAG;
+	  }
+	  return result;
+	};
+	const getToggleButton = ({
+	  quoteText,
+	  isExpanded = false
+	}) => {
+	  if (!main_core.Type.isStringFilled(quoteText)) {
+	    return '';
+	  }
+	  if (!isQuoteExpandableByText(quoteText)) {
+	    return '';
+	  }
+	  const label = getToggleLabel(isExpanded);
+	  return `<button type="button" class="${CLASS_QUOTE_TOGGLE}">${label}</button>`;
+	};
+	const getToggleLabel = isExpanded => {
+	  const phraseCode = isExpanded ? 'IM_PARSER_QUOTE_COLLAPSE' : 'IM_PARSER_QUOTE_EXPAND';
+	  return main_core.Loc.getMessage(phraseCode);
+	};
 	const isQuoteFromTheSameChat = (finalContextTag, dialogId) => {
 	  const contextDialogId = ParserUtils.getDialogIdFromFinalContextTag(finalContextTag);
 	  return contextDialogId === dialogId;
 	};
+	const isQuoteExpandable = target => {
+	  const textNode = target.querySelector(`.${CLASS_QUOTE_TEXT}`);
+	  if (!textNode) {
+	    return false;
+	  }
+	  const isExpanded = main_core.Dom.hasClass(target, CLASS_EXPANDED);
+	  return isExpanded || textNode.scrollHeight > textNode.clientHeight + 1;
+	};
+	const isQuoteExpandableByText = quoteText => {
+	  const lines = quoteText.split(BR_HTML_TAG);
+	  let virtualLineCount = 0;
+	  for (const line of lines) {
+	    const plainText = line.replaceAll(/<[^>]+>/g, '').trim();
+	    virtualLineCount += Math.max(1, Math.ceil(plainText.length / PREVIEW_CHARS_PER_LINE));
+	    if (virtualLineCount > PREVIEW_LINE_LIMIT) {
+	      return true;
+	    }
+	  }
+	  return false;
+	};
+	const isToggleButtonClick = target => {
+	  const targetElement = target instanceof HTMLElement ? target : null;
+	  if (!targetElement) {
+	    return false;
+	  }
+	  return Boolean(targetElement.closest(`.${CLASS_QUOTE_TOGGLE}`));
+	};
+	const shouldStopQuoteClick = event => {
+	  const isInteractiveClick = event.target instanceof HTMLElement && event.target.closest('a');
+	  if (isInteractiveClick) {
+	    return true;
+	  }
+	  const selection = window.getSelection().toString().trim();
+	  return main_core.Type.isStringFilled(selection);
+	};
+	const handleQuoteToggle = (target, isExpandable) => {
+	  if (isExpandable) {
+	    main_core.Dom.addClass(target, CLASS_CLICKABLE);
+	  } else {
+	    main_core.Dom.removeClass(target, CLASS_CLICKABLE);
+	  }
+	  if (!main_core.Dom.hasClass(target, CLASS_CLICKABLE) || !isExpandable) {
+	    return true;
+	  }
+	  toggleQuoteState(target);
+	  return true;
+	};
+	const toggleQuoteState = target => {
+	  const isExpanded = main_core.Dom.hasClass(target, CLASS_EXPANDED);
+	  if (isExpanded) {
+	    main_core.Dom.removeClass(target, CLASS_EXPANDED);
+	    main_core.Dom.addClass(target, CLASS_COLLAPSED);
+	  } else {
+	    main_core.Dom.addClass(target, CLASS_EXPANDED);
+	    main_core.Dom.removeClass(target, CLASS_COLLAPSED);
+	  }
+	  const toggleButton = target.querySelector(`.${CLASS_QUOTE_TOGGLE}`);
+	  if (toggleButton) {
+	    toggleButton.textContent = getToggleLabel(!isExpanded);
+	  }
+	};
+	const updateToggleButtonVisibility = (target, isExpandable) => {
+	  const toggleButton = target.querySelector(`.${CLASS_QUOTE_TOGGLE}`);
+	  if (!toggleButton) {
+	    return;
+	  }
+	  main_core.Dom.style(toggleButton, 'display', isExpandable ? '' : 'none');
+	};
 
+	let _$1 = t => t,
+	  _t$1;
+	const ImageBbCodeSizes = Object.freeze({
+	  small: 'small',
+	  medium: 'medium',
+	  large: 'large'
+	});
 	const ParserImage = {
 	  decodeLink(text) {
 	    return text.replaceAll(/>((https|http):\/\/(\S+)\.(jpg|jpeg|png|gif|webp)(\?\S+[^<])?)<\/a>/gi, (whole, urlParsed) => {
@@ -613,11 +671,54 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      return title;
 	    });
 	  },
+	  purifyImageBbCode(text) {
+	    const sizesFragment = Object.values(ImageBbCodeSizes).join('|');
+	    const imageTagRegex = new RegExp(`\\[img\\s+size=(${sizesFragment})]([\\s\\S]*?)\\[\\/img]`, 'gi');
+	    return text.replaceAll(imageTagRegex, () => ParserIcon.getImageBlock());
+	  },
 	  hideErrorImage(element) {
 	    const result = element;
 	    if (result && result.parentNode) {
 	      result.parentNode.innerHTML = `<a href="${encodeURI(element.src)}" target="_blank">${element.src}</a>`;
 	    }
+	  },
+	  decodeImageBbCode(text, {
+	    contextDialogId = ''
+	  } = {}) {
+	    if (!main_core.Type.isStringFilled(text)) {
+	      return '';
+	    }
+	    return text.replaceAll(/\[img(?:\s+size=([^\]]+))?]\s*(?:\[url])?([\S\s]*?)(?:\[\/url])?\s*\[\/img]/gi, (whole, size, urlParsed) => {
+	      const url = main_core.Text.decode(urlParsed);
+	      const isValidSize = size && Object.values(ImageBbCodeSizes).includes(size.toLowerCase());
+	      const isInvalidUrl = ['/docs/pub/', 'logout=yes'].includes(url.toLowerCase());
+	      const isSafeUrl = getUtils().text.checkUrl(url);
+	      const isImage = isImageUrl(url);
+	      const hasNestedItems = hasNestedImgBbCodes(url);
+	      if (!isValidSize || isInvalidUrl || !isSafeUrl || !isImage || hasNestedItems) {
+	        return whole.replaceAll(/\[url]([\S\s]*?)\[\/url]/gi, '$1');
+	      }
+	      const classModifier = `--${size}`;
+	      const {
+	        file
+	      } = getUtils();
+	      const dialog = getCore().getStore().getters['chats/get'](contextDialogId, true);
+	      const viewerGroupBy = dialog.chatId;
+	      const viewerAttributes = file.getViewerDataForImageSrc({
+	        src: url,
+	        viewerGroupBy
+	      });
+	      const layout = main_core.Tag.render(_t$1 || (_t$1 = _$1`
+					<a class='bx-im-message-image ${0}'>
+						<img
+							class='bx-im-message-image-source'
+							src="${0}"
+						/>
+					</a>
+				`), classModifier, url);
+	      main_core.Dom.attr(layout.firstChild, viewerAttributes);
+	      return layout.outerHTML;
+	    });
 	  }
 	};
 	function isLinkFromDisk(url) {
@@ -634,12 +735,18 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  const AllowedSymbolsBeforeImageUrl = new Set(['>', ']', ' ']);
 	  return main_core.Type.isStringFilled(symbolBeforeUrl) && !AllowedSymbolsBeforeImageUrl.has(symbolBeforeUrl);
 	}
-	const canPurifyLink = (symbolBeforeUrl, url) => {
+	function canPurifyLink(symbolBeforeUrl, url) {
 	  return hasImageFileExtension(url) && !isLinkFromDisk(url) && !isLogoutLink(url) && !hasLeadingTextBeforeUrl(symbolBeforeUrl);
-	};
+	}
+	function isImageUrl(url) {
+	  return /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url.trim());
+	}
+	function hasNestedImgBbCodes(url) {
+	  return /\[img/i.test(url.trim());
+	}
 
-	let _$1 = t => t,
-	  _t$1;
+	let _$2 = t => t,
+	  _t$2;
 	const RatioConfig = Object.freeze({
 	  Default: 1,
 	  Big: 1.6
@@ -663,7 +770,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      width,
 	      height
 	    } = smile;
-	    const smileImg = main_core.Tag.render(_t$1 || (_t$1 = _$1`
+	    const smileImg = main_core.Tag.render(_t$2 || (_t$2 = _$2`
 			<img
 				src="${0}"
 				data-code="${0}"
@@ -746,10 +853,13 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	};
 
+	const {
+	  DataAttribute
+	} = getConst();
 	const ParserUrl = {
 	  decode(text, config = {}) {
 	    const {
-	      urlTarget = "_blank",
+	      urlTarget = '_blank',
 	      removeLinks = false
 	    } = config;
 
@@ -759,14 +869,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      if (!getUtils().text.checkUrl(url)) {
 	        return text;
 	      }
-	      return main_core.Dom.create({
-	        tag: 'a',
-	        attrs: {
-	          href: url,
-	          target: urlTarget
-	        },
-	        html: text
-	      }).outerHTML;
+	      return this.getLinkHtml(url, urlTarget, text);
 	    });
 
 	    // url like https://bitrix24.com/?params[1]="test"
@@ -785,14 +888,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	          text = text.slice(text.lastIndexOf(']') + 1);
 	        }
 	      }
-	      return main_core.Dom.create({
-	        tag: 'a',
-	        attrs: {
-	          href: url,
-	          target: urlTarget
-	        },
-	        html: text
-	      }).outerHTML;
+	      return this.getLinkHtml(url, urlTarget, text);
 	    });
 	    if (removeLinks) {
 	      text = text.replace(/<a.*?href="([^"]*)".*?>(.*?)<\/a>/gi, '$2');
@@ -811,6 +907,17 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  removeSimpleUrlTag(text) {
 	    text = text.replace(/\[url](.*?)\[\/url]/gis, (whole, link) => link);
 	    return text;
+	  },
+	  getLinkHtml(url, urlTarget, text) {
+	    return main_core.Dom.create({
+	      tag: 'a',
+	      attrs: {
+	        href: url,
+	        target: urlTarget,
+	        [DataAttribute.useNativeContextMenu]: true
+	      },
+	      html: text
+	    }).outerHTML;
 	  }
 	};
 
@@ -860,15 +967,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	};
 
-	let _$2 = t => t,
-	  _t$2;
+	let _$3 = t => t,
+	  _t$3;
 	const ParserLines = {
 	  decode(text) {
 	    let result = text;
 	    result = result.replaceAll(/\[like]/gi, `<span class="bx-im-lines-vote-like" title="${main_core.Loc.getMessage('IM_PARSER_LINES_RATING_LIKE')}"></span>`);
 	    result = result.replaceAll(/\[dislike]/gi, `<span class="bx-im-lines-vote-dislike" title="${main_core.Loc.getMessage('IM_PARSER_LINES_RATING_DISLIKE')}"></span>`);
 	    result = result.replaceAll(/\[rating=([1-5])]/gi, (whole, rating) => {
-	      const tag = main_core.Tag.render(_t$2 || (_t$2 = _$2`
+	      const tag = main_core.Tag.render(_t$3 || (_t$3 = _$3`
 				<span class="bx-im-lines-rating" title="${0} - ${0}">
 					<span class="bx-im-lines-rating-selected" style="width: ${0}%"></span>
 				</span>
@@ -891,7 +998,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	const {
 	  EventType: EventType$1
 	} = getConst();
-	const atomRegExpPart = '\\d{4}-\\d{2}-\\d{2}T[0-2]\\d:[0-5]\\d:[0-5]\\d[+-][0-2]\\d:[0-5]\\d';
 	const ActionType = {
 	  put: 'put',
 	  send: 'send'
@@ -948,21 +1054,6 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    });
 	    return text;
 	  },
-	  decodeDate(text) {
-	    text = text.replace(RegExp('\\[DATE=(' + atomRegExpPart + ')](.+?)\\[\\/DATE]', 'ig'), (whole, date, text) => {
-	      text = text.replace(/<(\w+)[^>]*>(.*?)<\\1>/i, "$2", text);
-	      text = text.replace(/\[(\w+)[^\]]*](.*?)\[\/\1]/i, "$2", text);
-	      return this._getHtmlForAction('date', text, date);
-	    });
-	    return text;
-	  },
-	  purifyDate(text) {
-	    const atomRegexp = getUtils().date.atomRegexpString;
-	    text = text.replace(RegExp('\[DATE=(' + atomRegexp + ')](.+?)\[\/DATE]', 'ig'), (whole, date, text) => {
-	      return text;
-	    });
-	    return text;
-	  },
 	  _getHtmlForAction(method, text, data) {
 	    return main_core.Dom.create({
 	      tag: 'span',
@@ -985,11 +1076,14 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      })]
 	    }).outerHTML;
 	  },
-	  executeClickEvent(event) {
+	  executeClickEvent(event, context) {
 	    var _getDialogIdByMessage;
 	    if (!main_core.Dom.hasClass(event.target, 'bx-im-message-command')) {
 	      return;
 	    }
+	    const {
+	      emitter
+	    } = context;
 	    const element = event.target;
 	    const messageId = getMessageIdForClickElement(element);
 	    const dialogId = (_getDialogIdByMessage = getDialogIdByMessageId(messageId)) != null ? _getDialogIdByMessage : '';
@@ -1000,7 +1094,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      if (!textToInsert) {
 	        return;
 	      }
-	      main_core_events.EventEmitter.emit(EventType$1.textarea.insertText, {
+	      emitter.emit(EventType$1.textarea.insertText, {
 	        text: textToInsert,
 	        dialogId
 	      });
@@ -1011,7 +1105,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      if (!textToSend) {
 	        return;
 	      }
-	      main_core_events.EventEmitter.emit(EventType$1.textarea.sendMessage, {
+	      emitter.emit(EventType$1.textarea.sendMessage, {
 	        text: textToSend,
 	        dialogId
 	      });
@@ -1080,17 +1174,157 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 
 	const {
 	  EventType: EventType$2,
-	  MessageMentionType: MessageMentionType$1
+	  MessageMentionType: MessageMentionType$1,
+	  SidebarDetailBlock,
+	  SpecialMentionDialogId,
+	  ChatType
 	} = getConst();
+	const MENTION_CSS_CLASS = 'bx-im-mention';
+	var _handlersByMentionType = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handlersByMentionType");
+	var _handlersByDialogId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handlersByDialogId");
+	var _getCopilotBotDialogId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getCopilotBotDialogId");
+	var _handleCopilot = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleCopilot");
+	var _handleChat = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleChat");
+	var _handleLines = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleLines");
+	var _handleContext = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleContext");
+	var _handleCall = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleCall");
+	var _handleAllParticipants = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleAllParticipants");
+	class MentionHandler {
+	  constructor(context) {
+	    Object.defineProperty(this, _handleAllParticipants, {
+	      value: _handleAllParticipants2
+	    });
+	    Object.defineProperty(this, _handleCall, {
+	      value: _handleCall2
+	    });
+	    Object.defineProperty(this, _handleContext, {
+	      value: _handleContext2
+	    });
+	    Object.defineProperty(this, _handleLines, {
+	      value: _handleLines2
+	    });
+	    Object.defineProperty(this, _handleChat, {
+	      value: _handleChat2
+	    });
+	    Object.defineProperty(this, _handleCopilot, {
+	      value: _handleCopilot2
+	    });
+	    Object.defineProperty(this, _getCopilotBotDialogId, {
+	      value: _getCopilotBotDialogId2
+	    });
+	    Object.defineProperty(this, _handlersByMentionType, {
+	      writable: true,
+	      value: {
+	        [MessageMentionType$1.user]: dataset => babelHelpers.classPrivateFieldLooseBase(this, _handleChat)[_handleChat](dataset),
+	        [MessageMentionType$1.chat]: dataset => babelHelpers.classPrivateFieldLooseBase(this, _handleChat)[_handleChat](dataset),
+	        [MessageMentionType$1.lines]: dataset => babelHelpers.classPrivateFieldLooseBase(this, _handleLines)[_handleLines](dataset),
+	        [MessageMentionType$1.context]: dataset => babelHelpers.classPrivateFieldLooseBase(this, _handleContext)[_handleContext](dataset),
+	        [MessageMentionType$1.call]: dataset => babelHelpers.classPrivateFieldLooseBase(this, _handleCall)[_handleCall](dataset)
+	      }
+	    });
+	    Object.defineProperty(this, _handlersByDialogId, {
+	      writable: true,
+	      value: {
+	        [babelHelpers.classPrivateFieldLooseBase(this, _getCopilotBotDialogId)[_getCopilotBotDialogId]()]: () => babelHelpers.classPrivateFieldLooseBase(this, _handleCopilot)[_handleCopilot](),
+	        [SpecialMentionDialogId.allParticipants]: () => babelHelpers.classPrivateFieldLooseBase(this, _handleAllParticipants)[_handleAllParticipants]()
+	      }
+	    });
+	    const {
+	      emitter
+	    } = context;
+	    this.emitter = emitter;
+	  }
+	  handleClick(event) {
+	    if (!main_core.Dom.hasClass(event.target, MENTION_CSS_CLASS)) {
+	      return;
+	    }
+	    const dataset = event.target.dataset;
+	    const handlerByDialogId = babelHelpers.classPrivateFieldLooseBase(this, _handlersByDialogId)[_handlersByDialogId][dataset.value];
+	    if (handlerByDialogId) {
+	      handlerByDialogId();
+	      return;
+	    }
+	    const handlerByMentionType = babelHelpers.classPrivateFieldLooseBase(this, _handlersByMentionType)[_handlersByMentionType][dataset.type];
+	    if (!handlerByMentionType) {
+	      return;
+	    }
+	    handlerByMentionType(dataset);
+	  }
+	}
+	function _getCopilotBotDialogId2() {
+	  return getCore().getStore().getters['users/bots/getCopilotBotDialogId'];
+	}
+	function _handleCopilot2() {
+	  void im_public.Messenger.openCopilot();
+	}
+	function _handleChat2(dataset) {
+	  void im_public.Messenger.openChat(dataset.value);
+	}
+	function _handleLines2(dataset) {
+	  const dialogId = dataset.value;
+	  if (getUtils().dialog.isLinesHistoryId(dialogId)) {
+	    void im_public.Messenger.openLinesHistory(dialogId);
+	  } else if (getUtils().dialog.isLinesExternalId(dialogId)) {
+	    void im_public.Messenger.openLines(dialogId);
+	  }
+	}
+	function _handleContext2(dataset) {
+	  const messageId = Number.parseInt(dataset.messageId, 10);
+	  this.emitter.emit(EventType$2.dialog.goToMessageContext, {
+	    messageId,
+	    dialogId: dataset.dialogId
+	  });
+	}
+	function _handleCall2(dataset) {
+	  const destination = dataset.destination;
+	  if (getUtils().call.isNumber(destination)) {
+	    void im_public.Messenger.startPhoneCall(destination);
+	  }
+	}
+	function _handleAllParticipants2() {
+	  const {
+	    entityId
+	  } = getCore().getStore().getters['application/getLayout'];
+	  const {
+	    type
+	  } = getCore().getStore().getters['chats/get'](entityId, true);
+	  if (!entityId) {
+	    return;
+	  }
+	  if (type === ChatType.user) {
+	    return;
+	  }
+	  this.emitter.emit(EventType$2.sidebar.open, {
+	    panel: SidebarDetailBlock.members,
+	    dialogId: entityId
+	  });
+	}
+
+	const {
+	  UserType,
+	  MessageMentionType: MessageMentionType$2,
+	  SpecialMentionDialogId: SpecialMentionDialogId$1 = {}
+	} = getConst();
+	const SpecialMentionHandlers = {
+	  [SpecialMentionDialogId$1.allParticipants]: userName => ParserMention.renderAllParticipantsMention(userName)
+	};
+	const MENTION_BASE_CLASS = 'bx-im-mention';
+	const MentionModifier = {
+	  highlight: '--highlight',
+	  extranet: '--extranet'
+	};
 	const ParserMention = {
 	  decode(text) {
-	    text = text.replace(/\[USER=([0-9]+)( REPLACE)?](.*?)\[\/USER]/gi, (whole, userId, replace, userName) => {
+	    text = text.replace(/\[USER=(all|[0-9]+)( REPLACE)?](.*?)\[\/USER]/gi, (whole, userId, replace, userName) => {
+	      if (SpecialMentionHandlers[userId]) {
+	        return SpecialMentionHandlers[userId](userName);
+	      }
 	      userId = Number.parseInt(userId, 10);
 	      if (!main_core.Type.isNumber(userId) || userId === 0) {
 	        return userName;
 	      }
+	      const user = getCore().getStore().getters['users/get'](userId);
 	      if (replace || !userName) {
-	        const user = getCore().getStore().getters['users/get'](userId);
 	        if (user) {
 	          userName = user.name;
 	        }
@@ -1100,15 +1334,18 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      if (!userName) {
 	        userName = `User ${userId}`;
 	      }
-	      let className = 'bx-im-mention';
+	      let className = MENTION_BASE_CLASS;
 	      if (getCore().getUserId() === userId) {
-	        className += ' --highlight';
+	        className += ` ${MentionModifier.highlight}`;
+	      }
+	      if (user && user.type === UserType.extranet) {
+	        className += ` ${MentionModifier.extranet}`;
 	      }
 	      return main_core.Dom.create({
 	        tag: 'span',
 	        attrs: {
 	          className,
-	          'data-type': MessageMentionType$1.user,
+	          'data-type': MessageMentionType$2.user,
 	          'data-value': userId
 	        },
 	        text: userName
@@ -1122,14 +1359,14 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      if (chatName) {
 	        chatName = main_core.Text.decode(chatName);
 	      } else {
-	        const dialog = getCore().store.getters['chats/get'](`chat${chatId}`);
+	        const dialog = getCore().getStore().getters['chats/get'](`chat${chatId}`);
 	        chatName = dialog ? dialog.name : `Chat ${chatId}`;
 	      }
 	      return main_core.Dom.create({
 	        tag: 'span',
 	        attrs: {
-	          className: 'bx-im-mention',
-	          'data-type': isLines ? MessageMentionType$1.lines : MessageMentionType$1.chat,
+	          className: MENTION_BASE_CLASS,
+	          'data-type': isLines ? MessageMentionType$2.lines : MessageMentionType$2.chat,
 	          'data-value': isLines ? `imol|${chatId}` : `chat${chatId}`
 	        },
 	        text: chatName
@@ -1148,10 +1385,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      let title = '';
 	      messageId = Number.parseInt(messageId, 10);
 	      if (main_core.Type.isNumber(messageId) && messageId > 0) {
-	        const message = getCore().store.getters['messages/getById'](messageId);
+	        const message = getCore().getStore().getters['messages/getById'](messageId);
 	        if (message) {
 	          title = Parser.purifyMessage(message);
-	          const user = getCore().store.getters['users/get'](message.authorId);
+	          const user = getCore().getStore().getters['users/get'](message.authorId);
 	          if (user) {
 	            title = `${user.name}: ${title}`;
 	          }
@@ -1163,8 +1400,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      return main_core.Dom.create({
 	        tag: 'span',
 	        attrs: {
-	          className: 'bx-im-mention',
-	          'data-type': MessageMentionType$1.context,
+	          className: MENTION_BASE_CLASS,
+	          'data-type': MessageMentionType$2.context,
 	          'data-dialog-id': dialogId,
 	          'data-message-id': messageId,
 	          title
@@ -1175,7 +1412,7 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return text;
 	  },
 	  purify(text) {
-	    text = text.replace(/\[USER=([0-9]+)( REPLACE)?](.*?)\[\/USER]/gi, (whole, userId, replace, userName) => {
+	    text = text.replace(/\[USER=(all|[0-9]+)( REPLACE)?](.*?)\[\/USER]/gi, (whole, userId, replace, userName) => {
 	      userId = Number.parseInt(userId, 10);
 	      if (!main_core.Type.isNumber(userId) || userId === 0) {
 	        return userName;
@@ -1196,43 +1433,35 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    text = text.replace(/\[CHAT=(imol\|)?(\d+)](.*?)\[\/CHAT]/gi, (whole, openlines, chatId, chatName) => {
 	      chatId = Number.parseInt(chatId, 10);
 	      if (!chatName) {
-	        const dialog = getCore().store.getters['chats/get']('chat' + chatId);
+	        const dialog = getCore().getStore().getters['chats/get']('chat' + chatId);
 	        chatName = dialog ? dialog.name : 'Chat ' + chatId;
 	      }
 	      return chatName;
 	    });
 	    text = text.replace(/\[context=(chat\d+|\d+:\d+)\/(\d+)](.*?)\[\/context]/gis, (whole, dialogId, messageId, text) => {
 	      if (!text) {
-	        const dialog = getCore().store.getters['chats/get'](dialogId);
+	        const dialog = getCore().getStore().getters['chats/get'](dialogId);
 	        text = dialog ? dialog.name : 'Dialog ' + dialogId;
 	      }
 	      return text;
 	    });
 	    return text;
 	  },
-	  executeClickEvent(event) {
-	    if (!main_core.Dom.hasClass(event.target, 'bx-im-mention')) {
-	      return;
-	    }
-	    if (event.target.dataset.type === MessageMentionType$1.user || event.target.dataset.type === MessageMentionType$1.chat) {
-	      void im_public.Messenger.openChat(event.target.dataset.value);
-	    } else if (event.target.dataset.type === MessageMentionType$1.lines) {
-	      const dialogId = event.target.dataset.value;
-	      if (getUtils().dialog.isLinesHistoryId(dialogId)) {
-	        void im_public.Messenger.openLinesHistory(dialogId);
-	      } else if (getUtils().dialog.isLinesExternalId(dialogId)) {
-	        void im_public.Messenger.openLines(dialogId);
-	      }
-	    } else if (event.target.dataset.type === MessageMentionType$1.context) {
-	      main_core_events.EventEmitter.emit(EventType$2.dialog.goToMessageContext, {
-	        messageId: Number.parseInt(event.target.dataset.messageId, 10),
-	        dialogId: event.target.dataset.dialogId.toString()
-	      });
-	    } else if (event.target.dataset.type === MessageMentionType$1.call) {
-	      if (getUtils().call.isNumber(event.target.dataset.destination)) {
-	        void im_public.Messenger.startPhoneCall(event.target.dataset.destination);
-	      }
-	    }
+	  executeClickEvent(event, context) {
+	    const mentionHandler = new MentionHandler(context);
+	    mentionHandler.handleClick(event);
+	  },
+	  renderAllParticipantsMention(userName) {
+	    const className = `${MENTION_BASE_CLASS} ${MentionModifier.highlight}`;
+	    return main_core.Dom.create({
+	      tag: 'span',
+	      attrs: {
+	        className,
+	        'data-type': MessageMentionType$2.user,
+	        'data-value': SpecialMentionDialogId$1.allParticipants
+	      },
+	      text: userName
+	    }).outerHTML;
 	  }
 	};
 
@@ -1282,29 +1511,124 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	  }
 	};
 
-	const {
-	  FileIconType: FileIconType$1
-	} = getConst();
 	const ParserDisk = {
 	  decode(text) {
-	    const icon = ParserIcon.getIcon(FileIconType$1.file);
-	    let diskText;
-	    if (icon) {
-	      diskText = `${icon} ${main_core.Loc.getMessage('IM_PARSER_ICON_TYPE_FILE')}`;
-	    } else {
-	      diskText = `[${main_core.Loc.getMessage('IM_PARSER_ICON_TYPE_FILE')}]`;
-	    }
-	    text = text.replace(/\[disk=\d+]/gi, diskText);
-	    return text;
+	    const diskText = `[${main_core.Loc.getMessage('IM_PARSER_ICON_TYPE_FILE')}]`;
+	    return text.replaceAll(/\[disk=\d+]/gi, diskText);
 	  },
 	  purify(text) {
 	    return this.decode(text);
 	  }
 	};
 
+	const ParserDate = {
+	  decode(text) {
+	    return handleTimestampCode(text);
+	  },
+	  purify(text) {
+	    return handleTimestampCode(text);
+	  }
+	};
+	const handleTimestampCode = text => {
+	  // [timestamp=1645844720 format=SHORT_TIME_FORMAT]
+	  const regex = /\[timestamp=(?<timestamp>\d+)\s+format=(?<format>[_a-z]+)]/gi;
+	  return text.replaceAll(regex, (initialText, ...args) => {
+	    const {
+	      timestamp,
+	      format
+	    } = args.at(-1);
+	    const DateFormatter = main_core.Reflection.getClass('BX.Messenger.v2.Lib.DateFormatter');
+	    const DateFormat = main_core.Reflection.getClass('BX.Messenger.v2.Lib.DateFormat');
+	    const DateCode = main_core.Reflection.getClass('BX.Messenger.v2.Lib.DateCode');
+	    if (!DateFormatter) {
+	      return initialText;
+	    }
+	    const timestampInMilliseconds = Number(timestamp) * 1000;
+	    const date = new Date(timestampInMilliseconds);
+	    const preparedFormat = main_core.Text.toCamelCase(format);
+	    const availableFormats = Object.keys(DateFormat);
+	    if (!availableFormats.includes(preparedFormat)) {
+	      return initialText;
+	    }
+	    return DateFormatter.formatByCode(date, DateCode[preparedFormat]);
+	  });
+	};
+
+	const NestedTagHandler = {
+	  putReplacement: [],
+	  sendReplacement: [],
+	  codeReplacement: [],
+	  clean() {
+	    this.putReplacement = [];
+	    this.sendReplacement = [];
+	    this.codeReplacement = [];
+	  },
+	  cutPutTag(text) {
+	    return text.replaceAll(/\[put(?:=(.+?))?](.+?)?\[\/put]/gi, whole => {
+	      const id = this.putReplacement.length;
+	      this.putReplacement.push(whole);
+	      return `####REPLACEMENT_PUT_${id}####`;
+	    });
+	  },
+	  recoverPutTag(text) {
+	    this.putReplacement.forEach((value, index) => {
+	      text = text.replace(`####REPLACEMENT_PUT_${index}####`, value);
+	    });
+	    return text;
+	  },
+	  cutSendTag(text) {
+	    text = text.replaceAll(/\[send(?:=(.+?))?](.+?)?\[\/send]/gi, whole => {
+	      const id = this.sendReplacement.length;
+	      this.sendReplacement.push(whole);
+	      return `####REPLACEMENT_SEND_${id}####`;
+	    });
+	    return text;
+	  },
+	  recoverSendTag(text) {
+	    this.sendReplacement.forEach((value, index) => {
+	      const placeholder = `####REPLACEMENT_SEND_${index}####`;
+	      text = text.split(placeholder).join(value);
+	    });
+	    return text;
+	  },
+	  cutCodeTag(text) {
+	    text = text.replaceAll(/\[code](<br \/>)?(.*?)\[\/code]/gis, whole => {
+	      const id = this.codeReplacement.length;
+	      this.codeReplacement.push(whole);
+	      return `####REPLACEMENT_CODE_${id}####`;
+	    });
+	    return text;
+	  },
+	  recoverCodeTag(text) {
+	    this.codeReplacement.forEach((value, index) => {
+	      text = text.replace(`####REPLACEMENT_CODE_${index}####`, value);
+	    });
+	    this.sendReplacement.forEach((value, index) => {
+	      text = text.replaceAll(`####REPLACEMENT_SEND_${index}####`, value);
+	    });
+	    return text;
+	  },
+	  recoverRecursionTag(text) {
+	    if (this.sendReplacement.length > 0) {
+	      this.sendReplacement.forEach((value, index) => {
+	        text = text.replaceAll(`####REPLACEMENT_SEND_${index}####`, value);
+	      });
+	    }
+	    text = text.split('####REPLACEMENT_SP_').join('####REPLACEMENT_PUT_');
+	    if (this.putReplacement.length > 0) {
+	      do {
+	        this.putReplacement.forEach((value, index) => {
+	          text = text.replace(`####REPLACEMENT_PUT_${index}####`, value);
+	        });
+	      } while (text.includes('####REPLACEMENT_PUT_'));
+	    }
+	    return text;
+	  }
+	};
+
 	const Parser = {
 	  decodeMessage(message) {
-	    const messageFiles = getCore().store.getters['messages/getMessageFiles'](message.id);
+	    const messageFiles = getCore().getStore().getters['messages/getMessageFiles'](message.id);
 	    const contextDialogId = ParserUtils.getDialogIdByChatId(message.chatId);
 	    return this.decode({
 	      text: message.text,
@@ -1321,6 +1645,12 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      attach: (_notification$params$ = notification.params.attach) != null ? _notification$params$ : false,
 	      showIconIfEmptyText: false,
 	      showImageFromLink: false,
+	      urlTarget: im_v2_lib_desktopApi.DesktopApi.isDesktop() ? '_blank' : '_self'
+	    });
+	  },
+	  decodeNotificationParam(text) {
+	    return this.decode({
+	      text,
 	      urlTarget: im_v2_lib_desktopApi.DesktopApi.isDesktop() ? '_blank' : '_self'
 	    });
 	  },
@@ -1383,11 +1713,14 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    text = main_core.Text.encode(text.trim());
 	    text = ParserCommon.decodeNewLine(text);
 	    text = ParserCommon.decodeTabulation(text);
-	    text = ParserRecursionPrevention.cutPutTag(text);
-	    text = ParserRecursionPrevention.cutSendTag(text);
-	    text = ParserRecursionPrevention.cutCodeTag(text);
+	    text = NestedTagHandler.cutPutTag(text);
+	    text = NestedTagHandler.cutSendTag(text);
+	    text = NestedTagHandler.cutCodeTag(text);
 	    text = ParserSmile.decodeSmile(text);
 	    text = ParserSlashCommand.decode(text);
+	    text = ParserImage.decodeImageBbCode(text, {
+	      contextDialogId
+	    });
 	    text = ParserUrl.decode(text, {
 	      urlTarget,
 	      removeLinks
@@ -1401,33 +1734,35 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      text = ParserImage.decodeLink(text);
 	    }
 	    text = ParserDisk.decode(text);
-	    text = ParserAction.decodeDate(text);
+	    text = ParserDate.decode(text);
 	    text = ParserQuote.decodeArrowQuote(text);
 	    text = ParserQuote.decodeQuote(text, {
 	      contextDialogId
 	    });
-	    text = ParserRecursionPrevention.recoverSendTag(text);
+	    text = NestedTagHandler.recoverSendTag(text);
 	    text = ParserAction.decodeSend(text);
-	    text = ParserRecursionPrevention.recoverPutTag(text);
+	    text = NestedTagHandler.recoverPutTag(text);
 	    text = ParserAction.decodePut(text);
-	    text = ParserRecursionPrevention.recoverCodeTag(text);
+	    text = NestedTagHandler.recoverCodeTag(text);
 	    text = ParserQuote.decodeCode(text);
-	    text = ParserRecursionPrevention.recoverRecursionTag(text);
+	    text = NestedTagHandler.recoverRecursionTag(text);
 	    text = ParserCommon.removeDuplicateTags(text);
-	    ParserRecursionPrevention.clean();
+	    NestedTagHandler.clean();
 	    return text;
 	  },
 	  purifyMessage(message) {
-	    const messageFiles = getCore().store.getters['messages/getMessageFiles'](message.id);
+	    const messageFiles = getCore().getStore().getters['messages/getMessageFiles'](message.id);
+	    const isSticker = getCore().getStore().getters['stickers/messages/isSticker'](message.id);
 	    return this.purify({
 	      text: message.text,
 	      attach: message.attach,
-	      files: messageFiles
+	      files: messageFiles,
+	      isSticker
 	    });
 	  },
 	  purifyNotification(notification) {
 	    var _notification$params$2;
-	    const messageFiles = getCore().store.getters['messages/getMessageFiles'](notification.id);
+	    const messageFiles = getCore().getStore().getters['messages/getMessageFiles'](notification.id);
 	    return this.purify({
 	      text: notification.text,
 	      attach: (_notification$params$2 = notification.params.attach) != null ? _notification$params$2 : false,
@@ -1453,13 +1788,15 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    const {
 	      files,
 	      attach,
-	      text
+	      text,
+	      isSticker
 	    } = this.prepareConfigForRecent(recentMessage);
 	    return this.purify({
 	      text,
 	      attach,
 	      files,
-	      showPhraseMessageWasDeleted: recentMessage.messageId !== 0
+	      showPhraseMessageWasDeleted: recentMessage.messageId !== 0,
+	      isSticker
 	    });
 	  },
 	  purifyText(text) {
@@ -1478,16 +1815,18 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    const {
 	      attach = false,
 	      files = false,
+	      isSticker = false,
 	      showPhraseMessageWasDeleted = true
 	    } = config;
 	    if (!main_core.Type.isString(text)) {
 	      text = main_core.Type.isNumber(text) ? text.toString() : '';
 	    }
-	    if (!text) {
+	    if (!text || isSticker) {
 	      text = ParserIcon.addIconToShortText({
 	        text,
 	        attach,
-	        files
+	        files,
+	        isSticker
 	      });
 	      return text.trim();
 	    }
@@ -1506,7 +1845,9 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    text = ParserUrl.purify(text);
 	    text = ParserImage.purifyLink(text);
 	    text = ParserImage.purifyIcon(text);
+	    text = ParserImage.purifyImageBbCode(text);
 	    text = ParserDisk.purify(text);
+	    text = ParserDate.purify(text);
 	    text = ParserCommon.purifyNewLine(text);
 	    text = ParserIcon.addIconToShortText({
 	      text,
@@ -1526,7 +1867,8 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      attach
 	    } = message;
 	    let text = quoteText === '' ? message.text : quoteText;
-	    const files = getCore().store.getters['messages/getMessageFiles'](id);
+	    const files = getCore().getStore().getters['messages/getMessageFiles'](id);
+	    const isSticker = getCore().getStore().getters['stickers/messages/isSticker'](id);
 	    text = main_core.Text.encode(text.trim());
 	    text = ParserMention.purify(text);
 	    text = ParserCall.purify(text);
@@ -1542,6 +1884,11 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	        text,
 	        attach,
 	        files
+	      });
+	    }
+	    if (isSticker) {
+	      text = ParserIcon.addIconToShortText({
+	        isSticker
 	      });
 	    }
 	    text = text.length > 0 ? main_core.Text.decode(text) : main_core.Loc.getMessage('IM_PARSER_MESSAGE_DELETED');
@@ -1566,27 +1913,29 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    const {
 	      id
 	    } = message;
-	    const files = getCore().store.getters['messages/getMessageFiles'](id).map(file => {
+	    const files = getCore().getStore().getters['messages/getMessageFiles'](id).map(file => {
 	      return `[DISK=${file.id}]\n`;
 	    });
 	    return files.join('\n').trim();
 	  },
 	  prepareConfigForRecent(recentMessage) {
-	    let files = getCore().store.getters['messages/getMessageFiles'](recentMessage.messageId);
+	    let files = getCore().getStore().getters['messages/getMessageFiles'](recentMessage.messageId);
 	    if (files.length === 0) {
 	      files = false;
 	    }
-	    const message = getCore().store.getters['messages/getById'](recentMessage.messageId);
+	    const message = getCore().getStore().getters['messages/getById'](recentMessage.messageId);
 	    let attach = false;
 	    if (main_core.Type.isBoolean(message == null ? void 0 : message.attach) || main_core.Type.isStringFilled(message == null ? void 0 : message.attach) || main_core.Type.isArray(message == null ? void 0 : message.attach)) {
 	      attach = message.attach;
 	    } else if (main_core.Type.isPlainObject(message == null ? void 0 : message.attach)) {
 	      attach = [message.attach];
 	    }
+	    const isSticker = getCore().getStore().getters['stickers/messages/isSticker'](recentMessage.messageId);
 	    return {
 	      files,
 	      attach,
-	      text: message.text
+	      text: message.text,
+	      isSticker
 	    };
 	  },
 	  prepareLegacyConfigForRecent(recentMessage) {
@@ -1610,10 +1959,10 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	      text: recentMessage.message.text
 	    };
 	  },
-	  executeClickEvent(event) {
-	    ParserMention.executeClickEvent(event);
-	    ParserQuote.executeClickEvent(event);
-	    ParserAction.executeClickEvent(event);
+	  executeClickEvent(event, context) {
+	    ParserMention.executeClickEvent(event, context);
+	    ParserQuote.executeClickEvent(event, context);
+	    ParserAction.executeClickEvent(event, context);
 	  },
 	  getContextCodeFromForwardId(forwardId) {
 	    return ParserUtils.getFinalContextTag(forwardId);
@@ -1622,5 +1971,5 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 
 	exports.Parser = Parser;
 
-}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX.Messenger.v2.Lib,BX.Event,BX.Messenger.v2.Lib,BX));
+}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX));
 //# sourceMappingURL=parser.bundle.js.map

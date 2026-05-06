@@ -1,40 +1,39 @@
-import {Core} from 'im.v2.application.core';
-import {UserListPopup} from 'im.v2.component.elements';
+import { Core } from 'im.v2.application.core';
+import { UserListPopup } from 'im.v2.component.elements.user-list-popup';
+import { Utils } from 'im.v2.lib.utils';
 
-import {UserService} from '../classes/user-service';
+import { UserService } from '../classes/user-service';
+
+import type { JsonObject } from 'main.core';
 
 // @vue/component
 export const AdditionalUsers = {
-	components: {UserListPopup},
+	components: { UserListPopup },
 	props: {
 		messageId: {
 			type: [String, Number],
-			required: true
+			required: true,
 		},
 		reaction: {
 			type: String,
-			required: true
+			required: true,
 		},
 		show: {
 			type: Boolean,
-			required: true
+			required: true,
 		},
 		bindElement: {
 			type: Object,
-			required: true
-		},
-		contextDialogId: {
-			type: String,
 			required: true,
 		},
 	},
 	emits: ['close'],
-	data()
+	data(): JsonObject
 	{
 		return {
 			showPopup: false,
 			loadingAdditionalUsers: false,
-			additionalUsers: []
+			additionalUsers: [],
 		};
 	},
 	watch:
@@ -46,21 +45,39 @@ export const AdditionalUsers = {
 				this.showPopup = true;
 				this.loadUsers();
 			}
-		}
+		},
 	},
 	methods:
 	{
-		loadUsers()
+		async loadUsers()
 		{
 			this.loadingAdditionalUsers = true;
-			this.getUserService().loadReactionUsers(this.messageId, this.reaction)
-				.then(userIds => {
-					this.additionalUsers = userIds;
-					this.loadingAdditionalUsers = false;
-				})
-				.catch(() => {
-					this.loadingAdditionalUsers = false;
-				});
+
+			try
+			{
+				this.additionalUsers = await this.getUserService().loadFirstPage(this.messageId);
+				this.loadingAdditionalUsers = false;
+			}
+			catch
+			{
+				this.loadingAdditionalUsers = false;
+			}
+		},
+		async onScroll(event: Event)
+		{
+			if (!Utils.dom.isOneScreenRemaining(event.target) || !this.getUserService().hasMoreItemsToLoad())
+			{
+				return;
+			}
+
+			const userIds = await this.getUserService().loadNextPage(this.messageId);
+
+			if (!userIds)
+			{
+				return;
+			}
+
+			this.additionalUsers = [...this.additionalUsers, ...userIds];
 		},
 		onPopupClose()
 		{
@@ -71,7 +88,7 @@ export const AdditionalUsers = {
 		{
 			const firstViewerId = this.dialog.lastMessageViews.firstViewer.userId;
 
-			return userIds.filter(userId => {
+			return userIds.filter((userId) => {
 				return userId !== Core.getUserId() && userId !== firstViewerId;
 			});
 		},
@@ -79,7 +96,7 @@ export const AdditionalUsers = {
 		{
 			if (!this.userService)
 			{
-				this.userService = new UserService();
+				this.userService = new UserService(this.reaction);
 			}
 
 			return this.userService;
@@ -91,12 +108,12 @@ export const AdditionalUsers = {
 			:showPopup="showPopup"
 			:loading="loadingAdditionalUsers"
 			:userIds="additionalUsers"
-			:contextDialogId="contextDialogId"
 			:bindElement="bindElement || {}"
 			:withAngle="false"
 			:offsetLeft="-112"
 			:forceTop="true"
 			@close="onPopupClose"
+			@scroll="onScroll"
 		/>
-	`
+	`,
 };

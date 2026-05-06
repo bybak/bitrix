@@ -1,10 +1,10 @@
 <?php
 
 use Bitrix\Bizproc\Debugger\Workflow\DebugWorkflow;
+use Bitrix\Bizproc\Internal\Service\Container;
 use Bitrix\Bizproc\Workflow\Entity\WorkflowInstanceTable;
 use Bitrix\Main;
 use Bitrix\Bizproc;
-use Bitrix\Bizproc\RestActivityTable;
 
 /**
  * Workflow runtime.
@@ -17,14 +17,19 @@ use Bitrix\Bizproc\RestActivityTable;
  * @method \CBPDocumentService getDocumentService()
  * @method Bizproc\Service\Analytics getAnalyticsService()
  * @method Bizproc\Service\User getUserService()
+ * @method Bizproc\Service\AiDescription getAiDescriptionService()
  */
 class CBPRuntime
 {
-	const EXCEPTION_CODE_INSTANCE_NOT_FOUND = 404;
-	const EXCEPTION_CODE_INSTANCE_LOCKED = 423;
-	const EXCEPTION_CODE_INSTANCE_TERMINATED = 499;
+	use Bizproc\Activity\Mixins\ActivityDescriptionBuilder;
+	use Bizproc\Activity\Mixins\ActivityFilterChecker;
 
-	const REST_ACTIVITY_PREFIX = 'rest_';
+	public const EXCEPTION_CODE_INSTANCE_TARIFF_LIMIT_EXCEED = 402;
+	public const EXCEPTION_CODE_INSTANCE_NOT_FOUND = 404;
+	public const EXCEPTION_CODE_INSTANCE_LOCKED = 423;
+	public const EXCEPTION_CODE_INSTANCE_TERMINATED = 499;
+
+	public const REST_ACTIVITY_PREFIX = 'rest_';
 
 	public const ACTIVITY_API_VERSION = 1;
 
@@ -33,13 +38,9 @@ class CBPRuntime
 	private static $instance;
 	private static $featuresCache = [];
 
-	private $services = [];
+	private array $services = [];
 	private $debugServices = [];
-	private $workflows = [];
-
-	private $loadedActivities = [];
-
-	private $activityFolders = [];
+	private array $workflows = [];
 	private $workflowChains = [];
 
 	/*********************  SINGLETON PATTERN  **************************************************/
@@ -50,25 +51,18 @@ class CBPRuntime
 	*/
 	private function __construct()
 	{
-		$this->workflows = array();
-		$this->services = array(
-			"SchedulerService" => null,
-			"StateService" => null,
-			"TrackingService" => null,
-			"TaskService" => null,
-			"HistoryService" => null,
-			"DocumentService" => null,
-			"AnalyticsService" => null,
-			"UserService" => null,
-		);
-		$this->loadedActivities = array();
-		$this->activityFolders = array(
-			$_SERVER["DOCUMENT_ROOT"]."/local/activities",
-			$_SERVER["DOCUMENT_ROOT"]."/local/activities/custom",
-			$_SERVER["DOCUMENT_ROOT"].BX_ROOT."/activities/custom",
-			$_SERVER["DOCUMENT_ROOT"].BX_ROOT."/activities/bitrix",
-			$_SERVER["DOCUMENT_ROOT"].BX_ROOT."/modules/bizproc/activities",
-		);
+		$this->workflows = [];
+		$this->services = [
+			'SchedulerService' => null,
+			'StateService' => null,
+			'TrackingService' => null,
+			'TaskService' => null,
+			'HistoryService' => null,
+			'DocumentService' => null,
+			'AnalyticsService' => null,
+			'UserService' => null,
+			'AiDescriptionService' => null,
+		];
 	}
 
 	/**
@@ -170,12 +164,6 @@ class CBPRuntime
 			return;
 		}
 
-		/** @var CBPWorkflow $workflow */
-		foreach ($this->workflows as $key => $workflow)
-		{
-			$workflow->OnRuntimeStopped();
-		}
-
 		foreach ($this->services as $serviceId => $service)
 		{
 			$service->stop();
@@ -246,11 +234,11 @@ class CBPRuntime
 		{
 			if (!array_key_exists($parameterName, $workflowParameters))
 			{
-				$workflowParameters[$parameterName] = $parametersProperty['Default'];
+				$workflowParameters[$parameterName] = $parametersProperty['Default'] ?? null;
 			}
 		}
 
-		if ($rootActivity == null)
+		if (!$rootActivity)
 		{
 			throw new Exception("EmptyRootActivity");
 		}
@@ -260,15 +248,15 @@ class CBPRuntime
 			ExecuteModuleEventEx($arEvent, [$workflowTemplateId, $documentId, &$workflowParameters, $workflowId]);
 		}
 
-		$workflow->Initialize($rootActivity, $arDocumentId, $workflowParameters, $workflowVariablesTypes, $workflowParametersTypes, $workflowTemplateId);
+		$workflow->initialize($rootActivity, $arDocumentId, $workflowParameters, $workflowVariablesTypes, $workflowParametersTypes, $workflowTemplateId);
 
 		$starterUserId = 0;
 		if (isset($workflowParameters[CBPDocument::PARAM_TAGRET_USER]))
 		{
-			$starterUserId = intval(mb_substr($workflowParameters[CBPDocument::PARAM_TAGRET_USER], mb_strlen("user_")));
+			$starterUserId = (int)CBPHelper::stripUserPrefix($workflowParameters[CBPDocument::PARAM_TAGRET_USER]);
 		}
 
-		$this->GetService("StateService")->AddWorkflow($workflowId, $workflowTemplateId, $arDocumentId, $starterUserId);
+		$this->getStateService()->addWorkflow($workflowId, $workflowTemplateId, $arDocumentId, $starterUserId);
 
 		$this->workflows[$workflowId] = $workflow;
 
@@ -332,13 +320,19 @@ class CBPRuntime
 	public function getWorkflow($workflowId, $silent = false)
 	{
 		if ($workflowId == '')
+		{
 			throw new Exception("workflowId");
+		}
 
 		if (!$this->isStarted)
+		{
 			$this->StartRuntime();
+		}
 
 		if (array_key_exists($workflowId, $this->workflows))
+		{
 			return $this->workflows[$workflowId];
+		}
 
 		$workflow = $this->getWorkflowInstance($workflowId);
 		$rootActivity = $workflow->getPersister()->LoadWorkflow($workflowId, $silent);
@@ -351,6 +345,7 @@ class CBPRuntime
 		$workflow->reload($rootActivity);
 
 		$this->workflows[$workflowId] = $workflow;
+
 		return $workflow;
 	}
 
@@ -362,6 +357,11 @@ class CBPRuntime
 		}
 
 		return array_key_exists($workflowId, $this->workflows);
+	}
+
+	public function getWorkflows(): array
+	{
+		return $this->workflows;
 	}
 
 	protected function getWorkflowInstance(string $workflowId): CBPWorkflow
@@ -400,7 +400,7 @@ class CBPRuntime
 
 	public static function generateWorkflowId(): string
 	{
-		return uniqid("", true);
+		return uniqid('', true);
 	}
 
 	/*******************  SERVICES  *********************************************************/
@@ -440,16 +440,24 @@ class CBPRuntime
 	public function addService($name, CBPRuntimeService $service)
 	{
 		if ($this->isStarted)
+		{
 			throw new Exception("Runtime is started");
+		}
 
 		$name = trim($name);
 		if ($name == '')
+		{
 			throw new Exception("Service code is empty");
+		}
 		if (!$service)
+		{
 			throw new Exception("Service is null");
+		}
 
 		if (array_key_exists($name, $this->services))
+		{
 			throw new Exception("Service is already exists");
+		}
 
 		$this->services[$name] = $service;
 	}
@@ -463,31 +471,49 @@ class CBPRuntime
 	* @param mixed $eventName - Event name.
 	* @param mixed $arEventParameters - Event parameters.
 	*/
-	public static function sendExternalEvent($workflowId, $eventName, $arEventParameters = array())
+	public static function sendExternalEvent($workflowId, $eventName, $arEventParameters = []): void
 	{
-		$runtime = CBPRuntime::GetRuntime();
-		$workflow = $runtime->GetWorkflow($workflowId);
-		if ($workflow)
+		$workflow = static::getRuntime()->getWorkflow($workflowId);
+
+		if (!self::isRunnableWorkflow($workflow))
 		{
-			//check if state exists
-			$stateExists = CBPStateService::exists($workflowId);
-			$documentExists = false;
+			$workflow?->terminate();
 
-			if ($stateExists)
-			{
-				$documentService = $runtime->getDocumentService();
-				$documentExists = $documentService->isDocumentExists($workflow->getDocumentId());
-			}
-
-			if (!$stateExists || !$documentExists)
-			{
-				$workflow->Terminate();
-
-				return false;
-			}
-
-			$workflow->SendExternalEvent($eventName, $arEventParameters);
+			return;
 		}
+
+		$workflow->sendExternalEvent($eventName, (array)$arEventParameters);
+	}
+
+	public static function startDelayedWorkflow(string $workflowId): void
+	{
+		$workflow = static::getRuntime()->getWorkflow($workflowId);
+
+		if (!self::isRunnableWorkflow($workflow))
+		{
+			$workflow?->terminate();
+
+			return;
+		}
+
+		$workflow->resume();
+	}
+
+	private static function isRunnableWorkflow(?CBPWorkflow $workflow): bool
+	{
+		if ($workflow === null)
+		{
+			return false;
+		}
+
+		$stateExists = CBPStateService::exists($workflow->getInstanceId());
+
+		if (!$stateExists)
+		{
+			return false;
+		}
+
+		return $workflow->getDocumentService()->isDocumentExists($workflow->getDocumentId());
 	}
 
 	/*******************  UTILITIES  ***************************************************************/
@@ -499,122 +525,63 @@ class CBPRuntime
 	*/
 	public function includeActivityFile($code)
 	{
-		if (in_array($code, $this->loadedActivities))
-			return true;
-
-		if (preg_match("#[^a-zA-Z0-9_]#", $code))
-			return false;
-		if ($code == '')
-			return false;
-
-		$code = mb_strtolower($code);
-		if (mb_substr($code, 0, 3) == "cbp")
-			$code = mb_substr($code, 3);
-		if ($code == '')
-			return false;
-		if (in_array($code, $this->loadedActivities))
-			return true;
-
-		$filePath = "";
-		$fileDir = "";
-		foreach ($this->activityFolders as $folder)
+		$searcher = Container::instance()->getActivitySearcherService();
+		$loadedActivityCode = $searcher->includeActivityFile((string)$code);
+		if ($loadedActivityCode)
 		{
-			if (file_exists($folder."/".$code."/".$code.".php") && is_file($folder."/".$code."/".$code.".php"))
-			{
-				$filePath = $folder."/".$code."/".$code.".php";
-				$fileDir = $folder."/".$code;
-				break;
-			}
-		}
-
-		if ($filePath <> '')
-		{
-			$this->LoadActivityLocalization($fileDir, $code.".php");
-			include_once($filePath);
-			$this->loadedActivities[] = $code;
-			return true;
-		}
-
-		if (mb_strpos($code, static::REST_ACTIVITY_PREFIX) === 0)
-		{
-			$code = mb_substr($code, mb_strlen(static::REST_ACTIVITY_PREFIX));
-			$result = RestActivityTable::getList(array(
-				'select' => array('ID'),
-				'filter' => array('=INTERNAL_CODE' => $code),
-			));
-			$activity = $result->fetch();
-			eval('class CBP'.static::REST_ACTIVITY_PREFIX.$code.' extends CBPRestActivity {const REST_ACTIVITY_ID = '.($activity? $activity['ID'] : 0).';}');
-			$this->loadedActivities[] = static::REST_ACTIVITY_PREFIX.$code;
 			return true;
 		}
 
 		return false;
 	}
 
-	public function getActivityDescription($code, $lang = false)
+	public function getActivityDescription($code, $lang = false): ?array
 	{
-		if (preg_match("#[^a-zA-Z0-9_]#", $code))
-			return null;
-		if ($code == '')
-			return null;
-
-		$code = mb_strtolower($code);
-		if (mb_substr($code, 0, 3) == "cbp")
-			$code = mb_substr($code, 3);
-		if ($code == '')
-			return null;
-
-		$filePath = "";
-		$fileDir = "";
-		foreach ($this->activityFolders as $folder)
+		if (!is_string($code))
 		{
-			if (file_exists($folder."/".$code."/".$code.".php") && is_file($folder."/".$code."/".$code.".php"))
-			{
-				$filePath = $folder."/".$code."/.description.php";
-				$fileDir = $folder."/".$code;
-				break;
-			}
+			return null;
 		}
 
-		if ($filePath <> '')
+		if (!is_string($lang))
 		{
-			$arActivityDescription = array();
-			if (file_exists($filePath) && is_file($filePath))
-			{
-				$this->LoadActivityLocalization($fileDir, ".description.php");
-				include($filePath);
-			}
-			$arActivityDescription["PATH_TO_ACTIVITY"] = $fileDir;
-
-			return $arActivityDescription;
+			$lang = null;
 		}
 
-		if (mb_strpos($code, static::REST_ACTIVITY_PREFIX) === 0)
+		$activityDescription = Container::instance()
+			->getActivitySearcherService()
+			->searchByCode($code, $lang)
+		;
+		if (!$activityDescription)
 		{
-			$code = mb_substr($code, mb_strlen(static::REST_ACTIVITY_PREFIX));
-			$result = RestActivityTable::getList(array(
-				'filter' => array('=INTERNAL_CODE' => $code),
-			));
-			$activity = $result->fetch();
-			if ($activity)
-			{
-				return $this->makeRestActivityDescription($activity, $lang);
-			}
+			return null;
 		}
 
-		return null;
+		if (!$activityDescription->getFilter())
+		{
+			return $activityDescription->toArray();
+		}
+
+		if (
+			mb_strpos($activityDescription->getClass() ?? '', static::REST_ACTIVITY_PREFIX) === 0
+			&& !$this->checkActivityFilter($activityDescription->getFilter())
+		)
+		{
+			$activityDescription->setExcluded(true);
+		}
+
+		return $activityDescription->toArray();
 	}
 
-	public function getActivityReturnProperties($code, $lang = false): array
+	public function getActivityReturnProperties($codeOrActivity, $lang = false): array
 	{
 		$activity = null;
-		if (is_array($code))
+		if (is_array($codeOrActivity))
 		{
-			$activity = $code;
-			$code = $activity['Type'];
+			$activity = $codeOrActivity;
+			$codeOrActivity = $activity['Type'];
 		}
 
-		$description = $this->GetActivityDescription($code, $lang);
+		$description = $this->GetActivityDescription($codeOrActivity, $lang);
 		$props = [];
 		if (isset($description['RETURN']) && is_array($description['RETURN']))
 		{
@@ -637,6 +604,15 @@ class CBPRuntime
 			}
 		}
 		return $props;
+	}
+
+	public function includeActivityAiDescriptionFile(string $code): bool
+	{
+		return (
+			Container::instance()
+				->getActivitySearcherService()
+				->includeActivityAiDescriptionFile($code)
+		);
 	}
 
 	private function loadActivityLocalization($path, $file, $lang = false)
@@ -677,7 +653,7 @@ class CBPRuntime
 		return $result;
 	}
 
-	public function searchActivitiesByType($type, array $documentType = null)
+	public function searchActivitiesByType($type, ?array $documentType = null)
 	{
 		$type = mb_strtolower(trim($type));
 		if ($type === '')
@@ -685,76 +661,19 @@ class CBPRuntime
 			return false;
 		}
 
-		$arProcessedDirs = [];
-		foreach ($this->activityFolders as $folder)
+		$searcher = Container::instance()->getActivitySearcherService();
+
+		$activities =
+			$searcher->searchByType($type, $documentType)
+				->computeDescriptionFilter($documentType)
+		;
+
+		if ($type !== Bizproc\Activity\Enum\ActivityType::CONDITION->value)
 		{
-			if (is_dir($folder) && $handle = opendir($folder))
-			{
-				while (false !== ($dir = readdir($handle)))
-				{
-					if ($dir === "." || $dir === "..")
-					{
-						continue;
-					}
-					if (!is_dir($folder."/".$dir))
-					{
-						continue;
-					}
-					$dirKey = mb_strtolower($dir);
-					if (array_key_exists($dirKey, $arProcessedDirs))
-					{
-						continue;
-					}
-					if (!file_exists($folder."/".$dir."/.description.php"))
-					{
-						continue;
-					}
-
-					$arActivityDescription = [];
-					$this->LoadActivityLocalization($folder."/".$dir, ".description.php");
-					include($folder."/".$dir."/.description.php");
-
-					//Support multiple types
-					$activityType = (array)$arActivityDescription['TYPE'];
-					foreach ($activityType as $i => $aType)
-					{
-						$activityType[$i] = mb_strtolower(trim($aType));
-					}
-
-					if (in_array($type, $activityType, true))
-					{
-						$arProcessedDirs[$dirKey] = $arActivityDescription;
-						$arProcessedDirs[$dirKey]["PATH_TO_ACTIVITY"] = $folder."/".$dir;
-						if (
-							isset($arActivityDescription['FILTER']) && is_array($arActivityDescription['FILTER'])
-							&& !$this->checkActivityFilter($arActivityDescription['FILTER'], $documentType)
-						)
-						{
-							$arProcessedDirs[$dirKey]['EXCLUDED'] = true;
-						}
-					}
-
-				}
-				closedir($handle);
-			}
+			$activities = $activities->sort();
 		}
 
-		if ($type == 'activity')
-		{
-			$arProcessedDirs = array_merge($arProcessedDirs, $this->getRestActivities(false, $documentType));
-		}
-
-		if ($type == 'activity' || $type == 'robot_activity')
-		{
-			$arProcessedDirs = array_merge($arProcessedDirs, $this->getRestRobots(false, $documentType));
-		}
-
-		if ($type !== 'condition')
-		{
-			\Bitrix\Main\Type\Collection::sortByColumn($arProcessedDirs, ['SORT' => SORT_ASC, 'NAME' => SORT_ASC]);
-		}
-
-		return $arProcessedDirs;
+		return $activities->toArray();
 	}
 
 	/**
@@ -765,17 +684,14 @@ class CBPRuntime
 	 */
 	public function getRestActivities($lang = false, $documentType = null)
 	{
-		$result = array();
-		$iterator = RestActivityTable::getList(array(
-			'filter' => array('=IS_ROBOT' => 'N'),
-		));
+		$searcher = Container::instance()->getActivitySearcherService();
 
-		while ($activity = $iterator->fetch())
-		{
-			$result[static::REST_ACTIVITY_PREFIX.$activity['INTERNAL_CODE']] = $this->makeRestActivityDescription($activity, $lang, $documentType);
-		}
+		$activities =
+			$searcher->searchRestByType(Bizproc\Activity\Enum\ActivityType::ACTIVITY, $lang ?: null)
+				->computeDescriptionFilter($documentType)
+		;
 
-		return $result;
+		return $activities->toArray();
 	}
 
 	/**
@@ -786,18 +702,14 @@ class CBPRuntime
 	 */
 	public function getRestRobots($lang = false, $documentType = null)
 	{
-		$result = array();
-		$iterator = RestActivityTable::getList([
-			'filter' => ['=IS_ROBOT' => 'Y'],
-			'cache' => ['ttl' => 3600],
-		]);
+		$searcher = Container::instance()->getActivitySearcherService();
 
-		while ($activity = $iterator->fetch())
-		{
-			$result[static::REST_ACTIVITY_PREFIX.$activity['INTERNAL_CODE']] = $this->makeRestRobotDescription($activity, $lang, $documentType);
-		}
+		$activities =
+			$searcher->searchRestByType(Bizproc\Activity\Enum\ActivityType::ROBOT, $lang ?: null)
+				->computeDescriptionFilter($documentType)
+		;
 
-		return $result;
+		return $activities->toArray();
 	}
 
 	public function unserializeWorkflowStream(string $stream)
@@ -806,20 +718,20 @@ class CBPRuntime
 		$usedActivities = mb_substr($stream, 0, $pos);
 		$stream = mb_substr($stream, $pos + 1);
 
+		$searcher = Container::instance()->getActivitySearcherService();
 		foreach (explode(',', $usedActivities) as $activityCode)
 		{
-			$this->IncludeActivityFile($activityCode);
+			$searcher->includeActivityFile((string)$activityCode);
 		}
 
 		$classesList = array_map(
-			function ($name)
+			static function ($name)
 			{
-				return 'cbp'.$name;
+				return 'cbp' . $name;
 			},
-			$this->loadedActivities
+			$searcher->getLoadedActivities()
 		);
 
-		/** @bug 0135642 */
 		if (in_array('cbpstateactivity', $classesList))
 		{
 			$classesList[] = CBPStateEventActivitySubscriber::class;
@@ -839,177 +751,31 @@ class CBPRuntime
 		$classesList[] = Main\Web\Uri::class;
 		$classesList[] = \DateTime::class;
 		$classesList[] = \DateTimeZone::class;
+		$classesList[] = Bizproc\Internal\Entity\Workflow\ExecutionPayload::class;
 
 		return unserialize($stream, ['allowed_classes' => $classesList]);
 	}
 
-	private function makeRestActivityDescription($activity, $lang = false, $documentType = null)
+	private function makeRestActivityDescription($activity, $lang = false, $documentType = null): array
 	{
-		if ($lang === false)
-			$lang = LANGUAGE_ID;
-
-		$code = static::REST_ACTIVITY_PREFIX.$activity['INTERNAL_CODE'];
-		$result = array(
-			'NAME' => '['.RestActivityTable::getLocalization($activity['APP_NAME'], $lang).'] '
-				.RestActivityTable::getLocalization($activity['NAME'], $lang),
-			'DESCRIPTION' => RestActivityTable::getLocalization($activity['DESCRIPTION'], $lang),
-			'TYPE' => 'activity',
-			'CLASS' => $code,
-			'JSCLASS' => 'BizProcActivity',
-			'CATEGORY' => array(
-				'ID' => 'rest',
-			),
-			'RETURN' => array(),
-			//compatibility
-			'PATH_TO_ACTIVITY' => '',
-		);
-
-		if (
-			isset($activity['FILTER']) && is_array($activity['FILTER'])
-			&& !$this->checkActivityFilter($activity['FILTER'], $documentType)
-		)
-			$result['EXCLUDED'] = true;
-
-		if (!empty($activity['RETURN_PROPERTIES']))
+		$description = $this->buildRestActivityDescription($activity, $lang ?: null);
+		if ($description->getFilter() && !$this->checkActivityFilter($description->getFilter(), $documentType))
 		{
-			foreach ($activity['RETURN_PROPERTIES'] as $name => $property)
-			{
-				$result['RETURN'][$name] = array(
-					'NAME' => RestActivityTable::getLocalization($property['NAME'], $lang),
-					'TYPE' => isset($property['TYPE']) ? $property['TYPE'] : \Bitrix\Bizproc\FieldType::STRING,
-				);
-			}
+			$description->setExcluded(true);
 		}
-		if ($activity['USE_SUBSCRIPTION'] != 'N')
-			$result['RETURN']['IsTimeout'] = array(
-				'NAME' => GetMessage('BPRA_IS_TIMEOUT'),
-				'TYPE' => \Bitrix\Bizproc\FieldType::INT,
-			);
 
-		return $result;
+		return $description->toArray();
 	}
 
 	private function makeRestRobotDescription($activity, $lang = false, $documentType = null)
 	{
-		if ($lang === false)
-			$lang = LANGUAGE_ID;
-
-		$code = static::REST_ACTIVITY_PREFIX.$activity['INTERNAL_CODE'];
-		$result = array(
-			'NAME' => '['.RestActivityTable::getLocalization($activity['APP_NAME'], $lang).'] '
-				.RestActivityTable::getLocalization($activity['NAME'], $lang),
-			'DESCRIPTION' => RestActivityTable::getLocalization($activity['DESCRIPTION'], $lang),
-			'TYPE' => array('activity', 'robot_activity'),
-			'CLASS' => $code,
-			'JSCLASS' => 'BizProcActivity',
-			'CATEGORY' => [
-				'ID' => 'rest',
-			],
-			'RETURN' => array(),
-			//compatibility
-			'PATH_TO_ACTIVITY' => '',
-			'ROBOT_SETTINGS' => array(
-				'CATEGORY' => 'other',
-			),
-		);
-
-		if (
-			isset($activity['FILTER']) && is_array($activity['FILTER'])
-			&& !$this->checkActivityFilter($activity['FILTER'], $documentType)
-		)
-			$result['EXCLUDED'] = true;
-
-		if (!empty($activity['RETURN_PROPERTIES']))
+		$description = $this->buildRestRobotDescription($activity, $lang);
+		if ($description->getFilter() && !$this->checkActivityFilter($description->getFilter(), $documentType))
 		{
-			foreach ($activity['RETURN_PROPERTIES'] as $name => $property)
-			{
-				$result['RETURN'][$name] = [
-					'NAME' => RestActivityTable::getLocalization($property['NAME'], $lang),
-					'TYPE' => $property['TYPE'] ?? \Bitrix\Bizproc\FieldType::STRING,
-					'OPTIONS' => $property['OPTIONS'] ?? null,
-				];
-			}
-		}
-		if ($activity['USE_SUBSCRIPTION'] !== 'N')
-		{
-			$result['RETURN']['IsTimeout'] = array(
-				'NAME' => GetMessage('BPRA_IS_TIMEOUT'),
-				'TYPE' => \Bitrix\Bizproc\FieldType::INT,
-			);
+			$description->setExcluded(true);
 		}
 
-		return $result;
-	}
-
-	public function checkActivityFilter($filter, $documentType)
-	{
-		$distrName = CBPHelper::getDistrName();
-		foreach ($filter as $type => $rules)
-		{
-			if ($type === 'MIN_API_VERSION')
-			{
-				$minApiVersion = (int)$rules;
-				if ($minApiVersion > self::ACTIVITY_API_VERSION)
-				{
-					return false;
-				}
-
-				continue;
-			}
-
-			$found = $this->checkActivityFilterRules($rules, $documentType, $distrName);
-			if (($type === 'INCLUDE' && !$found) || ($type === 'EXCLUDE' && $found))
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	private function checkActivityFilterRules($rules, $documentType, $distrName)
-	{
-		if (!is_array($rules) || CBPHelper::IsAssociativeArray($rules))
-		{
-			$rules = [$rules];
-		}
-
-		foreach ($rules as $rule)
-		{
-			$result = false;
-			if (is_array($rule))
-			{
-				if (!$documentType)
-				{
-					$result = true;
-				}
-				else
-				{
-					foreach ($documentType as $key => $value)
-					{
-						if (!isset($rule[$key]))
-						{
-							break;
-						}
-						$result = $rule[$key] == $value;
-						if (!$result)
-						{
-							break;
-						}
-					}
-				}
-			}
-			else
-			{
-				$result = (string)$rule == $distrName;
-			}
-			if ($result)
-			{
-				return true;
-			}
-		}
-
-		return false;
+		return $description->toArray();
 	}
 
 	private function addWorkflowToChain($childId, $parent)

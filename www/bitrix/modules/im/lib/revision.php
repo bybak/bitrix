@@ -1,5 +1,8 @@
 <?php
+
 namespace Bitrix\Im;
+
+use Bitrix\Im\V2\Service\Locator;
 
 class Revision
 {
@@ -14,21 +17,26 @@ class Revision
 	 * Mobile Api revision
 	 *
 	 * @filesource synchronize immobile/install/mobileapp/immobile/components/im/im.recent/component.js:9
-	 * @filesource synchronize immobile/install/mobileapp/immobile/components/im/messenger/component.js:1
+	 * @filesource synchronize immobile/install/mobileapp/immobile/extensions/im/messenger/application/messenger/extension.js:46
 	 * @filesource synchronize immobile/install/components/bitrix/immobile.webcomponent/webcomponents/im.dialog/bundle/component/src/component.js:3
 	 * @filesource synchronize immobile/install/components/bitrix/immobile.webcomponent/webcomponents/im.dialog/bundle/component/src/mobile_dialog.js:22
 	 */
-	const MOBILE = 19;
+	const MOBILE = 23;
 
 	/**
 	 * Desktop Api revision
 	 */
-	const DESKTOP = 5;
+	const DESKTOP = 6;
 
 	/**
 	 * Rest Api revision
 	 */
-	const REST = 32;
+	const REST = 33;
+
+	/**
+	 * Menu revision
+	 */
+	const MENU = 1;
 
 	public static function getWeb()
 	{
@@ -48,6 +56,11 @@ class Revision
 	public static function getRest()
 	{
 		return static::REST;
+	}
+
+	public static function getMenu()
+	{
+		return static::MENU;
 	}
 
 	public static function get()

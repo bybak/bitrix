@@ -1,10 +1,9 @@
 import { hint } from 'ui.vue3.directives.hint';
 
-import { ActionByRole, Layout } from 'im.v2.const';
-import { Core } from 'im.v2.application.core';
-import { ChatService } from 'im.v2.provider.service';
+import { ActionByRole } from 'im.v2.const';
+import { ChatService } from 'im.v2.provider.service.chat';
 import { PermissionManager } from 'im.v2.lib.permission';
-import { Toggle, ToggleSize } from 'im.v2.component.elements';
+import { Toggle, ToggleSize } from 'im.v2.component.elements.toggle';
 
 import type { ImModelChat } from 'im.v2.model';
 
@@ -29,21 +28,9 @@ export const MuteChat = {
 		{
 			return this.$store.getters['chats/get'](this.dialogId, true);
 		},
-		isGroupChat(): boolean
-		{
-			return this.dialogId.startsWith('chat');
-		},
 		canBeMuted(): boolean
 		{
 			return PermissionManager.getInstance().canPerformActionByRole(ActionByRole.mute, this.dialogId);
-		},
-		isChatMuted(): boolean
-		{
-			const isMuted = this.dialog.muteList.find((element) => {
-				return element === Core.getUserId();
-			});
-
-			return Boolean(isMuted);
 		},
 		hintMuteNotAvailable(): ?Object
 		{
@@ -65,12 +52,6 @@ export const MuteChat = {
 				},
 			};
 		},
-		isCopilotLayout(): boolean
-		{
-			const { name: currentLayoutName } = this.$store.getters['application/getLayout'];
-
-			return currentLayoutName === Layout.copilot.name;
-		},
 	},
 	methods:
 	{
@@ -90,7 +71,7 @@ export const MuteChat = {
 				return;
 			}
 
-			if (this.isChatMuted)
+			if (this.dialog.isMuted)
 			{
 				this.getChatService().unmuteChat(this.dialogId);
 			}
@@ -106,16 +87,15 @@ export const MuteChat = {
 	},
 	template: `
 		<div
-			v-if="isGroupChat"
 			class="bx-im-sidebar-mute-chat__container"
-			:class="{'--not-active': !canBeMuted, '--copilot': isCopilotLayout}"
+			:class="{'--not-active': !canBeMuted}"
 			v-hint="hintMuteNotAvailable"
 		>
 			<div class="bx-im-sidebar-mute-chat__title">
 				<div class="bx-im-sidebar-mute-chat__title-text bx-im-sidebar-mute-chat__icon">
 					{{ loc('IM_SIDEBAR_ENABLE_NOTIFICATION_TITLE_2') }}
 				</div>
-				<Toggle :size="ToggleSize.M" :isEnabled="!isChatMuted" @click="muteActionHandler" />
+				<Toggle :size="ToggleSize.M" :isEnabled="!dialog.isMuted" @click="muteActionHandler" />
 			</div>
 		</div>
 	`,

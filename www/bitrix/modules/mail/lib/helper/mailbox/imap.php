@@ -81,9 +81,9 @@ class Imap extends Mail\Helper\Mailbox
 
 			$currentSyncDirMessagesCount = (int)$currentSyncDirMessages['TOTAL'];
 			$currentSyncDirMessagesAll = (int)$currentSyncDir->getMessageCount();
-			$currentSyncDirPosition = $this->getDirsHelper()->getCurrentSyncDirPositionByDefault(
+			$currentSyncDirPosition = $this->getDirsHelper()->getCurrentSyncDirPositionOrdered(
 				$currentSyncDir->getPath(),
-				$currentDir
+				$currentDir,
 			);
 
 			if ($currentDir != null) {
@@ -749,7 +749,7 @@ class Imap extends Mail\Helper\Mailbox
 		}
 
 		$syncReport = [
-			'syncCount'=>0,
+			'syncCount' => 0,
 			'reSyncCount' => 0,
 			'reSyncStatus' => false,
 		];
@@ -770,9 +770,8 @@ class Imap extends Mail\Helper\Mailbox
 			return $syncReport;
 		}
 
-		$lastDir = $this->getDirsHelper()->getLastSyncDirByDefault($currentDir);
+		$lastDir = $this->getDirsHelper()->getLastSyncDirOrdered($currentDir);
 
-		/** @var Mail\Internals\Entity\MailboxDirectory $item */
 		foreach ($dirsSync as $item)
 		{
 			MailboxDirectoryHelper::setCurrentSyncDir($item->getPath());
@@ -822,8 +821,6 @@ class Imap extends Mail\Helper\Mailbox
 			$countDeleted = $result ? $result->getCount() : 0;
 
 			$this->lastSyncResult['deletedMessages'] += $countDeleted;
-
-			$successfulReSyncCount = 0;
 
 			if (!empty($this->syncParams['full']))
 			{
@@ -928,7 +925,7 @@ class Imap extends Mail\Helper\Mailbox
 	 * @throws Main\DB\SqlQueryException
 	 * @throws Main\SystemException
 	 */
-	public function syncMessages($mailboxID, $dirPath, $UIDs)
+	public function syncMessages($mailboxID, $dirPath, $UIDs, $isRecovered = false)
 	{
 		$meta = $this->client->select($dirPath, $error);
 		$uidtoken = $meta['uidvalidity'];
@@ -1012,7 +1009,7 @@ class Imap extends Mail\Helper\Mailbox
 				}
 
 				$hashesMap = [];
-				$this->syncMessage($dir->getPath(), $item, $hashesMap, true, $isOutgoing);
+				$this->syncMessage($dir->getPath(), $item, $hashesMap, true, $isOutgoing, $isRecovered);
 
 				if ($this->isTimeQuotaExceeded())
 				{
@@ -1026,12 +1023,22 @@ class Imap extends Mail\Helper\Mailbox
 
 	public function isAuthenticated(): bool
 	{
-		if (\Bitrix\Mail\Helper::getImapUnseen($this->mailbox, 'inbox') === false)
+		$dirs = $this->getDirsHelper()->getSyncDirsOrderByTime();
+
+		if (empty($dirs))
 		{
-			return false;
+			return true;
 		}
 
-		return true;
+		foreach ($dirs as $dir)
+		{
+			if (\Bitrix\Mail\Helper::getImapUnseen($this->mailbox, $dir->getPath()) !== false)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public function syncDirForSpecificDay($dirPath, $internalDate)
@@ -1817,8 +1824,6 @@ class Imap extends Mail\Helper\Mailbox
 			'U' => array(),
 		);
 
-		$firstLocalUID = null;
-
 		foreach ($messages as $id => $item)
 		{
 			$messageUid = md5(sprintf('%s:%u:%u', $dirPath, $uidtoken, $item['UID']));
@@ -1874,17 +1879,13 @@ class Imap extends Mail\Helper\Mailbox
 				{
 					$lostMessageFields = [
 						'ID' => $messageUid,
-						'IS_OLD' => 'D',
 						'DIR_MD5'  => md5($dirPath),
 						'DIR_UIDV' => $uidtoken,
 						'MSG_UID'  => $item['UID'],
 						'MAILBOX_ID' => $this->mailbox['ID'],
-						/* To prevent lost messages from falling under the "downloadable" filter,
-						 set the upload date a little earlier: */
-						'DATE_INSERT' => (new Main\Type\DateTime())->add('- '.(static::MESSAGE_RESYNCHRONIZATION_TIME*2).' seconds'),
 					];
 
-					$this->registerMessage($lostMessageFields, redefineInsertDate: false);
+					$this->registerMessage($lostMessageFields, messageStatus: \Bitrix\Mail\MailMessageUidTable::LOST);
 				}
 			}
 		}
@@ -1973,7 +1974,7 @@ class Imap extends Mail\Helper\Mailbox
 		return $result->isSuccess();
 	}
 
-	protected function syncMessage($dirPath, array $message, &$hashesMap = [], $ignoreSyncFrom = false, $isOutgoing = false)
+	protected function syncMessage($dirPath, array $message, &$hashesMap = [], $ignoreSyncFrom = false, $isOutgoing = false, $isRecovered = false)
 	{
 		$fields = $message['__fields'];
 
@@ -2076,19 +2077,20 @@ class Imap extends Mail\Helper\Mailbox
 
 			$messageId = $this->cacheMessage(
 				$message,
-				array(
-					'timestamp'        => $message['__internaldate']->getTimestamp(),
-					'size'             => $message['RFC822.SIZE'],
-					'outcome'          => in_array($this->mailbox['EMAIL'], $message['__from']),
-					'draft'            => $dir != null && $dir->isDraft() || (isset($message['FLAGS']) && preg_grep('/^ \x5c Draft $/ix', $message['FLAGS'])),
-					'trash'            => $dir != null && $dir->isTrash(),
-					'spam'             => $dir != null && $dir->isSpam(),
-					'seen'             => $fields['IS_SEEN'] == 'Y',
-					'hash'             => $fields['HEADER_MD5'],
+				[
+					'timestamp' => $message['__internaldate']->getTimestamp(),
+					'size' => $message['RFC822.SIZE'],
+					'outcome' => in_array($this->mailbox['EMAIL'], $message['__from']),
+					'draft' => $dir != null && $dir->isDraft() || (isset($message['FLAGS']) && preg_grep('/^ \x5c Draft $/ix', $message['FLAGS'])),
+					'trash' => $dir != null && $dir->isTrash(),
+					'spam' => $dir != null && $dir->isSpam(),
+					'seen' => $fields['IS_SEEN'] == 'Y',
+					'recovered' => $isRecovered,
+					'hash' => $fields['HEADER_MD5'],
 					'lazy_attachments' => $this->isSupportLazyAttachments(),
-					'excerpt'          => $fields,
+					'excerpt' => $fields,
 					MailMessageTable::FIELD_SANITIZE_ON_VIEW => $this->isSupportSanitizeOnView(),
-				)
+				],
 			);
 		}
 

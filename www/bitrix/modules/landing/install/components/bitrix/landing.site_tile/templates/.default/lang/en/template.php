@@ -1,4 +1,6 @@
 <?php
+$MESS["LANDING_SITE_TILE_COPILOT_GENERATED_TEXT_MSGVER_1"] = "#COPILOT_NAME# is creating your site now";
+$MESS["LANDING_SITE_TILE_COPILOT_LABEL_MSGVER_1"] = "Created with #COPILOT_NAME#";
 $MESS["LANDING_SITE_TILE_CREATE_DOMAIN_NAME"] = "Come up with a catchy site address";
 $MESS["LANDING_SITE_TILE_DELETE_ALERT_MESSAGE"] = "Do you really want to delete it?";
 $MESS["LANDING_SITE_TILE_DELETE_ALERT_TITLE"] = "Attention!";
@@ -10,7 +12,7 @@ $MESS["LANDING_SITE_TILE_DEV_STORE_HELP"] = "Need help with your online store?";
 $MESS["LANDING_SITE_TILE_DEV_STORE_ORDER"] = "Ask our partners for assistance!";
 $MESS["LANDING_SITE_TILE_EMPTY_ADD_2"] = "Create";
 $MESS["LANDING_SITE_TILE_EMPTY_ADD_NO_RIGHT"] = "Insufficient permissions to create a site";
-$MESS["LANDING_SITE_TILE_EMPTY_BALLOON_TEXT"] = "Now with CoPilot";
+$MESS["LANDING_SITE_TILE_EMPTY_BALLOON_TEXT_MSGVER_1"] = "Now with #COPILOT_NAME#";
 $MESS["LANDING_SITE_TILE_EMPTY_FEAT1_PAGE"] = "Create your own site with an easy to use and handy website builder";
 $MESS["LANDING_SITE_TILE_EMPTY_FEAT1_STORE"] = "Fast launch, no special knowledge required";
 $MESS["LANDING_SITE_TILE_EMPTY_FEAT2_PAGE"] = "Your site will be equipped a built-in callback form, a feedback form and an online chat";
@@ -36,6 +38,11 @@ $MESS["LANDING_SITE_TILE_NOT_PUBLISHED_MSG_STORE"] = "The online store is not pu
 $MESS["LANDING_SITE_TILE_NOT_PUBLISHED_TITLE"] = "View site";
 $MESS["LANDING_SITE_TILE_NOT_PUBLISHED_TITLE_STORE"] = "View online store";
 $MESS["LANDING_SITE_TILE_OPEN"] = "Open";
+$MESS["LANDING_SITE_TILE_POPUP_COPILOT_BUTTON"] = "Create a site";
+$MESS["LANDING_SITE_TILE_POPUP_COPILOT_LIST_TEXT_1"] = "You describe your requirements.";
+$MESS["LANDING_SITE_TILE_POPUP_COPILOT_LIST_TEXT_2"] = "AI creates a design for your site, images and texts.";
+$MESS["LANDING_SITE_TILE_POPUP_COPILOT_LIST_TEXT_3"] = "Your site is ready in a couple minutes.";
+$MESS["LANDING_SITE_TILE_POPUP_COPILOT_TITLE"] = "<div class=\"landing-site_title-popup-title-node\">The AI will create your site</div> <div class=\"landing-site_title-popup-title-node-2\">in 3 simple steps</div>";
 $MESS["LANDING_SITE_TILE_POPUP_COPY_LINK"] = "Copy link";
 $MESS["LANDING_SITE_TILE_POPUP_COPY_LINK_COMPLETE"] = "Link copied.";
 $MESS["LANDING_SITE_TILE_POPUP_CREATE_TEST_ORDER"] = "Place a test order";

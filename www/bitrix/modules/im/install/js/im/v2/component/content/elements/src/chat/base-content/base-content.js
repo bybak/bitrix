@@ -8,7 +8,6 @@ import { PermissionManager } from 'im.v2.lib.permission';
 import { ResizeManager } from 'im.v2.lib.textarea';
 import { ChatSidebar } from 'im.v2.component.sidebar';
 import { ActionByRole, Settings, UserRole, EventType, SidebarDetailBlock } from 'im.v2.const';
-import { BulkActionsManager } from 'im.v2.lib.bulk-actions';
 
 import { Height } from './const/size';
 import { ChatHeader } from '../header/chat-header';
@@ -56,15 +55,15 @@ export const BaseChatContent = {
 			type: String,
 			default: '',
 		},
-		backgroundId: {
-			type: [Number, String, null],
-			default: null,
-		},
 		withSidebar: {
 			type: Boolean,
 			default: true,
 		},
 		withHeader: {
+			type: Boolean,
+			default: true,
+		},
+		withDropArea: {
 			type: Boolean,
 			default: true,
 		},
@@ -85,6 +84,11 @@ export const BaseChatContent = {
 		},
 		canSend(): boolean
 		{
+			if (!this.dialog.isTextareaEnabled)
+			{
+				return false;
+			}
+
 			return PermissionManager.getInstance().canPerformActionByRole(ActionByRole.send, this.dialog.dialogId);
 		},
 		isGuest(): boolean
@@ -107,12 +111,7 @@ export const BaseChatContent = {
 		},
 		backgroundStyle(): BackgroundStyle
 		{
-			if (this.backgroundId)
-			{
-				return ThemeManager.getBackgroundStyleById(this.backgroundId);
-			}
-
-			return ThemeManager.getCurrentBackgroundStyle();
+			return ThemeManager.getCurrentBackgroundStyle(this.dialogId);
 		},
 		dialogContainerStyle(): Object
 		{
@@ -148,8 +147,6 @@ export const BaseChatContent = {
 	{
 		this.initTextareaResizeManager();
 		this.bindEvents();
-
-		BulkActionsManager.init();
 	},
 	beforeUnmount()
 	{
@@ -196,13 +193,17 @@ export const BaseChatContent = {
 		},
 		bindEvents()
 		{
-			EventEmitter.subscribe(EventType.dialog.showLoadingBar, this.onShowLoadingBar);
-			EventEmitter.subscribe(EventType.dialog.hideLoadingBar, this.onHideLoadingBar);
+			this.getEmitter().subscribe(EventType.dialog.showLoadingBar, this.onShowLoadingBar);
+			this.getEmitter().subscribe(EventType.dialog.hideLoadingBar, this.onHideLoadingBar);
 		},
 		unbindEvents()
 		{
-			EventEmitter.unsubscribe(EventType.dialog.showLoadingBar, this.onShowLoadingBar);
-			EventEmitter.unsubscribe(EventType.dialog.hideLoadingBar, this.onHideLoadingBar);
+			this.getEmitter().unsubscribe(EventType.dialog.showLoadingBar, this.onShowLoadingBar);
+			this.getEmitter().unsubscribe(EventType.dialog.hideLoadingBar, this.onHideLoadingBar);
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
 		},
 		loc(phraseCode: string): string
 		{
@@ -215,6 +216,7 @@ export const BaseChatContent = {
 				<slot v-if="withHeader" name="header">
 					<ChatHeader :dialogId="dialogId" :key="dialogId" />
 				</slot>
+				<slot name="sub-header"></slot>
 				<div :style="dialogContainerStyle" class="bx-im-content-chat__dialog_container">
 					<Transition name="loading-bar-transition">
 						<LoadingBar v-if="showLoadingBar" />
@@ -233,7 +235,6 @@ export const BaseChatContent = {
 							<ChatTextarea
 								:dialogId="dialogId"
 								:key="dialogId"
-								:withAudioInput="false"
 								@mounted="onTextareaMount"
 							/>
 						</slot>
@@ -243,7 +244,12 @@ export const BaseChatContent = {
 					</slot>
 					<MutePanel v-else :dialogId="dialogId" />
 				</Transition>
-				<DropArea :dialogId="dialogId" :container="$refs.content || {}" :key="dialogId" />
+				<DropArea
+					v-if="withDropArea"
+					:key="dialogId" 
+					:dialogId="dialogId" 
+					:container="$refs.content || {}" 
+				/>
 				<!-- End textarea -->
 			</div>
 			<ChatSidebar
@@ -252,6 +258,7 @@ export const BaseChatContent = {
 				:isActive="!hasCommentsOnTop"
 				@changePanel="onChangeSidebarPanel"
 			/>
+			<slot name="extra-panel"></slot>
 		</div>
 	`,
 };

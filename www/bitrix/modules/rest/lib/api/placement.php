@@ -111,17 +111,17 @@ class Placement extends \IRestService
 
 		if($placement == '')
 		{
-			throw new Exceptions\ArgumentNullException("PLACEMENT");
+			throw new Exceptions\ArgumentNullException("The placement code is not specified");
 		}
 
 		if($placement == PlacementTable::PLACEMENT_DEFAULT)
 		{
-			throw new Exceptions\ArgumentNullException("Wrong value", "PLACEMENT");
+			throw new Exceptions\ArgumentNullException("The placement code has an incorrect value");
 		}
 
 		if($placementHandler == '')
 		{
-			throw new Exceptions\ArgumentNullException("HANDLER");
+			throw new Exceptions\ArgumentNullException("The URL of the placement handler is not specified");
 		}
 
 		$appInfo = static::getApplicationInfo($server);
@@ -131,7 +131,7 @@ class Placement extends \IRestService
 		$scopeList[] = \CRestUtil::GLOBAL_SCOPE;
 
 		$placementList = static::getPlacementList($server, $scopeList);
-		$placementInfo = $placementList[$placement];
+		$placementInfo = $placementList[$placement] ?? null;
 
 		if (is_array($placementInfo) && (!isset($placementInfo['private']) || !$placementInfo['private']))
 		{
@@ -626,6 +626,7 @@ class Placement extends \IRestService
 					}
 				}
 				$result[] = array(
+					'id' => $placement->getId(),
 					'placement' => $placement->getPlacement(),
 					'userId' => $placement->getUserId(),
 					'handler' => $placement->getPlacementHandler(),
@@ -696,8 +697,7 @@ class Placement extends \IRestService
 
 		foreach($scopeList as $scope)
 		{
-			if(
-				isset($serviceDescription[$scope])
+			if (!empty($serviceDescription[$scope][\CRestUtil::PLACEMENTS])
 				&& is_array($serviceDescription[$scope][\CRestUtil::PLACEMENTS])
 			)
 			{

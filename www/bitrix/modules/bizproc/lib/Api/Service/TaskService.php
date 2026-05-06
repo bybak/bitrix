@@ -14,7 +14,9 @@ use Bitrix\Bizproc\Api\Response;
 use Bitrix\Bizproc\Api\Response\TaskService\DelegateTasksResponse;
 use Bitrix\Bizproc\Api\Response\TaskService\GetUserTaskListResponse;
 use Bitrix\Bizproc\Api\Response\TaskService\GetUserTaskByWorkflowIdResponse;
+use Bitrix\Bizproc\Public\Service\Task\UnArchiveTaskService;
 use Bitrix\Bizproc\Result;
+use Bitrix\Bizproc\Internal\Model\TaskArchive\TaskArchiveTable;
 use Bitrix\Bizproc\Workflow\Task\TaskTable;
 use Bitrix\Main\ArgumentException;
 use Bitrix\Main\ArgumentOutOfRangeException;
@@ -299,6 +301,35 @@ class TaskService
 
 		if (!$task)
 		{
+			$archive =
+				TaskArchiveTable::query()
+					->setSelect(['TASKS_DATA', 'WORKFLOW_ID'])
+					->where('TASKS.TASK_ID', $request->taskId)
+					->setLimit(1)
+					->fetchObject()
+			;
+
+			if ($archive)
+			{
+				$unArchiveTaskService = new UnArchiveTaskService($archive->getTasksData());
+				$taskData = $unArchiveTaskService->getTask($request->taskId);
+				$neededTaskUser = current(array_filter($taskData['USERS'], fn($taskUser) => $taskUser['USER_ID'] === $request->userId));
+				$userStatus = $neededTaskUser['STATUS'];
+
+				$task = [
+					'ID' => $taskData['ID'],
+					'NAME' => $taskData['NAME'],
+					'WORKFLOW_ID' => $archive->getWorkflowId(),
+					'DESCRIPTION' => $taskData['DESCRIPTION'],
+					'STATUS' => $taskData['STATUS'],
+					'USER_STATUS' => $userStatus,
+					'DELEGATION_TYPE' => null,
+				];
+			}
+		}
+
+		if (!$task)
+		{
 			$this->addUserTaskNotFoundError($response, $request->taskId, $request->userId);
 
 			return $response;
@@ -314,19 +345,30 @@ class TaskService
 		$response = new GetUserTaskByWorkflowIdResponse();
 		$renderer = new \Bitrix\Bizproc\Controller\Response\RenderControlCollectionContent();
 		$task = false;
+		$taskQuery = null;
 
 		if ($request->workflowId)
 		{
-			$task = \Bitrix\Bizproc\Workflow\Task\TaskTable::query()
-				->setSelect(['*'])
-				->setFilter([
-					'=WORKFLOW_ID' => $request->workflowId,
-					'=TASK_USERS.USER_ID' => $request->userId,
-					'=TASK_USERS.STATUS' => \CBPTaskUserStatus::Waiting,
-				])
-				->setOrder(['ID' => 'DESC'])
-				->fetch()
+			$taskQuery =
+				\Bitrix\Bizproc\Workflow\Task\TaskTable::query()
+					->setSelect([
+						'ID',
+						'ACTIVITY',
+						'ACTIVITY_NAME',
+						'NAME',
+						'DESCRIPTION',
+						'PARAMETERS',
+						'TEMPLATE_ID' => 'WORKFLOW_STATE.WORKFLOW_TEMPLATE_ID',
+					])
+					->setFilter([
+						'=WORKFLOW_ID' => $request->workflowId,
+						'=TASK_USERS.USER_ID' => $request->userId,
+						'=TASK_USERS.STATUS' => \CBPTaskUserStatus::Waiting,
+					])
+					->setOrder(['ID' => 'DESC'])
+					->exec()
 			;
+			$task = $taskQuery->fetch();
 		}
 
 		if (!$task)
@@ -336,6 +378,8 @@ class TaskService
 			return $response;
 		}
 
+		$task['saveVariables'] = $task['PARAMETERS']['SaveVariables'] ?? false;
+		$task['commentRequired'] = $task['PARAMETERS']['CommentRequired'] ?? 'N';
 		$controls = \CBPDocument::getTaskControls($task, $request->userId);
 
 		$task['BUTTONS'] = $controls['BUTTONS'] ?? null;
@@ -346,6 +390,20 @@ class TaskService
 				\CBPHelper::convertBBtoText(
 					preg_replace('|\n+|', "\n", trim($task['DESCRIPTION']))
 				)
+			);
+		}
+
+		if ($taskQuery?->fetch())
+		{
+			$task['IS_LAST_TASK_FOR_USER'] = false;
+		}
+		else
+		{
+			$task['IS_LAST_TASK_FOR_USER'] = \CBPTaskService::isLastTaskForUserByActivity(
+				$task['ACTIVITY_NAME'],
+				$request->userId,
+				$task['TEMPLATE_ID'],
+				$task['ACTIVITY']
 			);
 		}
 		$response->setTask($task);

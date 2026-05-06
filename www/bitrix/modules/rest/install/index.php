@@ -68,6 +68,7 @@ class rest extends CModule
 		$eventManager->registerEventHandler('rest', 'OnRestApplicationConfigurationEntity', 'rest', '\Bitrix\Rest\Configuration\AppConfiguration', 'getEntityList');
 		$eventManager->registerEventHandler('rest', 'OnRestApplicationConfigurationGetManifest', 'rest', '\Bitrix\Rest\Configuration\AppConfiguration', 'getManifestList');
 		$eventManager->registerEventHandler('main', 'OnAfterSetOption_~mp24_paid_date', 'rest', '\Bitrix\Rest\Marketplace\Client', 'onChangeSubscriptionDate');
+		$eventManager->registerEventHandler('main', 'OnAfterSetOption_~mp24_paid_date', 'rest', '\Bitrix\Rest\Integration\Main\EventHandler', 'onSubscriptionChange');
 		if(CModule::IncludeModule('iblock'))
 		{
 			COption::SetOptionString("rest", "entity_iblock_type", "rest_entity");
@@ -129,6 +130,21 @@ class rest extends CModule
 			'\Bitrix\Rest\Marketplace\TagTable',
 			'onAfterUnRegisterModule'
 		);
+		$eventManager->registerEventHandler(
+			'mobile',
+			'onMobileMenuStructureBuilt',
+			'rest',
+			'Bitrix\Rest\MobileMenuManager',
+			'onMobileMenuStructureBuilt',
+		);
+
+		$eventManager->registerEventHandlerCompatible(
+			'im',
+			'OnGetNotifySchema',
+			'rest',
+			\Bitrix\Rest\Integration\Im\NotifySchema::class,
+			'onGetNotifySchema',
+		);
 
 		\CAgent::AddAgent("Bitrix\\Rest\\Marketplace\\Client::getNumUpdates();", "rest", "N", 86400);
 		\CAgent::AddAgent("Bitrix\\Rest\\EventOfflineTable::cleanProcessAgent();", "rest", "N", 86400);
@@ -140,6 +156,19 @@ class rest extends CModule
 		\CAgent::AddAgent('\Bitrix\Rest\Marketplace\Immune::load();', "rest", "N", 86400);
 		\CAgent::AddAgent('\Bitrix\Rest\Configuration\Structure::clearContentAgent();', 'rest', 'N', 86400);
 		\CAgent::AddAgent('\Bitrix\Rest\Helper::recoveryAgents();','rest','N',604800);
+
+		\Bitrix\Rest\Internal\Model\AccessPermissionTable::addInsertIgnoreMulti([
+			[
+				'ENTITY_TYPE' => \Bitrix\Rest\Internal\Entity\Access\EntityType::IncomingWebhook->value,
+				'ACCESS_CODE' => 'UA',
+				'PERMISSION' => \Bitrix\Rest\Internal\Entity\Access\PermissionType::CreateOwn->value,
+			],
+			[
+				'ENTITY_TYPE' => \Bitrix\Rest\Internal\Entity\Access\EntityType::IncomingWebhook->value,
+				'ACCESS_CODE' => 'UA',
+				'PERMISSION' => \Bitrix\Rest\Internal\Entity\Access\PermissionType::ManageOwn->value,
+			],
+		], true);
 
 		return true;
 	}
@@ -185,6 +214,7 @@ class rest extends CModule
 		$eventManager->unRegisterEventHandler('rest', 'OnRestApplicationConfigurationEntity', 'rest', '\Bitrix\Rest\Configuration\AppConfiguration', 'getEntityList');
 		$eventManager->unRegisterEventHandler('rest', 'OnRestApplicationConfigurationGetManifest', 'rest', '\Bitrix\Rest\Configuration\AppConfiguration', 'getManifestList');
 		$eventManager->unRegisterEventHandler('main', 'OnAfterSetOption_~mp24_paid_date', 'rest', '\Bitrix\Rest\Marketplace\Client', 'onChangeSubscriptionDate');
+		$eventManager->unRegisterEventHandler('main', 'OnAfterSetOption_~mp24_paid_date', 'rest', '\Bitrix\Rest\Integration\Main\EventHandler', 'onSubscriptionChange');
 		$eventManager->unRegisterEventHandler(
 			'main',
 			'OnAfterRegisterModule',
@@ -212,6 +242,21 @@ class rest extends CModule
 			'rest',
 			'\Bitrix\Rest\Marketplace\TagTable',
 			'onAfterUnRegisterModule'
+		);
+		$eventManager->unRegisterEventHandler(
+			'mobile',
+			'onMobileMenuStructureBuilt',
+			'rest',
+			'Bitrix\Rest\MobileMenuManager',
+			'onMobileMenuStructureBuilt',
+		);
+
+		$eventManager->unRegisterEventHandler(
+			'im',
+			'OnGetNotifySchema',
+			'rest',
+			\Bitrix\Rest\Integration\Im\NotifySchema::class,
+			'onGetNotifySchema',
 		);
 
 		CAgent::RemoveModuleAgents("rest");

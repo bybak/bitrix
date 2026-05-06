@@ -3,14 +3,110 @@ this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
-(function (exports,main_date,im_v2_component_elements,im_v2_lib_utils,im_v2_lib_parser,im_v2_lib_dateFormatter,im_v2_lib_logger,im_v2_lib_user,im_v2_application_core,im_v2_lib_rest,main_core,im_v2_const,im_v2_lib_layout,im_v2_lib_menu) {
+(function (exports,im_v2_component_elements_listLoadingState,im_v2_provider_service_recent,main_core,im_v2_lib_layout,im_v2_lib_menu,im_v2_lib_rest,main_date,im_v2_const,im_v2_component_elements_chatTitle,im_v2_lib_counter,im_v2_lib_dateFormatter,im_v2_application_core,im_v2_component_elements_avatar,im_v2_lib_utils,im_v2_lib_parser) {
 	'use strict';
+
+	var _lastMessageId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("lastMessageId");
+	var _getMinMessageId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getMinMessageId");
+	class ChannelService extends im_v2_provider_service_recent.BaseRecentService {
+	  constructor(...args) {
+	    super(...args);
+	    Object.defineProperty(this, _getMinMessageId, {
+	      value: _getMinMessageId2
+	    });
+	    Object.defineProperty(this, _lastMessageId, {
+	      writable: true,
+	      value: 0
+	    });
+	  }
+	  getRestMethodName() {
+	    return im_v2_const.RestMethod.imV2RecentChannelTail;
+	  }
+	  saveRecentItems(recentItems) {
+	    return im_v2_application_core.Core.getStore().dispatch('recent/setCollection', {
+	      type: im_v2_const.RecentType.openChannel,
+	      items: recentItems
+	    });
+	  }
+	  getRequestFilter(firstPage = false) {
+	    return {
+	      lastMessageId: firstPage ? null : babelHelpers.classPrivateFieldLooseBase(this, _lastMessageId)[_lastMessageId]
+	    };
+	  }
+	  onAfterRequest(firstPage) {
+	    if (!firstPage) {
+	      return;
+	    }
+	    void im_v2_application_core.Core.getStore().dispatch('recent/clearCollection', {
+	      type: im_v2_const.RecentType.openChannel
+	    });
+	  }
+	  handlePaginationField(result) {
+	    const {
+	      messages
+	    } = result;
+	    babelHelpers.classPrivateFieldLooseBase(this, _lastMessageId)[_lastMessageId] = babelHelpers.classPrivateFieldLooseBase(this, _getMinMessageId)[_getMinMessageId](messages);
+	  }
+	}
+	function _getMinMessageId2(messages) {
+	  if (messages.length === 0) {
+	    return 0;
+	  }
+	  const firstMessageId = messages[0].id;
+	  return messages.reduce((minId, nextMessage) => {
+	    return Math.min(minId, nextMessage.id);
+	  }, firstMessageId);
+	}
+
+	class ChannelRecentMenu extends im_v2_lib_menu.RecentMenu {
+	  getMenuItems() {
+	    return [this.getOpenItem()];
+	  }
+	  getOpenItem() {
+	    return {
+	      title: main_core.Loc.getMessage('IM_LIB_MENU_OPEN'),
+	      onClick: () => {
+	        void im_v2_lib_layout.LayoutManager.getInstance().setLayout({
+	          name: im_v2_const.Layout.channel,
+	          entityId: this.context.dialogId
+	        });
+	        this.menuInstance.close();
+	      }
+	    };
+	  }
+	}
+
+	const TAG = 'IM_SHARED_CHANNEL_LIST';
+	var _pullClient = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("pullClient");
+	var _requestWatchStart = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("requestWatchStart");
+	class PullWatchManager {
+	  constructor() {
+	    Object.defineProperty(this, _requestWatchStart, {
+	      value: _requestWatchStart2
+	    });
+	    Object.defineProperty(this, _pullClient, {
+	      writable: true,
+	      value: void 0
+	    });
+	    babelHelpers.classPrivateFieldLooseBase(this, _pullClient)[_pullClient] = im_v2_application_core.Core.getPullClient();
+	  }
+	  subscribe() {
+	    babelHelpers.classPrivateFieldLooseBase(this, _pullClient)[_pullClient].extendWatch(TAG);
+	    babelHelpers.classPrivateFieldLooseBase(this, _requestWatchStart)[_requestWatchStart]();
+	  }
+	  unsubscribe() {
+	    babelHelpers.classPrivateFieldLooseBase(this, _pullClient)[_pullClient].clearWatch(TAG);
+	  }
+	}
+	function _requestWatchStart2() {
+	  void im_v2_lib_rest.runAction(im_v2_const.RestMethod.imV2RecentChannelExtendPullWatch);
+	}
 
 	// @vue/component
 	const MessageText = {
 	  name: 'MessageText',
 	  components: {
-	    MessageAvatar: im_v2_component_elements.MessageAvatar
+	    MessageAvatar: im_v2_component_elements_avatar.MessageAvatar
 	  },
 	  props: {
 	    item: {
@@ -19,7 +115,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    }
 	  },
 	  computed: {
-	    AvatarSize: () => im_v2_component_elements.AvatarSize,
+	    AvatarSize: () => im_v2_component_elements_avatar.AvatarSize,
 	    recentItem() {
 	      return this.item;
 	    },
@@ -91,8 +187,8 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	const ChannelItem = {
 	  name: 'ChannelItem',
 	  components: {
-	    ChatAvatar: im_v2_component_elements.ChatAvatar,
-	    ChatTitle: im_v2_component_elements.ChatTitle,
+	    ChatAvatar: im_v2_component_elements_avatar.ChatAvatar,
+	    ChatTitle: im_v2_component_elements_chatTitle.ChatTitle,
 	    MessageText
 	  },
 	  props: {
@@ -101,22 +197,10 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      required: true
 	    }
 	  },
-	  data() {
-	    return {};
-	  },
 	  computed: {
-	    AvatarSize: () => im_v2_component_elements.AvatarSize,
+	    AvatarSize: () => im_v2_component_elements_avatar.AvatarSize,
 	    recentItem() {
 	      return this.item;
-	    },
-	    formattedDate() {
-	      if (this.needsBirthdayPlaceholder) {
-	        return this.loc('IM_LIST_RECENT_BIRTHDAY_DATE');
-	      }
-	      return this.formatDate(this.message.date);
-	    },
-	    formattedCounter() {
-	      return this.dialog.counter > 99 ? '99+' : this.dialog.counter.toString();
 	    },
 	    dialog() {
 	      return this.$store.getters['chats/get'](this.recentItem.dialogId, true);
@@ -127,6 +211,15 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    message() {
 	      return this.$store.getters['recent/getMessage'](this.recentItem.dialogId);
 	    },
+	    chatCounter() {
+	      return this.$store.getters['counters/getCounterByChatId'](this.dialog.chatId);
+	    },
+	    formattedDate() {
+	      return this.formatDate(this.message.date);
+	    },
+	    formattedCounter() {
+	      return im_v2_lib_counter.CounterManager.formatCounter(this.chatCounter);
+	    },
 	    isUser() {
 	      return this.dialog.type === im_v2_const.ChatType.user;
 	    },
@@ -134,22 +227,10 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	      return !this.isUser;
 	    },
 	    isChatSelected() {
-	      if (this.layout.name !== im_v2_const.Layout.channel.name) {
+	      if (this.layout.name !== im_v2_const.Layout.channel) {
 	        return false;
 	      }
 	      return this.layout.entityId === this.recentItem.dialogId;
-	    },
-	    isChatMuted() {
-	      if (this.isUser) {
-	        return false;
-	      }
-	      const isMuted = this.dialog.muteList.find(element => {
-	        return element === im_v2_application_core.Core.getUserId();
-	      });
-	      return Boolean(isMuted);
-	    },
-	    needsBirthdayPlaceholder() {
-	      return this.$store.getters['recent/needsBirthdayPlaceholder'](this.recentItem.dialogId);
 	    },
 	    showLastMessage() {
 	      return this.$store.getters['application/settings/get'](im_v2_const.Settings.recent.showLastMessage);
@@ -176,11 +257,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 			<div class="bx-im-list-channel-item__container">
 				<div class="bx-im-list-channel-item__avatar_container">
 					<div class="bx-im-list-channel-item__avatar_content">
-						<ChatAvatar 
-							:avatarDialogId="recentItem.dialogId" 
-							:contextDialogId="recentItem.dialogId"
-							:size="AvatarSize.XL" 
-						/>
+						<ChatAvatar :avatarDialogId="recentItem.dialogId" :size="AvatarSize.XL" />
 					</div>
 				</div>
 				<div class="bx-im-list-channel-item__content_container">
@@ -218,172 +295,12 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	`
 	};
 
-	var _itemsPerPage = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("itemsPerPage");
-	var _isLoading = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("isLoading");
-	var _pagesLoaded = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("pagesLoaded");
-	var _hasMoreItemsToLoad = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("hasMoreItemsToLoad");
-	var _lastMessageId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("lastMessageId");
-	var _requestItems = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("requestItems");
-	var _updateModels = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("updateModels");
-	var _getMinMessageId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getMinMessageId");
-	class ChannelService {
-	  constructor() {
-	    Object.defineProperty(this, _getMinMessageId, {
-	      value: _getMinMessageId2
-	    });
-	    Object.defineProperty(this, _updateModels, {
-	      value: _updateModels2
-	    });
-	    Object.defineProperty(this, _requestItems, {
-	      value: _requestItems2
-	    });
-	    this.firstPageIsLoaded = false;
-	    Object.defineProperty(this, _itemsPerPage, {
-	      writable: true,
-	      value: 50
-	    });
-	    Object.defineProperty(this, _isLoading, {
-	      writable: true,
-	      value: false
-	    });
-	    Object.defineProperty(this, _pagesLoaded, {
-	      writable: true,
-	      value: 0
-	    });
-	    Object.defineProperty(this, _hasMoreItemsToLoad, {
-	      writable: true,
-	      value: true
-	    });
-	    Object.defineProperty(this, _lastMessageId, {
-	      writable: true,
-	      value: 0
-	    });
-	  }
-	  async loadFirstPage() {
-	    babelHelpers.classPrivateFieldLooseBase(this, _isLoading)[_isLoading] = true;
-	    const result = await babelHelpers.classPrivateFieldLooseBase(this, _requestItems)[_requestItems]({
-	      firstPage: true
-	    });
-	    this.firstPageIsLoaded = true;
-	    return result;
-	  }
-	  loadNextPage() {
-	    if (babelHelpers.classPrivateFieldLooseBase(this, _isLoading)[_isLoading] || !babelHelpers.classPrivateFieldLooseBase(this, _hasMoreItemsToLoad)[_hasMoreItemsToLoad]) {
-	      return Promise.resolve();
-	    }
-	    babelHelpers.classPrivateFieldLooseBase(this, _isLoading)[_isLoading] = true;
-	    return babelHelpers.classPrivateFieldLooseBase(this, _requestItems)[_requestItems]();
-	  }
-	  hasMoreItemsToLoad() {
-	    return babelHelpers.classPrivateFieldLooseBase(this, _hasMoreItemsToLoad)[_hasMoreItemsToLoad];
-	  }
-	}
-	async function _requestItems2({
-	  firstPage = false
-	} = {}) {
-	  const queryParams = {
-	    data: {
-	      limit: babelHelpers.classPrivateFieldLooseBase(this, _itemsPerPage)[_itemsPerPage],
-	      filter: {
-	        lastMessageId: firstPage ? null : babelHelpers.classPrivateFieldLooseBase(this, _lastMessageId)[_lastMessageId]
-	      }
-	    }
-	  };
-	  const result = await im_v2_lib_rest.runAction(im_v2_const.RestMethod.imV2RecentChannelTail, queryParams).catch(error => {
-	    // eslint-disable-next-line no-console
-	    console.error('Im.ChannelList: page request error', error);
-	  });
-	  babelHelpers.classPrivateFieldLooseBase(this, _pagesLoaded)[_pagesLoaded]++;
-	  im_v2_lib_logger.Logger.warn(`Im.ChannelList: ${firstPage ? 'First' : babelHelpers.classPrivateFieldLooseBase(this, _pagesLoaded)[_pagesLoaded]} page request result`, result);
-	  const {
-	    messages,
-	    hasNextPage
-	  } = result;
-	  babelHelpers.classPrivateFieldLooseBase(this, _lastMessageId)[_lastMessageId] = babelHelpers.classPrivateFieldLooseBase(this, _getMinMessageId)[_getMinMessageId](messages);
-	  if (!hasNextPage) {
-	    babelHelpers.classPrivateFieldLooseBase(this, _hasMoreItemsToLoad)[_hasMoreItemsToLoad] = false;
-	  }
-	  babelHelpers.classPrivateFieldLooseBase(this, _isLoading)[_isLoading] = false;
-	  if (firstPage) {
-	    void im_v2_application_core.Core.getStore().dispatch('recent/clearChannelCollection');
-	  }
-	  return babelHelpers.classPrivateFieldLooseBase(this, _updateModels)[_updateModels](result);
-	}
-	function _updateModels2(restResult) {
-	  const {
-	    users,
-	    chats,
-	    messages,
-	    files,
-	    recentItems
-	  } = restResult;
-	  const usersPromise = new im_v2_lib_user.UserManager().setUsersToModel(users);
-	  const dialoguesPromise = im_v2_application_core.Core.getStore().dispatch('chats/set', chats);
-	  const messagesPromise = im_v2_application_core.Core.getStore().dispatch('messages/store', messages);
-	  const filesPromise = im_v2_application_core.Core.getStore().dispatch('files/set', files);
-	  const recentPromise = im_v2_application_core.Core.getStore().dispatch('recent/setChannel', recentItems);
-	  return Promise.all([usersPromise, dialoguesPromise, messagesPromise, filesPromise, recentPromise]);
-	}
-	function _getMinMessageId2(messages) {
-	  if (messages.length === 0) {
-	    return 0;
-	  }
-	  const firstMessageId = messages[0].id;
-	  return messages.reduce((minId, nextMessage) => {
-	    return Math.min(minId, nextMessage.id);
-	  }, firstMessageId);
-	}
-
-	const TAG = 'IM_SHARED_CHANNEL_LIST';
-	var _pullClient = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("pullClient");
-	var _requestWatchStart = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("requestWatchStart");
-	class PullWatchManager {
-	  constructor() {
-	    Object.defineProperty(this, _requestWatchStart, {
-	      value: _requestWatchStart2
-	    });
-	    Object.defineProperty(this, _pullClient, {
-	      writable: true,
-	      value: void 0
-	    });
-	    babelHelpers.classPrivateFieldLooseBase(this, _pullClient)[_pullClient] = im_v2_application_core.Core.getPullClient();
-	  }
-	  subscribe() {
-	    babelHelpers.classPrivateFieldLooseBase(this, _pullClient)[_pullClient].extendWatch(TAG);
-	    babelHelpers.classPrivateFieldLooseBase(this, _requestWatchStart)[_requestWatchStart]();
-	  }
-	  unsubscribe() {
-	    babelHelpers.classPrivateFieldLooseBase(this, _pullClient)[_pullClient].clearWatch(TAG);
-	  }
-	}
-	function _requestWatchStart2() {
-	  void im_v2_lib_rest.runAction(im_v2_const.RestMethod.imV2RecentChannelExtendPullWatch);
-	}
-
-	class ChannelRecentMenu extends im_v2_lib_menu.RecentMenu {
-	  getMenuItems() {
-	    return [this.getOpenItem()];
-	  }
-	  getOpenItem() {
-	    return {
-	      text: main_core.Loc.getMessage('IM_LIB_MENU_OPEN'),
-	      onclick: () => {
-	        im_v2_lib_layout.LayoutManager.getInstance().setLayout({
-	          name: im_v2_const.Layout.channel.name,
-	          entityId: this.context.dialogId
-	        });
-	        this.menuInstance.close();
-	      }
-	    };
-	  }
-	}
-
 	// @vue/component
 	const ChannelList = {
 	  name: 'ChannelList',
 	  components: {
 	    EmptyState,
-	    LoadingState: im_v2_component_elements.ListLoadingState,
+	    LoadingState: im_v2_component_elements_listLoadingState.ListLoadingState,
 	    ChannelItem
 	  },
 	  emits: ['chatClick'],
@@ -395,22 +312,19 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    };
 	  },
 	  computed: {
-	    collection() {
-	      return this.$store.getters['recent/getChannelCollection'];
-	    },
 	    preparedItems() {
-	      return [...this.collection].sort((a, b) => {
-	        const firstMessage = this.$store.getters['messages/getById'](a.messageId);
-	        const secondMessage = this.$store.getters['messages/getById'](b.messageId);
-	        return secondMessage.date - firstMessage.date;
+	      return this.$store.getters['recent/getSortedCollection']({
+	        type: im_v2_const.RecentType.openChannel
 	      });
 	    },
 	    isEmptyCollection() {
-	      return this.collection.length === 0;
+	      return this.preparedItems.length === 0;
 	    }
 	  },
 	  created() {
-	    this.contextMenuManager = new ChannelRecentMenu();
+	    this.contextMenuManager = new ChannelRecentMenu({
+	      emitter: this.getEmitter()
+	    });
 	  },
 	  beforeUnmount() {
 	    this.contextMenuManager.destroy();
@@ -428,7 +342,7 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	  methods: {
 	    async onScroll(event) {
 	      this.contextMenuManager.close();
-	      if (!im_v2_lib_utils.Utils.dom.isOneScreenRemaining(event.target) || !this.getRecentService().hasMoreItemsToLoad) {
+	      if (!im_v2_lib_utils.Utils.dom.isOneScreenRemaining(event.target) || !this.getRecentService().hasMoreItemsToLoad()) {
 	        return;
 	      }
 	      this.isLoadingNextPage = true;
@@ -440,7 +354,11 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	    },
 	    onRightClick(item, event) {
 	      event.preventDefault();
-	      this.contextMenuManager.openMenu(item, event.currentTarget);
+	      const context = {
+	        dialogId: item.dialogId,
+	        recentItem: item
+	      };
+	      this.contextMenuManager.openMenu(context, event.currentTarget);
 	    },
 	    getRecentService() {
 	      if (!this.service) {
@@ -453,6 +371,9 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 	        this.pullWatchManager = new PullWatchManager();
 	      }
 	      return this.pullWatchManager;
+	    },
+	    getEmitter() {
+	      return this.$Bitrix.eventEmitter;
 	    },
 	    loc(phraseCode) {
 	      return this.$Bitrix.Loc.getMessage(phraseCode);
@@ -480,5 +401,5 @@ this.BX.Messenger.v2.Component = this.BX.Messenger.v2.Component || {};
 
 	exports.ChannelList = ChannelList;
 
-}((this.BX.Messenger.v2.Component.List = this.BX.Messenger.v2.Component.List || {}),BX.Main,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Application,BX.Messenger.v2.Lib,BX,BX.Messenger.v2.Const,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib));
+}((this.BX.Messenger.v2.Component.List = this.BX.Messenger.v2.Component.List || {}),BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Service,BX,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Main,BX.Messenger.v2.Const,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib,BX.Messenger.v2.Application,BX.Messenger.v2.Component.Elements,BX.Messenger.v2.Lib,BX.Messenger.v2.Lib));
 //# sourceMappingURL=channel-list.bundle.js.map

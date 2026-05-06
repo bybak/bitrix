@@ -1,4 +1,4 @@
-import {Type, Uri} from "main.core";
+import { ajax as Ajax, Runtime, Type } from 'main.core';
 
 export default class Slider
 {
@@ -7,42 +7,51 @@ export default class Slider
 		BX.UI.Feedback.Form.open(Slider.getFeedbackParams());
 	}
 
-	static openIntegrationRequestForm(event, params={})
+	static async openIntegrationRequestForm(event): void
 	{
 		if (event && Type.isFunction(event.preventDefault))
 		{
 			event.preventDefault();
 		}
 
-		if(!Type.isPlainObject(params))
+		try
 		{
-			params = {};
+			const response = await Ajax.runComponentAction(
+				'bitrix:catalog.feedback',
+				'getFormParams',
+				{
+					mode: 'class',
+				},
+			);
+
+			const { Form } = await Runtime.loadExtension(['ui.feedback.form']);
+			const formIdNumber = Math.round(Math.random() * 1000);
+			const data = response.data;
+			data.id += formIdNumber.toString();
+			Form.open(data);
 		}
-
-		let url = (new Uri('/bitrix/components/bitrix/catalog.feedback/slider.php'));
-
-		url.setQueryParams({feedback_type: 'integration_request'});
-		url.setQueryParams(params);
-
-		return Slider.open(url.toString(), {width: 735});
+		catch (err)
+		{
+			await console.error(err);
+		}
 	}
 
-	static open(url, options)
+	static open(url, rawOptions): Promise
 	{
-		if(!Type.isPlainObject(options))
-		{
-			options = {};
-		}
-		options = {...{cacheable: false, allowChangeHistory: false, events: {}}, ...options};
-		return new Promise((resolve) =>
-		{
-			if(Type.isString(url) && url.length > 1)
+		let options = Type.isPlainObject(rawOptions)
+			? rawOptions
+			: {}
+		;
+		options = { cacheable: false, allowChangeHistory: false, events: {}, ...options };
+
+		return new Promise((resolve) => {
+			if (Type.isString(url) && url.length > 1)
 			{
 				options.events.onClose = function(event)
 				{
 					resolve(event.getSlider());
 				};
-				BX.SidePanel.Instance.open(url, options);
+				BX.SidePanel.Instance.open(url, rawOptions);
 			}
 			else
 			{

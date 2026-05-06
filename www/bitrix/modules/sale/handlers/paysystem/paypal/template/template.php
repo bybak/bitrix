@@ -14,7 +14,7 @@ if ($params["PAYED"] != "Y")
 		<tr>
 			<td align="center">
 				<?
-					$itemName = "Invoice ".$params["PAYMENT_ID"]." (".$params["PAYMENT_DATE_INSERT"].")";
+					$itemName = 'Invoice ' . $params['PAYMENT_ID'] . ' ' . $params['PAYMENT_DATE_INSERT'];
 				?>
 				<form action="<?=$params['URL']?>" method="post">
 					<input type="hidden" name="cmd" value="_xclick">
@@ -22,7 +22,7 @@ if ($params["PAYED"] != "Y")
 					<input type="hidden" name="business" value="<?= htmlspecialcharsbx($params["PAYPAL_BUSINESS"]) ?>">
 					<input type="hidden" name="item_name" value="<?=htmlspecialcharsbx($itemName)?>">
 					<input type="hidden" name="currency_code" value="<?=htmlspecialcharsbx($params["PAYMENT_CURRENCY"])?>">
-					<input type="hidden" name="amount" value="<?=PriceMaths::roundPrecision($params["PAYMENT_SHOULD_PAY"]);?>">
+					<input type="hidden" name="amount" value="<?=PriceMaths::roundByFormatCurrency($params["PAYMENT_SHOULD_PAY"], $params["PAYMENT_CURRENCY"]);?>">
 					<input type="hidden" name="custom" value="<?=htmlspecialcharsbx($params["PAYMENT_ID"])?>">
 
 					<?if ($params["PAYPAL_ON0"] != ''):?>

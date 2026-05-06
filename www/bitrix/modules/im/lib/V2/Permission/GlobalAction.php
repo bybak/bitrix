@@ -13,4 +13,7 @@ enum GlobalAction: string
 	case CreateCollab = 'CREATE_COLLAB';
 	case CreateCopilot = 'CREATE_COPILOT';
 	case LeaveCollab = 'LEAVE_COLLAB';
+	case ChangeMessagesAutoDeleteDelay = 'CHANGE_MESSAGES_AUTO_DELETE_DELAY';
+	case CreateStickerPack = 'CREATE_STICKER_PACK';
+	case ChangeStickerPack = 'CHANGE_STICKER_PACK';
 }

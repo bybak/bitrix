@@ -1,13 +1,12 @@
-import {Dom, Type, Text, Event, Runtime} from 'main.core';
-import type {AnalyticsOptions} from './types';
+import { Dom, Type, Text, Event, Runtime } from 'main.core';
+import type { AnalyticsOptions } from './types';
 
 /**
  * @memberOf BX.Landing
  */
 export class Metrika
 {
-	static TOOL_NAME = 'landing';
-
+	tool: string;
 	formSelector: string;
 	widgetBlockItemSelector: string;
 	siteType: ?string;
@@ -17,8 +16,10 @@ export class Metrika
 	widgetOpened: boolean;
 	widgetBlockHover: boolean;
 
-	constructor(light: boolean)
+	constructor(light: boolean, tool: ?string = null)
 	{
+		this.tool = tool || null;
+
 		this.sendedLabel = [];
 
 		if (light === true)
@@ -26,7 +27,7 @@ export class Metrika
 			return;
 		}
 
-		this.formSelector= '.bitrix24forms';
+		this.formSelector = '.bitrix24forms';
 		this.widgetBlockItemSelector = '.landing-b24-widget-button-social-item';
 		this.formBlocks = [...document.querySelectorAll(this.formSelector)];
 		this.siteType = this.getSiteType();
@@ -128,7 +129,7 @@ export class Metrika
 							this.sendLabel(widgetHost, 'chatOpened');
 						}
 					}
-				}
+				},
 
 			});
 		});
@@ -147,11 +148,11 @@ export class Metrika
 
 			if (disabled)
 			{
-				this.sendLabel(address, 'formDisabledLoad', id+ '|' + sec);
+				this.sendLabel(address, 'formDisabledLoad', id + '|' + sec);
 			}
 			else
 			{
-				this.sendLabel(address, 'formSuccessLoad', id+ '|' + sec);
+				this.sendLabel(address, 'formSuccessLoad', id + '|' + sec);
 			}
 		});
 
@@ -166,7 +167,7 @@ export class Metrika
 						this.sendLabel(
 							null,
 							'formFailLoad',
-							formData[1] ? formData[0] + '|' + formData[1] : formData[0]
+							formData[1] ? formData[0] + '|' + formData[1] : formData[0],
 						);
 					}
 				}
@@ -213,27 +214,46 @@ export class Metrika
 	 */
 	sendData(data: AnalyticsOptions): void
 	{
-		Runtime.loadExtension('ui.analytics')
+		Runtime
+			.loadExtension('ui.analytics')
 			.then(exports => {
-				data.tool = Metrika.TOOL_NAME;
-				if (data.params && Type.isObject(data.params))
+				const preparedData = {
+					tool: this.tool ?? BX.Landing.Main.getAnalyticsCategoryByType(),
+				};
+
+				[
+					'tool',
+					'category',
+					'event',
+					'type',
+					'c_section',
+					'c_sub_section',
+					'c_element',
+					'status',
+				].forEach(key =>
 				{
-					let i = 1;
-					const maxParams = 5;
-					for (let param in data.params)
+					if (data[key])
 					{
-						if (i <= maxParams)
-						{
-							const key = 'p' + i++;
-							Text.toCamelCase(param);
-							data[key] = Text.toCamelCase(param) + '_' + Text.toCamelCase(data.params[param]);
-						}
+						preparedData[key] = data[key];
 					}
-					delete data.params;
+				});
+
+				for (let pos = 1; pos <= 5; pos++)
+				{
+					const key = `p${pos}`;
+					const param = data[key];
+					if (param && Type.isArray(param) && param.length === 2)
+					{
+						preparedData[key] = `${Text.toCamelCase(param[0])}_${Text.toKebabCase(param[1])}`;
+					}
 				}
 
 				const {sendData} = exports;
-				sendData(data);
+
+				sendData(preparedData);
+			})
+			.catch(err => {
+				console.error('Metrika send error', err);
 			})
 		;
 	}

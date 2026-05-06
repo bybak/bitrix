@@ -1,11 +1,13 @@
-import { MessageAvatar, AvatarSize, ChatTitle } from 'im.v2.component.elements';
-import { Utils } from 'im.v2.lib.utils';
 import { Text } from 'main.core';
+
+import { ChatTitle } from 'im.v2.component.elements.chat-title';
+import { MessageAvatar, AvatarSize } from 'im.v2.component.elements.avatar';
+import { Utils } from 'im.v2.lib.utils';
+import { highlightText } from 'im.v2.lib.text-highlighter';
 
 import './css/link-item.css';
 
 import type { ImModelSidebarLinkItem } from 'im.v2.model';
-import { highlightText } from 'im.v2.lib.text-highlighter';
 
 // @vue/component
 export const LinkItem = {
@@ -15,10 +17,6 @@ export const LinkItem = {
 	{
 		link: {
 			type: Object,
-			required: true,
-		},
-		contextDialogId: {
-			type: String,
 			required: true,
 		},
 		searchQuery: {
@@ -65,7 +63,9 @@ export const LinkItem = {
 
 			if (this.searchQuery.length === 0)
 			{
-				return Utils.text.convertHtmlEntities(descriptionToShow);
+				const decodedDescription = Utils.text.convertHtmlEntities(descriptionToShow);
+
+				return Text.encode(decodedDescription);
 			}
 
 			return highlightText(Text.encode(descriptionToShow), this.searchQuery);

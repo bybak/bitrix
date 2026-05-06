@@ -2,7 +2,6 @@
 
 namespace Bitrix\Im\V2\Sync;
 
-use Bitrix\Im\Model\EO_Log_Collection;
 use Bitrix\Main\Type\DateTime;
 
 class Event
@@ -11,6 +10,7 @@ class Event
 	public const COMPLETE_DELETE_EVENT = 'completeDelete';
 	public const ADD_EVENT = 'add';
 	public const READ_ALL_EVENT = 'readAll';
+	public const READ_ALL_BY_TYPE_EVENT = 'readAllByType';
 	public const CHAT_ENTITY = 'chat';
 	public const PIN_MESSAGE_ENTITY = 'pin';
 	public const MESSAGE_ENTITY = 'message';
@@ -61,26 +61,15 @@ class Event
 		return $this->dateDelete;
 	}
 
-	/**
-	 * @param EO_Log_Collection $logCollection
-	 * @return self[]
-	 */
-	public static function initByOrmEntities(EO_Log_Collection $logCollection): array
+	public static function initByEntity(array $entity): self
 	{
-		$events = [];
-
-		foreach ($logCollection as $logItem)
-		{
-			$events[] = new self(
-				$logItem->getEvent(),
-				$logItem->getEntityType(),
-				$logItem->getEntityId(),
-				$logItem->getDateCreate(),
-				$logItem->getDateDelete(),
-				$logItem->getId()
-			);
-		}
-
-		return $events;
+		return new self(
+			$entity['EVENT'] ?? '',
+			$entity['ENTITY_TYPE'] ?? '',
+			$entity['ENTITY_ID'] ?? 0,
+			$entity['DATE_DELETE'] ?? null,
+			$entity['DATE_CREATE'] ?? null,
+			$entity['ID'] ?? null
+		);
 	}
 }

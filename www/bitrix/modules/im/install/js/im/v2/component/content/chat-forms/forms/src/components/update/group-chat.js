@@ -1,10 +1,8 @@
-import 'ui.notification';
-import { EventEmitter } from 'main.core.events';
 import { MenuManager } from 'main.popup';
 
 import { Messenger } from 'im.public';
 import { Analytics } from 'im.v2.lib.analytics';
-import { ChatService } from 'im.v2.provider.service';
+import { ChatService } from 'im.v2.provider.service.chat';
 import { ChatType, EventType, PopupType, SidebarDetailBlock, UserRole } from 'im.v2.const';
 import { showExitUpdateChatConfirm } from 'im.v2.lib.confirm';
 import {
@@ -21,6 +19,7 @@ import { ChatMemberDiffManager } from '../../classes/chat-member-diff-manager';
 import { getCollapsedUsersElement, type TagSelectorElement } from '../../helpers/get-collapsed-users-element';
 
 import type { JsonObject } from 'main.core';
+import type { EventEmitter } from 'main.core.events';
 import type { ImModelChat } from 'im.v2.model';
 
 type UserRoleItem = $Keys<typeof UserRole>;
@@ -79,6 +78,7 @@ export const GroupChatUpdating = {
 		{
 			return this.dialog.chatId;
 		},
+		ChatType: () => ChatType,
 		collapsedUsers(): TagSelectorElement[]
 		{
 			if (!this.areUsersCollapsed)
@@ -214,9 +214,6 @@ export const GroupChatUpdating = {
 				manageMessages: this.rights.manageMessages,
 			}).catch(() => {
 				this.isUpdating = false;
-				BX.UI.Notification.Center.notify({
-					content: this.loc('IM_UPDATE_CHAT_ERROR'),
-				});
 			});
 
 			this.isUpdating = false;
@@ -249,10 +246,6 @@ export const GroupChatUpdating = {
 
 			return this.chatService;
 		},
-		loc(phraseCode: string, replacements: {[string]: string} = {}): string
-		{
-			return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
-		},
 		async onCollapsedUsersClick()
 		{
 			const confirmResult = await showExitUpdateChatConfirm(this.dialogId);
@@ -263,53 +256,65 @@ export const GroupChatUpdating = {
 
 			await this.onUpdateClick();
 
-			EventEmitter.emit(EventType.sidebar.open, {
+			this.getEmitter().emit(EventType.sidebar.open, {
 				panel: SidebarDetailBlock.members,
 				dialogId: this.dialogId,
 			});
 		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
+		},
+		loc(phraseCode: string, replacements: {[string]: string} = {}): string
+		{
+			return this.$Bitrix.Loc.getMessage(phraseCode, replacements);
+		},
 	},
 	template: `
-		<div v-if="isLoading" class="bx-im-content-chat-forms__skeleton"></div>
-		<div v-else class="bx-im-content-chat-forms__content --chat" @scroll="onScroll">
-			<div class="bx-im-content-chat-forms__header">
-				<ChatAvatar
-					:avatarFile="avatarFile" 
-					:existingAvatarUrl="avatarUrl" 
-					:chatTitle="chatTitle" 
-					@avatarChange="onAvatarChange" 
+		<div class="bx-im-content-chat-forms__content --chat" @scroll="onScroll">
+			<div v-if="isLoading" class="bx-im-content-chat-forms__skeleton"></div>
+			<template v-else>
+				<div class="bx-im-content-chat-forms__header">
+					<ChatAvatar
+						:avatarFile="avatarFile"
+						:existingAvatarUrl="avatarUrl"
+						:chatTitle="chatTitle"
+						@avatarChange="onAvatarChange"
+					/>
+					<TitleInput v-model="chatTitle" :placeholder="loc('IM_CREATE_CHAT_TITLE_PLACEHOLDER')" />
+				</div>
+				<CreateChatHeading :text="loc('IM_CREATE_CHAT_MEMBERS_TITLE')" />
+				<div class="bx-im-content-chat-forms__members_container">
+					<ChatMembersSelector
+						:customElements="collapsedUsers"
+						:chatMembers="chatMembers"
+						:allowTeamsSelect="dialog.type !== ChatType.videoconf"
+						@membersChange="onMembersChange"
+					/>
+				</div>
+				<SettingsSection
+					:isAvailableInSearch="settings.isAvailableInSearch"
+					:description="settings.description"
+					:withSearchOption="canChangeSearchAvailability"
+					:withAutoDeleteOption="false"
+					@chatTypeChange="onChatTypeChange"
+					@descriptionChange="onDescriptionChange"
 				/>
-				<TitleInput v-model="chatTitle" :placeholder="loc('IM_CREATE_CHAT_TITLE_PLACEHOLDER')" />
-			</div>
-			<CreateChatHeading :text="loc('IM_CREATE_CHAT_MEMBERS_TITLE')" />
-			<div class="bx-im-content-chat-forms__members_container">
-				<ChatMembersSelector 
-					:customElements="collapsedUsers"
-					:chatMembers="chatMembers" 
-					@membersChange="onMembersChange" 
+				<RightsSection
+					:ownerId="rights.ownerId"
+					:managerIds="rights.managerIds"
+					:manageUsersAdd="rights.manageUsersAdd"
+					:manageUsersDelete="rights.manageUsersDelete"
+					:manageUi="rights.manageUi"
+					:manageMessages="rights.manageMessages"
+					@ownerChange="onOwnerChange"
+					@managersChange="onManagersChange"
+					@manageUsersAddChange="onManageUsersAddChange"
+					@manageUsersDeleteChange="onManageUsersDeleteChange"
+					@manageUiChange="onManageUiChange"
+					@manageMessagesChange="onManageMessagesChange"
 				/>
-			</div>
-			<SettingsSection
-				:isAvailableInSearch="settings.isAvailableInSearch"
-				:description="settings.description"
-				:withSearchOption="canChangeSearchAvailability"
-				@chatTypeChange="onChatTypeChange"
-				@descriptionChange="onDescriptionChange"
-			/>
-			<RightsSection
-				:ownerId="rights.ownerId"
-				:managerIds="rights.managerIds"
-				:manageUsersAdd="rights.manageUsersAdd"
-				:manageUsersDelete="rights.manageUsersDelete"
-				:manageUi="rights.manageUi"
-				:manageMessages="rights.manageMessages"
-				@ownerChange="onOwnerChange"
-				@managersChange="onManagersChange"
-				@manageUsersAddChange="onManageUsersAddChange"
-				@manageUsersDeleteChange="onManageUsersDeleteChange"
-				@manageUiChange="onManageUiChange"
-				@manageMessagesChange="onManageMessagesChange"
-			/>
+			</template>
 		</div>
 		<ButtonPanel
 			:isCreating="isUpdating || isLoading"

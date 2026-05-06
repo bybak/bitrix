@@ -1,13 +1,14 @@
-import { MessengerPopup } from 'im.v2.component.elements';
-import { ChatType } from 'im.v2.const';
+import { type PopupOptions } from 'main.popup';
+import { type EventEmitter } from 'main.core.events';
 
-import type { ImModelChat } from 'im.v2.model';
+import { MessengerPopup } from 'im.v2.component.elements.popup';
+import { ChatType, EventType } from 'im.v2.const';
+import { CopilotManager } from 'im.v2.lib.copilot';
+import { type ImModelChat } from 'im.v2.model';
 
-import { MentionPopupContent } from './components/mention-popup-content';
+import { MentionPopupContent } from './mention-content';
 
 import './css/mention-popup.css';
-
-import type { PopupOptions } from 'main.popup';
 
 const POPUP_ID = 'im-mention-popup';
 
@@ -30,7 +31,7 @@ export const MentionPopup = {
 			default: '',
 		},
 	},
-	emits: ['close'],
+	emits: ['close', 'onFocusTextarea'],
 	computed:
 	{
 		POPUP_ID: () => POPUP_ID,
@@ -42,29 +43,18 @@ export const MentionPopup = {
 		{
 			return this.dialog.type === ChatType.copilot;
 		},
+		isGroupCopilotChat(): boolean
+		{
+			return (new CopilotManager()).isGroupCopilotChat(this.dialogId);
+		},
 		needToShowMentionPopup(): boolean
 		{
 			if (this.isCopilotType)
 			{
-				return this.dialog.userCounter > 2;
+				return this.isGroupCopilotChat;
 			}
 
 			return true;
-		},
-		excludedChatsFromMentions(): string[]
-		{
-			if (!this.isCopilotType)
-			{
-				return [];
-			}
-
-			const copilotUserId = this.$store.getters['users/bots/getCopilotUserId'];
-			if (copilotUserId && this.dialog.userCounter > 2)
-			{
-				return [copilotUserId.toString()];
-			}
-
-			return [];
 		},
 		searchChats(): boolean
 		{
@@ -87,6 +77,24 @@ export const MentionPopup = {
 			};
 		},
 	},
+	created()
+	{
+		this.getEmitter().subscribe(EventType.mention.onNestedMenuClosed, this.onFocusTextarea);
+	},
+	beforeUnmount()
+	{
+		this.getEmitter().unsubscribe(EventType.mention.onNestedMenuClosed, this.onFocusTextarea);
+	},
+	methods: {
+		onFocusTextarea()
+		{
+			this.$emit('onFocusTextarea');
+		},
+		getEmitter(): EventEmitter
+		{
+			return this.$Bitrix.eventEmitter;
+		},
+	},
 	template: `
 		<MessengerPopup
 			v-if="needToShowMentionPopup"
@@ -98,7 +106,6 @@ export const MentionPopup = {
 			<MentionPopupContent 
 				:dialogId="dialogId"
 				:query="query"
-				:exclude="excludedChatsFromMentions"
 				:searchChats="searchChats"
 				@close="$emit('close');"
 				@adjustPosition="adjustPosition()"

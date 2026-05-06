@@ -51,8 +51,6 @@ class Copyright
 		/*
 		if(LANGUAGE_ID == "ru")
 			$vendor = "1c_bitrix_portal";
-		elseif(LANGUAGE_ID == "ua")
-			$vendor = "ua_bitrix_portal";
 		else
 			$vendor = "bitrix_portal";
 
@@ -65,7 +63,7 @@ class Copyright
 
 		return (new static(Loc::getMessage("EPILOG_ADMIN_SM_".$vendor)))
 			->setProductUrl(Loc::getMessage("EPILOG_ADMIN_URL_PRODUCT_".$vendor))
-			->setCopyright(Loc::getMessage("EPILOG_ADMIN_COPY_".$vendor))
+			->setCopyright(Loc::getMessage("EPILOG_ADMIN_COPY_".$vendor, ["#YEAR#" => 2026]))
 			->setVendorName(Loc::getMessage("EPILOG_ADMIN_URL_MAIN_TEXT_".$vendor))
 			->setVendorUrl(Loc::getMessage("EPILOG_ADMIN_URL_MAIN_".$vendor))
 			->setSupportUrl(Loc::getMessage("EPILOG_ADMIN_URL_SUPPORT_".$vendor))
@@ -301,28 +299,7 @@ class Copyright
 	{
 		return [
 			// main/install/js/main/jquery
-			(new static("jQuery JavaScript Library v1.7"))
-				->setProductUrl("http://jquery.com/")
-				->setCopyright("Copyright 2011, John Resig")
-				->setLicence(static::LICENCE_MIT)
-				->setLicenceUrl("http://jquery.org/license"),
-
-			// main/install/js/main/jquery
-			(new static("jQuery JavaScript Library v1.8"))
-				->setProductUrl("http://jquery.com/")
-				->setCopyright("Copyright 2012 jQuery Foundation and other contributors")
-				->setLicence(static::LICENCE_MIT)
-				->setLicenceUrl("http://jquery.org/license"),
-
-			// main/install/js/main/jquery
-			(new static("jQuery JavaScript Library v2.1"))
-				->setProductUrl("http://jquery.com/")
-				->setCopyright("Copyright 2005, 2014 jQuery Foundation, Inc. and other contributors")
-				->setLicence(static::LICENCE_MIT)
-				->setLicenceUrl("http://jquery.org/license"),
-
-			// main/install/js/main/jquery
-			(new static("jQuery JavaScript Library v3"))
+			(new static("jQuery JavaScript Library"))
 				->setProductUrl("http://jquery.com/")
 				->setCopyright("Copyright JS Foundation and other contributors")
 				->setLicence(static::LICENCE_MIT)
@@ -345,12 +322,6 @@ class Copyright
 				->setProductUrl("https://photoeditorsdk.com/")
 				->setCopyright("Copyright (C) 2016-2019 img.ly GmbH <contact@img.ly>")
 				->setLicence(static::LICENCE_COMMERCIAL),
-
-			// main/install/js/main/json
-			(new static("json2.js"))
-				->setProductUrl("https://github.com/douglascrockford/JSON-js")
-				->setCopyright("Douglas Crockford")
-				->setLicence(static::LICENCE_PUBLIC_DOMAIN),
 
 			// main/install/js/main/md5
 			(new static("js-md5"))
@@ -630,15 +601,15 @@ In addition to the Google Terms of Service (http://www.google.com/accounts/TOS),
 				->setLicenceText("Unsplash grants you an irrevocable, nonexclusive, worldwide copyright license to download, copy, modify, distribute, perform, and use photos from Unsplash for free, including for commercial purposes, without permission from or attributing the photographer or Unsplash. This license does not include the right to compile photos from Unsplash to replicate a similar or competing service."),
 
 			// ui/install/js/ui/dexie
-			(new static("Dexie.js - a minimalistic wrapper for IndexedDB v3.2.2"))
+			(new static("Dexie.js - a minimalistic wrapper for IndexedDB v4.0.9"))
 				->setCopyright("David Fahlander, david.fahlander@gmail.com")
 				->setProductUrl("https://dexie.org")
 				->setLicence(static::LICENCE_APACHE2)
 				->setLicenceUrl("http://www.apache.org/licenses/"),
 
 			// ui/install/js/ui/progressbarjs
-			(new static("ProgressBar.js v1.1.0"))
-				->setCopyright("Copyright 2016, Kimmo Brunfeldt")
+			(new static("ProgressBar.js v1.1.1"))
+				->setCopyright("Copyright 2022, Kimmo Brunfeldt")
 				->setProductUrl("https://kimmobrunfeldt.github.io/progressbar.js")
 				->setLicence(static::LICENCE_MIT),
 
@@ -668,7 +639,7 @@ In addition to the Google Terms of Service (http://www.google.com/accounts/TOS),
 				->setLicence(static::LICENCE_MIT),
 
 			// ui/install/js/ui/vue3/vue
-			(new static("Vue v3.5.4"))
+			(new static("Vue v3.5.28"))
 				->setCopyright("2018-present Yuxi (Evan) You and Vue contributors")
 				->setProductUrl("https://vuejs.org/")
 				->setLicence(static::LICENCE_MIT),
@@ -686,14 +657,14 @@ In addition to the Google Terms of Service (http://www.google.com/accounts/TOS),
 				->setLicence(static::LICENCE_MIT),
 
 			// ui/install/js/ui/vue3/router
-			(new static("Vue-router v4.4.4"))
-				->setCopyright("Copyright 2024 Eduardo San Martin Morote")
+			(new static("Vue-router v5.0.2"))
+				->setCopyright("Copyright 2026 Eduardo San Martin Morote")
 				->setProductUrl("https://router.vuejs.org/")
 				->setLicence(static::LICENCE_MIT),
 
 			// ui/install/js/ui/vue3/pinia
-			(new static("Pinia v2.2.2"))
-				->setCopyright("Copyright 2024 Eduardo San Martin Morote")
+			(new static("Pinia v3.0.4"))
+				->setCopyright("Copyright 2025 Eduardo San Martin Morote")
 				->setProductUrl("https://pinia.vuejs.org/")
 				->setLicence(static::LICENCE_MIT),
 
@@ -765,6 +736,12 @@ In addition to the Google Terms of Service (http://www.google.com/accounts/TOS),
 				->setProductUrl('https://fonts.google.com/specimen/Montserrat')
 				->setLicence(static::LICENCE_OFL),
 
+			// ui/fonts/inter/
+			(new static("The Inter Font Family"))
+				->setProductUrl("https://rsms.me/inter/")
+				->setCopyright("Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)")
+				->setLicence(static::LICENCE_OFL),
+
 			// ui/lib/barcode
 			(new static("Barcode"))
 				->setCopyright("Copyright (c) 2016-2018 Kreative Software")
@@ -819,12 +796,6 @@ In addition to the Google Terms of Service (http://www.google.com/accounts/TOS),
 			(new static("Apache Cordova"))
 				->setCopyright("Copyright 2012 The Apache Software Foundation")
 				->setLicence(static::LICENCE_APACHE2),
-
-			// faceid/install/components/bitrix/faceid.tracker/templates/.default/smoother.js
-			// faceid/install/js/faceid/WebPhotoMaker/smoother.js
-			(new static("Smoother"))
-				->setCopyright("Copyright 2014 Martin Tschirsich")
-				->setLicence(static::LICENCE_MIT),
 
 			// ui/install/js/ui/fonts/comforter-brush
 			(new static("Font Comforter Brush"))
@@ -885,6 +856,50 @@ In addition to the Google Terms of Service (http://www.google.com/accounts/TOS),
 				->setProductUrl('https://github.com/simshaun/recurr')
 				->setLicence(static::LICENCE_MIT)
 				->setLicenceUrl('https://github.com/simshaun/recurr/blob/master/LICENSE'),
+
+			// mobile/install/mobileapp/mobile/extensions/bitrix/statemanager/redux
+			(new static('Redux Toolkit'))
+				->setCopyright('Copyright (c) 2018 Mark Erikson')
+				->setProductUrl('https://redux-toolkit.js.org')
+				->setLicence(Copyright::LICENCE_MIT),
+
+			(new static('Redux-State-Sync 3'))
+				->setCopyright('Copyright (c) 2018 MU AOHUA')
+				->setProductUrl('https://github.com/AOHUA/redux-state-sync')
+				->setLicence(Copyright::LICENCE_MIT),
+
+			(new static('Logger for Redux'))
+				->setCopyright('Copyright (c) 2016 Eugene Rodionov')
+				->setProductUrl('https://github.com/LogRocket/redux-logger')
+				->setLicence(Copyright::LICENCE_MIT),
+
+			(new static('redux-batched-subscribe'))
+				->setCopyright('Copyright (c) 2016 Terry Appleby')
+				->setProductUrl('https://github.com/tappleby/redux-batched-subscribe')
+				->setLicence(Copyright::LICENCE_MIT),
+
+			(new static('redux-batched-actions'))
+				->setCopyright('Copyright (c) 2016 Tim Shelburne')
+				->setProductUrl('https://github.com/tshelburne/redux-batched-actions')
+				->setLicence(Copyright::LICENCE_MIT),
+
+			(new static("glMatrix"))
+				->setCopyright("Copyright (c) 2015-2021, Brandon Jones, Colin MacKenzie IV.")
+				->setProductUrl('https://github.com/toji/gl-matrix')
+				->setLicence(static::LICENCE_MIT)
+				->setLicenceUrl('https://github.com/toji/gl-matrix/blob/master/LICENSE.md'),
+
+			(new static("quickselect"))
+				->setCopyright("Copyright (c) 2024, Vladimir Agafonkin")
+				->setProductUrl('https://github.com/mourner/quickselect')
+				->setLicence(Copyright::LICENCE_ISC)
+				->setLicenceUrl('https://github.com/mourner/quickselect/blob/main/LICENSE.md'),
+
+			(new static("rbush"))
+				->setCopyright("Copyright (c) 2024 Volodymyr Agafonkin")
+				->setProductUrl('https://github.com/mourner/rbush')
+				->setLicence(Copyright::LICENCE_MIT)
+				->setLicenceUrl('https://github.com/mourner/rbush/blob/main/LICENSE.md'),
 		];
 	}
 }

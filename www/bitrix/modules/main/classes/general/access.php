@@ -215,7 +215,7 @@ class CAccess
 		unset(static::$userCodes[$userId]);
 	}
 
-	public static function RecalculateForUser($userId, $provider, DateTime $dateCheck = null)
+	public static function RecalculateForUser($userId, $provider, ?DateTime $dateCheck = null)
 	{
 		global $DB;
 
@@ -349,6 +349,12 @@ class CAccess
 					$arWhere[] = "provider_id='" . $DB->ForSQL($val) . "'";
 					break;
 			}
+		}
+
+		if (empty($arFilter))
+		{
+			// nobody wants chat codes and there are plenty of them
+			$arWhere[] = "provider_id <> 'imchat'";
 		}
 
 		$sWhere = '';

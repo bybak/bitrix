@@ -1,13 +1,13 @@
 <?php
+
 namespace Bitrix\Catalog\Model;
 
-use Bitrix\Catalog\v2\Integration\Seo\Entity\ExportedProductTable;
+use Bitrix\Catalog;
+use Bitrix\Iblock;
 use Bitrix\Main;
 use Bitrix\Main\ORM;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
-use Bitrix\Catalog;
-use Bitrix\Iblock;
 
 class Product extends Entity
 {
@@ -786,7 +786,6 @@ class Product extends Entity
 		Catalog\ProductGroupAccessTable::deleteByProduct($id);
 		Catalog\StoreProductTable::deleteByProduct($id);
 		Catalog\SubscribeTable::onIblockElementDelete($id);
-		ExportedProductTable::deleteProduct($id);
 		//TODO: replace this code
 		$conn = Main\Application::getConnection();
 		$helper = $conn->getSqlHelper();
@@ -877,7 +876,7 @@ class Product extends Entity
 		return $result;
 	}
 
-	private static function calculateAvailable(array &$fields, array &$actions)
+	private static function calculateAvailable(array &$fields, array &$actions): void
 	{
 		$result = null;
 

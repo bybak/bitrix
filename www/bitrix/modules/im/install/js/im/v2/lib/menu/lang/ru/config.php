@@ -17,13 +17,23 @@ $MESS['IM_LIB_MENU_HIDE_MSGVER_1'] = "Скрыть";
 $MESS['IM_LIB_MENU_LEAVE_MSGVER_1'] = "Выйти";
 $MESS['IM_LIB_MENU_LEAVE_CHANNEL'] = "Отписаться от канала";
 $MESS['IM_LIB_INVITE_RESEND'] = "Пригласить повторно";
-$MESS["IM_LIB_INVITE_RESEND_DONE"] = "Приглашение отправлено";
 $MESS['IM_LIB_INVITE_CANCEL'] = "Отменить приглашение";
 $MESS['IM_LIB_INVITE_CANCEL_CONFIRM'] = "Вы уверены, что хотите отменить приглашение?";
-$MESS['IM_LIB_INVITE_CANCEL_DONE'] = "Приглашение отменено";
-$MESS['IM_LIB_MENU_FIND_CHATS_WITH_USER_MSGVER_1'] = "Найти общие чаты";
+$MESS['IM_LIB_MENU_FIND_SHARED_CHATS'] = "Найти общие чаты";
 
 $MESS['IM_LIB_MENU_USER_KICK_FROM_CHAT'] = "Исключить из чата";
 $MESS['IM_LIB_MENU_USER_KICK_FROM_COLLAB'] = "Исключить из коллабы";
 $MESS["IM_LIB_MENU_USER_MENTION"] = "Упомянуть";
 $MESS['IM_LIB_MENU_USER_WRITE'] = "Написать лично";
+
+$MESS["IM_LIB_MENU_AI_ASSISTANT_FEEDBACK"] = "Обратная связь";
+
+$MESS["IM_LIB_MENU_COMMENTS_OPEN_IN_CHANNEL"] = "Посмотреть в канале";
+
+$MESS["IM_LIB_MENU_EDIT_STICKER_PACK"] = "Редактировать";
+$MESS["IM_LIB_MENU_REMOVE_STICKER_PACK"] = "Удалить у всех";
+$MESS["IM_LIB_MENU_UNLINK_STICKER_PACK"] = "Удалить у меня";
+$MESS["IM_LIB_MENU_REMOVE_RECENT_STICKER"] = "Удалить из недавних";
+$MESS["IM_LIB_MENU_CLEAR_RECENT_STICKERS"] = "Очистить недавние";
+$MESS["IM_LIB_MENU_SEND_STICKER"] = "Отправить в чат";
+$MESS["IM_LIB_MENU_REMOVE_STICKER"] = "Удалить из набора";

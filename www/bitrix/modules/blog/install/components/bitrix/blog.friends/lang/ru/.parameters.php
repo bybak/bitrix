@@ -1,4 +1,4 @@
-<?
+<?php
 $MESS["BF_MESSAGE_COUNT"] = "Количество выводимых сообщений";
 $MESS["BF_PATH_TO_BLOG"] = "Шаблон пути к странице блога";
 $MESS["BF_PATH_TO_BLOG_CATEGORY"] = "Шаблон пути к странице блога c фильтром по тегу";
@@ -23,4 +23,3 @@ $MESS["RATING_TYPE_LIKE_TEXT"] = "Мне нравится (текстовый)";
 $MESS["RATING_TYPE_LIKE_GRAPHIC"] = "Мне нравится (графический)";
 $MESS["BPC_IMAGE_MAX_WIDTH"] = "Максимальная ширина изображения";
 $MESS["BPC_IMAGE_MAX_HEIGHT"] = "Максимальная высота изображения";
-?>

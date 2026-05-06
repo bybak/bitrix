@@ -1,0 +1,21 @@
+<?php
+$MESS["BPSCT_INTERVAL"] = "Аралық";
+$MESS["BPSCT_INTERVAL_INVALID"] = "Аралық 1-ден 12-ге дейін болуы керек";
+$MESS["BPSCT_MONTH_DAY"] = "Айдың күні (1-31)";
+$MESS["BPSCT_MONTH_DAY_INVALID"] = "Айдың дұрыс емес күні (1-31)";
+$MESS["BPSCT_RUN_AT"] = "Іске қосу уақыты";
+$MESS["BPSCT_RUN_AT_EMPTY"] = "Міндетті өріс толтырылмаған: Іске қосу уақыты";
+$MESS["BPSCT_SCHEDULE_TYPE"] = "Кесте түрі";
+$MESS["BPSCT_SCHEDULE_TYPE_DAILY"] = "Күн сайын";
+$MESS["BPSCT_SCHEDULE_TYPE_EMPTY"] = "Міндетті өріс толтырылмаған: Кесте түрі";
+$MESS["BPSCT_SCHEDULE_TYPE_HOURLY"] = "Әр сағат сайын";
+$MESS["BPSCT_SCHEDULE_TYPE_MONTHLY"] = "Ай сайын";
+$MESS["BPSCT_SCHEDULE_TYPE_ONCE"] = "Қайталанбайды";
+$MESS["BPSCT_SCHEDULE_TYPE_WEEKLY"] = "Әр апта сайын";
+$MESS["BPSCT_SCHEDULE_TYPE_YEARLY"] = "Жыл сайын";
+$MESS["BPSCT_WEEK_DAYS"] = "Аптаның күндері";
+$MESS["BPSCT_WEEK_DAYS_EMPTY"] = "Аптаның күндері таңдалмаған";
+$MESS["BPSCT_YEAR_MONTH"] = "Ай";
+$MESS["BPSCT_YEAR_MONTH_DAY"] = "Айдың күні";
+$MESS["BPSCT_YEAR_MONTH_DAY_INVALID"] = "Айдың дұрыс емес күні (1-31)";
+$MESS["BPSCT_YEAR_MONTH_INVALID"] = "Дұрыс емес ай (1-12)";

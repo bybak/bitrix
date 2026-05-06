@@ -1,9 +1,16 @@
 <?php
 namespace Bitrix\Bizproc\BaseType;
 
+use Bitrix\Bizproc\Internal\Entity\Activity\SettingType;
+use Bitrix\HumanResources\Compatibility\Utils\DepartmentBackwardAccessCode;
+use Bitrix\HumanResources\Service\Container;
 use Bitrix\Main;
 use Bitrix\Bizproc\FieldType;
 use Bitrix\Bizproc\Automation;
+use COption;
+use CSite;
+use CUser;
+use phpDocumentor\Reflection\Types\This;
 
 /**
  * Class User
@@ -11,7 +18,6 @@ use Bitrix\Bizproc\Automation;
  */
 class User extends Base
 {
-
 	/**
 	 * @return string
 	 */
@@ -27,11 +33,19 @@ class User extends Base
 	public static function getFormats()
 	{
 		$formats = parent::getFormats();
-		$formats['friendly'] = array(
-			'callable' =>'formatValueFriendly',
-			'separator' => ', ',
-		);
-		return $formats;
+
+		$userSpecificFormats = [
+			'friendly' => [
+				'callable' => 'formatValueFriendly',
+				'separator' => ', ',
+			],
+			'bbcode' => [
+				'callable' => 'formatValueBbcode',
+				'separator' => ', ',
+			],
+		];
+
+		return array_merge($formats, $userSpecificFormats);
 	}
 
 	/**
@@ -73,9 +87,50 @@ class User extends Base
 	protected static function formatValueFriendly(FieldType $fieldType, $value)
 	{
 		if (!is_array($value))
-			$value = array($value);
+		{
+			$value = [$value];
+		}
 
 		return \CBPHelper::usersArrayToString($value, null, $fieldType->getDocumentType(), false);
+	}
+
+	protected static function formatValueBbcode(FieldType $fieldType, $value)
+	{
+		if (!is_array($value))
+		{
+			$value = [$value];
+		}
+
+		if (!Main\Loader::includeModule('im'))
+		{
+			return self::formatValueFriendly($fieldType, $value);
+		}
+
+		$formatFunction = static function(array $arUser) {
+			if (empty($arUser['ID']))
+			{
+				return '';
+			}
+
+			$userId = (int)$arUser['ID'];
+			$nameTemplate = COption::GetOptionString("bizproc", "name_template", CSite::GetNameFormat(false), SITE_ID);
+			$innerText = (string)CUser::FormatName(
+				$nameTemplate,
+				$arUser,
+				true,
+				false,
+			);
+
+			return \Bitrix\Im\V2\Message\Text\BbCode\User::build($userId, $innerText)->compile();
+		};
+
+		return \CBPHelper::usersArrayToString(
+			$value,
+			null,
+			$fieldType->getDocumentType(),
+			false,
+			$formatFunction,
+		);
 	}
 
 	/**
@@ -172,6 +227,7 @@ class User extends Base
 				'items' => $value ? static::getSelectedItems($value, $settings) : [],
 				'multiple' => $fieldType->isMultiple(),
 				'required' => $fieldType->isRequired(),
+				'canUseHumanResources' => static::canUseHumanResources(),
 			];
 
 			if ($settings)
@@ -179,9 +235,11 @@ class User extends Base
 				$config += $settings;
 			}
 
-			$groups = \CBPRuntime::GetRuntime()
-				->GetService('DocumentService')
-				->GetAllowableUserGroups($fieldType->getDocumentType(), true);
+			$groups =
+				\CBPRuntime::GetRuntime()
+					->getDocumentService()
+					->GetAllowableUserGroups($fieldType->getDocumentType(), true)
+			;
 
 			if ($groups)
 			{
@@ -211,7 +269,7 @@ class User extends Base
 			return <<<HTML
 				<script>
 					BX.ready(function(){
-						var c = document.getElementById('{$controlIdJs}');
+						const c = document.getElementById('{$controlIdJs}');
 						if (c)
 						{
 							BX.Bizproc.FieldType.initControl(c.parentNode, JSON.parse(c.dataset.property));
@@ -358,15 +416,21 @@ HTML;
 			return null;
 		}
 
-		$mapCallback = function ($value)
+		$mapCallback = static function ($value)
 		{
-			if ($value && strpos($value, 'user_') === 0)
+			if ($value && str_starts_with($value, 'user_'))
 			{
 				return ['user', \CBPHelper::StripUserPrefix($value)];
 			}
-			if ($value && strpos($value, 'group_d') === 0)
+
+			if ($value && str_starts_with($value, 'group_d'))
 			{
-				return ['department', preg_replace('|[^0-9]+|', '', $value)];
+				return ['department', preg_replace('|\D+|', '', $value)];
+			}
+
+			if ($value && str_starts_with($value, 'group_hr'))
+			{
+				return ['structure-node', preg_replace('|\D+|', '', $value)];
 			}
 
 			return null;
@@ -377,6 +441,23 @@ HTML;
 		if (!$preselectedItems)
 		{
 			return [];
+		}
+
+		if (static::canUseHumanResources())
+		{
+			$nodeRepository = Container::getNodeRepository();
+			foreach ($preselectedItems as $key => $item)
+			{
+				if ($item[0] === 'department')
+				{
+					$node = $nodeRepository->getByAccessCode(DepartmentBackwardAccessCode::makeById((int)$item[1]));
+					if ($node)
+					{
+						unset($preselectedItems[$key]);
+						$preselectedItems[] = ['structure-node', $node->id];
+					}
+				}
+			}
 		}
 
 		$options = [];
@@ -394,7 +475,7 @@ HTML;
 			];
 		}
 
-		return \Bitrix\UI\EntitySelector\Dialog::getSelectedItems($preselectedItems, $options)->toArray();
+		return \Bitrix\UI\EntitySelector\Dialog::getPreselectedItems($preselectedItems, $options)->toArray();
 	}
 
 	public static function validateValueSingle($value, FieldType $fieldType)
@@ -459,6 +540,19 @@ HTML;
 			&& !is_numeric($value)
 			&& strpos($value, 'user_') === false
 			&& strpos($value, 'group_') === false
+		);
+	}
+
+	private static function canUseHumanResources(): bool
+	{
+		return Main\Loader::includeModule('humanresources');
+	}
+
+	public static function getAiSettingType(): SettingType
+	{
+		return new SettingType(
+			name: static::getType(),
+			description: 'The values are references to users in Bitrix24 and have the form "user_{number}", where {number} is the numeric identifier of the user in Bitrix24, for example "user_1" for the user with ID 1',
 		);
 	}
 }

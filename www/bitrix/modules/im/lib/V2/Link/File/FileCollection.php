@@ -2,9 +2,12 @@
 
 namespace Bitrix\Im\V2\Link\File;
 
+use Bitrix\Im\V2\Chat;
+use Bitrix\Im\V2\Entity;
 use Bitrix\Im\V2\Entity\File\FileError;
 use Bitrix\Im\V2\Entity\File\FilePopupItem;
 use Bitrix\Im\V2\Entity\User\UserPopupItem;
+use Bitrix\Im\V2\Message;
 use Bitrix\Im\V2\Rest\PopupData;
 use Bitrix\Main\ORM\Query\Query;
 use Bitrix\Main\ORM\Fields;
@@ -49,7 +52,8 @@ class FileCollection extends BaseLinkCollection
 		}
 
 		$query = LinkFileTable::query();
-		static::addRightsCheckToQuery($query, $context->getUserId(), ['FILE.ID', 'FILE.CREATED_BY']);
+		static::processDiskFileFilters($query, $context);
+
 		$query
 			->setSelect(['ID', 'DISK_FILE_ID', 'SUBTYPE', 'AUTHOR_ID', 'MESSAGE_ID', 'CHAT_ID', 'DATE_CREATE'])
 			->setOrder($fileOrder)
@@ -74,6 +78,24 @@ class FileCollection extends BaseLinkCollection
 		;
 
 		return (new static($entity))->fillFiles();
+	}
+
+	public static function getByMessageIds(array $messageIds): self
+	{
+		$messageIds = array_map('intval', $messageIds);
+
+		if (empty($messageIds))
+		{
+			return new self();
+		}
+
+		$entities = LinkFileTable::query()
+			->setSelect(['ID', 'MESSAGE_ID', 'CHAT_ID', 'SUBTYPE', 'DISK_FILE_ID', 'DATE_CREATE', 'AUTHOR_ID'])
+			->whereIn('MESSAGE_ID', $messageIds)
+			->fetchCollection()
+		;
+
+		return new self($entities);
 	}
 
 	public function fillFiles(): FileCollection
@@ -110,6 +132,16 @@ class FileCollection extends BaseLinkCollection
 		return parent::save($isGroupSave);
 	}
 
+	public static function linkEntityToMessage(Entity\EntityCollection $entities, Message $message): self
+	{
+		if ($entities instanceof Entity\File\FileCollection)
+		{
+			$entities->loadParams();
+		}
+
+		return parent::linkEntityToMessage($entities, $message);
+	}
+
 	protected static function processFilters(Query $query, array $filter, array $order): void
 	{
 		static::processSidebarFilters($query, $filter, $order);
@@ -119,36 +151,39 @@ class FileCollection extends BaseLinkCollection
 			$query->whereLike('FILE.NAME', "{$filter['SEARCH_FILE_NAME']}%");
 		}
 
+		$subtypes = [];
+
 		if (isset($filter['SUBTYPE']))
 		{
-			if (is_array($filter['SUBTYPE']))
-			{
-				$subtypes = array_filter($filter['SUBTYPE'], static fn (string $subtype) => FileItem::isSubtypeValid($subtype));
-				$query->whereIn('SUBTYPE', $subtypes);
-			}
-			elseif (FileItem::isSubtypeValid($filter['SUBTYPE']))
-			{
-				$query->where('SUBTYPE', $filter['SUBTYPE']);
-			}
+			$subtypes = Subtype::getSubtypeFilter($filter['SUBTYPE']);
+		}
+		elseif (isset($filter['GROUP']))
+		{
+			$subtypes = SubtypeGroup::getSubtypeFilter($filter['GROUP']);
+		}
+
+		if (count($subtypes) > 1)
+		{
+			$query->whereIn('SUBTYPE', $subtypes);
+		}
+		elseif (count($subtypes) === 1)
+		{
+			$query->where('SUBTYPE', array_values($subtypes)[0]);
 		}
 	}
 
-	protected static function addRightsCheckToQuery(Query $query, int $userId, array $specificColumns): Query
+	protected static function processDiskFileFilters(Query $query, Context $context): void
 	{
-		$securityContext = new \Bitrix\Disk\Security\DiskSecurityContext($userId);
+		$securityContext = new \Bitrix\Disk\Security\DiskSecurityContext($context->getUserId());
 		$parameters = [];
 		$parameters = \Bitrix\Disk\Driver::getInstance()
 			->getRightsManager()
-			->addRightsCheck($securityContext, $parameters, $specificColumns)
+			->addRightsCheck($securityContext, $parameters, ['FILE.ID'])
 		;
 
 		/** @var Fields\ExpressionField $field */
 		$field = $parameters['runtime'][0];
 		$field->configureValueType(Fields\IntegerField::class);
-		$query
-			->registerRuntimeField($field)
-			->where('RIGHTS_CHECK', 1);
-
-		return $query;
+		$query->registerRuntimeField($field);
 	}
 }

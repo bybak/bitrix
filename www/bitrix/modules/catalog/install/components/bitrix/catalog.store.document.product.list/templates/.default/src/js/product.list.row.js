@@ -11,7 +11,7 @@ import { PopupMenu } from 'main.popup';
 
 import { PriceCalculator } from './price.calculator';
 import { AccessDeniedInput } from './access.denied.input';
-import { FieldScheme, ProductCalculator} from 'catalog.product-calculator';
+import { FieldScheme, ProductCalculator } from 'catalog.product-calculator';
 
 type Action = {
 	type: string,
@@ -90,7 +90,7 @@ export class Row
 		this.id = id;
 	}
 
-	getSettings()
+	getSettings(): Object
 	{
 		return this.settings;
 	}
@@ -530,6 +530,33 @@ export class Row
 		return result;
 	}
 
+	getFieldsWithHashed(fieldList: Array): Object
+	{
+		const result = {};
+
+		const realValues = this.#getRealValues() || {};
+		const fields = Type.isArrayFilled(fieldList) ? fieldList : Object.keys(this.fields);
+		const fieldsToEncode = {};
+
+		fields.forEach((fieldName) => {
+			if (fieldName in realValues)
+			{
+				fieldsToEncode[fieldName] = this.getField(fieldName);
+			}
+			else
+			{
+				result[fieldName] = this.getField(fieldName);
+			}
+		});
+
+		if (Object.keys(fieldsToEncode).length > 0)
+		{
+			result.REAL_VALUES = this.#encodeRealValues(fieldsToEncode);
+		}
+
+		return result;
+	}
+
 	/**
 	 * Get real values field.
 	 *
@@ -549,7 +576,7 @@ export class Row
 			const value = this.getField('REAL_VALUES');
 			if (value)
 			{
-				const parsedValue = JSON.parse(atob(value));
+				const parsedValue = this.parseRealValues(value);
 				if (Type.isPlainObject(parsedValue))
 				{
 					this.realValues = parsedValue;
@@ -562,6 +589,35 @@ export class Row
 		}
 
 		return this.realValues;
+	}
+
+	updateRealValues(newRealValues: Object): void
+	{
+		const newRealValuesKey = Object.keys(newRealValues);
+
+		if (newRealValuesKey.length === 0)
+		{
+			return;
+		}
+
+		if (!this.realValues)
+		{
+			return;
+		}
+
+		newRealValuesKey.forEach((valueKey) => {
+			this.realValues[valueKey] = newRealValues[valueKey];
+		});
+	}
+
+	parseRealValues(values: string): Object
+	{
+		return JSON.parse(atob(values));
+	}
+
+	#encodeRealValues(values: Object): string
+	{
+		return btoa(JSON.stringify(values));
 	}
 
 	initFields(fields: Object): void
@@ -833,20 +889,20 @@ export class Row
 			.getCalculator()
 			.setFields(this.#getCalculateProductFields())
 			.setSettings(this.getEditor().getSettings())
-			;
+		;
 	}
 
 	#getCalculateProductFields(): FieldScheme
 	{
 		return {
-			'PRICE': this.getPrice(),
-			'BASE_PRICE': this.getBasePrice(),
-			'PRICE_EXCLUSIVE': this.getPriceExclusive(),
-			'PRICE_NETTO': this.getPriceNetto(),
-			'PRICE_BRUTTO': this.getPriceBrutto(),
-			'QUANTITY': this.getQuantity(),
-			'TAX_INCLUDED': this.getTaxIncluded(),
-			'TAX_RATE': this.getTaxRate()
+			PRICE: this.getPrice(),
+			BASE_PRICE: this.getBasePrice(),
+			PRICE_EXCLUSIVE: this.getPriceExclusive(),
+			PRICE_NETTO: this.getPriceNetto(),
+			PRICE_BRUTTO: this.getPriceBrutto(),
+			QUANTITY: this.getQuantity(),
+			TAX_INCLUDED: this.getTaxIncluded(),
+			TAX_RATE: this.getTaxRate(),
 		};
 	}
 
@@ -1536,7 +1592,7 @@ export class Row
 	updateUiCurrencyFields()
 	{
 		const currencyText = this.getEditor().getCurrencyText();
-		const currencyId = `${this.getEditor().getCurrencyId()}`;
+		const currencyId = String(this.getEditor().getCurrencyId());
 
 		const currencyFieldNames = ['BASE_PRICE_CURRENCY', 'PURCHASING_PRICE_CURRENCY'];
 		currencyFieldNames.forEach((name) => {
@@ -1587,7 +1643,7 @@ export class Row
 		}
 	}
 
-	getUiFieldName(field)
+	getUiFieldName(field): string | null
 	{
 		let result = null;
 
@@ -1611,7 +1667,7 @@ export class Row
 		return result;
 	}
 
-	getUiFieldType(field)
+	getUiFieldType(field): string | null
 	{
 		const moneyFields = ['BASE_PRICE', 'PURCHASING_PRICE', 'TOTAL_PRICE'];
 		if (moneyFields.includes(field))
@@ -1650,17 +1706,17 @@ export class Row
 		return this.getEditor().parseFloat(value, precision, defaultValue);
 	}
 
-	getPricePrecision()
+	getPricePrecision(): number
 	{
 		return this.getEditor().getPricePrecision();
 	}
 
-	getQuantityPrecision()
+	getQuantityPrecision(): number
 	{
 		return this.getEditor().getQuantityPrecision();
 	}
 
-	getCommonPrecision()
+	getCommonPrecision(): number
 	{
 		return this.getEditor().getCommonPrecision();
 	}
@@ -1701,7 +1757,7 @@ export class Row
 		this.resetExternalActions();
 	}
 
-	isEmptyRow()
+	isEmptyRow(): boolean
 	{
 		return (
 			!Type.isStringFilled(this.getField('NAME', '').trim())
@@ -1769,7 +1825,7 @@ export class Row
 		return !this.getModel().isService();
 	}
 
-	#isRowAccessDenied()
+	#isRowAccessDenied(): boolean
 	{
 		return this.getField('ACCESS_DENIED') === true;
 	}
@@ -1815,7 +1871,7 @@ export class Row
 		}
 	}
 
-	#isPurchasingPriceAccessDenied()
+	#isPurchasingPriceAccessDenied(): boolean
 	{
 		return this.getField('ACCESS_DENIED_TO_PURCHASING_PRICE') === true;
 	}

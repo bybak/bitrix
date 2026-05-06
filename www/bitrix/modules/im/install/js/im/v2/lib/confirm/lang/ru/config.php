@@ -38,3 +38,12 @@ $MESS['IM_LIB_CONFIRM_DELETE_MESSAGES_TITLE'] = "Удалить";
 $MESS['IM_LIB_DOWNLOAD_ALL_FILES_TITLE'] = "Проверьте настройки скачивания в браузере";
 $MESS['IM_LIB_DOWNLOAD_ALL_FILES_TEXT'] = "Чтобы сохранить несколько файлов одновременно, разрешите автоматическое скачивание в настройках вашего браузера. [helpdesk]Подробнее[/helpdesk]";
 $MESS['IM_LIB_DOWNLOAD_ALL_FILES_BUTTON'] = "Понятно";
+$MESS['IM_LIB_CONFIRM_ACTIVE_CALL_CONFIRM'] = "Вы уверены, что хотите закрыть страницу? В этом случае вы отключитесь от звонка";
+
+$MESS['IM_LIB_CONFIRM_DELETE_STICKER_PACK_CONFIRM_TITLE'] = "Удалить набор у всех?";
+$MESS['IM_LIB_CONFIRM_DELETE_STICKER_PACK_CONFIRM_TEXT'] = "Набор удалится у всех сотрудников компании. Его нельзя будет восстановить";
+$MESS['IM_LIB_CONFIRM_DELETE_STICKER_PACK_CONFIRM_CONFIRM'] = "Да, удалить";
+
+$MESS['IM_LIB_CONFIRM_UNLINK_STICKER_PACK_CONFIRM_TITLE'] = "Удалить набор из ваших стикеров?";
+$MESS['IM_LIB_CONFIRM_UNLINK_STICKER_PACK_CONFIRM_TEXT'] = "Остальные сотрудники по-прежнему смогут использовать стикеры из этого набора";
+$MESS['IM_LIB_CONFIRM_UNLINK_STICKER_PACK_CONFIRM_CONFIRM'] = "Да, удалить";

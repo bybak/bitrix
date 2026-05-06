@@ -90,10 +90,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.defaultBasketItemLogo = this.templateFolder + "/images/product_logo.png";
 			this.defaultStoreLogo = this.templateFolder + "/images/pickup_logo.png";
 			this.defaultDeliveryLogo = this.templateFolder + "/images/delivery_logo.png";
-			this.defaultPaySystemLogo = this.templateFolder + "/images/pay/generic.svg";
+			this.defaultPaySystemLogo = this.templateFolder + "/images/pay_system_logo.png";
 
 			this.orderBlockNode = BX(parameters.orderBlockId);
-			this.checkoutMetaBlockNode = BX(parameters.checkoutMetaBlockId);
 			this.totalBlockNode = BX(parameters.totalBlockId);
 			this.mobileTotalBlockNode = BX(parameters.totalBlockId + '-mobile');
 			this.savedFilesBlockNode = BX('bx-soa-saved-files');
@@ -176,23 +175,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			action = BX.type.isNotEmptyString(action) ? action : 'refreshOrderAjax';
 
-			if (action === 'showAuthForm')
-			{
-				try
-				{
-					form = BX('bx-soa-order-form');
-					this.__mfPendingRegisterSuccess = !!(
-						form
-						&& form.querySelector('input[name="do_register"]')
-						&& form.querySelector('input[name="do_register"]').value === 'Y'
-					);
-				}
-				catch (e)
-				{
-					this.__mfPendingRegisterSuccess = false;
-				}
-			}
-
 			var eventArgs = {
 				action: action,
 				actionData: actionData,
@@ -224,7 +206,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 							action: 'saveOrderAjax',
 							sessid: BX.bitrix_sessid(),
 							SITE_ID: this.siteId,
-							signedParamsString: this.signedParamsString
+							signedParamsString: this.signedParamsString,
+							userConsents: this.options.userConsents ?? null,
 						},
 						onsuccess: BX.proxy(this.saveOrderWithJson, this),
 						onfailure: BX.proxy(this.handleNotRedirected, this)
@@ -375,11 +358,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				this.initOptions();
 				this.editOrder();
-				if (this.__mfPendingRegisterSuccess && this.result && this.result.IS_AUTHORIZED)
-				{
-					this.showTopSuccess('Вы зарегистрированы. Личный кабинет создан, данные для оформления подставлены автоматически.');
-					this.__mfPendingRegisterSuccess = false;
-				}
 				this.mapsReady && this.initMaps();
 				BX.saleOrderAjax && BX.saleOrderAjax.initDeferredControl();
 			}
@@ -640,57 +618,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			};
 		},
 
-		/**
-		 * Локальные SVG для способов оплаты без загруженного PSA_LOGOTIP / LOGOTIP в БД.
-		 */
-		getPaySystemPlaceholderLogoUrl: function(item)
-		{
-			if (!item)
-				return '';
-
-			var afRaw = String(item.ACTION_FILE || '');
-			var af = afRaw.toLowerCase().replace(/\\/g, '/').split('/').pop().replace(/\.php$/i, '');
-			var code = String(item.CODE || '').toLowerCase();
-			var nm = String(item.NAME || '').toLowerCase();
-			var psa = String(item.PSA_NAME || '').toLowerCase();
-			var hay = af + ' ' + code + ' ' + nm + ' ' + psa;
-			var base = this.templateFolder + '/images/pay/';
-
-			if (hay.indexOf('paykeeper') !== -1 || /mfpaykeeper|mf_paykeeper/.test(hay))
-				return base + 'paykeeper.svg';
-			if (/card2card|mf_card|mfcard|bank.?card|sberbank|tbank|тинькофф/.test(hay))
-				return base + 'card.svg';
-			if (af === 'cash' || /\bналич/.test(nm) || /\bналич/.test(psa))
-				return base + 'cash.svg';
-			if (af === 'bill' || /счет|счёт|invoice|mf_bill|аккредитив/.test(hay))
-				return base + 'invoice.svg';
-			if (/qiwi|webmoney|юmoney|wallet|кошел/.test(hay))
-				return base + 'wallet.svg';
-			if (/yandex|yookassa|robok|robox|alpha|paypal|apple|google|sbp|paymaster|cloudpayments|онлайн|online|link/.test(hay))
-				return base + 'online.svg';
-
-			if (af === 'cash')
-				return base + 'cash.svg';
-			if (af === 'bill')
-				return base + 'invoice.svg';
-
-			return base + 'generic.svg';
-		},
-
-		resolvePaySystemLogo: function(item, key)
-		{
-			key = key || 'PSA_LOGOTIP';
-			var logo = this.getImageSources(item, key);
-			if (logo && (logo.src_1x || logo.src_2x))
-				return logo;
-
-			var url = this.getPaySystemPlaceholderLogoUrl(item);
-			if (!url)
-				return logo || false;
-
-			return {src_1x: url, src_2x: url, src_orig: url};
-		},
-
 		getErrorContainer: function(node)
 		{
 			if (!node)
@@ -780,9 +707,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					case 'REGION':
 						if (showAll || this.regionBlockNode.getAttribute('data-visited') === 'true')
 						{
-							// Motor-Force customization: region step disabled; show region-related errors in Delivery block.
-							this.showError(this.deliveryBlockNode, blockErrors, true);
-							this.showError(this.deliveryHiddenBlockNode, blockErrors);
+							this.showError(this.regionBlockNode, blockErrors, true);
+							this.showError(this.regionHiddenBlockNode, blockErrors);
 						}
 						break;
 					case 'DELIVERY':
@@ -1036,10 +962,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					switch (k.toUpperCase())
 					{
 						case 'DELIVERY':
-							if (
-								this.deliveryBlockNode.getAttribute('data-visited') === 'true'
-								&& !this.isIgnoredDeliveryWarning(this.result.WARNING[k])
-							)
+							if (this.deliveryBlockNode.getAttribute('data-visited') === 'true')
 							{
 								this.showBlockWarning(this.deliveryBlockNode, this.result.WARNING[k], true);
 								this.showBlockWarning(this.deliveryHiddenBlockNode, this.result.WARNING[k], true);
@@ -1067,28 +990,12 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			switch (node.id)
 			{
 				case this.deliveryBlockNode.id:
-					if (this.result.WARNING && !this.isIgnoredDeliveryWarning(this.result.WARNING.DELIVERY))
-						this.showBlockWarning(this.deliveryBlockNode, this.result.WARNING.DELIVERY, true);
+					this.showBlockWarning(this.deliveryBlockNode, this.result.WARNING.DELIVERY, true);
 					break;
 				case this.paySystemBlockNode.id:
 					this.showBlockWarning(this.paySystemBlockNode, this.result.WARNING.PAY_SYSTEM, true);
 					break;
 			}
-		},
-
-		isIgnoredDeliveryWarning: function(warnings)
-		{
-			if (warnings == null)
-				return true;
-
-			var text = '';
-			if (BX.type.isArray(warnings))
-				text = warnings.join(' ');
-			else
-				text = String(warnings);
-
-			text = text.replace(/\s+/g, ' ').trim().toLowerCase();
-			return text === 'выбрана первая доступная доставка';
 		},
 
 		showBlockWarning: function(node, warnings, hide)
@@ -1760,8 +1667,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				arProperty, data, section;
 
 			this.locationsInitialized = true;
-			// Motor-Force customization: location+zip are rendered in Delivery block.
-			this.fixLocationsStyle(this.deliveryBlockNode, this.deliveryHiddenBlockNode);
+			this.fixLocationsStyle(this.regionBlockNode, this.regionHiddenBlockNode);
 			this.fixLocationsStyle(this.propsBlockNode, this.propsHiddenBlockNode);
 
 			for (i in this.locations)
@@ -1822,7 +1728,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.checkNotifications();
 
-			// Motor-Force customization: region block disabled (location+zip are in Delivery block).
+			if (this.activeSectionId !== this.regionBlockNode.id)
+				this.editFadeRegionContent(this.regionBlockNode.querySelector('.bx-soa-section-content'));
 
 			if (this.activeSectionId != this.propsBlockNode.id)
 				this.editFadePropsContent(this.propsBlockNode.querySelector('.bx-soa-section-content'));
@@ -1859,7 +1766,22 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (this.params.USER_CONSENT === 'Y' && BX.UserConsent)
 				{
-					BX.onCustomEvent('bx-soa-order-save', []);
+					if (this.options.userConsents)
+					{
+						var requiredUncheckedConsentId = this.getFirstRequiredUncheckedConsentId();
+						if (requiredUncheckedConsentId)
+						{
+							BX.onCustomEvent('bx-soa-order-save-' + requiredUncheckedConsentId);
+						}
+						else
+						{
+							this.doSaveAction();
+						}
+					}
+					else
+					{
+						BX.onCustomEvent('bx-soa-order-save', []);
+					}
 				}
 				else
 				{
@@ -1879,6 +1801,55 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			}
 		},
 
+		getFirstRequiredUncheckedConsentId: function()
+		{
+			var uncheckedConsent = this.options.userConsents.find(
+				consent => consent.required === 'Y' && consent.checked !== 'Y',
+			);
+
+			return uncheckedConsent ? uncheckedConsent.id : null;
+		},
+
+		refusedByConsent: function(item)
+		{
+			if (item.config.id)
+			{
+				var consent = this.options.userConsents.find(consent => consent.id === item.config.id);
+				if (consent)
+				{
+					consent.checked = 'N';
+				}
+			}
+			this.disallowOrderSave();
+		},
+
+		saveByConsent: function(item)
+		{
+			if (item.config.id)
+			{
+				var consent = this.options.userConsents.find(consent => consent.id === item.config.id);
+				if (consent)
+				{
+					consent.checked = 'Y';
+				}
+			}
+
+			if (!this.isOrderSaveAllowed())
+			{
+				return;
+			}
+
+			var requiredUncheckedConsentId = this.getFirstRequiredUncheckedConsentId();
+			if (requiredUncheckedConsentId)
+			{
+				BX.onCustomEvent('bx-soa-order-save-' + requiredUncheckedConsentId);
+
+				return;
+			}
+
+			this.doSaveAction();
+		},
+
 		/**
 		 * Hiding current block node and showing next available block node
 		 */
@@ -1888,35 +1859,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				actionSection = BX.findParent(target, {className : "bx-active"}),
 				section = this.getNextSection(actionSection),
 				allSections, titleNode, editStep;
-
-			// Motor-Force customization:
-			// In "virtual eDost tariffs" mode, do not allow leaving Delivery step
-			// until user explicitly selects a tariff (MF_EDOST_TARIF_ID).
-			try
-			{
-				if (actionSection && actionSection.id === this.deliveryBlockNode.id)
-				{
-					var f = BX('bx-soa-order-form');
-					var virtual = f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box'));
-					if (virtual)
-					{
-						var tidEl = f ? f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
-						var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
-						// Also require location to be chosen (the selector may exist but be empty).
-						var locHidden = f ? f.querySelector('input[type="hidden"][name^="ORDER_PROP_"]') : null;
-						if (!tid)
-						{
-							this.showError(this.deliveryBlockNode, 'Выберите способ доставки, чтобы перейти дальше.', true);
-							this.animateScrollTo(this.deliveryBlockNode, 400, 20);
-							return BX.PreventDefault(event);
-						}
-					}
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
 
 			this.reachGoal('next', actionSection);
 
@@ -1939,40 +1881,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.fade(actionSection, section.next);
 			this.show(section.next);
 
-			// Motor-Force customization:
-			// After fading Delivery block, Bitrix renders the collapsed summary ("Стандартный 0 ₽").
-			// Replace it with the selected virtual delivery tariff name/price (display-only).
-			try
-			{
-				if (actionSection && actionSection.id === this.deliveryBlockNode.id)
-				{
-					setTimeout(function(){
-						try {
-							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.applyDeliverySummary === 'function')
-							{
-								BX.saleOrderAjax.__mfEdost.applyDeliverySummary();
-							}
-						} catch(e2) {}
-					}, 30);
-				}
-				// When navigating into Delivery step, re-render virtual offers and restore selection.
-				if (section && section.next && section.next.id === this.deliveryBlockNode.id)
-				{
-					setTimeout(function(){
-						try {
-							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
-							{
-								BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
-							}
-						} catch(e3) {}
-					}, 30);
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
-
 			return BX.PreventDefault(event);
 		},
 
@@ -1987,46 +1895,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.fade(actionSection);
 			this.show(section.next);
-			// Motor-Force customization:
-			// When leaving Delivery step backwards (Delivery -> Basket), Bitrix re-renders the collapsed
-			// delivery summary and can show the technical delivery ("Стандартный"). Replace it again.
-			try
-			{
-				if (actionSection && actionSection.id === this.deliveryBlockNode.id)
-				{
-					setTimeout(function(){
-						try {
-							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.applyDeliverySummary === 'function')
-							{
-								BX.saleOrderAjax.__mfEdost.applyDeliverySummary();
-							}
-						} catch(e3) {}
-					}, 30);
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
-			// Motor-Force customization: when navigating into Delivery step, restore virtual offers.
-			try
-			{
-				if (section && section.next && section.next.id === this.deliveryBlockNode.id)
-				{
-					setTimeout(function(){
-						try {
-							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
-							{
-								BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
-							}
-						} catch(e2) {}
-					}, 30);
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
 			this.animateScrollTo(section.next, 800);
 			return BX.PreventDefault(event);
 		},
@@ -2079,23 +1947,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (section.id === this.deliveryBlockNode.id)
 				{
-					// Motor-Force customization:
-					// We use a single technical Bitrix delivery ("Стандартный", price=0) and show
-					// real delivery options as virtual eDost tariffs. Therefore we must NOT skip
-					// the Delivery step even if Bitrix sees only one delivery service.
-					try
-					{
-						var f = BX('bx-soa-order-form');
-						if (f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box')))
-						{
-							return false;
-						}
-					}
-					catch (e)
-					{
-						// ignore
-					}
-
 					skip = this.result.DELIVERY && this.result.DELIVERY.length === 1
 						&& this.result.DELIVERY[0].EXTRA_SERVICES.length === 0
 						&& !this.result.DELIVERY[0].CALCULATE_ERRORS;
@@ -2386,25 +2237,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			fadeNode && this.fade(fadeNode);
 			this.show(showNode);
-			// Motor-Force customization: clicking "изменить" on Delivery should show virtual offers.
-			try
-			{
-				if (showNode && showNode.id === this.deliveryBlockNode.id)
-				{
-					setTimeout(function(){
-						try {
-							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
-							{
-								BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
-							}
-						} catch(e2) {}
-					}, 30);
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
 
 			setTimeout(BX.delegate(function(){
 				if (BX.pos(showNode).top < scrollTop)
@@ -2685,8 +2517,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!this.orderBlockNode || !this.result)
 				return;
 
-			this.editCheckoutMetaBlock();
-
 			if (this.result.DELIVERY.length > 0)
 			{
 				BX.addClass(this.deliveryBlockNode, 'bx-active');
@@ -2715,531 +2545,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.editTotalBlock();
 			this.totalBlockFixFont();
 
-			if (this.__mfPendingPersonTypeSectionReset)
-			{
-				this.applyPersonTypeSectionReset();
-				this.__mfPendingPersonTypeSectionReset = false;
-			}
-
 			this.showErrors(this.result.ERROR, false);
 			this.showWarnings();
-
-			if (!this.result.SHOW_AUTH && this.result.OK_MESSAGE && this.result.OK_MESSAGE.length)
-			{
-				this.showTopSuccess(this.result.OK_MESSAGE.join(' '));
-				this.result.OK_MESSAGE = [];
-			}
-			else if (!this.result.SHOW_AUTH)
-			{
-				try
-				{
-					if (window.sessionStorage.getItem('mf_checkout_register_success') === 'Y' && this.result.IS_AUTHORIZED)
-					{
-						this.showTopSuccess('Вы зарегистрированы. Личный кабинет создан, данные для оформления подставлены автоматически.');
-						window.sessionStorage.removeItem('mf_checkout_register_success');
-					}
-				}
-				catch (storageError)
-				{
-					// ignore
-				}
-			}
-
-			try
-			{
-				if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.deferApplyDeliverySummary === 'function')
-				{
-					BX.saleOrderAjax.__mfEdost.deferApplyDeliverySummary();
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
-		},
-
-		editCheckoutMetaBlock: function()
-		{
-			if (!this.checkoutMetaBlockNode || !this.result || !this.result.PERSON_TYPE)
-				return;
-
-			var node = this.checkoutMetaBlockNode,
-				form = BX('bx-soa-order-form') || node,
-				personTypes = this.getPersonTypeSortedArray(this.result.PERSON_TYPE),
-				personTypesCount = personTypes.length,
-				selectedId = null,
-				checkoutModeInput = form.querySelector('input[name="MF_CHECKOUT_MODE"]'),
-				resetSwitchInput = form.querySelector('input[name="MF_RESET_PERSON_TYPE_SWITCH"]'),
-				checkoutMode = (this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.MODE === 'register') ? 'register' : 'guest',
-				personTypeOldInput = form.querySelector('input[type=hidden][name="PERSON_TYPE_OLD"]'),
-				personTypeInput = form.querySelector('input[type=hidden][name="PERSON_TYPE"]'),
-				profileIdInput = form.querySelector('input[type=hidden][name="PROFILE_ID"]'),
-				profileChangeInput = form.querySelector('input[type=hidden][name="profile_change"]'),
-				i,
-				ctx = this;
-
-			BX.cleanNode(node);
-			personTypeOldInput = form.querySelector('input[type=hidden][name="PERSON_TYPE_OLD"]');
-			personTypeInput = form.querySelector('input[type=hidden][name="PERSON_TYPE"]');
-			profileIdInput = form.querySelector('input[type=hidden][name="PROFILE_ID"]');
-			profileChangeInput = form.querySelector('input[type=hidden][name="profile_change"]');
-			if (resetSwitchInput)
-			{
-				resetSwitchInput.value = 'N';
-			}
-
-			for (i in personTypes)
-			{
-				if (personTypes.hasOwnProperty(i) && personTypes[i].CHECKED == 'Y')
-				{
-					selectedId = personTypes[i].ID;
-					break;
-				}
-			}
-
-			if (!selectedId && personTypesCount > 0)
-			{
-				selectedId = personTypes[0].ID;
-			}
-
-			if (!personTypeInput || !personTypeInput.parentNode)
-			{
-				personTypeInput = BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: selectedId || ''}});
-				node.appendChild(personTypeInput);
-			}
-			else
-			{
-				personTypeInput.value = selectedId || '';
-			}
-
-			if (!personTypeOldInput || !personTypeOldInput.parentNode)
-			{
-				personTypeOldInput = BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE_OLD', value: selectedId || ''}});
-				node.appendChild(personTypeOldInput);
-			}
-			else
-			{
-				personTypeOldInput.value = selectedId || '';
-			}
-
-			if (this.result.IS_AUTHORIZED)
-			{
-				node.style.display = 'none';
-
-				if (!profileIdInput || !profileIdInput.parentNode)
-				{
-					for (i in this.result.USER_PROFILES)
-					{
-						if (
-							this.result.USER_PROFILES.hasOwnProperty(i)
-							&& this.result.USER_PROFILES[i].CHECKED === 'Y'
-						)
-						{
-							profileIdInput = BX.create('INPUT', {
-								props: {
-									type: 'hidden',
-									name: 'PROFILE_ID',
-									value: this.result.USER_PROFILES[i].ID
-								}
-							});
-							node.appendChild(profileIdInput);
-							break;
-						}
-					}
-				}
-				else if (this.result.USER_PROFILES)
-				{
-					for (i in this.result.USER_PROFILES)
-					{
-						if (
-							this.result.USER_PROFILES.hasOwnProperty(i)
-							&& this.result.USER_PROFILES[i].CHECKED === 'Y'
-						)
-						{
-							profileIdInput.value = this.result.USER_PROFILES[i].ID;
-							break;
-						}
-					}
-				}
-
-				if (!profileChangeInput || !profileChangeInput.parentNode)
-				{
-					profileChangeInput = BX.create('INPUT', {
-						props: {
-							type: 'hidden',
-							id: 'profile_change',
-							name: 'profile_change',
-							value: 'N'
-						}
-					});
-					node.appendChild(profileChangeInput);
-				}
-				else
-				{
-					profileChangeInput.value = 'N';
-				}
-
-				return;
-			}
-
-			node.style.display = '';
-
-			if (
-				this.result.MF_CHECKOUT
-				&& this.result.MF_CHECKOUT.ENABLED
-				&& !this.result.IS_AUTHORIZED
-				&& this.result.MF_CHECKOUT.LOGIN_HREF
-				&& this.result.MF_CHECKOUT.REGISTER_HREF
-			)
-			{
-				var authTop = BX.create('DIV', {
-					props: {className: 'mf-search-modal__auth mf-checkout-auth-top'}
-				});
-				authTop.appendChild(BX.create('P', {
-					props: {className: 'mf-search-modal__auth-text'},
-					text: 'Уже есть аккаунт? Войдите или зарегистрируйтесь — после возврата продолжите оформление заказа.'
-				}));
-				var authActions = BX.create('DIV', {props: {className: 'mf-search-modal__auth-actions'}});
-				authActions.appendChild(BX.create('A', {
-					props: {
-						href: this.result.MF_CHECKOUT.LOGIN_HREF,
-						className: 'btn btn-outline-dark mf-search-modal__auth-btn'
-					},
-					text: 'Войти'
-				}));
-				authActions.appendChild(BX.create('A', {
-					props: {
-						href: this.result.MF_CHECKOUT.REGISTER_HREF,
-						className: 'btn btn-outline-dark mf-search-modal__auth-btn'
-					},
-					text: 'Регистрация'
-				}));
-				authTop.appendChild(authActions);
-				node.appendChild(authTop);
-			}
-
-			node.appendChild(BX.create('DIV', {
-				props: {className: 'mf-checkout-meta__title'},
-				text: 'Параметры оформления'
-			}));
-
-			if (this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED && !this.result.IS_AUTHORIZED)
-			{
-				var guestWrap = BX.create('DIV', {props: {className: 'mf-checkout-choice'}});
-				guestWrap.appendChild(BX.create('DIV', {
-					props: {className: 'mf-checkout-choice__title'},
-					text: 'Оформление заказа'
-				}));
-
-				var guestCards = BX.create('DIV', {props: {className: 'mf-checkout-choice__cards'}});
-				[
-					{
-						value: 'guest',
-						title: 'Без регистрации',
-						desc: 'Заказ будет оформлен без создания личного кабинета.'
-					},
-					{
-						value: 'register',
-						title: 'Зарегистрироваться и оформить',
-						desc: 'После оформления автоматически создадим аккаунт на указанный email.'
-					}
-				].forEach(function(item){
-					var input = BX.create('INPUT', {
-						props: {
-							type: 'radio',
-							name: 'MF_CHECKOUT_MODE_CONTROL',
-							value: item.value,
-							checked: checkoutMode === item.value
-						},
-						events: {
-							change: function() {
-								if (!this.checked || !checkoutModeInput)
-								{
-									return;
-								}
-								checkoutModeInput.value = item.value;
-							}
-						}
-					});
-
-					guestCards.appendChild(BX.create('LABEL', {
-						props: {className: 'mf-checkout-choice__item'},
-						children: [
-							input,
-							BX.create('SPAN', {props: {className: 'mf-checkout-choice__item-title'}, text: item.title}),
-							BX.create('SPAN', {props: {className: 'mf-checkout-choice__item-desc'}, text: item.desc})
-						]
-					}));
-				});
-
-				guestWrap.appendChild(guestCards);
-
-				node.appendChild(guestWrap);
-			}
-
-			if (personTypesCount > 1)
-			{
-				var personWrap = BX.create('DIV', {props: {className: 'mf-checkout-choice mf-checkout-choice--person-type'}});
-				personWrap.appendChild(BX.create('DIV', {
-					props: {className: 'mf-checkout-choice__title'},
-					text: 'Тип плательщика'
-				}));
-
-				var personCards = BX.create('DIV', {props: {className: 'mf-checkout-choice__cards'}});
-				for (i in personTypes)
-				{
-					if (!personTypes.hasOwnProperty(i))
-					{
-						continue;
-					}
-
-					(function(personType){
-						var input = BX.create('INPUT', {
-							props: {
-								type: 'radio',
-								name: 'PERSON_TYPE',
-								value: personType.ID,
-								checked: String(selectedId) === String(personType.ID)
-							},
-							events: {
-								change: BX.delegate(function() {
-									var profileInput, profileChangeInput;
-									if (!input.checked)
-									{
-										return;
-									}
-
-									ctx.resetCheckoutStateAfterPersonTypeSwitch(form);
-									ctx.resetCheckoutSectionsAfterPersonTypeSwitch();
-									ctx.applyPersonTypeSectionReset();
-									if (resetSwitchInput)
-									{
-										resetSwitchInput.value = 'Y';
-									}
-
-									personTypeOldInput.value = selectedId || personType.ID;
-									selectedId = personType.ID;
-									if (personTypeInput)
-									{
-										personTypeInput.value = personType.ID;
-									}
-
-									profileInput = form.querySelector('select[name="PROFILE_ID"], input[name="PROFILE_ID"]');
-									if (profileInput)
-									{
-										profileInput.value = '0';
-									}
-									profileChangeInput = form.querySelector('input[name="profile_change"]');
-									if (profileChangeInput)
-									{
-										profileChangeInput.value = 'Y';
-									}
-
-									ctx.sendRequest();
-								}, ctx)
-							}
-						});
-
-						personCards.appendChild(BX.create('LABEL', {
-							props: {className: 'mf-checkout-choice__item'},
-							children: [
-								input,
-								BX.create('SPAN', {props: {className: 'mf-checkout-choice__item-title'}, text: personType.NAME || ''}),
-								BX.create('SPAN', {
-									props: {className: 'mf-checkout-choice__item-desc'},
-									text: String(personType.ID) === '2'
-										? 'Для юрлица обязательны реквизиты и доступна только оплата по счету.'
-										: 'Стандартное оформление заказа для физического лица.'
-								})
-							]
-						}));
-					})(personTypes[i]);
-				}
-
-				personWrap.appendChild(personCards);
-				node.appendChild(personWrap);
-			}
-			else if (selectedId)
-			{
-				node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: selectedId}}));
-			}
-
-			this.getProfilesControl(node);
-		},
-
-		showTopSuccess: function(message)
-		{
-			if (!message)
-				return;
-
-			var container = this.mainErrorsNode || this.orderBlockNode;
-			if (!container)
-				return;
-
-			var existed = container.querySelector('.alert.alert-success.mf-checkout-success');
-			if (existed)
-			{
-				BX.remove(existed);
-			}
-
-			BX.prepend(BX.create('DIV', {
-				props: {className: 'alert alert-success mf-checkout-success'},
-				text: message
-			}), container);
-		},
-
-		resetCheckoutStateAfterPersonTypeSwitch: function(form)
-		{
-			if (!form || !form.querySelectorAll)
-				return;
-
-			var i, nodes, field;
-
-			nodes = form.querySelectorAll('input[name^="ORDER_PROP_"], textarea[name^="ORDER_PROP_"], select[name^="ORDER_PROP_"]');
-			for (i = 0; i < nodes.length; i++)
-			{
-				field = nodes[i];
-				if (!field)
-					continue;
-
-				if (field.type === 'radio' || field.type === 'checkbox')
-				{
-					field.checked = false;
-				}
-				else
-				{
-					field.value = '';
-				}
-			}
-
-			nodes = form.querySelectorAll(
-				'input[name="DELIVERY_ID"], input[name="PAY_SYSTEM_ID"], input[name="BUYER_STORE"], '
-				+ 'input[name="PROFILE_ID"], input[name="ZIP_PROPERTY_CHANGED"], '
-				+ 'input[name="MF_EDOST_TARIF_ID"], input[name="MF_EDOST_TARIF_COMPANY"], '
-				+ 'input[name="MF_EDOST_TARIF_NAME"], input[name="MF_EDOST_TARIF_PRICE"], '
-				+ 'input[name="MF_EDOST_TARIF_UI"]'
-			);
-			for (i = 0; i < nodes.length; i++)
-			{
-				if (nodes[i])
-				{
-					nodes[i].value = '';
-				}
-			}
-
-			nodes = form.querySelectorAll('select[name="PROFILE_ID"]');
-			for (i = 0; i < nodes.length; i++)
-			{
-				nodes[i].value = '0';
-			}
-
-			nodes = form.querySelectorAll('input[name="profile_change"]');
-			for (i = 0; i < nodes.length; i++)
-			{
-				nodes[i].value = 'Y';
-			}
-
-			nodes = form.querySelectorAll('input[name="MF_EDOST_TARIF_UI"]');
-			for (i = 0; i < nodes.length; i++)
-			{
-				nodes[i].checked = false;
-			}
-
-			try
-			{
-				if (
-					window.BX
-					&& BX.saleOrderAjax
-					&& BX.saleOrderAjax.__mfEdost
-					&& typeof BX.saleOrderAjax.__mfEdost.clearSelection === 'function'
-				)
-				{
-					BX.saleOrderAjax.__mfEdost.clearSelection();
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
-		},
-
-		resetCheckoutSectionsAfterPersonTypeSwitch: function()
-		{
-			if (!this.orderBlockNode || !this.orderBlockNode.querySelectorAll)
-				return;
-
-			var sections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active'),
-				i,
-				section,
-				alertNode;
-
-			for (i = 0; i < sections.length; i++)
-			{
-				section = sections[i];
-				if (!section)
-					continue;
-
-				section.setAttribute('data-visited', 'false');
-				BX.removeClass(section, 'bx-selected bx-step-completed bx-step-good bx-step-warning bx-step-error');
-
-				alertNode = section.querySelector('.alert.alert-warning.alert-hide');
-				if (alertNode)
-				{
-					BX.remove(alertNode);
-				}
-			}
-
-			this.hasErrorSection = {};
-			this.activeSectionId = '';
-			this.__mfPendingPersonTypeSectionReset = true;
-		},
-
-		applyPersonTypeSectionReset: function()
-		{
-			if (!this.orderBlockNode || !this.basketBlockNode)
-				return;
-
-			var sections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active'),
-				i,
-				section,
-				content;
-
-			for (i = 0; i < sections.length; i++)
-			{
-				section = sections[i];
-				if (!section)
-					continue;
-
-				if (section.id === this.basketBlockNode.id)
-				{
-					this.changeVisibleSection(section, true);
-					section.setAttribute('data-visited', 'false');
-					BX.removeClass(section, 'bx-selected bx-step-completed bx-step-good bx-step-warning bx-step-error');
-					continue;
-				}
-
-				content = section.querySelector('.bx-soa-section-content');
-				this.changeVisibleSection(section, false);
-				section.setAttribute('data-visited', 'false');
-				BX.removeClass(section, 'bx-selected bx-step-completed bx-step-good bx-step-warning bx-step-error');
-				if (content)
-				{
-					content.style.display = 'none';
-				}
-			}
-
-			this.activeSectionId = '';
-			this.show(this.basketBlockNode);
-			content = this.basketBlockNode.querySelector('.bx-soa-section-content');
-			if (content)
-			{
-				content.style.display = '';
-				if (content.querySelector('.bx-soa-more'))
-				{
-					BX.remove(content.querySelector('.bx-soa-more'));
-				}
-				this.getBlockFooter(content);
-			}
 		},
 
 		/**
@@ -3815,14 +3122,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 								},
 								events: {
 									click: BX.delegate(function(e){
-										try
-										{
-											window.sessionStorage.setItem('mf_checkout_register_success', 'Y');
-										}
-										catch (storageError)
-										{
-											// ignore
-										}
 										BX('do_register').value = 'Y';
 										this.sendRequest('showAuthForm');
 										return BX.PreventDefault(e);
@@ -4395,37 +3694,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			logoNode = BX.create('DIV', {props: {className: 'bx-soa-item-imgcontainer'}});
 
 			if (data.PREVIEW_PICTURE_SRC && data.PREVIEW_PICTURE_SRC.length)
-			{
 				logotype = this.getImageSources(data, 'PREVIEW_PICTURE');
-				if (!logotype || !logotype.src_1x)
-				{
-					logotype = {
-						src_1x: data.PREVIEW_PICTURE_SRC,
-						src_2x: (data.PREVIEW_PICTURE_SRC_2X && data.PREVIEW_PICTURE_SRC_2X.length)
-							? data.PREVIEW_PICTURE_SRC_2X
-							: data.PREVIEW_PICTURE_SRC,
-						src_orig: (data.PREVIEW_PICTURE_SRC_ORIGINAL && data.PREVIEW_PICTURE_SRC_ORIGINAL.length)
-							? data.PREVIEW_PICTURE_SRC_ORIGINAL
-							: data.PREVIEW_PICTURE_SRC
-					};
-				}
-			}
 			else if (data.DETAIL_PICTURE_SRC && data.DETAIL_PICTURE_SRC.length)
-			{
 				logotype = this.getImageSources(data, 'DETAIL_PICTURE');
-				if (!logotype || !logotype.src_1x)
-				{
-					logotype = {
-						src_1x: data.DETAIL_PICTURE_SRC,
-						src_2x: (data.DETAIL_PICTURE_SRC_2X && data.DETAIL_PICTURE_SRC_2X.length)
-							? data.DETAIL_PICTURE_SRC_2X
-							: data.DETAIL_PICTURE_SRC,
-						src_orig: (data.DETAIL_PICTURE_SRC_ORIGINAL && data.DETAIL_PICTURE_SRC_ORIGINAL.length)
-							? data.DETAIL_PICTURE_SRC_ORIGINAL
-							: data.DETAIL_PICTURE_SRC
-					};
-				}
-			}
 
 			if (logotype && logotype.src_2x)
 			{
@@ -4459,8 +3730,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			var itemName = data.NAME || '',
 				titleHtml = this.htmlspecialcharsEx(itemName),
 				props = data.PROPS || [],
-				propsNodes = [],
-				deliveryTerm = (data.MF_DELIVERY_TERM || '');
+				propsNodes = [];
 
 			if (this.params.HIDE_DETAIL_PAGE_URL !== 'Y' && data.DETAIL_PAGE_URL && data.DETAIL_PAGE_URL.length)
 			{
@@ -4473,20 +3743,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				{
 					if (props.hasOwnProperty(i))
 					{
-						var propCode = (props[i].CODE || props[i].NAME || ''),
-							name = props[i].NAME || '',
+						var name = props[i].NAME || '',
 							value = props[i].VALUE || '';
-
-						// Hide internal basket properties used for store selection.
-						if (
-							propCode === 'MF_STORE_ID'
-							|| propCode === 'MF_STORE_TITLE'
-							|| propCode === 'MF_STORE_CODE'
-							|| propCode.indexOf('MF_STORE_') === 0
-						)
-						{
-							continue;
-						}
 
 						propsNodes.push(
 							BX.create('DIV', {
@@ -4506,24 +3764,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				}
 			}
 
-			if (deliveryTerm && String(deliveryTerm).length)
-			{
-				propsNodes.push(
-					BX.create('DIV', {
-						props: {className: 'bx-soa-item-td-title'},
-						style: {textAlign: 'left'},
-						text: 'Срок доставки'
-					})
-				);
-				propsNodes.push(
-					BX.create('DIV', {
-						props: {className: 'bx-soa-item-td-text'},
-						style: {textAlign: 'left'},
-						text: String(deliveryTerm)
-					})
-				);
-			}
-
 			return BX.create('DIV', {
 				props: {className: 'bx-soa-item-content'},
 				children: propsNodes.length ? [
@@ -4540,10 +3780,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!column || !allData)
 				return;
 
-			/* Пустой [] из columns — truthy в JS; тогда подставлялся весь columns без PRICE/SUM и ячейки были пустыми */
-			var colCell = allData.columns && allData.columns[column.id],
-				useColumnsMap = !!colCell && !(BX.type.isArray(colCell) && colCell.length === 0),
-				data = useColumnsMap ? allData.columns : allData.data,
+			var data = allData.columns[column.id] ? allData.columns : allData.data,
 				toRight = BX.util.in_array(column.id, ["QUANTITY", "PRICE_FORMATED", "DISCOUNT_PRICE_PERCENT_FORMATED", "SUM"]),
 				textNode = BX.create('DIV', {props: {className: 'bx-soa-item-td-text'}}),
 				logotype, img;
@@ -4666,9 +3903,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!column || !allData)
 				return;
 
-			var colCellH = allData.columns && allData.columns[column.id],
-				useColumnsMapH = !!colCellH && !(BX.type.isArray(colCellH) && colCellH.length === 0),
-				data = useColumnsMapH ? allData.columns : allData.data,
+			var data = allData.columns[column.id] ? allData.columns : allData.data,
 				textNode = BX.create('TD', {props: {className: 'bx-soa-info-text'}}),
 				logotype, img, i;
 
@@ -4681,20 +3916,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					{
 						if (props.hasOwnProperty(i))
 						{
-							var propCode = (props[i].CODE || props[i].NAME || ''),
-								name = props[i].NAME || '',
+							var name = props[i].NAME || '',
 								value = props[i].VALUE || '';
-
-							// Hide internal basket properties used for store selection.
-							if (
-								propCode === 'MF_STORE_ID'
-								|| propCode === 'MF_STORE_TITLE'
-								|| propCode === 'MF_STORE_CODE'
-								|| propCode.indexOf('MF_STORE_') === 0
-							)
-							{
-								continue;
-							}
 
 							if (value.length == 0)
 								continue;
@@ -5091,20 +4314,73 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 		editRegionBlock: function(active)
 		{
-			// Motor-Force customization:
-			// - remove "Region" step entirely
-			// - location + zip are rendered in Delivery block
-			// - person type selector UI is removed (we keep a hidden PERSON_TYPE input elsewhere)
-			if (this.regionBlockNode)
+			if (!this.regionBlockNode || !this.regionHiddenBlockNode || !this.result.PERSON_TYPE)
+				return;
+
+			if (active)
 			{
-				this.regionBlockNode.style.display = 'none';
+				this.editActiveRegionBlock(true);
+				!this.regionBlockNotEmpty && this.editFadeRegionBlock();
 			}
+			else
+				this.editFadeRegionBlock();
+
 			this.initialized.region = true;
 		},
 
 		editActiveRegionBlock: function(activeNodeMode)
 		{
-			// Disabled. (Location + ZIP are rendered in Delivery block.)
+			var node = activeNodeMode ? this.regionBlockNode : this.regionHiddenBlockNode,
+				regionContent, regionNode, regionNodeCol;
+
+			if (this.initialized.region)
+			{
+				BX.remove(BX.lastChild(node));
+				node.appendChild(BX.firstChild(this.regionHiddenBlockNode));
+			}
+			else
+			{
+				regionContent = node.querySelector('.bx-soa-section-content');
+				if (!regionContent)
+				{
+					regionContent = this.getNewContainer();
+					node.appendChild(regionContent);
+				}
+				else
+					BX.cleanNode(regionContent);
+
+				this.getErrorContainer(regionContent);
+
+				regionNode = BX.create('DIV', {props: {className: 'bx_soa_location row'}});
+				regionNodeCol = BX.create('DIV', {props: {className: 'col'}});
+
+				this.getPersonTypeControl(regionNodeCol);
+
+				this.getProfilesControl(regionNodeCol);
+
+				this.getDeliveryLocationInput(regionNodeCol);
+
+				if (!this.result.SHOW_AUTH)
+				{
+					if (this.regionBlockNotEmpty)
+					{
+						BX.addClass(this.regionBlockNode, 'bx-active');
+						this.regionBlockNode.style.display = '';
+					}
+					else
+					{
+						BX.removeClass(this.regionBlockNode, 'bx-active');
+						this.regionBlockNode.style.display = 'none';
+
+						if (!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
+							this.initFirstSection();
+					}
+				}
+
+				regionNode.appendChild(regionNodeCol);
+				regionContent.appendChild(regionNode);
+				this.getBlockFooter(regionContent);
+			}
 		},
 
 		editFadeRegionBlock: function()
@@ -5197,12 +4473,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (validRegionErrors.length)
 				{
-					// Motor-Force customization: region step disabled; show in Delivery block.
-					BX.addClass(this.deliveryBlockNode, 'bx-step-error');
-					this.showError(this.deliveryBlockNode, validRegionErrors);
+					BX.addClass(this.regionBlockNode, 'bx-step-error');
+					this.showError(this.regionBlockNode, validRegionErrors);
 				}
 				else
-					BX.removeClass(this.deliveryBlockNode, 'bx-step-error');
+					BX.removeClass(this.regionBlockNode, 'bx-step-error');
 			}
 
 			BX.bind(node.querySelector('.alert.alert-danger'), 'click', BX.proxy(this.showByClick, this));
@@ -5231,14 +4506,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				personTypeInput = this.regionBlockNode.querySelector('select[name=PERSON_TYPE] > option:checked');
 				if (!personTypeInput)
 					personTypeInput = this.regionHiddenBlockNode.querySelector('select[name=PERSON_TYPE] > option:checked');
-			}
-
-			if (!personTypeInput && this.controls && this.controls.scope && this.controls.scope.querySelector)
-			{
-				personTypeInput =
-					this.controls.scope.querySelector('input[type=radio][name=PERSON_TYPE]:checked')
-					|| this.controls.scope.querySelector('input[type=hidden][name=PERSON_TYPE]')
-					|| this.controls.scope.querySelector('select[name=PERSON_TYPE] > option:checked');
 			}
 
 			if (personTypeInput)
@@ -5359,7 +4626,15 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.getZipLocationInput(node);
 
-			// Motor-Force customization: hide "region" reference text (region step removed).
+			if (location && location[0])
+			{
+				node.appendChild(
+					BX.create('DIV', {
+						props: {className: 'bx-soa-reference'},
+						html: this.params.MESS_REGION_REFERENCE
+					})
+				);
+			}
 		},
 
 		getLocationString: function(node)
@@ -5483,7 +4758,113 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.result.PERSON_TYPE = this.getPersonTypeSortedArray(this.result.PERSON_TYPE);
 
-			return;
+			var personTypesCount = this.result.PERSON_TYPE.length,
+				currentType, oldPersonTypeId, i,
+				input, options = [], label, delimiter = false;
+
+			if (personTypesCount > 1)
+			{
+				input = BX.create('DIV', {
+					props: {className: 'form-check-group'},
+					children: [
+						BX.create('LABEL', {
+							props: {className: 'bx-soa-custom-label'},
+							html: this.params.MESS_PERSON_TYPE
+						})
+					]
+				});
+				node.appendChild(input);
+				node = input;
+			}
+
+			if (personTypesCount > 2)
+			{
+				for (i in this.result.PERSON_TYPE)
+				{
+					if (this.result.PERSON_TYPE.hasOwnProperty(i))
+					{
+						currentType = this.result.PERSON_TYPE[i];
+						options.push(BX.create('OPTION', {
+							props: {
+								value: currentType.ID,
+								selected: currentType.CHECKED == 'Y'
+							},
+							text: currentType.NAME
+						}));
+
+						if (currentType.CHECKED == 'Y')
+							oldPersonTypeId = currentType.ID;
+					}
+
+				}
+				node.appendChild(BX.create('SELECT', {
+					props: {name: 'PERSON_TYPE', className: 'form-control'},
+					children: options,
+					events: {change: BX.proxy(this.sendRequest, this)}
+				}));
+
+				this.regionBlockNotEmpty = true;
+			}
+			else if (personTypesCount == 2)
+			{
+				for (i in this.result.PERSON_TYPE)
+				{
+					if (this.result.PERSON_TYPE.hasOwnProperty(i))
+					{
+						currentType = this.result.PERSON_TYPE[i];
+						var inputContainer = BX.create("div", {
+							attrs: {className: "form-check"},
+							children: [
+								BX.create('INPUT', {
+									attrs: {
+										className: "form-check-input",
+										id: "radio" + currentType.ID,
+										checked: currentType.CHECKED == 'Y'},
+										props: {type: 'radio', name: 'PERSON_TYPE', value: currentType.ID}
+								}),
+								BX.create('LABEL', {
+									attrs: {
+										className: "form-check-label",
+										for: "radio" + currentType.ID
+									},
+									text: BX.util.htmlspecialchars(currentType.NAME),
+									events: {change: BX.proxy(this.sendRequest, this)}
+								})
+							],
+							events: {change: BX.proxy(this.sendRequest, this)}
+
+						});
+
+						node.appendChild(inputContainer);
+						delimiter = true;
+
+						if (currentType.CHECKED == 'Y')
+							oldPersonTypeId = currentType.ID;
+					}
+				}
+
+				this.regionBlockNotEmpty = true;
+			}
+			else
+			{
+				for (i in this.result.PERSON_TYPE)
+					if (this.result.PERSON_TYPE.hasOwnProperty(i))
+						node.appendChild(BX.create('INPUT', {props: {type: 'hidden', name: 'PERSON_TYPE', value: this.result.PERSON_TYPE[i].ID}}));
+			}
+
+			if (oldPersonTypeId)
+			{
+				node.appendChild(
+					BX.create('INPUT', {
+						props: {
+							type: 'hidden',
+							name: 'PERSON_TYPE_OLD',
+							value: oldPersonTypeId
+
+						}
+					})
+				);
+			}
 		},
 
 		getProfilesControl: function(node)
@@ -5673,7 +5054,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				title, label, itemNode;
 
 			logoNode = BX.create('DIV', {props: {className: 'bx-soa-pp-company-image'}});
-			logotype = this.resolvePaySystemLogo(item, 'PSA_LOGOTIP');
+			logotype = this.getImageSources(item, 'PSA_LOGOTIP');
 			if (logotype && logotype.src_2x)
 			{
 				logoNode.setAttribute('style',
@@ -5744,7 +5125,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (currentPaySystem)
 			{
 				logoNode = BX.create('DIV', {props: {className: 'bx-soa-pp-company-image'}});
-				logotype = this.resolvePaySystemLogo(currentPaySystem, 'PSA_LOGOTIP');
+				logotype = this.getImageSources(currentPaySystem, 'PSA_LOGOTIP');
 				if (logotype && logotype.src_2x)
 				{
 					logoNode.setAttribute('style',
@@ -5830,7 +5211,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			}
 
 			logoNode = BX.create('DIV', {props: {className: 'bx-soa-pp-company-image'}});
-			logotype = this.resolvePaySystemLogo(paySystem, 'LOGOTIP');
+			logotype = this.getImageSources(paySystem, 'LOGOTIP');
 			if (logotype && logotype.src_2x)
 			{
 				logoNode.setAttribute('style',
@@ -5918,7 +5299,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (this.isSelectedInnerPayment())
 			{
-				logotype = this.resolvePaySystemLogo(this.result.INNER_PAY_SYSTEM, 'LOGOTIP');
+				logotype = this.getImageSources(this.result.INNER_PAY_SYSTEM, 'LOGOTIP');
 				imgSrc = logotype && logotype.src_1x || this.defaultPaySystemLogo;
 
 				addedHtml += '<div class="bx-soa-pp-company-selected">';
@@ -5929,7 +5310,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (selectedPaySystem && selectedPaySystem.NAME)
 			{
-				logotype = this.resolvePaySystemLogo(selectedPaySystem, 'PSA_LOGOTIP');
+				logotype = this.getImageSources(selectedPaySystem, 'PSA_LOGOTIP');
 				imgSrc = logotype && logotype.src_1x || this.defaultPaySystemLogo;
 
 				addedHtml += '<div class="bx-soa-pp-company-selected">';
@@ -6065,7 +5446,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		editActiveDeliveryBlock: function(activeNodeMode)
 		{
 			var node = activeNodeMode ? this.deliveryBlockNode : this.deliveryHiddenBlockNode,
-				deliveryContent, deliveryNode, locationNode, locationNodeCol;
+				deliveryContent, deliveryNode;
 
 			if (this.initialized.delivery)
 			{
@@ -6085,14 +5466,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				this.getErrorContainer(deliveryContent);
 
-				// Motor-Force customization: location + zip belong to Delivery block.
-				locationNode = BX.create('DIV', {props: {className: 'bx_soa_location row'}});
-				locationNodeCol = BX.create('DIV', {props: {className: 'col'}});
-				this.getPersonTypeControl(locationNodeCol);
-				this.getDeliveryLocationInput(locationNodeCol);
-				locationNode.appendChild(locationNodeCol);
-				deliveryContent.appendChild(locationNode);
-
 				deliveryNode = BX.create('DIV', {props: {className: 'bx-soa-pp row'}});
 				this.editDeliveryItems(deliveryNode);
 				deliveryContent.appendChild(deliveryNode);
@@ -6102,21 +5475,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					this.editCoupons(deliveryContent);
 
 				this.getBlockFooter(deliveryContent);
-			}
-
-			// Motor-Force customization:
-			// After the active Delivery DOM is fully rebuilt, force virtual eDost render again.
-			// This is more reliable than only relying on navigation callbacks/timers.
-			if (activeNodeMode)
-			{
-				setTimeout(function(){
-					try {
-						if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
-						{
-							BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
-						}
-					} catch(e) {}
-				}, 0);
 			}
 		},
 
@@ -6354,28 +5712,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (this.params.SHOW_COUPONS_DELIVERY == 'Y')
 				this.editCouponsFade(newContent);
-
-			// Motor-Force customization:
-			// Whenever Bitrix rebuilds the collapsed delivery summary, replace the technical
-			// "Стандартный / 0 ₽" output with the selected virtual eDost tariff.
-			try
-			{
-				if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost)
-				{
-					if (typeof BX.saleOrderAjax.__mfEdost.applyDeliverySummary === 'function')
-					{
-						BX.saleOrderAjax.__mfEdost.applyDeliverySummary();
-					}
-					if (typeof BX.saleOrderAjax.__mfEdost.applyTotalDeliveryLine === 'function')
-					{
-						BX.saleOrderAjax.__mfEdost.applyTotalDeliveryLine();
-					}
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
 		},
 
 		createDeliveryItem: function(item)
@@ -6468,41 +5804,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				name = this.params.SHOW_DELIVERY_PARENT_NAMES != 'N' ? selectedDelivery.NAME : selectedDelivery.OWN_NAME,
 				errorNode = this.deliveryHiddenBlockNode.querySelector('div.alert.alert-danger'),
 				warningNode = this.deliveryHiddenBlockNode.querySelector('div.alert.alert-warning.alert-show'),
-				extraService, logotype, imgSrc, arNodes, i,
-				form, edostId, edostCompany, edostName, edostPrice, displayPriceText;
-
-			// Motor-Force customization:
-			// For virtual eDost tariffs, the collapsed delivery summary must show the
-			// selected eDost method instead of the technical Bitrix delivery ("Стандартный").
-			form = BX('bx-soa-order-form');
-			edostId = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || {}).value || '')) : '';
-			edostCompany = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_COMPANY"]') || {}).value || '')) : '';
-			edostName = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_NAME"]') || {}).value || '')) : '';
-			edostPrice = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_PRICE"]') || {}).value || '')) : '';
-			displayPriceText = ((selectedDelivery && typeof selectedDelivery.PRICE !== 'undefined') ? (String(selectedDelivery.PRICE) + ' ₽') : '0 ₽');
-
-			var mfCheckoutEnabled = !!(this.result && this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED);
-			var mfEd = (typeof BX !== 'undefined' && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost) ? BX.saleOrderAjax.__mfEdost : null;
-			var managerFb = !!(mfEd && mfEd._managerDeliveryFallback);
-
-			if (edostId !== '' && edostName !== '')
-			{
-				name = (edostCompany ? (edostCompany + ' — ') : '') + edostName;
-				displayPriceText = edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении';
-			}
-			else if (mfCheckoutEnabled)
-			{
-				if (managerFb)
-				{
-					name = 'Стоимость доставки уточняет менеджер';
-					displayPriceText = '0 ₽';
-				}
-				else
-				{
-					name = 'Способ доставки не выбран';
-					displayPriceText = '—';
-				}
-			}
+				extraService, logotype, imgSrc, arNodes, i;
 
 			if (errorNode && errorNode.innerHTML)
 				node.appendChild(errorNode.cloneNode(true));
@@ -6550,7 +5852,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 							}),
 							BX.create('DIV', {
 								props: {className: 'col-sm bx-soa-pp-price'},
-								text: displayPriceText
+								children: this.getDeliveryPriceNodes(selectedDelivery)
 							})
 						]
 					})
@@ -8127,8 +7429,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (regionErrors.length)
 			{
 				navigated = true;
-				// Motor-Force customization: location+zip are inside Delivery block.
-				this.animateScrollTo(this.deliveryBlockNode, 800, 50);
+				this.animateScrollTo(this.regionBlockNode, 800, 50);
 			}
 
 			if (propsErrors.length && !navigated)
@@ -8151,8 +7452,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (regionErrors.length)
 			{
-				this.showError(this.deliveryBlockNode, regionErrors);
-				BX.addClass(this.deliveryBlockNode, 'bx-step-error');
+				this.showError(this.regionBlockNode, regionErrors);
+				BX.addClass(this.regionBlockNode, 'bx-step-error');
 			}
 
 			if (propsErrors.length)
@@ -9013,37 +8314,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				}
 			}
 
-			// Motor-Force customization:
-			// Virtual delivery tariffs (display-only). Delivery must show:
-			// - "Не выбрано" until user selects a tariff
-			// - selected tariff price after selection
-			// but MUST NOT affect order totals (Bitrix delivery price remains 0).
-			try
-			{
-				var f = BX('bx-soa-order-form');
-				if (f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box')))
-				{
-					var tidEl = f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]');
-					var priceEl = f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_PRICE"]');
-					var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
-					var price = priceEl ? BX.util.trim(String(priceEl.value || '')) : '';
-
-					params = {}; // override free/error styling
-					if (!tid)
-					{
-						deliveryValue = 'Не выбрано';
-					}
-					else
-					{
-						deliveryValue = price !== '' ? (price + ' ₽') : 'Не выбрано';
-					}
-				}
-			}
-			catch (e)
-			{
-				// ignore
-			}
-
 			if (this.result.DELIVERY.length)
 			{
 				this.totalInfoBlockNode.appendChild(this.createTotalUnit(BX.message('SOA_SUM_DELIVERY'), deliveryValue, params));
@@ -9382,12 +8652,47 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 		initUserConsent: function()
 		{
+			if (this.params.USER_CONSENTS)
+			{
+				this.options.userConsents = [];
+				this.params.USER_CONSENTS.forEach(consent => {
+					this.options.userConsents.push({
+						id: parseInt(consent.ID, 10),
+						checked: consent.CHECKED,
+						required: consent.REQUIRED,
+					});
+				});
+			}
+			else
+			{
+				this.options.userConsents = null;
+			}
+
 			BX.ready(BX.delegate(function(){
-				var control = BX.UserConsent && BX.UserConsent.load(this.orderBlockNode);
-				if (control)
+				if (this.options.userConsents)
 				{
-					BX.addCustomEvent(control, BX.UserConsent.events.save, BX.proxy(this.doSaveAction, this));
-					BX.addCustomEvent(control, BX.UserConsent.events.refused, BX.proxy(this.disallowOrderSave, this));
+					if (BX.UserConsent)
+					{
+						var controls = BX.UserConsent.getItems();
+						if (controls.length === 0)
+						{
+							BX.UserConsent.loadAll(this.orderBlockNode);
+							controls = BX.UserConsent.getItems();
+						}
+						controls.forEach(control => {
+							BX.addCustomEvent(control, BX.UserConsent.events.afterAccepted, BX.proxy(this.saveByConsent, this));
+							BX.addCustomEvent(control, BX.UserConsent.events.refused, BX.proxy(this.refusedByConsent, this));
+						});
+					}
+				}
+				else
+				{
+					var control = BX.UserConsent && BX.UserConsent.load(this.orderBlockNode);
+					if (control)
+					{
+						BX.addCustomEvent(control, BX.UserConsent.events.save, BX.proxy(this.doSaveAction, this));
+						BX.addCustomEvent(control, BX.UserConsent.events.refused, BX.proxy(this.disallowOrderSave, this));
+					}
 				}
 			}, this));
 		}

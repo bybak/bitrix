@@ -8,6 +8,8 @@ CREATE TABLE b_ui_entity_editor_config (
   COMMON varchar(1) NOT NULL,
   AUTO_APPLY_SCOPE varchar(1) NOT NULL DEFAULT 'N',
   OPTION_CATEGORY varchar(50) NOT NULL,
+  ON_ADD varchar(1) NOT NULL DEFAULT 'Y',
+  ON_UPDATE varchar(1) NOT NULL DEFAULT 'Y',
   PRIMARY KEY (ID)
 );
 CREATE INDEX ix_b_ui_entity_editor_config_entity_type_id ON b_ui_entity_editor_config (entity_type_id);
@@ -36,6 +38,7 @@ CREATE TABLE b_ui_file_uploader_temp_file (
   BUCKET_ID int,
   MODULE_ID varchar(50) NOT NULL,
   CONTROLLER varchar(255) NOT NULL,
+  CONTROLLER_OPTIONS text,
   CLOUD smallint NOT NULL DEFAULT 0,
   UPLOADED smallint NOT NULL DEFAULT 0,
   DELETED smallint NOT NULL DEFAULT 0,

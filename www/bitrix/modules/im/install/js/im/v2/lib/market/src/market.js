@@ -4,6 +4,7 @@ import { Runtime } from 'main.core';
 import { Core } from 'im.v2.application.core';
 import { Logger } from 'im.v2.lib.logger';
 
+import { IframeCommunicationManager } from './classes/iframe-communication-manager';
 import { MarketService } from './classes/market-service';
 import { AvailabilityManager } from './classes/availability-manager';
 
@@ -86,11 +87,11 @@ export class MarketManager
 		BX.rest.AppLayout.openApplication(placement.loadConfiguration.ID, context, placement.loadConfiguration);
 	}
 
-	static openMarketplace()
+	static openChatMarket(): void
 	{
-		const marketplaceImPlacementCode = 'IM_CHAT';
+		const placementCode = 'IM_CHAT';
 
-		BX.SidePanel.Instance.open(`/market/?placement=${marketplaceImPlacementCode}`);
+		BX.SidePanel.Instance.open(`/market/?placement=${placementCode}`);
 	}
 
 	#init(marketApps: MarketApps)
@@ -102,5 +103,6 @@ export class MarketManager
 
 		void this.#store.dispatch('market/set', marketApps);
 		this.#marketService.setLoadLink(marketApps.links.load);
+		IframeCommunicationManager.init();
 	}
 }

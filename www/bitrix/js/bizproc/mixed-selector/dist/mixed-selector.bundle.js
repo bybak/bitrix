@@ -4,6 +4,7 @@ this.BX = this.BX || {};
 	'use strict';
 
 	var _templateObject, _templateObject2, _templateObject3;
+	function _wrapRegExp() { _wrapRegExp = function _wrapRegExp(re, groups) { return new BabelRegExp(re, void 0, groups); }; var _super = RegExp.prototype, _groups = new WeakMap(); function BabelRegExp(re, flags, groups) { var _this = new RegExp(re, flags); return _groups.set(_this, groups || _groups.get(re)), babelHelpers.setPrototypeOf(_this, BabelRegExp.prototype); } function buildGroups(result, re) { var g = _groups.get(re); return Object.keys(g).reduce(function (groups, name) { var i = g[name]; if ("number" == typeof i) groups[name] = result[i];else { for (var k = 0; void 0 === result[i[k]] && k + 1 < i.length;) k++; groups[name] = result[i[k]]; } return groups; }, Object.create(null)); } return babelHelpers.inherits(BabelRegExp, RegExp), BabelRegExp.prototype.exec = function (str) { var result = _super.exec.call(this, str); if (result) { result.groups = buildGroups(result, this); var indices = result.indices; indices && (indices.groups = buildGroups(indices, this)); } return result; }, BabelRegExp.prototype[Symbol.replace] = function (str, substitution) { if ("string" == typeof substitution) { var groups = _groups.get(this); return _super[Symbol.replace].call(this, str, substitution.replace(/\$<([^>]+)>/g, function (_, name) { var group = groups[name]; return "$" + (Array.isArray(group) ? group.join("$") : group); })); } if ("function" == typeof substitution) { var _this = this; return _super[Symbol.replace].call(this, str, function () { var args = arguments; return "object" != babelHelpers["typeof"](args[args.length - 1]) && (args = [].slice.call(args)).push(buildGroups(args, _this)), substitution.apply(this, args); }); } return _super[Symbol.replace].call(this, str, substitution); }, _wrapRegExp.apply(this, arguments); }
 	function _classPrivateMethodInitSpec(obj, privateSet) { _checkPrivateRedeclaration(obj, privateSet); privateSet.add(obj); }
 	function _checkPrivateRedeclaration(obj, privateCollection) { if (privateCollection.has(obj)) { throw new TypeError("Cannot initialize the same private elements twice on an object"); } }
 	function _classPrivateMethodGet(receiver, privateSet, fn) { if (!privateSet.has(receiver)) { throw new TypeError("attempted to get private field on non-instance"); } return fn; }
@@ -279,6 +280,29 @@ this.BX = this.BX || {};
 	      return null;
 	    }
 	  }, {
+	    key: "parseExpression",
+	    value: function parseExpression(expression) {
+	      var _match$groups;
+	      var re = /*#__PURE__*/_wrapRegExp(/^\{=\s*([a-z0-9_]+)\s*:\s*([a-z0-9_.]+)(?:\s*>\s*([a-z0-9_:]+)(?:\s*,\s*([a-z0-9_]+))?)?\s*\}$/i, {
+	        object: 1,
+	        field: 2,
+	        mod1: 3,
+	        mod2: 4
+	      });
+	      var match = expression.match(re);
+	      var _ref = (_match$groups = match === null || match === void 0 ? void 0 : match.groups) !== null && _match$groups !== void 0 ? _match$groups : {},
+	        _ref$object = _ref.object,
+	        object = _ref$object === void 0 ? null : _ref$object,
+	        _ref$field = _ref.field,
+	        field = _ref$field === void 0 ? null : _ref$field,
+	        _ref$mod = _ref.mod1,
+	        _ref$mod2 = _ref.mod2;
+	      return {
+	        object: object,
+	        field: field
+	      };
+	    }
+	  }, {
 	    key: "getSelectedFieldValue",
 	    value: function getSelectedFieldValue() {
 	      if (this.fieldInputNode) {
@@ -291,7 +315,9 @@ this.BX = this.BX || {};
 	    value: function setSelectedObjectAndField(object, field, fieldTitle) {
 	      var target = this.getMenuTargetNode();
 	      var tabsLocMessage = BpMixedSelector.getAvailableTabsLocMessages();
-	      if (BpMixedSelector.getAvailableTabsName().includes(object)) {
+	      if (!fieldTitle) {
+	        target.innerText = "".concat(object, ":").concat(field);
+	      } else if (BpMixedSelector.getAvailableTabsName().includes(object)) {
 	        target.innerText = "".concat(tabsLocMessage[object], ": ").concat(fieldTitle);
 	      } else {
 	        target.innerText = "".concat(tabsLocMessage.Activity, ": ").concat(fieldTitle);
@@ -346,7 +372,6 @@ this.BX = this.BX || {};
 	              text: main_core.Text.encode("".concat(item.text, " (").concat(item.description, ")")),
 	              object: item.object,
 	              field: item.field,
-	              property: item,
 	              onclick: _classPrivateMethodGet(me, _onChooseFieldClick, _onChooseFieldClick2).bind(me)
 	            });
 	          }
@@ -421,35 +446,32 @@ this.BX = this.BX || {};
 	    var activityData = (_activities$activityT = activities[activityType]) !== null && _activities$activityT !== void 0 ? _activities$activityT : {};
 	    var returnActivityData = activityData.RETURN;
 	    var additionalResult = activityData.ADDITIONAL_RESULT;
+	    var activityResult = [];
 	    if (returnActivityData) {
 	      var keys = Object.keys(returnActivityData);
-	      var activityResult = [];
 	      for (var j in keys) {
 	        activityResult.push({
-	          text: returnActivityData[keys[j]].NAME,
+	          text: returnActivityData[keys[j]].NAME || returnActivityData[keys[j]].Name,
 	          description: template[i].Properties.Title || activityData.NAME,
 	          activity: activityType,
 	          value: "{=".concat(template[i].Name, ":").concat(keys[j], "}"),
 	          object: template[i].Name,
 	          field: keys[j],
 	          property: {
-	            Name: returnActivityData[keys[j]].NAME,
-	            Type: returnActivityData[keys[j]].TYPE
+	            Name: returnActivityData[keys[j]].NAME || returnActivityData[keys[j]].Name,
+	            Type: returnActivityData[keys[j]].TYPE || returnActivityData[keys[j]].Type
 	          }
 	        });
 	      }
-	      if (activityResult.length > 0) {
-	        result.push(activityResult);
-	      }
-	    } else if (main_core.Type.isArray(additionalResult)) {
+	    }
+	    if (main_core.Type.isArray(additionalResult)) {
 	      var properties = template[i].Properties;
 	      additionalResult.forEach(function (addProp) {
 	        if (properties[addProp]) {
 	          var _keys = Object.keys(properties[addProp]);
-	          var _activityResult = [];
 	          for (var _j in _keys) {
 	            var field = properties[addProp][_keys[_j]];
-	            _activityResult.push({
+	            activityResult.push({
 	              text: field.Name,
 	              description: properties.Title || activityData.NAME,
 	              value: "{=".concat(template[i].Name, ":").concat(_keys[_j], "}"),
@@ -458,11 +480,11 @@ this.BX = this.BX || {};
 	              property: field
 	            });
 	          }
-	          if (_activityResult.length > 0) {
-	            result.push(_activityResult);
-	          }
 	        }
 	      });
+	    }
+	    if (activityResult.length > 0) {
+	      result.push(activityResult);
 	    }
 	    if (template[i].Children && template[i].Children.length > 0) {
 	      var subResult = _classPrivateMethodGet(_this3, _getTemplateActivitiesItems, _getTemplateActivitiesItems2).call(_this3, template[i].Children, activities);
@@ -486,6 +508,29 @@ this.BX = this.BX || {};
 	  });
 	}
 	function _onChooseTargetClick2(event) {
+	  var _this4 = this;
+	  var listenersResult = main_core_events.EventEmitter.emit(this.getTargetNode(), 'Bizproc.NodeSettings:askShowValueSelector', {
+	    showOnlyRealProperties: true,
+	    onSelect: function onSelect(value, property) {
+	      var _this4$parseExpressio = _this4.parseExpression(value),
+	        object = _this4$parseExpressio.object,
+	        field = _this4$parseExpressio.field;
+	      if (!object || !field) {
+	        return;
+	      }
+	      _this4.setSelectedObjectAndField(object, field);
+	      main_core_events.EventEmitter.emit(_this4, 'onSelect', {
+	        item: {
+	          object: object,
+	          field: field,
+	          property: property
+	        }
+	      });
+	    }
+	  });
+	  if (listenersResult.length > 0) {
+	    return;
+	  }
 	  var menu = this.getMenu();
 	  menu.show();
 	  event.preventDefault();

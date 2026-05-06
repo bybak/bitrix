@@ -1,0 +1,123 @@
+import { Loc, Tag } from 'main.core';
+import { MarketExpiredPopup } from './market-expired-popup';
+import { SubscribeButton } from '../button/subscribe-button';
+import { HideButton } from '../button/hide-button';
+import PopupCategory from '../type/popup-category';
+import PopupType from '../type/popup-type';
+
+export class MarketSubscriptionPopup extends MarketExpiredPopup
+{
+	getCategory(): PopupCategory
+	{
+		return PopupCategory.SUBSCRIPTION;
+	}
+
+	getTitle(): string
+	{
+		const replacements = { '#DAYS#': this.expireDays };
+
+		if (this.type === PopupType.FINAL)
+		{
+			return this.isRenamedMarket
+				? Loc.getMessage('REST_MARKET_EXPIRED_POPUP_TITLE_SUBSCRIPTION_FINAL_BITRIX_GPT', replacements)
+				: Loc.getMessage('REST_MARKET_EXPIRED_POPUP_TITLE_SUBSCRIPTION_FINAL_MARKET_PLUS', replacements);
+		}
+
+		return this.isRenamedMarket
+			? Loc.getMessage('REST_MARKET_EXPIRED_POPUP_TITLE_SUBSCRIPTION_WARNING_BITRIX_GPT', replacements)
+			: Loc.getMessage('REST_MARKET_EXPIRED_POPUP_TITLE_SUBSCRIPTION_WARNING_MARKET_PLUS', replacements);
+	}
+
+	renderDescription(): HTMLElement
+	{
+		return Tag.render`
+			<div class="rest-market-expired-popup__description">
+				<p class="rest-market-expired-popup__description-text">
+					${this.#getDescription()}
+				</p>
+			</div>
+		`;
+	}
+
+	#getDescription(): string
+	{
+		const replacements = { '#DATE#': this.expireDate };
+
+		if (this.type === PopupType.FINAL)
+		{
+			return this.isRenamedMarket
+				? Loc.getMessage('REST_MARKET_EXPIRED_POPUP_DESCRIPTION_SUBSCRIPTION_FINAL_BITRIX_GPT', replacements)
+				: Loc.getMessage('REST_MARKET_EXPIRED_POPUP_DESCRIPTION_SUBSCRIPTION_FINAL_MARKET_PLUS', replacements);
+		}
+
+		return this.isRenamedMarket
+			? Loc.getMessage('REST_MARKET_EXPIRED_POPUP_DESCRIPTION_SUBSCRIPTION_WARNING_BITRIX_GPT', replacements)
+			: Loc.getMessage('REST_MARKET_EXPIRED_POPUP_DESCRIPTION_SUBSCRIPTION_WARNING_MARKET_PLUS', replacements);
+	}
+
+	renderButtons(): HTMLElement
+	{
+		return Tag.render`
+			<div class="rest-market-expired-popup__buttons-wrapper">
+				<div class="rest-market-expired-popup__button-container">
+					${this.#getSubscribeButton().render()}
+					${this.#getHideButton().render()}
+				</div>
+			</div>
+		`;
+	}
+
+	onOpen(): void
+	{
+		if (this.type === PopupType.FINAL)
+		{
+			BX.userOptions.save('rest', 'marketSubscriptionPopupDismiss', null, 'Y');
+		}
+		else
+		{
+			BX.userOptions.save('rest', 'marketSubscriptionPopupTs', null, Math.floor(Date.now() / 1000));
+		}
+
+		super.onOpen();
+	}
+
+	renderAboutLink(): HTMLElement
+	{
+		const onclick = () => {
+			BX.Helper.show('redirect=detail&code=17451118');
+			this.getAnalytic()?.sendClickButton('details');
+		};
+
+		return Tag.render`
+			<span class="rest-market-expired-popup__details">
+				<a
+					class="ui-link rest-market-expired-popup__link"
+					href="#"
+					onclick="${onclick}"
+				>
+					${Loc.getMessage('REST_MARKET_EXPIRED_POPUP_DETAILS')}
+				</a>
+			</span>
+		`;
+	}
+
+	#getSubscribeButton(): SubscribeButton
+	{
+		return new SubscribeButton({
+			text: Loc.getMessage('REST_MARKET_EXPIRED_POPUP_BUTTON_RENEW_SUBSCRIPTION'),
+			analytic: this.getAnalytic(),
+		});
+	}
+
+	#getHideButton(): HideButton
+	{
+		return new HideButton({
+			text: Loc.getMessage('REST_MARKET_EXPIRED_POPUP_BUTTON_NEVER_SHOW_AGAIN'),
+			onSuccess: () => {
+				BX.userOptions.save('rest', 'marketSubscriptionPopupDismiss', null, 'Y');
+				this.close();
+			},
+			analytic: this.getAnalytic(),
+		});
+	}
+}

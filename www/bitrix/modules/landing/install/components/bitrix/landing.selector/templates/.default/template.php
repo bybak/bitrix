@@ -34,12 +34,20 @@ $currentLanding = $arResult['LANDINGS'][$arParams['LANDING_ID']] ?? null;
 	{
 		BX.UI.Hint.init(BX('landing-selector'));
 
-		if (typeof BX.SidePanel !== 'undefined' && typeof BX.SidePanel.Instance !== 'undefined')
+		const condition = <?= \CUtil::PhpToJSObject(str_replace(['?', '&'], ['\?', '\&'], $arParams['PAGE_URL_FOLDER_ADD']))?>;
+		const topWindow = (window.top && window.top !== window) ? window.top : window;
+		if (
+			topWindow
+			&& topWindow.BX
+			&& topWindow.BX.SidePanel
+			&& topWindow.BX.SidePanel.Instance
+			&& condition !== ''
+		)
 		{
-			BX.SidePanel.Instance.bindAnchors({
+			const bindParams = {
 				rules: [
 					{
-						condition: [<?= \CUtil::PhpToJSObject(str_replace(['?', '&'], ['\?', '\&'], $arParams['PAGE_URL_FOLDER_ADD']))?>],
+						condition: [condition],
 						validate: function(link)
 						{
 							if (
@@ -56,7 +64,11 @@ $currentLanding = $arResult['LANDINGS'][$arParams['LANDING_ID']] ?? null;
 						options: {allowChangeHistory: false}
 					}
 				]
-			});
+			};
+			const preparedParams = (topWindow.BX.Runtime && typeof topWindow.BX.Runtime.clone === 'function')
+				? topWindow.BX.Runtime.clone(bindParams)
+				: bindParams;
+			topWindow.BX.SidePanel.Instance.bindAnchors(preparedParams);
 		}
 
 		new BX.Landing.Component.Selector({

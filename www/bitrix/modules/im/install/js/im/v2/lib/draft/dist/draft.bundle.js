@@ -2,7 +2,7 @@
 this.BX = this.BX || {};
 this.BX.Messenger = this.BX.Messenger || {};
 this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
-(function (exports,main_core,main_core_events,im_v2_lib_logger,im_v2_application_core,ui_dexie,im_v2_lib_localStorage,im_v2_const) {
+(function (exports,main_core,main_core_events,im_v2_lib_logger,im_v2_application_core,im_v2_const,ui_dexie,im_v2_lib_localStorage) {
 	'use strict';
 
 	const DB_NAME = 'bx-im-drafts';
@@ -55,6 +55,17 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	const SHOW_DRAFT_IN_RECENT_TIMEOUT = 1500;
 	const STORAGE_KEY = 'recentDraft';
 	const NOT_AVAILABLE_CHAT_TYPES = new Set([im_v2_const.ChatType.comment]);
+	const STANDALONE_SECTION_CHAT_TYPES = new Set([im_v2_const.ChatType.taskComments]);
+	var _fillDraftsFromStorage = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("fillDraftsFromStorage");
+	var _setRecentListDraftText = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("setRecentListDraftText");
+	var _setRecentItemDraftText = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("setRecentItemDraftText");
+	var _onLayoutChange = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("onLayoutChange");
+	var _refreshSaveTimeout = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("refreshSaveTimeout");
+	var _saveToIndexedDb = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("saveToIndexedDb");
+	var _prepareDrafts = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("prepareDrafts");
+	var _canSetRecentItemDraftText = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("canSetRecentItemDraftText");
+	var _getChat = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getChat");
+	var _isValidDialogId = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("isValidDialogId");
 	class DraftManager {
 	  static getInstance() {
 	    if (!DraftManager.instance) {
@@ -63,176 +74,189 @@ this.BX.Messenger.v2 = this.BX.Messenger.v2 || {};
 	    return DraftManager.instance;
 	  }
 	  constructor() {
+	    Object.defineProperty(this, _isValidDialogId, {
+	      value: _isValidDialogId2
+	    });
+	    Object.defineProperty(this, _getChat, {
+	      value: _getChat2
+	    });
+	    Object.defineProperty(this, _canSetRecentItemDraftText, {
+	      value: _canSetRecentItemDraftText2
+	    });
+	    Object.defineProperty(this, _prepareDrafts, {
+	      value: _prepareDrafts2
+	    });
+	    Object.defineProperty(this, _saveToIndexedDb, {
+	      value: _saveToIndexedDb2
+	    });
+	    Object.defineProperty(this, _refreshSaveTimeout, {
+	      value: _refreshSaveTimeout2
+	    });
+	    Object.defineProperty(this, _onLayoutChange, {
+	      value: _onLayoutChange2
+	    });
+	    Object.defineProperty(this, _setRecentItemDraftText, {
+	      value: _setRecentItemDraftText2
+	    });
+	    Object.defineProperty(this, _setRecentListDraftText, {
+	      value: _setRecentListDraftText2
+	    });
+	    Object.defineProperty(this, _fillDraftsFromStorage, {
+	      value: _fillDraftsFromStorage2
+	    });
 	    this.inited = false;
 	    this.drafts = {};
-	    this.initPromise = new Promise(resolve => {
-	      this.initPromiseResolver = resolve;
-	    });
-	    main_core_events.EventEmitter.subscribe(im_v2_const.EventType.layout.onLayoutChange, this.onLayoutChange.bind(this));
+	    main_core_events.EventEmitter.subscribe(im_v2_const.EventType.layout.onLayoutChange, babelHelpers.classPrivateFieldLooseBase(this, _onLayoutChange)[_onLayoutChange].bind(this));
 	  }
 	  async initDraftHistory() {
-	    if (this.inited) {
-	      return;
-	    }
-	    this.inited = true;
 	    let draftHistory = null;
 	    try {
-	      draftHistory = await IndexedDbManager.getInstance().get(this.getStorageKey(), {});
+	      draftHistory = await IndexedDbManager.getInstance().get(STORAGE_KEY, {});
 	    } catch (error) {
 	      // eslint-disable-next-line no-console
 	      console.error('DraftManager: error initing draft history', error);
-	      this.initPromiseResolver();
 	      return;
 	    }
-	    this.fillDraftsFromStorage(draftHistory);
+	    babelHelpers.classPrivateFieldLooseBase(this, _fillDraftsFromStorage)[_fillDraftsFromStorage](draftHistory);
 	    im_v2_lib_logger.Logger.warn('DraftManager: initDrafts:', this.drafts);
-	    this.initPromiseResolver();
-	    this.setRecentListDraftText();
-	  }
-	  ready() {
-	    return this.initPromise;
-	  }
-	  fillDraftsFromStorage(draftHistory) {
-	    if (!main_core.Type.isPlainObject(draftHistory)) {
-	      return;
-	    }
-	    Object.entries(draftHistory).forEach(([dialogId, draft]) => {
-	      if (!main_core.Type.isPlainObject(draft)) {
-	        return;
-	      }
-	      this.drafts[dialogId] = draft;
-	    });
+	    babelHelpers.classPrivateFieldLooseBase(this, _setRecentListDraftText)[_setRecentListDraftText]();
+	    this.inited = true;
 	  }
 	  setDraftText(dialogId, text) {
+	    if (!babelHelpers.classPrivateFieldLooseBase(this, _isValidDialogId)[_isValidDialogId](dialogId)) {
+	      return;
+	    }
 	    if (!this.drafts[dialogId]) {
 	      this.drafts[dialogId] = {};
 	    }
 	    this.drafts[dialogId].text = text.trim();
-	    this.refreshSaveTimeout();
+	    babelHelpers.classPrivateFieldLooseBase(this, _refreshSaveTimeout)[_refreshSaveTimeout]();
 	  }
 	  setDraftPanel(dialogId, panelType, panelContext) {
+	    if (!babelHelpers.classPrivateFieldLooseBase(this, _isValidDialogId)[_isValidDialogId](dialogId)) {
+	      return;
+	    }
 	    if (!this.drafts[dialogId]) {
 	      this.drafts[dialogId] = {};
 	    }
 	    this.drafts[dialogId].panelType = panelType;
 	    this.drafts[dialogId].panelContext = panelContext;
-	    this.refreshSaveTimeout();
+	    babelHelpers.classPrivateFieldLooseBase(this, _refreshSaveTimeout)[_refreshSaveTimeout]();
 	  }
 	  setDraftMentions(dialogId, mentions) {
+	    if (!babelHelpers.classPrivateFieldLooseBase(this, _isValidDialogId)[_isValidDialogId](dialogId)) {
+	      return;
+	    }
 	    if (!this.drafts[dialogId]) {
 	      this.drafts[dialogId] = {};
 	    }
 	    this.drafts[dialogId].mentions = mentions;
-	    this.refreshSaveTimeout();
+	    babelHelpers.classPrivateFieldLooseBase(this, _refreshSaveTimeout)[_refreshSaveTimeout]();
 	  }
 	  async getDraft(dialogId) {
 	    var _this$drafts$dialogId;
+	    if (!babelHelpers.classPrivateFieldLooseBase(this, _isValidDialogId)[_isValidDialogId](dialogId)) {
+	      return {};
+	    }
 	    if (!this.inited) {
 	      await this.initDraftHistory();
 	    }
-	    const draft = (_this$drafts$dialogId = this.drafts[dialogId]) != null ? _this$drafts$dialogId : {};
-	    return Promise.resolve(draft);
+	    return (_this$drafts$dialogId = this.drafts[dialogId]) != null ? _this$drafts$dialogId : {};
 	  }
 	  clearDraft(dialogId) {
+	    if (!babelHelpers.classPrivateFieldLooseBase(this, _isValidDialogId)[_isValidDialogId](dialogId)) {
+	      return;
+	    }
 	    delete this.drafts[dialogId];
-	    this.setRecentItemDraftText(dialogId, '');
+	    babelHelpers.classPrivateFieldLooseBase(this, _setRecentItemDraftText)[_setRecentItemDraftText](dialogId, '');
 	  }
-	  setRecentListDraftText() {
-	    Object.entries(this.drafts).forEach(([dialogId, draft]) => {
-	      var _draft$text;
-	      this.setRecentItemDraftText(dialogId, (_draft$text = draft.text) != null ? _draft$text : '');
-	    });
+	}
+	function _fillDraftsFromStorage2(draftHistory) {
+	  if (!main_core.Type.isPlainObject(draftHistory)) {
+	    return;
 	  }
-	  setRecentItemDraftText(dialogId, text) {
-	    if (!this.canSetRecentItemDraftText(dialogId)) {
+	  Object.entries(draftHistory).forEach(([dialogId, draft]) => {
+	    if (!main_core.Type.isPlainObject(draft) || !babelHelpers.classPrivateFieldLooseBase(this, _isValidDialogId)[_isValidDialogId](dialogId)) {
 	      return;
 	    }
-	    void im_v2_application_core.Core.getStore().dispatch(this.getDraftMethodName(), {
-	      id: dialogId,
-	      text
-	    });
+	    this.drafts[dialogId] = draft;
+	  });
+	}
+	function _setRecentListDraftText2() {
+	  Object.entries(this.drafts).forEach(([dialogId, draft]) => {
+	    var _draft$text;
+	    babelHelpers.classPrivateFieldLooseBase(this, _setRecentItemDraftText)[_setRecentItemDraftText](dialogId, (_draft$text = draft.text) != null ? _draft$text : '');
+	  });
+	}
+	function _setRecentItemDraftText2(dialogId, text) {
+	  if (!babelHelpers.classPrivateFieldLooseBase(this, _canSetRecentItemDraftText)[_canSetRecentItemDraftText](dialogId)) {
+	    return;
 	  }
-	  onLayoutChange(event) {
+	  const {
+	    type: chatType
+	  } = babelHelpers.classPrivateFieldLooseBase(this, _getChat)[_getChat](dialogId);
+	  void im_v2_application_core.Core.getStore().dispatch('recent/setDraft', {
+	    dialogId,
+	    text,
+	    addFakeItems: !STANDALONE_SECTION_CHAT_TYPES.has(chatType)
+	  });
+	}
+	function _onLayoutChange2(event) {
+	  const {
+	    from
+	  } = event.getData();
+	  const dialogId = from.entityId;
+	  if (!babelHelpers.classPrivateFieldLooseBase(this, _isValidDialogId)[_isValidDialogId](dialogId)) {
+	    return;
+	  }
+	  setTimeout(async () => {
 	    const {
-	      from
-	    } = event.getData();
-	    if (from.name !== this.getLayoutName() || from.entityId === '') {
+	      text = ''
+	    } = await this.getDraft(dialogId);
+	    babelHelpers.classPrivateFieldLooseBase(this, _setRecentItemDraftText)[_setRecentItemDraftText](dialogId, text);
+	  }, SHOW_DRAFT_IN_RECENT_TIMEOUT);
+	}
+	function _refreshSaveTimeout2() {
+	  clearTimeout(this.writeToStorageTimeout);
+	  this.writeToStorageTimeout = setTimeout(() => {
+	    babelHelpers.classPrivateFieldLooseBase(this, _saveToIndexedDb)[_saveToIndexedDb]();
+	  }, WRITE_TO_STORAGE_TIMEOUT);
+	}
+	function _saveToIndexedDb2() {
+	  IndexedDbManager.getInstance().set(STORAGE_KEY, babelHelpers.classPrivateFieldLooseBase(this, _prepareDrafts)[_prepareDrafts]());
+	}
+	function _prepareDrafts2() {
+	  const result = {};
+	  Object.entries(this.drafts).forEach(([dialogId, draft]) => {
+	    if (!draft.text && !draft.panelType) {
 	      return;
 	    }
-	    const dialogId = from.entityId;
-	    setTimeout(async () => {
-	      const {
-	        text = ''
-	      } = await this.getDraft(dialogId);
-	      this.setRecentItemDraftText(dialogId, text);
-	    }, SHOW_DRAFT_IN_RECENT_TIMEOUT);
-	  }
-	  refreshSaveTimeout() {
-	    clearTimeout(this.writeToStorageTimeout);
-	    this.writeToStorageTimeout = setTimeout(() => {
-	      this.saveToIndexedDb();
-	    }, WRITE_TO_STORAGE_TIMEOUT);
-	  }
-	  saveToIndexedDb() {
-	    IndexedDbManager.getInstance().set(this.getStorageKey(), this.prepareDrafts());
-	  }
-	  prepareDrafts() {
-	    const result = {};
-	    Object.entries(this.drafts).forEach(([dialogId, draft]) => {
-	      if (!draft.text && !draft.panelType) {
-	        return;
-	      }
-	      if (draft.panelType === im_v2_const.TextareaPanelType.edit) {
-	        return;
-	      }
-	      result[dialogId] = {
-	        text: draft.text,
-	        mentions: draft.mentions
-	      };
-	    });
-	    return result;
-	  }
-	  getLayoutName() {
-	    return im_v2_const.Layout.chat.name;
-	  }
-	  getStorageKey() {
-	    return STORAGE_KEY;
-	  }
-	  getDraftMethodName() {
-	    return 'recent/setRecentDraft';
-	  }
-	  canSetRecentItemDraftText(dialogId) {
-	    const chat = im_v2_application_core.Core.getStore().getters['chats/get'](dialogId);
-	    if (!chat) {
-	      return false;
+	    if (draft.panelType === im_v2_const.TextareaPanelType.edit) {
+	      return;
 	    }
-	    return !NOT_AVAILABLE_CHAT_TYPES.has(chat.type);
+	    result[dialogId] = {
+	      text: draft.text,
+	      mentions: draft.mentions
+	    };
+	  });
+	  return result;
+	}
+	function _canSetRecentItemDraftText2(dialogId) {
+	  const chat = babelHelpers.classPrivateFieldLooseBase(this, _getChat)[_getChat](dialogId);
+	  if (!chat) {
+	    return false;
 	  }
+	  return !NOT_AVAILABLE_CHAT_TYPES.has(chat.type);
+	}
+	function _getChat2(dialogId) {
+	  return im_v2_application_core.Core.getStore().getters['chats/get'](dialogId);
+	}
+	function _isValidDialogId2(dialogId) {
+	  return main_core.Type.isStringFilled(dialogId) && dialogId !== '0';
 	}
 	DraftManager.instance = null;
 
-	const STORAGE_KEY$1 = 'copilotDraft';
-	class CopilotDraftManager extends DraftManager {
-	  static getInstance() {
-	    if (!CopilotDraftManager.instance) {
-	      CopilotDraftManager.instance = new CopilotDraftManager();
-	    }
-	    return CopilotDraftManager.instance;
-	  }
-	  getLayoutName() {
-	    return im_v2_const.Layout.copilot.name;
-	  }
-	  getStorageKey() {
-	    return STORAGE_KEY$1;
-	  }
-	  getDraftMethodName() {
-	    return 'recent/setCopilotDraft';
-	  }
-	}
-	CopilotDraftManager.instance = null;
-
 	exports.DraftManager = DraftManager;
-	exports.CopilotDraftManager = CopilotDraftManager;
 
-}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX,BX.Event,BX.Messenger.v2.Lib,BX.Messenger.v2.Application,BX.Dexie3,BX.Messenger.v2.Lib,BX.Messenger.v2.Const));
+}((this.BX.Messenger.v2.Lib = this.BX.Messenger.v2.Lib || {}),BX,BX.Event,BX.Messenger.v2.Lib,BX.Messenger.v2.Application,BX.Messenger.v2.Const,BX.DexieExport,BX.Messenger.v2.Lib));
 //# sourceMappingURL=draft.bundle.js.map

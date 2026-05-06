@@ -38,8 +38,9 @@ export class Device
 		'Landing\\Block::removeCard',
 		'Landing\\Block::updateNodes',
 		'Landing\\Block::updateStyles',
-		'Landing\\Block::saveForm',// fake-action
+		'Landing\\Block::saveForm', // fake-action
 	];
+	target: HTMLElement;
 
 	/**
 	 * Device constructor.
@@ -48,6 +49,7 @@ export class Device
 	 */
 	constructor(options: Options)
 	{
+		this.target = options.target || document.body;
 		this.#frameUrl = options.frameUrl;
 		this.#editorFrameWrapper = options.editorFrameWrapper;
 		this.#options = options;
@@ -145,6 +147,29 @@ export class Device
 		}
 	}
 
+	#getDocumentMetrics(doc: ?Document): ?{ scrollHeight: number, scrollTop: number }
+	{
+		const body = doc?.body;
+		const documentElement = doc?.documentElement;
+
+		if (!body || !documentElement)
+		{
+			return null;
+		}
+
+		return {
+			scrollHeight: Math.max(
+				body.scrollHeight,
+				documentElement.scrollHeight,
+				body.offsetHeight,
+				documentElement.offsetHeight,
+				body.clientHeight,
+				documentElement.clientHeight,
+			),
+			scrollTop: documentElement.scrollTop || body.scrollTop,
+		};
+	}
+
 	/**
 	 * Scrolls preview window for some percent.
 	 *
@@ -154,15 +179,13 @@ export class Device
 	{
 		if (this.#previewWindow)
 		{
-			const document = this.#previewWindow.document;
+			const metrics = this.#getDocumentMetrics(this.#previewWindow.document);
+			if (!metrics)
+			{
+				return;
+			}
 
-			const scrollHeight = Math.max(
-				document.body.scrollHeight, document.documentElement.scrollHeight,
-				document.body.offsetHeight, document.documentElement.offsetHeight,
-				document.body.clientHeight, document.documentElement.clientHeight
-			);
-
-			this.#previewWindow.scroll(0, scrollHeight * topInPercent / 100);
+			this.#previewWindow.scroll(0, metrics.scrollHeight * topInPercent / 100);
 		}
 	}
 
@@ -242,7 +265,7 @@ export class Device
 		if (this.#currentDevice)
 		{
 			Dom.removeClass(this.#previewElement, this.#currentDevice.className);
-			this.#previewElement.style.removeProperty(`top`);
+			this.#previewElement.style.removeProperty('top');
 		}
 
 		this.#currentDevice = newDevice;
@@ -259,7 +282,8 @@ export class Device
 			&& this.#currentDevice.width
 			&& this.#currentDevice.height)
 		{
-			const scale = window.innerHeight / (this.#currentDevice.height + 300);
+			const maxDeviceHeight = this.#maxDeviceHeight(this.#currentDevice.type);
+			const scale = window.innerHeight / (maxDeviceHeight + 300);
 			const padding = parseInt(window.getComputedStyle(frameWrapper).padding);
 
 			let param1 = this.#currentDevice.width;
@@ -271,14 +295,27 @@ export class Device
 				param2 = this.#currentDevice.width;
 			}
 
-			frame.style.setProperty(`width`, `${param1}px`);
-			frame.style.setProperty(`height`, `${param2}px`);
-			frameWrapper.style.setProperty(`transform`, `scale(${scale})`);
-			this.#previewElement.style.setProperty(`width`, `${(param1 + (padding * 2)) * scale}px`);
-			this.#previewElement.style.setProperty(`height`, `${(param2 + (padding * 2)) * scale}px`);
+			frame.style.setProperty('width', `${param1}px`);
+			frame.style.setProperty('height', `${param2}px`);
+			frameWrapper.style.setProperty('transform', `scale(${scale})`);
+			this.#previewElement.style.setProperty('width', `${(param1 + (padding * 2)) * scale}px`);
+			this.#previewElement.style.setProperty('height', `${(param2 + (padding * 2)) * scale}px`);
 		}
 
 		Dom.addClass(this.#previewElement, this.#currentDevice.className);
+	}
+
+	#maxDeviceHeight(type: 'mobile' | 'tablet'): number
+	{
+		let maxHeight = 0;
+		Object.values(Devices.devices).forEach((device) => {
+			if (device.type === type && device.height)
+			{
+				maxHeight = Math.max(maxHeight, device.height);
+			}
+		});
+
+		return maxHeight;
 	}
 
 	/**
@@ -286,15 +323,14 @@ export class Device
 	 */
 	#adjustPreviewScroll()
 	{
-		const documentEditorFrame = this.#editorFrameWrapper.querySelector('iframe').contentWindow.document;
-		const scrollHeight = Math.max(
-			documentEditorFrame.body.scrollHeight, documentEditorFrame.documentElement.scrollHeight,
-			documentEditorFrame.body.offsetHeight, documentEditorFrame.documentElement.offsetHeight,
-			documentEditorFrame.body.clientHeight, documentEditorFrame.documentElement.clientHeight
-		);
-		const scrollTop = documentEditorFrame.documentElement.scrollTop || documentEditorFrame.body.scrollTop;
+		const editorFrame = this.#editorFrameWrapper?.querySelector('iframe');
+		const metrics = this.#getDocumentMetrics(editorFrame?.contentWindow?.document);
+		if (!metrics || metrics.scrollHeight <= 0)
+		{
+			return;
+		}
 
-		this.#scrollDevice(scrollTop / scrollHeight * 100);
+		this.#scrollDevice(metrics.scrollTop / metrics.scrollHeight * 100);
 	}
 
 	/**
@@ -312,19 +348,39 @@ export class Device
 				messages: options.messages,
 			});
 			Dom.hide(this.#previewElement);
-			document.body.appendChild(this.#previewElement);
+			this.target.appendChild(this.#previewElement);
 
-			//#170065
-			//this.#previewElement.querySelector('iframe').contentWindow.addEventListener('load', () => {
+			const editorFrame = this.#editorFrameWrapper?.querySelector('iframe');
+			if (editorFrame)
+			{
+				Event.bind(editorFrame, 'load', () => {
+					this.#adjustPreviewScroll();
+				});
+			}
+
+			const previewFrame = this.#previewElement.querySelector('iframe');
+			if (previewFrame)
+			{
+				Event.bind(previewFrame, 'load', () => {
+					this.#previewWindow = previewFrame.contentWindow;
+
+					const previewHtml = previewFrame.contentWindow?.document?.querySelector('html');
+					if (previewHtml)
+					{
+						Dom.removeClass(previewHtml, 'bx-no-touch');
+						Dom.addClass(previewHtml, 'bx-touch');
+					}
+
+					this.#adjustPreviewScroll();
+				});
+
 				if (!this.#previewWindow)
 				{
-					this.#previewWindow = this.#previewElement.querySelector('iframe').contentWindow;
-					const previewDocument = this.#previewElement.querySelector('iframe').contentWindow.document
-					Dom.removeClass(previewDocument.querySelector('html'), 'bx-no-touch');
-					Dom.addClass(previewDocument.querySelector('html'), 'bx-touch');
+					this.#previewWindow = previewFrame.contentWindow;
 				}
-				this.#adjustPreviewScroll();
-			//});
+			}
+
+			this.#adjustPreviewScroll();
 		}
 	}
 
@@ -336,7 +392,7 @@ export class Device
 		DeviceUI.openDeviceMenu(
 			this.#previewElement.querySelector('[data-role="device-name"]'),
 			Object.values(Devices.devices),
-			this.#setDevice.bind(this)
+			this.#setDevice.bind(this),
 		);
 	}
 

@@ -76,13 +76,14 @@ $editable = ($USER->IsAdmin() ||
 );
 
 //authorize as user
-if(isset($_REQUEST["action"]) && $_REQUEST["action"] == "authorize" && check_bitrix_sessid() && $USER->CanDoOperation('edit_php'))
+if (isset($_REQUEST["action"], $_REQUEST["ID"]) && $_REQUEST["action"] == "authorize" && $_REQUEST["ID"] > 0)
 {
-	$USER->Logout();
-	$USER->Authorize(intval($_REQUEST["ID"]), false, true, null, false);
-	LocalRedirect("user_edit.php?lang=".LANGUAGE_ID."&ID=".intval($_REQUEST["ID"]));
+	if (check_bitrix_sessid() && $USER->CanDoOperation('edit_php'))
+	{
+		$USER->LoginAs((int)$_REQUEST["ID"]);
+		LocalRedirect("user_edit.php?lang=" . LANGUAGE_ID . "&ID=" . (int)$_REQUEST["ID"]);
+	}
 }
-
 
 $canSelfEdit = true;
 if($ID==$uid && !($USER->CanDoOperation('edit_php') || ($USER->CanDoOperation('edit_all_users') && $USER->CanDoOperation('edit_groups'))))
@@ -318,11 +319,6 @@ if(
 		{
 			$ID = $user->Add($arFields);
 			$res = ($ID > 0);
-			if(COption::GetOptionString("main", "event_log_register", "N") === "Y" && $res)
-			{
-				$res_log["user"] = (!empty($_POST["NAME"]) || !empty($_POST["LAST_NAME"])) ? trim(($_POST["NAME"] ?? '')." ".($_POST["LAST_NAME"] ?? '')) : ($_POST["LOGIN"] ?? '');
-				CEventLog::Log("SECURITY", "USER_REGISTER", "main", $ID, serialize($res_log));
-			}
 			$new = "Y";
 		}
 		if ($USER->CanDoOperation('edit_ratings') && ($selfEdit || $ID!=$USER->GetID()) && is_array($_POST['RATING_BONUS'] ?? null))

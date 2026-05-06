@@ -145,7 +145,7 @@ this.BX = this.BX || {};
 	function _getLabelContainer2() {
 	  return this.cache.remember('label', () => {
 	    return main_core.Tag.render(_t6 || (_t6 = _`
-				<span>
+				<span class="catalog-footers-label-container">
 					<span
 						onclick="${0}"
 						class="ui-selector-footer-link  ui-selector-footer-link-add"
@@ -298,12 +298,8 @@ this.BX = this.BX || {};
 	var _handleNameInputBlur = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("handleNameInputBlur");
 	var _getHiddenNameInput = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getHiddenNameInput");
 	var _getArrowIcon = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getArrowIcon");
-	var _getSearchIcon = /*#__PURE__*/babelHelpers.classPrivateFieldLooseKey("getSearchIcon");
 	class ProductSearchInputBase {
 	  constructor(id, options = {}) {
-	    Object.defineProperty(this, _getSearchIcon, {
-	      value: _getSearchIcon2
-	    });
 	    Object.defineProperty(this, _getArrowIcon, {
 	      value: _getArrowIcon2
 	    });
@@ -348,7 +344,12 @@ this.BX = this.BX || {};
 	    this.isEnabledDetailLink = options.isEnabledDetailLink;
 	    this.inputName = options.inputName || catalog_productSelector.ProductSelector.INPUT_FIELD_NAME;
 	    this.loadedSelectedItem = null;
-	    this.handleSearchInput = main_core.Runtime.debounce(this.searchInDialog, 500, this);
+	    this.clickNameInputHandler = this.handleClickNameInput.bind(this);
+	    this.searchInDialogHandler = main_core.Runtime.debounce(this.searchInDialog, 500, this);
+	    this.nameInputBlurHandler = babelHelpers.classPrivateFieldLooseBase(this, _handleNameInputBlur)[_handleNameInputBlur].bind(this);
+	    this.nameInputKeyDownHandler = this.handleNameInputKeyDown.bind(this);
+	    this.iconsSwitchingOnNameInputHandler = babelHelpers.classPrivateFieldLooseBase(this, _handleIconsSwitchingOnNameInput)[_handleIconsSwitchingOnNameInput].bind(this);
+	    this.nameInputChangeHandler = babelHelpers.classPrivateFieldLooseBase(this, _handleNameInputChange)[_handleNameInputChange].bind(this);
 	  }
 	  layout() {
 	    babelHelpers.classPrivateFieldLooseBase(this, _clearInputCache)[_clearInputCache]();
@@ -359,23 +360,23 @@ this.BX = this.BX || {};
 	      if (this.selector.isProductSearchEnabled()) {
 	        babelHelpers.classPrivateFieldLooseBase(this, _initHasDialogItems)[_initHasDialogItems]();
 	      }
-	      this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), main_core.Type.isStringFilled(this.getFilledValue()) ? 'none' : 'block');
-	      main_core.Dom.append(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), block);
-	      main_core.Event.bind(this.getNameInput(), 'click', this.handleClickNameInput.bind(this));
-	      main_core.Event.bind(this.getNameInput(), 'input', this.handleSearchInput);
-	      main_core.Event.bind(this.getNameInput(), 'blur', babelHelpers.classPrivateFieldLooseBase(this, _handleNameInputBlur)[_handleNameInputBlur].bind(this));
-	      main_core.Event.bind(this.getNameInput(), 'keydown', this.handleNameInputKeyDown.bind(this));
+	      this.toggleIcon(this.getSearchIcon(), main_core.Type.isStringFilled(this.getFilledValue()) ? 'none' : 'block');
+	      main_core.Dom.append(this.getSearchIcon(), block);
+	      main_core.Event.bind(this.getNameInput(), 'click', this.clickNameInputHandler);
+	      main_core.Event.bind(this.getNameInput(), 'input', this.searchInDialogHandler);
+	      main_core.Event.bind(this.getNameInput(), 'blur', this.nameInputBlurHandler);
+	      main_core.Event.bind(this.getNameInput(), 'keydown', this.nameInputKeyDownHandler);
 	      this.dialogMode = this.model.isCatalogExisted() ? DialogMode.SHOW_PRODUCT_ITEM : DialogMode.SHOW_RECENT;
 	    }
 	    if (this.showDetailLink() && main_core.Type.isStringFilled(this.getValue())) {
 	      this.toggleIcon(this.getClearIcon(), 'none');
-	      this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), 'none');
+	      this.toggleIcon(this.getSearchIcon(), 'none');
 	      this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getArrowIcon)[_getArrowIcon](), 'block');
 	      main_core.Dom.append(babelHelpers.classPrivateFieldLooseBase(this, _getArrowIcon)[_getArrowIcon](), block);
 	    }
-	    main_core.Event.bind(this.getNameInput(), 'click', babelHelpers.classPrivateFieldLooseBase(this, _handleIconsSwitchingOnNameInput)[_handleIconsSwitchingOnNameInput].bind(this));
-	    main_core.Event.bind(this.getNameInput(), 'input', babelHelpers.classPrivateFieldLooseBase(this, _handleIconsSwitchingOnNameInput)[_handleIconsSwitchingOnNameInput].bind(this));
-	    main_core.Event.bind(this.getNameInput(), 'change', babelHelpers.classPrivateFieldLooseBase(this, _handleNameInputChange)[_handleNameInputChange].bind(this));
+	    main_core.Event.bind(this.getNameInput(), 'click', this.iconsSwitchingOnNameInputHandler);
+	    main_core.Event.bind(this.getNameInput(), 'input', this.iconsSwitchingOnNameInputHandler);
+	    main_core.Event.bind(this.getNameInput(), 'change', this.nameInputChangeHandler);
 	    main_core.Dom.append(this.getNameBlock(), block);
 	    return block;
 	  }
@@ -466,7 +467,15 @@ this.BX = this.BX || {};
 	  }
 	  removeSpotlight() {}
 	  removeQrAuth() {}
-	  destroy() {}
+	  destroy() {
+	    main_core.Event.unbind(this.getNameInput(), 'click', this.clickNameInputHandler);
+	    main_core.Event.unbind(this.getNameInput(), 'input', this.searchInDialogHandler);
+	    main_core.Event.unbind(this.getNameInput(), 'blur', this.nameInputBlurHandler);
+	    main_core.Event.unbind(this.getNameInput(), 'keydown', this.nameInputKeyDownHandler);
+	    main_core.Event.unbind(this.getNameInput(), 'click', this.iconsSwitchingOnNameInputHandler);
+	    main_core.Event.unbind(this.getNameInput(), 'input', this.iconsSwitchingOnNameInputHandler);
+	    main_core.Event.unbind(this.getNameInput(), 'change', this.nameInputChangeHandler);
+	  }
 	  showItems() {
 	    if (this.getFilledValue() === '') {
 	      this.showPreselectedItems();
@@ -567,7 +576,7 @@ this.BX = this.BX || {};
 	  onProductSelect(event) {
 	    const item = event.getData().item;
 	    item.getDialog().getTargetNode().value = item.getTitle();
-	    this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), 'none');
+	    this.toggleIcon(this.getSearchIcon(), 'none');
 	    this.clearErrors();
 	    if (this.selector) {
 	      this.selector.onProductSelect(item.getId(), this.getOnProductSelectConfig(item));
@@ -618,16 +627,26 @@ this.BX = this.BX || {};
 	    this.loadedSelectedItem = null;
 	    dialog.load();
 	  }
+	  getSearchIcon() {
+	    return this.cache.remember('searchIcon', () => {
+	      return main_core.Tag.render(_t6$1 || (_t6$1 = _$2`
+				<button
+					class="ui-ctl-after ui-ctl-icon-search"
+					onclick="${0}"
+				></button>
+			`), babelHelpers.classPrivateFieldLooseBase(this, _handleSearchIconClick)[_handleSearchIconClick].bind(this));
+	    });
+	  }
 	}
 	function _handleIconsSwitchingOnNameInput2(event) {
 	  this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getArrowIcon)[_getArrowIcon](), 'none');
 	  if (main_core.Type.isStringFilled(event.target.value)) {
 	    this.toggleIcon(this.getClearIcon(), 'block');
-	    this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), 'none');
+	    this.toggleIcon(this.getSearchIcon(), 'none');
 	  } else {
 	    this.toggleIcon(this.getClearIcon(), 'none');
 	    if (this.isSearchEnabled()) {
-	      this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), 'block');
+	      this.toggleIcon(this.getSearchIcon(), 'block');
 	    }
 	  }
 	}
@@ -665,6 +684,7 @@ this.BX = this.BX || {};
 	  this.onChangeValue(value);
 	}
 	function _clearInputCache2() {
+	  this.destroy();
 	  this.cache.delete('dialog');
 	  this.cache.delete('nameBlock');
 	  this.cache.delete('nameInput');
@@ -724,13 +744,13 @@ this.BX = this.BX || {};
 	    this.toggleIcon(this.getClearIcon(), 'none');
 	    if (this.showDetailLink() && main_core.Type.isStringFilled(this.getValue())) {
 	      if (this.isSearchEnabled()) {
-	        this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), 'none');
+	        this.toggleIcon(this.getSearchIcon(), 'none');
 	      }
 	      this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getArrowIcon)[_getArrowIcon](), 'block');
 	    } else {
 	      this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getArrowIcon)[_getArrowIcon](), 'none');
 	      if (this.isSearchEnabled()) {
-	        this.toggleIcon(babelHelpers.classPrivateFieldLooseBase(this, _getSearchIcon)[_getSearchIcon](), main_core.Type.isStringFilled(this.getFilledValue()) ? 'none' : 'block');
+	        this.toggleIcon(this.getSearchIcon(), main_core.Type.isStringFilled(this.getFilledValue()) ? 'none' : 'block');
 	      }
 	    }
 	  }, 200);
@@ -745,7 +765,7 @@ this.BX = this.BX || {};
 	}
 	function _getHiddenNameInput2() {
 	  return this.cache.remember('hiddenNameInput', () => {
-	    return main_core.Tag.render(_t6$1 || (_t6$1 = _$2`
+	    return main_core.Tag.render(_t7$1 || (_t7$1 = _$2`
 				<input
 				 	type="hidden"
 					name="${0}"
@@ -756,23 +776,13 @@ this.BX = this.BX || {};
 	}
 	function _getArrowIcon2() {
 	  return this.cache.remember('arrowIcon', () => {
-	    return main_core.Tag.render(_t7$1 || (_t7$1 = _$2`
+	    return main_core.Tag.render(_t8$1 || (_t8$1 = _$2`
 				<a
 					href="${0}"
 					target="_blank"
 					class="ui-ctl-after ui-ctl-icon-forward"
 				>
 			`), main_core.Text.encode(this.model.getDetailPath()));
-	  });
-	}
-	function _getSearchIcon2() {
-	  return this.cache.remember('searchIcon', () => {
-	    return main_core.Tag.render(_t8$1 || (_t8$1 = _$2`
-				<button
-					class="ui-ctl-after ui-ctl-icon-search"
-					onclick="${0}"
-				></button>
-			`), babelHelpers.classPrivateFieldLooseBase(this, _handleSearchIconClick)[_handleSearchIconClick].bind(this));
 	  });
 	}
 
@@ -1391,6 +1401,7 @@ this.BX = this.BX || {};
 	    this.qrAuth = null;
 	  }
 	  destroy() {
+	    super.destroy();
 	    main_core.Event.unbind(this.getNameInput(), 'focus', this.onFocusHandler);
 	    main_core.Event.unbind(this.getNameInput(), 'blur', this.onBlurHandler);
 	  }
@@ -1452,7 +1463,7 @@ this.BX = this.BX || {};
 	  });
 	}
 	function _getProductIdByBarcode2(barcode) {
-	  return main_core.ajax.runAction('catalog.ProductSelector.#getProductIdByBarcode', {
+	  return main_core.ajax.runAction('catalog.ProductSelector.getProductIdByBarcode', {
 	    json: {
 	      barcode
 	    }
@@ -1476,7 +1487,7 @@ this.BX = this.BX || {};
 	    const barcodeIcon = main_core.Tag.render(_t5$4 || (_t5$4 = _$5`
 				<button	class="ui-ctl-before warehouse-barcode-icon" title="${0}"></button>
 			`), main_core.Loc.getMessage('CATALOG_SELECTOR_BARCODE_ICON_TITLE'));
-	    if (!this.settingsCollection.get('isShowedBarcodeSpotlightInfo') && this.settingsCollection.get('isAllowedShowBarcodeSpotlightInfo') && this.selector.getConfig('ENABLE_INFO_SPOTLIGHT', true)) {
+	    if (!this.settingsCollection.get('isShowedBarcodeSpotlightInfo') && this.selector.getConfig('ENABLE_INFO_SPOTLIGHT', true)) {
 	      this.spotlight = new BX.SpotLight({
 	        id: 'selector_barcode_scanner_info',
 	        targetElement: barcodeIcon,
@@ -2310,14 +2321,14 @@ this.BX = this.BX || {};
 	    if (!wrapper) {
 	      return;
 	    }
-	    this.defineWrapperClass(wrapper);
-	    wrapper.innerHTML = '';
 	    const block = main_core.Tag.render(_t$c || (_t$c = _$c`<div class="catalog-product-field-inner"></div>`));
 	    main_core.Dom.append(this.layoutNameBlock(), block);
 	    if (this.getSkuTreeInstance()) {
 	      main_core.Dom.append(this.getSkuTreeInstance().layout(), block);
 	    }
 	    main_core.Dom.append(this.getErrorContainer(), block);
+	    this.defineWrapperClass(wrapper);
+	    wrapper.innerHTML = '';
 	    if (!this.isViewMode()) {
 	      main_core.Dom.append(block, wrapper);
 	    }
@@ -2832,6 +2843,9 @@ this.BX = this.BX || {};
 	  }
 	}
 	function _createSearchInput2() {
+	  if (this.getType() !== ProductSelector.INPUT_FIELD_BARCODE && this.searchInput) {
+	    this.searchInput.destroy();
+	  }
 	  if (this.placement) {
 	    return new ProductSearchInputPlacement(this.id, {
 	      selector: this,

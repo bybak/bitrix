@@ -54,7 +54,7 @@ if ($arResult['FATAL'])
 $row = $arResult['LANDING'];
 $hooks = $arResult['HOOKS'];
 $isFormEditor = $arResult['SPECIAL_TYPE'] === Site\Type::PSEUDO_SCOPE_CODE_FORMS;
-$isMainpageEditor = $arParams['TYPE'] === Site\Type::SCOPE_CODE_MAINPAGE;
+ $isMainpageEditor = $arParams['TYPE'] === Site\Type::SCOPE_CODE_VIBE;
 $colorMain = LandingEditComponent::COLOR_PICKER_DEFAULT_COLOR_TEXT;
 $colorTitle = LandingEditComponent::COLOR_PICKER_DEFAULT_COLOR_TEXT;
 $tplRefs = $arResult['TEMPLATES_REF'];
@@ -262,10 +262,14 @@ if ($arParams['SUCCESS_SAVE'])
 															const currentColor = <?= CUtil::PhpToJSObject($arResult['CURRENT_COLORS']['currentColor']) ?>;
 															BX.ready(function ()
 															{
+																const metrikaParams = {
+																	p1: 'page_design',
+																};
 																this.corporateColor = new BX.Landing.ColorPickerTheme(
 																	BX('<?= $template->getFieldId('COLORPICKER_THEME') ?>'),
 																	allColors,
 																	currentColor,
+																	metrikaParams,
 																);
 															});
 														</script>
@@ -361,9 +365,14 @@ if ($arParams['SUCCESS_SAVE'])
 											defaultColor: <?=CUtil::PhpToJSObject($colorMain)?>,
 										}
 										BX.ready(function() {
+											const metrikaParams = {
+												subSection: 'text',
+												p1: 'page_design',
+											};
 											this.textColor = new BX.Landing.ColorPicker(
 												BX('<?= $template->getFieldId('THEMEFONTS_COLOR') ?>'),
-												paramsColor
+												paramsColor,
+												metrikaParams,
 											);
 										});
 									</script>
@@ -413,9 +422,14 @@ if ($arParams['SUCCESS_SAVE'])
 											defaultColor: <?=CUtil::PhpToJSObject($colorTitle)?>,
 										}
 										BX.ready(function() {
+											const metrikaParams = {
+												subSection: 'title',
+												p1: 'page_design',
+											};
 											this.hColor = new BX.Landing.ColorPicker(
 												BX('<?= $template->getFieldId('THEMEFONTS_COLOR_H') ?>'),
-												paramsColorH
+												paramsColorH,
+												metrikaParams,
 											);
 										});
 									</script>
@@ -501,9 +515,14 @@ if ($arParams['SUCCESS_SAVE'])
 											defaultColor: <?=CUtil::PhpToJSObject(LandingEditComponent::COLOR_PICKER_DEFAULT_BG_COLOR)?>,
 										}
 										BX.ready(function() {
+											const metrikaParams = {
+												subSection: 'background',
+												p1: 'page_design',
+											};
 											this.bgColor = new BX.Landing.ColorPicker(
 												BX('<?= $template->getFieldId('BACKGROUND_COLOR') ?>'),
-												paramsBgColor
+												paramsBgColor,
+												metrikaParams,
 											);
 										});
 									</script>
@@ -553,21 +572,20 @@ if ($arParams['SUCCESS_SAVE'])
 	{
 		new BX.UI.LayoutForm({container: BX('landing-design-form')});
 
-		BX.UI.Hint.init(BX('landing-design-form'));
-
-		<?php
-		$themeFontsFields = $arResult['HOOKS_SITE']['THEMEFONTS']->getFields();
-		$themeFields = $arResult['HOOKS_SITE']['THEME']->getFields();
-		$bgFields = $arResult['HOOKS_SITE']['BACKGROUND']->getFields();
-
-		$bgFilePath = $bgFields['PICTURE']->getValue();
-		if (is_numeric($bgFilePath))
-		{
-			$bgFilePath = File::getFilePath($bgFields['PICTURE']->getValue());
-		}
-		?>
-
 		<?php if (!$isMainpageEditor): ?>
+		<?php
+			$themeFontsFields = $arResult['HOOKS_SITE']['THEMEFONTS']->getFields();
+			$themeFields = $arResult['HOOKS_SITE']['THEME']->getFields();
+			$bgFields = $arResult['HOOKS_SITE']['BACKGROUND']->getFields();
+
+			$bgFilePath = $bgFields['PICTURE']->getValue();
+			if (is_numeric($bgFilePath))
+			{
+				$bgFilePath = File::getFilePath($bgFields['PICTURE']->getValue());
+			}
+		?>
+			BX.UI.Hint.init(BX('landing-design-form'));
+
 			new BX.Landing.SettingsForm.DesignPreview(
 				BX('landing-design-form'),
 				{

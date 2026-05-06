@@ -1,8 +1,8 @@
 <?php
 $MESS["ACCOUNT_INFO_SENT"] = "A code to reset your password and your registration information has just been sent to your e-mail address. Please check your e-mail. Note that the reset code is re-generated on each request.";
 $MESS["CHANGE_PASS_SUCC"] = "Your password successfully changed.";
-$MESS["CHECKWORD_EXPIRE"] = "Check word validity period has expired. You need to request it again.";
-$MESS["CHECKWORD_INCORRECT1"] = "Incorrect check word.";
+$MESS["CHECKWORD_EXPIRE"] = "Checkword validity period has expired. You need to request it again.";
+$MESS["CHECKWORD_INCORRECT1"] = "Incorrect checkword.";
 $MESS["DATA_NOT_FOUND1"] = "User profile was not found.";
 $MESS["FORGOT_NAME"] = "Both Name and Last name required";
 $MESS["FORMATNAME_NONAME"] = "Untitled";
@@ -44,7 +44,7 @@ $MESS["USER_LAST_SEEN_TODAY"] = "today on #TIME#";
 $MESS["USER_LAST_SEEN_TOMORROW"] = "tomorrow at #TIME#";
 $MESS["USER_LAST_SEEN_YESTERDAY"] = "yesterday at #TIME#";
 $MESS["USER_LOGIN_OTP_ERROR"] = "One-time passwords are disabled.";
-$MESS["USER_LOGIN_OTP_INCORRECT"] = "One-time password is incorrect.";
+$MESS["USER_LOGIN_OTP_INCORRECT"] = "This code is incorrect.";
 $MESS["USER_REGISTERED_SIMPLE"] = "You registration has completed successfully.";
 $MESS["USER_REGISTER_OK"] = "You have successfully registered.";
 $MESS["USER_STATUS_OFFLINE"] = "Offline";
@@ -63,6 +63,7 @@ $MESS["main_change_pass_error"] = "Error changing the password.";
 $MESS["main_change_pass_incorrect_pass"] = "Current password you provided is incorrect.";
 $MESS["main_check_password_weak"] = "Password is too weak (found in the weak passwords list).";
 $MESS["main_login_need_phone_confirmation"] = "You have not confirmed your registration yet (your phone number: #PHONE#). Please use the password recovery form to request another confirmation SMS.";
+$MESS["main_password_policy_min_days"] = "Minimum password age not reached (#DAYS# days).";
 $MESS["main_register_no_user"] = "User was not found.";
 $MESS["main_register_sms_sent"] = "A code to change your password has been sent to your phone.";
 $MESS["main_register_timeout"] = "Timeout has not expired yet.";

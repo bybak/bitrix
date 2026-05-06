@@ -40,8 +40,8 @@ this.BX.UI = this.BX.UI || {};
 	    for (const eventName in events) {
 	      const callback = main_core.Type.isFunction(events[eventName]) ? events[eventName] : main_core.Reflection.getClass(events[eventName]);
 	      if (callback) {
-	        this.subscribe(this.constructor.getFullEventName(eventName), () => {
-	          callback();
+	        this.subscribe(this.constructor.getFullEventName(eventName), (...args) => {
+	          callback(...args);
 	        });
 	      }
 	    }
@@ -62,6 +62,10 @@ this.BX.UI = this.BX.UI || {};
 	    if (main_core.Type.isDomNode(this.target)) {
 	      return main_core.Dom.getPosition(this.target);
 	    }
+	  }
+	  isTargetVisible() {
+	    const target = this.getTarget();
+	    return main_core.Type.isDomNode(target) && document.body.contains(target) && main_core.Dom.isShownRecursive(target);
 	  }
 	  getId() {
 	    return this.id;
@@ -188,6 +192,7 @@ this.BX.UI = this.BX.UI || {};
 	    this.helper = top.BX.Helper;
 	    this.targetContainer = main_core.Type.isDomNode(options.targetContainer) ? options.targetContainer : null;
 	    this.overlay = main_core.Type.isBoolean(options.overlay) ? options.overlay : true;
+	    this.canShowWithoutTarget = main_core.Type.isBoolean(options.canShowWithoutTarget) ? options.canShowWithoutTarget : true;
 	    this.finalStep = options.finalStep || false;
 	    this.finalText = options.finalText || "";
 	    this.finalTitle = options.finalTitle || "";
@@ -328,7 +333,7 @@ this.BX.UI = this.BX.UI || {};
 	   * @public
 	   */
 	  showNextStep() {
-	    if (this.currentStepIndex === this.steps.length) {
+	    if (this.currentStepIndex === this.steps.length || !this.canShowWithoutTarget && !this.getCurrentStep().isTargetVisible()) {
 	      return;
 	    }
 	    if (this.getCurrentStep().getCursorMode()) {
@@ -633,6 +638,15 @@ this.BX.UI = this.BX.UI || {};
 	          forceBindPosition: true
 	        },
 	        events: {
+	          onBeforeShow: () => {
+	            if (this.getCurrentStep()) {
+	              const currentStep = this.getCurrentStep();
+	              currentStep.emit(currentStep.constructor.getFullEventName('onBeforeShow'), {
+	                step: currentStep,
+	                guide: this
+	              });
+	            }
+	          },
 	          onPopupClose: popup => {
 	            if (popup.destroyed === false && this.onEvents) main_core_events.EventEmitter.emit('UI.Tour.Guide:onPopupClose', this);
 	            this.close();
@@ -758,24 +772,12 @@ this.BX.UI = this.BX.UI || {};
 	    // eslint-disable-next-line sonarjs/no-nested-template-literals
 	    const url = `redirect=detail&code=${article}${anchor ? `&anchor=${anchor}` : ''}`;
 	    this.helper.show(url);
-	    if (this.helper.isOpen()) {
-	      this.getPopup().setAutoHide(false);
-	    }
-	    main_core_events.EventEmitter.subscribe(this.helper.getSlider(), 'SidePanel.Slider:onCloseComplete', () => {
-	      this.getPopup().setAutoHide(true);
-	    });
 	  }
 	  handleInfoHelperCodeClickLink() {
 	    event.preventDefault();
 	    if (main_core.Reflection.getClass('BX.UI.InfoHelper.show')) {
 	      const helper = top.BX.UI.InfoHelper;
 	      helper.show(this.getCurrentStep().getInfoHelperCode());
-	      if (helper.isOpen()) {
-	        this.getPopup().setAutoHide(false);
-	      }
-	      main_core_events.EventEmitter.subscribe(helper.getSlider(), 'SidePanel.Slider:onCloseComplete', () => {
-	        this.getPopup().setAutoHide(true);
-	      });
 	    }
 	  }
 

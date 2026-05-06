@@ -1,15 +1,24 @@
-import { ajax as Ajax } from "main.core";
+import { Runtime } from 'main.core';
 import { BaseEvent, EventEmitter } from 'main.core.events';
-import { Picker } from 'ai.picker';
 import 'calendar.sliderloader';
 
 import { runAction } from 'im.v2.lib.rest';
 import { Core } from 'im.v2.application.core';
-import { EventType, RestMethod } from 'im.v2.const';
+import { RestMethod } from 'im.v2.const';
 
 import type { RestClient } from 'rest.client';
+import type { JsonObject } from 'main.core';
 
-const CALENDAR_ON_ENTRY_SAVE_EVENT = 'BX.Calendar:onEntrySave';
+export type TaskV2Params = {
+	groupId?: number,
+	entityId?: number,
+	subEntityId?: number,
+	ta_sec: string,
+	ta_el: string,
+	description?: string,
+	auditors?: string,
+	UF_TASK_WEBDAV_FILES: string[],
+};
 
 export class EntityCreator
 {
@@ -24,9 +33,14 @@ export class EntityCreator
 		this.#chatId = chatId;
 	}
 
-	createAiTextForChat(startMessage): void
+	openTaskCreationForm(): void
 	{
-		this.#createAiText(startMessage);
+		this.#openTaskV2Card({
+			analytics: {
+				context: 'chat',
+				element: 'create_button',
+			},
+		});
 	}
 
 	createTaskForChat(): Promise
@@ -60,31 +74,13 @@ export class EntityCreator
 		return this.#requestPreparedParams(RestMethod.imChatCalendarPrepare, queryParams).then((sliderParams) => {
 			const { params } = sliderParams;
 
+			const CALENDAR_ON_ENTRY_SAVE_EVENT = 'BX.Calendar:onEntrySave';
+
 			this.#onCalendarEntrySaveHandler = this.#onCalendarEntrySave.bind(this, params.sliderId, messageId);
 			EventEmitter.subscribeOnce(CALENDAR_ON_ENTRY_SAVE_EVENT, this.#onCalendarEntrySaveHandler);
 
 			return this.#openCalendarSlider(params);
 		});
-	}
-
-	#createAiText(startMessage: ''): Promise
-	{
-		const picker = new Picker({
-			startMessage,
-			moduleId: 'im',
-			contextId: 'im_menu_plus',
-			history: true,
-			onSelect: (item) => {
-				EventEmitter.emit(EventType.textarea.insertText, {
-					text: item.data,
-					replace: true,
-				});
-			},
-		});
-		picker
-			.setLangSpace(Picker.LangSpace.text)
-			.text()
-		;
 	}
 
 	#createTask(messageId?: number): Promise
@@ -97,10 +93,13 @@ export class EntityCreator
 			config.data.messageId = messageId;
 		}
 
-		return runAction(RestMethod.imV2ChatTaskPrepare, config).then((sliderParams) => {
-			const { link, params } = sliderParams;
+		return runAction(RestMethod.imV2ChatTaskPrepare, config).then((taskParams) => {
+			const { link, params } = taskParams;
 
-			return this.#openTaskSlider(link, params);
+			return params.is_tasks_v2
+				? this.#openPrefilledTaskV2Card(params)
+				: this.#openTaskSlider(link, params)
+			;
 		});
 	}
 
@@ -120,6 +119,37 @@ export class EntityCreator
 			requestParams: sliderParams,
 			cacheable: false,
 		});
+	}
+
+	async #openTaskV2Card(payload: JsonObject = {}): void
+	{
+		const { TaskCard } = await Runtime.loadExtension('tasks.v2.application.task-card');
+
+		TaskCard.showCompactCard(payload);
+	}
+
+	#openPrefilledTaskV2Card(params: TaskV2Params)
+	{
+		const entityId = params.entityId ?? null;
+		const subEntityId = params.subEntityId ?? null;
+		const auditors = params.auditors
+			? params.auditors.split(',').map((auditorId) => parseInt(auditorId.trim(), 10))
+			: []
+		;
+
+		const payload = {
+			groupId: params.groupId ?? null,
+			description: params.description ?? null,
+			auditorsIds: auditors,
+			fileIds: params.UF_TASK_WEBDAV_FILES,
+			analytics: {
+				context: params.ta_sec,
+				element: params.ta_el,
+			},
+			source: { type: 'chat', entityId, subEntityId },
+		};
+
+		void this.#openTaskV2Card(payload);
 	}
 
 	#openCalendarSlider(sliderParams: Object)

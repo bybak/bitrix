@@ -2,13 +2,15 @@
 
 namespace Bitrix\Im\V2\Chat\InputAction;
 
+use Bitrix\Im\V2\AccessCheckable;
 use Bitrix\Im\V2\Chat;
 use Bitrix\Im\V2\Common\ContextCustomer;
 use Bitrix\Im\V2\Pull\Event\InputActionNotify;
 use Bitrix\Im\V2\Pull\Event\StartWriting;
 use Bitrix\Im\V2\Result;
+use Bitrix\Im\V2\Application\Context;
 
-class Action
+class Action implements AccessCheckable
 {
 	use ContextCustomer;
 
@@ -17,6 +19,8 @@ class Action
 	protected ?string $customUserName = null;
 	protected bool $byEvent = false;
 	protected bool $linesSilentMode = false;
+	protected ?string $statusMessageCode = null;
+	protected ?int $duration = null;
 
 	public function __construct(Chat $chat, Type $type)
 	{
@@ -43,26 +47,59 @@ class Action
 		return new Result();
 	}
 
-	public function setCustomUserName(string $customUserName): void
+	public function setCustomUserName(string $customUserName): self
 	{
 		$this->customUserName = $customUserName;
+
+		return $this;
 	}
 
-	public function setByEvent(bool $byEvent): void
+	public function setByEvent(bool $byEvent): self
 	{
 		$this->byEvent = $byEvent;
+
+		return $this;
 	}
 
-	public function setLinesSilentMode(bool $linesSilentMode): void
+	public function setLinesSilentMode(bool $linesSilentMode): self
 	{
 		$this->linesSilentMode = $linesSilentMode;
+
+		return $this;
+	}
+
+	public function setStatusMessageCode(?string $statusMessageCode): self
+	{
+		if ($statusMessageCode !== null)
+		{
+			$platform = Context::getCurrent()->isMobile()
+				? Platform::MOBILE
+				: Platform::WEB;
+
+			$allowedCodes = StatusMessageProvider::get($platform);
+			$this->statusMessageCode = isset($allowedCodes[$statusMessageCode])
+				? $statusMessageCode
+				: null;
+		}
+
+		return $this;
+	}
+
+	public function setDuration(?int $duration): self
+	{
+		$this->duration = $duration;
+
+		return $this;
 	}
 
 	private function sendPull(): Result
 	{
-		$pull = (new InputActionNotify($this->chat, $this->type))
-			->setContext($this->context)
-			->setCustomUserName($this->customUserName)
+		$pull =
+			(new InputActionNotify($this->chat, $this->type))
+				->setContext($this->context)
+				->setCustomUserName($this->customUserName)
+				->setStatusMessageCode($this->statusMessageCode)
+				->setDuration($this->duration)
 		;
 
 		return $pull->send();
@@ -72,7 +109,7 @@ class Action
 	{
 		if ($this->type !== Type::Writing)
 		{
-			return new Result(); // send legacy pull only for writting action
+			return new Result(); // send legacy pull only for writing action
 		}
 
 		$pull = (new StartWriting($this->chat))
@@ -152,5 +189,10 @@ class Action
 		}
 
 		return $array;
+	}
+
+	public function checkAccess(?int $userId = null): Result
+	{
+		return $this->chat->checkAccess($userId);
 	}
 }

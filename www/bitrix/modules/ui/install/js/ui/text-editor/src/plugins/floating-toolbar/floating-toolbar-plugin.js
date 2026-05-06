@@ -23,13 +23,11 @@ import {
 	type RangeSelection,
 } from 'ui.lexical.core';
 
-import { $isLinkNode } from 'ui.lexical.link';
 import { $findMatchingParent, mergeRegister } from 'ui.lexical.utils';
 import { TextEditorLexicalNode } from '../../types/text-editor-lexical-node';
 
 import BasePlugin from '../base-plugin';
 import { type TextEditor } from '../../text-editor';
-import type { CopilotPlugin } from '../copilot';
 
 export class FloatingToolbarPlugin extends BasePlugin
 {
@@ -190,18 +188,13 @@ export class FloatingToolbarPlugin extends BasePlugin
 			return false;
 		}
 
-		const node = getSelectedNode(selection);
-		const parent = node.getParent();
-		if ($isLinkNode(parent) || $isLinkNode(node))
-		{
-			return false;
-		}
-
 		const isSomeDialogVisible = this.getEditor().dispatchCommand(DIALOG_VISIBILITY_COMMAND);
 		if (isSomeDialogVisible)
 		{
 			return false;
 		}
+
+		const node = getSelectedNode(selection);
 
 		return $isTextNode(node);
 	}

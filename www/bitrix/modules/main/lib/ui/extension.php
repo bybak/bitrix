@@ -30,14 +30,24 @@ class Extension
 	}
 
 	/**
-	 * @param $extName
+	 * @param string $extName
 	 * @return bool
 	 */
 	public static function register($extName)
 	{
+		if (!is_string($extName))
+		{
+			return false;
+		}
+
 		if (\CJSCore::isExtRegistered($extName))
 		{
 			return true;
+		}
+
+		if (preg_match('/[^a-z0-9_.-]/i', $extName))
+		{
+			return false;
 		}
 
 		$extension = static::getConfig($extName);
@@ -47,7 +57,8 @@ class Extension
 
 			return true;
 		}
-		return \CJSCore::isExtRegistered($extName);
+
+		return false;
 	}
 
 	/**
@@ -567,7 +578,7 @@ class Extension
 		$config = \CJSCore::getExtInfo($name);
 		if ($config)
 		{
-			if (!$config['skip_core'] && !in_array('core', $alreadyResolved))
+			if ((!isset($config['skip_core']) || !$config['skip_core']) && !in_array('core', $alreadyResolved))
 			{
 				$coreConfig = \CJSCore::GetCoreConfig();
 				if ($storeConfig)

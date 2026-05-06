@@ -4,15 +4,15 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 	die();
 }
 
-use Bitrix\Landing\Mainpage;
+use Bitrix\Landing\Vibe\Vibe;
 use Bitrix\Main\Localization\Loc;
 
 $return = [
 	'block' => [
-		'name' => Loc::getMessage('LANDING_MPWIDGET_APPS_NAME'),
-		'type' => ['mainpage'],
+		'name' => Loc::getMessage('LANDING_MPWIDGET_APPS_NAME_NEW'),
+		'type' => ['vibe'],
 		'section' => ['widgets_new_employees', 'widgets_hr'],
-		'disableEditButton' => Mainpage\Manager::isUseDemoData(),
+		'disableEditButton' => Vibe::isUseDemoData(),
 	],
 	'nodes' => [
 		"bitrix:landing.blocks.mp_widget.apps" => [
@@ -21,6 +21,7 @@ $return = [
 				'editable' => [
 					'TITLE_MOBILE' => [],
 					'TITLE_DESKTOP' => [],
+					'TYPE' => [],
 					// visual
 					'COLOR_TITLE_MOBILE' => [
 						'style' => true,
@@ -52,7 +53,7 @@ $return = [
 	],
 	'style' => [
 		'block' => [
-			'type' => ['margin-bottom', 'widget-type'],
+			'type' => ['margin-bottom', 'widget-type', 'font-family'],
 		],
 	],
 ];

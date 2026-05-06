@@ -10,7 +10,7 @@ type UploadState = {
 	size: number
 };
 
-const EVENT_NAMESPACE = 'BX.Messenger.v2.CallBackground.ProgressBar';
+const EVENT_NAMESPACE = 'BX.Call.Component.v2.ProgressBar';
 const SIZE_LOWER_THRESHOLD = 1024 * 1024 * 2;
 const CONTAINER_WIDTH_LOWER_THRESHOLD = 240;
 const CONTAINER_HEIGHT_LOWER_THRESHOLD = 54;
@@ -63,6 +63,13 @@ export class ProgressBarManager extends EventEmitter
 			this.progressBar.setProgress(this.uploadState.progress > STARTING_PROGRESS? this.uploadState.progress: STARTING_PROGRESS);
 			this.progressBar.setCancelDisable(true);
 			this.progressBar.setIcon(ProgressBar.icon.cloud);
+			this.progressBar.setProgressTitle(Loc.getMessage('IM_LIB_PROGRESSBAR_FILE_UPLOAD_SAVING'));
+		}
+		else if (this.uploadState.status === FileStatus.preparing)
+		{
+			this.progressBar.setProgress(this.uploadState.progress > STARTING_PROGRESS? this.uploadState.progress: STARTING_PROGRESS);
+			this.progressBar.setCancelDisable(false);
+			this.progressBar.setIcon(ProgressBar.icon.cancel);
 			this.progressBar.setProgressTitle(Loc.getMessage('IM_LIB_PROGRESSBAR_FILE_UPLOAD_SAVING'));
 		}
 		else if (this.uploadState.progress === 100)

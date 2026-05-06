@@ -1,6 +1,7 @@
 import { Extension } from 'main.core';
 
 import { MessageComponent } from 'im.v2.const';
+import { Notifier } from 'im.v2.lib.notifier';
 
 import type { ImModelMessage } from 'im.v2.model';
 
@@ -13,6 +14,7 @@ const forwardMessageComponents = new Set([
 	MessageComponent.FeedbackFormMessage,
 	MessageComponent.ImOpenLinesMessage,
 	MessageComponent.ImOpenLinesForm,
+	MessageComponent.sticker,
 ]);
 
 // @vue/component
@@ -78,7 +80,7 @@ export const MessageSelectButton = {
 
 			if (this.isSelectionLimitReached)
 			{
-				this.showNotification(this.loc('IM_MESSAGE_LIST_MAX_LIMIT_SELECTED_MESSAGES'));
+				Notifier.message.onSelectLimitError();
 
 				return;
 			}
@@ -87,10 +89,6 @@ export const MessageSelectButton = {
 				messageId: this.messageItem.id,
 				dialogId: this.contextDialogId,
 			});
-		},
-		showNotification(text: string)
-		{
-			BX.UI.Notification.Center.notify({ content: text });
 		},
 		loc(phraseCode: string): string
 		{

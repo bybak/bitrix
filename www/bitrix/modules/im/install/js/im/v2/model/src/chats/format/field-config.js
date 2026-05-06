@@ -1,14 +1,18 @@
-import { Utils } from 'im.v2.lib.utils';
 import { Type } from 'main.core';
+
+import { Utils } from 'im.v2.lib.utils';
+import { formatFieldsWithConfig } from 'im.v2.model';
+
 import { convertToNumber, convertToString, isNumberOrString } from '../../utils/format';
-import { formatFieldsWithConfig, type FieldsConfig } from 'im.v2.model';
 import {
 	prepareAvatar,
 	prepareChatName,
 	prepareLastMessageViews,
 	prepareManagerList,
-	prepareMuteList,
+	prepareMuteStatus,
 } from './format-functions';
+
+import type { FieldsConfig } from 'im.v2.model';
 
 export const chatFieldsConfig: FieldsConfig = [
 	{
@@ -32,12 +36,6 @@ export const chatFieldsConfig: FieldsConfig = [
 		fieldName: 'quoteId',
 		targetFieldName: 'quoteId',
 		checkFunction: Type.isNumber,
-	},
-	{
-		fieldName: 'counter',
-		targetFieldName: 'counter',
-		checkFunction: isNumberOrString,
-		formatFunction: convertToNumber,
 	},
 	{
 		fieldName: 'userCounter',
@@ -111,6 +109,11 @@ export const chatFieldsConfig: FieldsConfig = [
 		checkFunction: Type.isBoolean,
 	},
 	{
+		fieldName: 'containsCollaber',
+		targetFieldName: 'containsCollaber',
+		checkFunction: Type.isBoolean,
+	},
+	{
 		fieldName: 'entityLink',
 		targetFieldName: 'entityLink',
 		checkFunction: Type.isPlainObject,
@@ -141,9 +144,14 @@ export const chatFieldsConfig: FieldsConfig = [
 	},
 	{
 		fieldName: 'muteList',
-		targetFieldName: 'muteList',
+		targetFieldName: 'isMuted',
 		checkFunction: [Type.isArray, Type.isPlainObject],
-		formatFunction: prepareMuteList,
+		formatFunction: prepareMuteStatus,
+	},
+	{
+		fieldName: 'isMuted',
+		targetFieldName: 'isMuted',
+		checkFunction: Type.isBoolean,
 	},
 	{
 		fieldName: 'inited',
@@ -186,9 +194,24 @@ export const chatFieldsConfig: FieldsConfig = [
 		targetFieldName: 'parentChatId',
 		checkFunction: Type.isNumber,
 	},
+	{
+		fieldName: 'backgroundId',
+		targetFieldName: 'backgroundId',
+		checkFunction: Type.isString,
+	},
+	{
+		fieldName: 'textFieldEnabled',
+		targetFieldName: 'isTextareaEnabled',
+		checkFunction: Type.isBoolean,
+	},
 ];
 
 export const chatEntityFieldsConfig = [
+	{
+		fieldName: 'id',
+		targetFieldName: 'id',
+		checkFunction: Type.isString,
+	},
 	{
 		fieldName: 'type',
 		targetFieldName: 'type',

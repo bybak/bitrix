@@ -11,7 +11,7 @@ use Bitrix\Main\Localization\Loc;
 
 Loc::loadMessages(__FILE__);
 
-class CAllAgent
+class CAgent
 {
 	protected const LOCK_TIME = 600;
 
@@ -404,7 +404,7 @@ class CAllAgent
 		$db_result_agents = $DB->Query($strSql);
 		if ($db_result_agents->Fetch())
 		{
-			if(!$connection->lock('agent'))
+			if(!$connection->lock($cache_id))
 			{
 				return "";
 			}
@@ -464,7 +464,7 @@ class CAllAgent
 			$DB->Query($strSql);
 		}
 
-		$connection->unlock('agent');
+		$connection->unlock($cache_id);
 
 		/** @var callable|false $logFunction */
 		$logFunction = (defined("BX_AGENTS_LOG_FUNCTION") && function_exists(BX_AGENTS_LOG_FUNCTION)? BX_AGENTS_LOG_FUNCTION : false);
@@ -559,8 +559,4 @@ class CAllAgent
 
 		return null;
 	}
-}
-
-class CAgent extends CAllAgent
-{
 }

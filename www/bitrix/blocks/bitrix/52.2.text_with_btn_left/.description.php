@@ -10,7 +10,7 @@ use \Bitrix\Main\Localization\Loc;
 return [
 	'block' => [
 		'name' => Loc::getMessage('LANDING_BLOCK_52_TEXT_WITH_BTN_LEFT-NAME'),
-		'type' => ['page', 'store', 'smn', 'knowledge', 'group', 'mainpage'],
+		'type' => ['page', 'store', 'smn', 'knowledge', 'group', 'vibe'],
 		'section' => ['title', 'widgets_text'],
 	],
 	'cards' => [],
@@ -51,16 +51,7 @@ return [
 		'.landing-block-node-button' => [
 			'name' => Loc::getMessage('LANDING_BLOCK_52_TEXT_WITH_BTN_LEFT-BTN'),
 			'type' => [
-				//button
-				'button-color',
-				'button-type',
-				'button-size',
-				'button-padding',
-				'border-radius',
-				'color',
-				'color-hover',
-				'font-family',
-				'text-transform',
+				'button',
 			],
 		],
 		'.landing-block-node-button-container' => [

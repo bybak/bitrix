@@ -8,17 +8,20 @@ use Bitrix\Im\Model\RecentTable;
 use Bitrix\Im\Model\RelationTable;
 use Bitrix\Im\Model\UserTable;
 use Bitrix\Im\V2\Chat;
-use Bitrix\Im\V2\Chat\ChannelChat;
+use Bitrix\Im\V2\Chat\Type\Query\TypeFilter;
+use Bitrix\Im\V2\Chat\Type\TypeCondition;
+use Bitrix\Im\V2\Chat\Background\Background;
+use Bitrix\Im\V2\Chat\CopilotChat;
+use Bitrix\Im\V2\Chat\TextField\TextFieldEnabled;
 use Bitrix\Im\V2\Common\ContextCustomer;
 use Bitrix\Im\V2\Entity\User\User;
 use Bitrix\Im\V2\Entity\User\UserBot;
 use Bitrix\Im\V2\Entity\User\UserCollection;
+use Bitrix\Im\V2\Integration\AI\RoleManager;
 use Bitrix\Im\V2\Integration\HumanResources\Department\Department;
 use Bitrix\Im\V2\Integration\Socialnetwork\Group;
-use Bitrix\Im\V2\Permission\ActionGroup;
-use Bitrix\Main\Config\Option;
+use Bitrix\Im\V2\Permission;
 use Bitrix\Main\Loader;
-use Bitrix\Main\ModuleManager;
 use Bitrix\Main\ORM\Entity;
 use Bitrix\Main\ORM\Fields\BooleanField;
 use Bitrix\Main\ORM\Fields\ExpressionField;
@@ -40,27 +43,21 @@ class RecentProvider extends BaseProvider
 {
 	use ContextCustomer;
 
-	private const LIMIT = 30;
-	private const ENTITY_ID = 'im-recent-v2';
+	protected const ENTITY_ID = 'im-recent-v2';
+	protected const LIMIT = 30;
+	protected const TECHNICAL_LIMIT = 1000;
 	private const ENTITY_TYPE_USER = 'im-user';
 	private const ENTITY_TYPE_CHAT = 'im-chat';
-	private const WITH_CHAT_BY_USERS_OPTION = 'withChatByUsers';
-	private const ONLY_WITH_MANAGE_MESSAGES_RIGHT_OPTION = 'onlyWithManageMessagesRight';
-	private const EXCLUDE_FROM_RECENT_OPTION = 'excludeFromRecent';
-	private const INCLUDE_ONLY_OPTION = 'includeOnly';
-	private const EXCLUDE_OPTION = 'exclude';
-	private const SEARCH_FLAGS_OPTION = 'searchFlags';
-	private const FLAG_USERS = 'users';
-	private const FLAG_CHATS = 'chats';
-	private const FLAG_BOTS = 'bots';
-	private const ALLOWED_SEARCH_FLAGS = [self::FLAG_USERS, self::FLAG_CHATS, self::FLAG_BOTS];
-	private const WITH_CHAT_BY_USERS_DEFAULT = false;
-	private const ONLY_WITH_MANAGE_MESSAGE_RIGHT_DEFAULT = false;
-	private const SEARCH_FLAGS_DEFAULT = [
-		self::FLAG_USERS => true,
-		self::FLAG_CHATS => true,
+	protected const ALLOWED_SEARCH_CHAT_TYPES = [
+		Chat::IM_TYPE_CHAT,
+		Chat::IM_TYPE_OPEN,
+		Chat::IM_TYPE_CHANNEL,
+		Chat::IM_TYPE_OPEN_CHANNEL,
+		Chat::IM_TYPE_COLLAB,
+		Chat::IM_TYPE_PRIVATE,
 	];
 
+	private readonly SearchOptions $searchOptions;
 	private string $preparedSearchString;
 	private string $originalSearchString;
 	private array $userIds;
@@ -69,22 +66,38 @@ class RecentProvider extends BaseProvider
 
 	public function __construct(array $options = [])
 	{
-		$this->options[self::WITH_CHAT_BY_USERS_OPTION] = self::WITH_CHAT_BY_USERS_DEFAULT;
-		$this->options[self::ONLY_WITH_MANAGE_MESSAGES_RIGHT_OPTION] = self::ONLY_WITH_MANAGE_MESSAGE_RIGHT_DEFAULT;
-		if (isset($options[self::WITH_CHAT_BY_USERS_OPTION]) && is_bool($options[self::WITH_CHAT_BY_USERS_OPTION]))
-		{
-			$this->options[self::WITH_CHAT_BY_USERS_OPTION] = $options[self::WITH_CHAT_BY_USERS_OPTION];
-		}
-		if (isset($options[self::ONLY_WITH_MANAGE_MESSAGES_RIGHT_OPTION]) && is_bool($options[self::ONLY_WITH_MANAGE_MESSAGES_RIGHT_OPTION]))
-		{
-			$this->options[self::ONLY_WITH_MANAGE_MESSAGES_RIGHT_OPTION] = $options[self::ONLY_WITH_MANAGE_MESSAGES_RIGHT_OPTION];
-		}
-		if (isset($options[self::EXCLUDE_FROM_RECENT_OPTION]) && is_array($options[self::EXCLUDE_FROM_RECENT_OPTION]))
-		{
-			$this->options[self::EXCLUDE_FROM_RECENT_OPTION] = $options[self::EXCLUDE_FROM_RECENT_OPTION];
-		}
-		$this->prepareSearchFlags($options);
+		$this->searchOptions = new SearchOptions($this->prepareOptions($options));
+
 		parent::__construct();
+	}
+
+	protected function prepareOptions(array $options): array
+	{
+		if (isset($options[SearchOptions::SEARCH_CHAT_TYPES_OPTION]))
+		{
+			$options[SearchOptions::SEARCH_CHAT_TYPES_OPTION] = $this->filterAllowedChatTypes($options[SearchOptions::SEARCH_CHAT_TYPES_OPTION]);
+		}
+		else
+		{
+			$options[SearchOptions::SEARCH_CHAT_TYPES_OPTION] = self::ALLOWED_SEARCH_CHAT_TYPES;
+		}
+
+		return $options;
+	}
+
+	protected function filterAllowedChatTypes(array $chatLiteralTypes): array
+	{
+		$filteredChatLiteralTypes = [];
+
+		foreach ($chatLiteralTypes as $chatLiteralType)
+		{
+			if (in_array($chatLiteralType, self::ALLOWED_SEARCH_CHAT_TYPES, true))
+			{
+				$filteredChatLiteralTypes[] = $chatLiteralType;
+			}
+		}
+
+		return $filteredChatLiteralTypes;
 	}
 
 	public function isAvailable(): bool
@@ -98,11 +111,12 @@ class RecentProvider extends BaseProvider
 	{
 		$this->originalSearchString = $searchQuery->getQuery();
 		$this->preparedSearchString = $this->prepareSearchString($searchQuery->getQuery());
+		$searchQuery->setCacheable(false);
 		if (!Content::canUseFulltextSearch($this->preparedSearchString))
 		{
 			return;
 		}
-		$searchQuery->setCacheable(false);
+
 		$items = $this->getSortedLimitedBlankItems();
 		$this->fillItems($items);
 		$dialog->addItems($items);
@@ -115,8 +129,19 @@ class RecentProvider extends BaseProvider
 			return;
 		}
 
-		$requiredCountToFill = self::LIMIT - $dialog->getRecentItems()->count();
+		if ($this->searchOptions->shouldFillDialogByRecent())
+		{
+			$this->fillDialogByRecentDefaultItems($dialog);
+		}
+		else
+		{
+			$this->fillDialogByDefaultItems($dialog);
+		}
+	}
 
+	protected function fillDialogByDefaultItems(Dialog $dialog): void
+	{
+		$requiredCountToFill = self::LIMIT - $dialog->getRecentItems()->count();
 		if ($requiredCountToFill <= 0)
 		{
 			return;
@@ -129,65 +154,71 @@ class RecentProvider extends BaseProvider
 
 		foreach ($defaultItems as $itemId)
 		{
-			$dialog->getRecentItems()->add(new RecentItem(['id' => $itemId, 'entityId' => self::ENTITY_ID]));
+			$dialog->getRecentItems()->add(new RecentItem(['id' => $itemId, 'entityId' => static::ENTITY_ID]));
 		}
+	}
+
+	protected function fillDialogByRecentDefaultItems(Dialog $dialog): void
+	{
+		$items = $this->getSortedLimitedBlankItems();
+		$this->fillItems($items);
+		$dialog->addRecentItems($items);
 	}
 
 	protected function getDefaultDialogItems(): array
 	{
-		if (!$this->getContext()->getUser()->isExtranet())
+		if (!$this->searchOptions->shouldFillDefaultItems())
 		{
-			return Department::getInstance()->getColleagues();
+			return [];
 		}
 
-		return Group::getUsersInSameGroups($this->getContext()->getUserId());
+		return match (true)
+		{
+			!$this->getContext()->getUser()->isExtranet() => Department::getInstance()->getColleagues(),
+			default => Group::getUsersInSameGroups($this->getContext()->getUserId()),
+		};
 	}
 
 	public function getItems(array $ids): array
 	{
 		$this->sortEnable = false;
-		$ids = array_slice($ids, 0, self::LIMIT);
 		$this->setUserAndChatIds($ids);
 		$items = $this->getItemsWithDates();
 		$this->fillItems($items);
+
+		$this->chatIds = [];
+		$this->userIds = [];
 
 		return $items;
 	}
 
 	public function getPreselectedItems(array $ids): array
 	{
-		/*$this->sortEnable = false;
-		$ids = array_slice($ids, 0, self::LIMIT);
-		$this->setUserAndChatIds($ids);
-		$foundItems = $this->getItemsWithDates();
-		$foundItemsDialogId = array_keys($foundItems);
-		$otherItemsDialogId = array_diff($ids, $foundItemsDialogId);
-		$otherItems = $this->getBlankItems($otherItemsDialogId);
-		$items = $this->mergeByKey($foundItems, $otherItems);
-		$this->fillItems($items);*/
-
 		return $this->getItems($ids);
 	}
 
 	private function setUserAndChatIds(array $ids): void
 	{
-		$needExcludeChats = isset($this->options[self::EXCLUDE_FROM_RECENT_OPTION][self::FLAG_CHATS]);
-		$needExcludeUsers = isset($this->options[self::EXCLUDE_FROM_RECENT_OPTION][self::FLAG_USERS]);
 		foreach ($ids as $id)
 		{
-			if ($this->isChatId($id) && !$needExcludeChats)
+			if ($this->isChatId($id) && $this->searchOptions->isChatSearchEnabled())
 			{
 				$chatId = substr($id, 4);
 				$this->chatIds[$chatId] = $chatId;
 			}
-			elseif (!$needExcludeUsers)
+			elseif ($this->searchOptions->isUserSearchEnabled())
 			{
 				$this->userIds[$id] = $id;
 			}
 		}
 	}
 
-	private function getBlankItem(string $dialogId, ?DateTime $dateMessage = null, ?DateTime $secondDate = null): Item
+	private function getBlankItem(
+		string $dialogId,
+		?DateTime $dateMessage = null,
+		?DateTime $secondDate = null,
+		?DateTime $dateLastActivity = null
+	): Item
 	{
 		$id = $dialogId;
 		$entityType = self::ENTITY_TYPE_USER;
@@ -199,18 +230,21 @@ class RecentProvider extends BaseProvider
 		$customData = ['id' => $id];
 		$sort = 0;
 		$customData['dateMessage'] = $dateMessage;
+		$customData['dateLastActivity'] = $dateLastActivity;
 		$customData['secondSort'] = $secondDate instanceof DateTime ? $secondDate->getTimestamp() : 0;
-		if (isset($dateMessage))
+		if ($this->sortEnable)
 		{
-			if ($this->sortEnable)
+			$sort = match (true)
 			{
-				$sort = $dateMessage->getTimestamp();
-			}
+				isset($dateLastActivity) => $dateLastActivity->getTimestamp(),
+				isset($dateMessage) => $dateMessage->getTimestamp(),
+				default => 0,
+			};
 		}
 
 		return new Item([
 			'id' => $dialogId,
-			'entityId' => self::ENTITY_ID,
+			'entityId' => static::ENTITY_ID,
 			'entityType' => $entityType,
 			'sort' => $sort,
 			'customData' => $customData,
@@ -231,23 +265,46 @@ class RecentProvider extends BaseProvider
 			if ($item->getEntityType() === self::ENTITY_TYPE_USER)
 			{
 				$userIds[] = $id;
+
+				continue;
 			}
-			else
-			{
-				$chats[$id] = Chat::getInstance($id);
-			}
+
+			$chats[$id] = Chat::getInstance($id);
 		}
+
 		$users = new UserCollection($userIds);
 		$users->fillOnlineData();
+		$privateChatIds = \Bitrix\Im\Dialog::getChatIds($userIds, $this->getContext()->getUserId());
+		$copilotRoles = $this->getCopilotRoles($this->filterCopilotChats($chats));
 		Chat::fillSelfRelations($chats);
+
+		$chatMembers = [];
+		if ($this->searchOptions->isChatContext())
+		{
+			$targetChat = Chat::getInstance($this->searchOptions->getContextChatId());
+			$chatMembers = $targetChat->getRelationsByUserIds($userIds)->getUserIds();
+		}
+
 		foreach ($items as $item)
 		{
 			$customData = $item->getCustomData()->getValues();
 			if ($item->getEntityType() === self::ENTITY_TYPE_USER)
 			{
 				$user = $users->getById($customData['id']);
-				$customData = array_merge($customData, $user->toRestFormat());
-				$item->setTitle($user->getName())->setAvatar($user->getAvatar())->setCustomData($customData);
+				$customData['user'] = $user->toRestFormat();
+
+				$chatId = (int)$privateChatIds[$customData['id']];
+				$customData['chat']['textFieldEnabled'] = (new TextFieldEnabled($chatId))->get();
+				$customData['chat']['backgroundId'] = (new Background($chatId))->get();
+				$customData['copilot'] = null;
+
+				$customData['isContextChatMember'] = $this->searchOptions->isChatContext() ? in_array($user->getId(), $chatMembers, true) : null;
+
+				$item
+					->setTitle($user->getName())
+					->setAvatar($user->getAvatar())
+					->setCustomData($customData)
+				;
 			}
 			if ($item->getEntityType() === self::ENTITY_TYPE_CHAT)
 			{
@@ -256,10 +313,51 @@ class RecentProvider extends BaseProvider
 				{
 					continue;
 				}
-				$customData = array_merge($customData, $chat->toRestFormat(['CHAT_SHORT_FORMAT' => true]));
-				$item->setTitle($chat->getTitle())->setAvatar($chat->getAvatar())->setCustomData($customData);
+
+				$customData['chat'] = $chat->toRestFormat(['CHAT_SHORT_FORMAT' => true]);
+				$customData['copilot'] = $copilotRoles[$chat->getId()] ?? null;
+				$item
+					->setTitle($chat->getTitle())
+					->setAvatar($chat->getAvatar())
+					->setCustomData($customData)
+				;
 			}
 		}
+	}
+
+	/**
+	 * @param Chat\CopilotChat[] $copilotChats
+	 * @return array
+	 */
+	private function getCopilotRoles(array $copilotChats): array
+	{
+		$roleManager = new RoleManager();
+
+		$roleCodes = [];
+		foreach ($copilotChats as $chat)
+		{
+			$chatId = (int)$chat->getId();
+			$roleCodes[$chatId] = $roleManager->getMainRole($chatId);
+		}
+
+		$roles = $roleManager->getRoles($roleCodes);
+
+		$result = [];
+		foreach ($roleCodes as $chatId => $code)
+		{
+			$result[$chatId] = $roles[$code] ?? $roles[RoleManager::getDefaultRoleCode()];
+		}
+
+		return $result;
+	}
+
+	/**
+	 * @param Chat[] $chats
+	 * @return Chat\CopilotChat[]
+	 */
+	private function filterCopilotChats(array $chats): array
+	{
+		return array_filter($chats, static fn($chat) => $chat instanceof Chat\CopilotChat);
 	}
 
 	private function getItemsWithDates(): array
@@ -297,7 +395,7 @@ class RecentProvider extends BaseProvider
 
 	private function getChatItemsWithDate(): array
 	{
-		if (!$this->needSearch(self::FLAG_CHATS))
+		if (!$this->searchOptions->isChatSearchEnabled())
 		{
 			return [];
 		}
@@ -315,7 +413,38 @@ class RecentProvider extends BaseProvider
 			return $this->getChatItemsWithDateByIds();
 		}
 
+		if ($this->searchOptions->shouldFillDialogByRecent())
+		{
+			return $this->getRecentChatItemsWithOrder();
+		}
+
 		return [];
+	}
+
+	private function getRecentChatItemsWithOrder(): array
+	{
+		if (!$this->searchOptions->shouldFillDialogByRecent())
+		{
+			return [];
+		}
+
+		$result = $this
+			->getCommonChatQuery()
+			->addSelect('RECENT.DATE_LAST_ACTIVITY', 'DATE_LAST_ACTIVITY')
+			->registerRuntimeField(
+				new Reference(
+					'RECENT',
+					RecentTable::class,
+					Join::on('this.ID', 'ref.ITEM_CID')
+						->where('ref.USER_ID', $this->getContext()->getUserId()),
+					['join_type' => Join::TYPE_INNER]
+				)
+			)
+			->setOrder(['RECENT.DATE_LAST_ACTIVITY' => 'DESC'])
+			->fetchAll()
+		;
+
+		return $this->getChatItemsByRawResult($result);
 	}
 
 	private function getChatItemsWithDateByIds(): array
@@ -325,7 +454,7 @@ class RecentProvider extends BaseProvider
 			return [];
 		}
 
-		$result = $this->getCommonChatQuery()->whereIn('ID', $this->chatIds)->fetchAll();
+		$result = $this->getCommonChatQuery(limit: self::TECHNICAL_LIMIT)->whereIn('ID', $this->chatIds)->fetchAll();
 
 		return $this->getChatItemsByRawResult($result);
 	}
@@ -338,9 +467,8 @@ class RecentProvider extends BaseProvider
 		}
 
 		$result = $this
-			->getCommonChatQuery()
+			->getCommonChatQueryWithOrder()
 			->whereMatch('INDEX.SEARCH_TITLE', $this->preparedSearchString)
-			->setOrder(['IS_MEMBER' => 'DESC', 'LAST_MESSAGE_ID' => 'DESC', 'DATE_CREATE' => 'DESC'])
 			->fetchAll()
 		;
 
@@ -349,14 +477,13 @@ class RecentProvider extends BaseProvider
 
 	private function getChatItemsWithDateByUsers(): array
 	{
-		if (!isset($this->preparedSearchString) || !$this->withChatByUsers())
+		if (!isset($this->preparedSearchString) || !$this->searchOptions->shouldSearchChatsByUsers())
 		{
 			return [];
 		}
 
 		$result = $this
-			->getCommonChatQuery(Join::TYPE_INNER)
-			->setOrder(['LAST_MESSAGE_ID' => 'DESC', 'DATE_CREATE' => 'DESC'])
+			->getCommonChatQueryWithOrder(Join::TYPE_INNER)
 			->registerRuntimeField(
 				'CHAT_SEARCH',
 				(new Reference(
@@ -398,20 +525,27 @@ class RecentProvider extends BaseProvider
 		;
 	}
 
-	private function getChatItemsByRawResult(array $raw, array $additionalCustomData = []): array
+	protected function getChatItemsByRawResult(array $raw, array $additionalCustomData = []): array
 	{
 		$result = [];
 
 		foreach ($raw as $row)
 		{
 			$dialogId = 'chat' . $row['ID'];
+			$dateLastActivity = $row['DATE_LAST_ACTIVITY'] ?? null;
 			$messageDate = $row['MESSAGE_DATE_CREATE'] ?? null;
 			$secondDate = $row['MESSAGE_DATE_CREATE'] ?? null;
 			if (($row['IS_MEMBER'] ?? 'Y') === 'N')
 			{
 				$messageDate = null;
+				$dateLastActivity = null;
 			}
-			$item = $this->getBlankItem($dialogId, $messageDate, $secondDate);
+			$item = $this->getBlankItem(
+				dialogId: $dialogId,
+				dateMessage: $messageDate,
+				secondDate: $secondDate,
+				dateLastActivity: $dateLastActivity,
+			);
 			if (!empty($additionalCustomData))
 			{
 				$customData = $item->getCustomData()->getValues();
@@ -423,7 +557,14 @@ class RecentProvider extends BaseProvider
 		return $result;
 	}
 
-	private function getCommonChatQuery(string $joinType = Join::TYPE_LEFT): Query
+	protected function getCommonChatQueryWithOrder(string $joinType = Join::TYPE_LEFT, int $limit = self::LIMIT): Query
+	{
+		return $this->getCommonChatQuery($joinType, $limit)
+			->setOrder(['IS_MEMBER' => 'DESC', 'LAST_MESSAGE_ID' => 'DESC', 'DATE_CREATE' => 'DESC'])
+		;
+	}
+
+	protected function getCommonChatQuery(string $joinType = Join::TYPE_LEFT, int $limit = self::LIMIT): Query
 	{
 		$query = ChatTable::query()
 			->setSelect(['ID', 'IS_MEMBER', 'MESSAGE_DATE_CREATE' => 'MESSAGE.DATE_CREATE', 'DATE_CREATE'])
@@ -447,21 +588,51 @@ class RecentProvider extends BaseProvider
 				'IS_MEMBER',
 				(new ExpressionField(
 					'IS_MEMBER',
-					"CASE WHEN %s IS NULL THEN 'N' ELSE 'Y' END",
-					['RELATION.ID']
+					"CASE WHEN (%s IS NULL OR %s = 'Y') THEN 'N' ELSE 'Y' END",
+					['RELATION.ID', 'RELATION.IS_HIDDEN']
 				))->configureValueType(BooleanField::class)
 			)
-			->setLimit(self::LIMIT)
-			->whereIn('TYPE', [Chat::IM_TYPE_CHAT, Chat::IM_TYPE_OPEN, Chat::IM_TYPE_CHANNEL, Chat::IM_TYPE_OPEN_CHANNEL, Chat::IM_TYPE_COLLAB])
+			->whereNot('TYPE', Chat::IM_TYPE_PRIVATE)
+			->setLimit($limit)
 		;
+
 		if ($joinType === Join::TYPE_LEFT)
 		{
 			$query->where($this->getRelationFilter());
 		}
 
-		if ($this->options[self::ONLY_WITH_MANAGE_MESSAGES_RIGHT_OPTION])
+		if ($this->searchOptions->shouldFilterByManageMessagesRight())
 		{
-			\Bitrix\Im\V2\Permission::getRoleOrmFilter($query, ActionGroup::ManageMessages, 'RELATION', '');
+			Permission\Filter::getRoleOrmFilter($query, Permission\ActionGroup::ManageMessages, 'RELATION', '');
+		}
+
+		if ($this->searchOptions->shouldFilterByManageUsersAddRight())
+		{
+			Permission\Filter::getRoleOrmFilter($query, Permission\ActionGroup::ManageUsersAdd, 'RELATION', '');
+		}
+
+		if ($this->searchOptions->shouldFilterByOwnerRight())
+		{
+			$query->where('AUTHOR_ID', $this->getContext()->getUserId());
+		}
+
+		if ($this->searchOptions->shouldExcludeIds())
+		{
+			$query->whereNotIn('ID', $this->searchOptions->getExcludeIds());
+		}
+
+		$query->where('PARENT_ID', 0);
+
+		$chatTypeCondition = $this->searchOptions->getChatTypeCondition() ?? new TypeCondition(include: []);
+		$query->where((new TypeFilter($chatTypeCondition, 'TYPE', 'ENTITY_TYPE'))->toConditionTree());
+
+		if ($this->searchOptions->shouldFilterByNullEntityType())
+		{
+			$query->where(Query::filter()
+				->logic('or')
+				->whereNull('ENTITY_TYPE')
+				->where('ENTITY_TYPE', ''))
+			;
 		}
 
 		return $query;
@@ -469,14 +640,19 @@ class RecentProvider extends BaseProvider
 
 	private function getRelationFilter(): ConditionTree
 	{
+		$relationFilter = Query::filter()
+			->whereNotNull('RELATION.USER_ID')
+			->where('RELATION.IS_HIDDEN', 'N')
+		;
+
 		if (User::getCurrent()->isExtranet())
 		{
-			return Query::filter()->whereNotNull('RELATION.USER_ID');
+			return $relationFilter;
 		}
 
 		return Query::filter()
 			->logic('or')
-			->whereNotNull('RELATION.USER_ID')
+			->where($relationFilter)
 			->whereIn('TYPE', [Chat::IM_TYPE_OPEN, Chat::IM_TYPE_OPEN_CHANNEL])
 		;
 	}
@@ -484,12 +660,19 @@ class RecentProvider extends BaseProvider
 	private function getUserItemsWithDate(): array
 	{
 		$result = [];
-		if (!$this->needSearch(self::FLAG_USERS))
+		if (!$this->searchOptions->isUserSearchEnabled())
 		{
 			return $result;
 		}
+		$recentJoinType = $this->searchOptions->shouldFillDialogByRecent() ? Join::TYPE_INNER : Join::TYPE_LEFT;
 		$query = UserTable::query()
-			->setSelect(['ID', 'DATE_MESSAGE' => 'RECENT.DATE_MESSAGE', 'IS_INTRANET_USER', 'DATE_CREATE' => 'DATE_REGISTER'])
+			->setSelect([
+				'ID',
+				'DATE_MESSAGE' => 'RECENT.DATE_MESSAGE',
+				'IS_INTRANET_USER',
+				'DATE_CREATE' => 'DATE_REGISTER',
+				'DATE_LAST_ACTIVITY' => 'RECENT.DATE_LAST_ACTIVITY',
+			])
 			->where('ACTIVE', true)
 			->registerRuntimeField(
 				'RECENT',
@@ -499,10 +682,9 @@ class RecentProvider extends BaseProvider
 					Join::on('this.ID', 'ref.ITEM_ID')
 						->where('ref.USER_ID', $this->getContext()->getUserId())
 						->where('ref.ITEM_TYPE', Chat::IM_TYPE_PRIVATE),
-					['join_type' => Join::TYPE_LEFT]
+					['join_type' => $recentJoinType]
 				)
 			)
-			->setLimit(self::LIMIT)
 		;
 
 		if (isset($this->preparedSearchString))
@@ -510,11 +692,19 @@ class RecentProvider extends BaseProvider
 			$query
 				->whereMatch('INDEX.SEARCH_USER_CONTENT', $this->preparedSearchString)
 				->setOrder(['RECENT.DATE_MESSAGE' => 'DESC', 'IS_INTRANET_USER' => 'DESC', 'DATE_CREATE' => 'DESC'])
+				->setLimit(self::LIMIT)
 			;
 		}
 		elseif (isset($this->userIds) && !empty($this->userIds))
 		{
-			$query->whereIn('ID', $this->userIds);
+			$query->whereIn('ID', $this->userIds)->setLimit(self::TECHNICAL_LIMIT);
+		}
+		elseif ($this->searchOptions->shouldFillDialogByRecent())
+		{
+			$query
+				->setOrder(['RECENT.DATE_LAST_ACTIVITY' => 'DESC', 'IS_INTRANET_USER' => 'DESC', 'DATE_CREATE' => 'DESC'])
+				->setLimit(self::LIMIT)
+			;
 		}
 		else
 		{
@@ -532,7 +722,12 @@ class RecentProvider extends BaseProvider
 				continue;
 			}
 
-			$result[(int)$row['ID']] = $this->getBlankItem((int)$row['ID'], $row['DATE_MESSAGE'], $row['DATE_CREATE']);
+			$result[(int)$row['ID']] = $this->getBlankItem(
+				dialogId: (int)$row['ID'],
+				dateMessage: $row['DATE_MESSAGE'],
+				secondDate: $row['DATE_CREATE'],
+				dateLastActivity: $this->searchOptions->shouldFillDialogByRecent() ? $row['DATE_LAST_ACTIVITY'] : null,
+			);
 		}
 
 		$result = $this->getAdditionalUsers($result);
@@ -570,7 +765,11 @@ class RecentProvider extends BaseProvider
 		$dateMessage = $row['DATE_MESSAGE'] ?? null;
 		$dateCreate = $row['DATE_CREATE'] ?? null;
 
-		return $this->getBlankItem($this->getContext()->getUserId(), $dateMessage, $dateCreate);
+		return $this->getBlankItem(
+			dialogId: $this->getContext()->getUserId(),
+			dateMessage: $dateMessage,
+			secondDate: $dateCreate,
+		);
 	}
 
 	private function needAddFavoriteChat(array $foundUserItems): bool
@@ -615,16 +814,12 @@ class RecentProvider extends BaseProvider
 
 		if ($user instanceof UserBot && $user->isBot())
 		{
-			if (!$this->needSearch(self::FLAG_BOTS))
+			if (!$this->searchOptions->isBotSearchEnabled())
 			{
 				return true;
 			}
 
-			$botData = $user->getBotData()->toRestFormat();
-			if ($botData['isHidden'])
-			{
-				return true;
-			}
+			return $user->isHidden();
 		}
 
 		return false;
@@ -672,47 +867,6 @@ class RecentProvider extends BaseProvider
 		;
 	}
 
-	private function prepareSearchFlags(array $options): void
-	{
-		$this->options[self::SEARCH_FLAGS_OPTION] = self::SEARCH_FLAGS_DEFAULT;
-
-		if (isset($options[self::INCLUDE_ONLY_OPTION]) && is_array($options[self::INCLUDE_ONLY_OPTION]))
-		{
-			foreach (self::ALLOWED_SEARCH_FLAGS as $searchFlag)
-			{
-				$this->options[self::SEARCH_FLAGS_OPTION][$searchFlag] = false;
-			}
-
-			foreach ($options[self::INCLUDE_ONLY_OPTION] as $searchFlag)
-			{
-				if ($this->isValidSearchFlag($searchFlag))
-				{
-					$this->options[self::SEARCH_FLAGS_OPTION][$searchFlag] = true;
-				}
-			}
-		}
-		elseif (isset($options[self::EXCLUDE_OPTION]) && is_array($options[self::EXCLUDE_OPTION]))
-		{
-			foreach ($options[self::EXCLUDE_OPTION] as $searchFlag)
-			{
-				if ($this->isValidSearchFlag($searchFlag))
-				{
-					$this->options[self::SEARCH_FLAGS_OPTION][$searchFlag] = false;
-				}
-			}
-		}
-	}
-
-	private function isValidSearchFlag(string $searchFlag): bool
-	{
-		return in_array($searchFlag, self::ALLOWED_SEARCH_FLAGS, true);
-	}
-
-	private function needSearch(string $flag): bool
-	{
-		return $this->options[self::SEARCH_FLAGS_OPTION][$flag] ?? true;
-	}
-
 	private function mergeByKey(array ...$arrays): array
 	{
 		$result = [];
@@ -730,11 +884,6 @@ class RecentProvider extends BaseProvider
 	private function isChatId(string $id): bool
 	{
 		return substr($id, 0, 4) === 'chat';
-	}
-
-	private function withChatByUsers(): bool
-	{
-		return $this->options[self::WITH_CHAT_BY_USERS_OPTION] ?? self::WITH_CHAT_BY_USERS_DEFAULT;
 	}
 
 	private function prepareSearchString(string $searchString): string

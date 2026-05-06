@@ -2,6 +2,8 @@
 
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\UI;
+use Bitrix\UI\Toolbar\ButtonLocation;
+use Bitrix\UI\Toolbar\Facade\Toolbar;
 
 if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true) die();
 
@@ -22,6 +24,8 @@ $createMenu = array(
 				)
 			),
 			array(
+				'ta_sec' => 'mail',
+				'ta_el' => 'quick_button',
 				'TITLE' => rawurlencode(Loc::getMessage(
 					'MAIL_MESSAGE_ACTIONS_TASK_TITLE',
 					array(
@@ -29,6 +33,9 @@ $createMenu = array(
 					)
 				)),
 				'UF_MAIL_MESSAGE' => (int) $message['ID'],
+				'MAIL_SUBJECT' => rawurlencode($message['SUBJECT'] ?? Loc::getMessage('MAIL_MESSAGE_ACTIONS_SUBJECT_PLACEHOLDER')),
+				'MAIL_FROM' => rawurlencode(htmlspecialchars_decode($message['FIELD_FROM'] ?? '', ENT_QUOTES)),
+				'MAIL_DATE' => rawurlencode($message['FIELD_DATE'] ? $message['FIELD_DATE']->getTimestamp() : ''),
 			)
 		),
 	),
@@ -73,16 +80,19 @@ foreach ($createMenu as $id => $item)
 }
 
 $createMenu['__default'] = &$createMenu[\CUserOptions::getOption('mail', 'default_create_action', 'TASKS_TASK')];
-
+$splitButton = new Bitrix\UI\Buttons\Split\Button([
+	'color' => Bitrix\UI\Buttons\Color::PRIMARY,
+	'text' => $createMenu['__default']['title'],
+	'dataset' => [
+		'toolbar-collapsed-icon' => Bitrix\UI\Buttons\Icon::CAMERA
+	]
+]);
+$splitButton->getMainButton()->addAttribute('id', 'mail-msg-'. (int)$message['ID'] .'-actions-create-btn');
+$splitButton->getMenuButton()->addAttribute('id', 'mail-msg-'. (int)$message['ID'] .'-actions-create-menu-btn');
+Toolbar::addButton($splitButton);
 ?>
 
-<div class="ui-btn-split ui-btn-primary">
-	<a class="ui-btn-main" id="mail-msg-<?=intval($message['ID']) ?>-actions-create-btn"><?=$createMenu['__default']['title'] ?></a>
-	<a class="ui-btn-extra" id="mail-msg-<?=intval($message['ID']) ?>-actions-create-menu-btn"></a>
-</div>
-
 <script>
-
 	BX.ready(function ()
 	{
 		BX.message({

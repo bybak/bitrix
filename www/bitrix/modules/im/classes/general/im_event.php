@@ -27,10 +27,6 @@ class CIMEvent
 
 	public static function OnBeforeUserSendPassword($params)
 	{
-		$bots = IM\Bot::getListCache();
-		if (empty($bots))
-			return true;
-
 		if (isset($params['LOGIN']) && !empty($params['LOGIN']))
 		{
 			if (mb_substr($params['LOGIN'], 0, mb_strlen(IM\Bot::LOGIN_START)) == IM\Bot::LOGIN_START)
@@ -760,56 +756,22 @@ class CIMEvent
 
 	public static function OnAfterUserAdd($arParams)
 	{
-		if(($arParams["ID"] ?? 0) <= 0)
-		{
-			return false;
-		}
-
-		if ($arParams['ACTIVE'] == 'N')
-		{
-			return false;
-		}
-
-		if (IsModuleInstalled('intranet') && !CIMContactList::IsExtranet($arParams))
-		{
-			$commonChatId = CIMChat::GetGeneralChatId();
-			if ($commonChatId <= 0)
-			{
-				return true;
-			}
-
-			if (
-				$arParams['EXTERNAL_AUTH_ID'] === IM\Bot::EXTERNAL_AUTH_ID
-				|| \Bitrix\Im\User::getInstance($arParams["ID"])->isBot()
-			)
-			{
-				return true;
-			}
-
-			if (!CIMChat::CanJoinGeneralChatId($arParams["ID"]))
-			{
-				return true;
-			}
-
-			$CIMChat = new CIMChat(0);
-			$CIMChat->AddUser($commonChatId, [$arParams["ID"]], null, true);
-		}
-
 		return true;
 	}
 
 	public static function OnAfterUserUpdate($arParams)
 	{
-		$chat = new CIMChat(0);
-		$user = IM\V2\Entity\User\User::getInstance((int)$arParams["ID"]);
 		IM\V2\Entity\User\UserFactory::getInstance()->clearCache((int)$arParams["ID"]);
 
 		IM\V2\Message\CounterService::onAfterUserUpdate($arParams);
 		IM\V2\Chat\User\OwnerService::onAfterUserUpdate($arParams);
+		IM\V2\Message\Sticker\CustomPacks\PackDeleteAgent::onAfterUserUpdate($arParams);
 
-		$commonChatId = CIMChat::GetGeneralChatId();
-		if ($commonChatId > 0 && (isset($arParams['ACTIVE']) || isset($arParams['UF_DEPARTMENT'])))
+		if ((isset($arParams['ACTIVE']) || isset($arParams['UF_DEPARTMENT'])) && CIMChat::GetGeneralChatId())
 		{
+			$chat = new CIMChat(0);
+			$commonChatId = CIMChat::GetGeneralChatId();
+			$user = IM\V2\Entity\User\User::getInstance((int)$arParams["ID"]);
 			if ($arParams['ACTIVE'] == 'N')
 			{
 				//CIMMessage::SetReadMessageAll($arParams['ID']);
@@ -843,7 +805,7 @@ class CIMEvent
 					}
 					else if (!$userInChat && $userCanJoin)
 					{
-						$chat->AddUser($commonChatId, [$arParams["ID"]], null, true, true);
+						$chat->AddUser($commonChatId, [$arParams["ID"]], false, true, true);
 					}
 				}
 			}
@@ -865,7 +827,7 @@ class CIMEvent
 				SELECT COUNT(1)
 				FROM b_im_relation R1
 				INNER JOIN b_user U ON R1.USER_ID = U.ID
-				WHERE R1.CHAT_ID = C.ID AND U.ACTIVE = 'Y'
+				WHERE R1.CHAT_ID = C.ID AND U.ACTIVE = 'Y' AND R1.IS_HIDDEN = 'N'
 			)
 			WHERE R.MESSAGE_TYPE NOT IN ('".IM_MESSAGE_SYSTEM."','".IM_MESSAGE_PRIVATE."')
 			AND R.USER_ID = ".$userId."
@@ -873,6 +835,9 @@ class CIMEvent
 		$DB->Query($sql, true);
 	}
 
+	/**
+	 * Event handler on after user delete {@see \CAllUser::Delete}
+	 */
 	public static function OnUserDelete($ID)
 	{
 		$ID = intval($ID);
@@ -887,7 +852,8 @@ class CIMEvent
 			'filter' => [
 				'=ITEM_TYPE' => IM_MESSAGE_PRIVATE,
 				'=ITEM_ID' => $ID,
-			]
+			],
+			'limit' => 1,
 		])->fetch();
 
 		$arChat = [];
@@ -947,21 +913,9 @@ class CIMEvent
 		$strSQL = "DELETE FROM b_im_recent WHERE ITEM_TYPE = '".IM_MESSAGE_PRIVATE."' and ITEM_ID = ".$ID;
 		$DB->Query($strSQL, true);
 
-		if ($isRecentExists && CModule::IncludeModule('pull'))
+		if ($isRecentExists)
 		{
-			$users = \Bitrix\Im\Helper::getOnlineIntranetUsers();
-
-			\Bitrix\Pull\Event::add($users, [
-				'module_id' => 'im',
-				'command' => 'chatHide',
-				'expiry' => 3600,
-				'params' => [
-					'dialogId' => $ID,
-					'chatId' => null,
-					'lines' => false,
-				],
-				'extra' => \Bitrix\Im\Common::getPullExtra()
-			]);
+			(new IM\V2\Pull\Event\ChatHideOnUserDelete($ID))->send();
 		}
 
 		return true;

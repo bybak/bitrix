@@ -4,8 +4,8 @@ namespace Bitrix\Im\V2\Chat;
 
 use Bitrix\Im\Recent;
 use Bitrix\Im\V2\Chat;
-use Bitrix\Im\V2\Message\ReadService;
-use Bitrix\Main\Config\Option;
+use Bitrix\Im\V2\Message;
+use Bitrix\Im\V2\Result;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Type\DateTime;
@@ -24,12 +24,28 @@ class ChannelChat extends GroupChat
 		\CPullWatch::Add($this->getContext()->getUserId(), "IM_PUBLIC_COMMENT_{$this->getId()}", true);
 	}
 
-	protected function updateStateAfterUsersAdd(array $usersToAdd): Chat
+	protected function updateStateAfterRelationsAdd(array $usersToAdd): Chat
 	{
-		$result = parent::updateStateAfterUsersAdd($usersToAdd);
+		$result = parent::updateStateAfterRelationsAdd($usersToAdd);
 		Recent::raiseChat($this, $this->getRelationsByUserIds($usersToAdd), new DateTime());
 
 		return $result;
+	}
+
+	public function onBeforeMentionsChange(Message\Send\Mention\MentionChange $mentionChange): Result
+	{
+		$parentResult = parent::onBeforeMentionsChange($mentionChange);
+		$commentGetResult = CommentChat::get($mentionChange->message);
+		$commentChat = $commentGetResult->getResult();
+
+		if ($commentChat === null)
+		{
+			return $parentResult;
+		}
+
+		$result = $commentChat->withContextUser(0)->subscribeUsers(true, $mentionChange->addedUserIds);
+
+		return Result::merge($parentResult, $result);
 	}
 
 	protected function sendGreetingMessage(?int $authorId = null)
@@ -65,27 +81,6 @@ class ChannelChat extends GroupChat
 		return self::MANAGE_RIGHTS_MANAGERS;
 	}
 
-	public function realAllComments(): void
-	{
-		$readComments = (new ReadService())->readChildren($this);
-
-		if (empty($readComments) || !Loader::includeModule('pull'))
-		{
-			return;
-		}
-
-		$pushMessage = [
-			'module_id' => 'im',
-			'command' => 'readAllChannelComments',
-			'params' => [
-				'chatId' => $this->getChatId(),
-			],
-			'extra' => \Bitrix\Im\Common::getPullExtra()
-		];
-
-		\Bitrix\Pull\Event::add($this->getContext()->getUserId(), $pushMessage);
-	}
-
 	protected function sendBanner(?int $authorId = null): void
 	{
 		\CIMMessage::Add([
@@ -100,5 +95,20 @@ class ChannelChat extends GroupChat
 			],
 			'SKIP_COUNTER_INCREMENTS' => 'Y',
 		]);
+	}
+
+	protected function needToSendMessageUserDelete(): bool
+	{
+		return false;
+	}
+
+	public function needToSendTaskCreationMessage(): bool
+	{
+		return false;
+	}
+
+	public function needToSendCalendarCreationMessage(): bool
+	{
+		return false;
 	}
 }

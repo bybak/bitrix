@@ -1,7 +1,9 @@
+import { Analytics } from 'im.v2.lib.analytics';
 import { DesktopApi, DesktopFeature, DesktopSettingsKey } from 'im.v2.lib.desktop-api';
 import { showDesktopConfirm, showDesktopRestartConfirm } from 'im.v2.lib.confirm';
 import { Settings } from 'im.v2.const';
-import { SettingsService } from 'im.v2.provider.service';
+import { Feature, FeatureManager } from 'im.v2.lib.feature';
+import { SettingsService } from 'im.v2.provider.service.settings';
 
 import { CheckboxOption } from '../elements/checkbox';
 
@@ -9,10 +11,6 @@ import { CheckboxOption } from '../elements/checkbox';
 export const DesktopSection = {
 	name: 'DesktopSection',
 	components: { CheckboxOption },
-	data(): {}
-	{
-		return {};
-	},
 	computed:
 	{
 		twoWindowMode(): boolean
@@ -42,9 +40,9 @@ export const DesktopSection = {
 
 			return sliderBindingStatus === '1';
 		},
-		sendTelemetry(): boolean
+		isRedirectAvailable(): boolean
 		{
-			return DesktopApi.getTelemetryStatus();
+			return FeatureManager.isFeatureAvailable(Feature.isDesktopRedirectAvailable);
 		},
 	},
 	methods:
@@ -52,6 +50,16 @@ export const DesktopSection = {
 		async onTwoWindowModeChange(newValue: boolean)
 		{
 			DesktopApi.setTwoWindowMode(newValue);
+
+			if (newValue)
+			{
+				Analytics.getInstance().desktopMode.onSettingsTwoWindowEnable();
+			}
+			else
+			{
+				Analytics.getInstance().desktopMode.onSettingsOneWindowEnable();
+			}
+
 			if (!DesktopApi.isFeatureSupported(DesktopFeature.restart.id))
 			{
 				void showDesktopConfirm();
@@ -77,10 +85,6 @@ export const DesktopSection = {
 		{
 			this.setSliderBindingStatus(newValue);
 			DesktopApi.setCustomSetting(DesktopSettingsKey.sliderBindingsStatus, newValue ? '1' : '0');
-		},
-		onSendTelemetryChange(newValue: boolean)
-		{
-			DesktopApi.setTelemetryStatus(newValue);
 		},
 		setSliderBindingStatus(flag: boolean)
 		{
@@ -113,11 +117,11 @@ export const DesktopSection = {
 				<div class="bx-im-settings-section-content__block_title">
 					{{ loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_BLOCK_STARTUP') }}
 				</div>
-				<CheckboxOption
-					:value="twoWindowMode"
-					:text="loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_TWO_WINDOW_MODE_V2')"
-					@change="onTwoWindowModeChange"
-				/>
+<!--				<CheckboxOption-->
+<!--					:value="twoWindowMode"-->
+<!--					:text="loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_TWO_WINDOW_MODE_V2')"-->
+<!--					@change="onTwoWindowModeChange"-->
+<!--				/>-->
 				<CheckboxOption
 					:value="autoStartDesktop"
 					:text="loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_AUTO_START')"
@@ -129,6 +133,7 @@ export const DesktopSection = {
 					{{ loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_BLOCK_LINKS') }}
 				</div>
 				<CheckboxOption
+					v-if="isRedirectAvailable"
 					:value="openPortalLinkInDesktop"
 					:text="openPortalLinkInDesktopPhrase"
 					@change="onOpenPortalLinkInDesktopChange"
@@ -137,16 +142,6 @@ export const DesktopSection = {
 					:value="openLinksInSlider"
 					:text="loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_OPEN_LINKS_IN_SLIDER_V2')"
 					@change="onOpenLinksInSliderChange"
-				/>
-			</div>
-			<div class="bx-im-settings-section-content__block">
-				<div class="bx-im-settings-section-content__block_title">
-					{{ loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_BLOCK_ADDITIONAL') }}
-				</div>
-				<CheckboxOption
-					:value="sendTelemetry"
-					:text="loc('IM_CONTENT_SETTINGS_OPTION_DESKTOP_SEND_TELEMETRY')"
-					@change="onSendTelemetryChange"
 				/>
 			</div>
 		</div>

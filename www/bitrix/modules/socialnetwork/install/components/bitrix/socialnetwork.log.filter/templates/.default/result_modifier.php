@@ -5,6 +5,9 @@
 /** @global CUser $USER */
 /** @global CMain $APPLICATION */
 
+use Bitrix\Main\Loader;
+use Bitrix\Tasks\V2\FormV2Feature;
+
 if (
 	isset($arParams["SET_EXPERT_MODE"])
 	&& $arParams["SET_EXPERT_MODE"] == "Y"
@@ -16,6 +19,12 @@ if (
 elseif ($USER->IsAuthorized())
 {
 	$arResult["SHOW_EXPERT_MODE_POPUP"] = CUserOptions::getOption("socialnetwork", "~log_expertmode_popup_show", "N");
+}
+
+$isTasksV2Form = Loader::includeModule('tasks') && FormV2Feature::isOn();
+if ($isTasksV2Form)
+{
+	$arResult["SHOW_EXPERT_MODE_POPUP"] = "N";
 }
 
 $arResult["SHOW_VIDEO_TRANSFORM_POPUP"] = CUserOptions::getOption("socialnetwork", "~log_videotransform_popup_show", "N");
@@ -243,7 +252,7 @@ if ($arResult["MODE"] == "AJAX")
 	}
 }
 
-if (SITE_TEMPLATE_ID === 'bitrix24')
+if (SITE_TEMPLATE_ID === 'bitrix24' || SITE_TEMPLATE_ID === 'air')
 {
 	$arResult["EnableFulltextSearch"] = \Bitrix\Socialnetwork\LogIndexTable::getEntity()->fullTextIndexEnabled("CONTENT");
 
@@ -253,4 +262,3 @@ if (SITE_TEMPLATE_ID === 'bitrix24')
 
 $arResult["VIDEO_TRANSFORM_POST_URL"] = CUserOptions::getOption("socialnetwork", "~log_videotransform_post_url", "#");
 $arResult["VIDEO_TRANSFORM_POST_ID"] = CUserOptions::getOption("socialnetwork", "~log_videotransform_post_id", 0);
-?>

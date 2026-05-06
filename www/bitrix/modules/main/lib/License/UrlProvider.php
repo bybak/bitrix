@@ -4,6 +4,7 @@ namespace Bitrix\Main\License;
 
 use Bitrix\Main\Application;
 use Bitrix\Main\Web\Uri;
+use Bitrix\Main\License;
 
 class UrlProvider
 {
@@ -24,24 +25,36 @@ class UrlProvider
 		'eu' => 'www.bitrix24.eu',
 		'in' => 'www.bitrix24.in',
 	];
-	private const TECH_DOMAINS = [
-		'ru' => 'bitrix24.tech',
-		'by' => 'bitrix24.tech',
-		'kz' => 'bitrix24.tech',
-		'en' => 'bitrix.info',
-	];
 	private const FEEDBACK_DOMAINS = [
 		'ru' => 'product-feedback.bitrix24.ru',
+		'by' => 'product-feedback.bitrix24.ru',
+		'kz' => 'product-feedback.bitrix24.ru',
+		'uz' => 'product-feedback.bitrix24.ru',
 		'en' => 'product-feedback.bitrix24.com',
 	];
+	private const PUBLIC_DOMAINS = [
+		'ru' => 'https://www.bitrix24.ru',
+		'kz' => 'https://www.bitrix24.kz',
+		'uz' => 'https://www.bitrix24.uz',
+		'by' => 'https://www.bitrix24.by',
+		'en' => 'https://www.bitrix24.com',
+		'de' => 'https://www.bitrix24.de',
+	];
+
+	protected License $license;
+
+	public function __construct()
+	{
+		$this->license = Application::getInstance()->getLicense();
+	}
 
 	public function getPriceTableUrl(): Uri
 	{
-		$license = Application::getInstance()->getLicense();
-		$domain = self::PRODUCTS_DOMAINS[$license->getRegion() ?? 'en'] ?? self::PRODUCTS_DOMAINS['en'];
+		$region = $this->license->getRegion();
+		$domain = self::PRODUCTS_DOMAINS[$region ?? 'en'] ?? self::PRODUCTS_DOMAINS['en'];
 		$url = new Uri('https://' . $domain);
 
-		if (in_array($license->getRegion(), ['ru', 'by', 'kz']))
+		if (in_array($region, ['ru', 'by', 'kz']))
 		{
 			$url->setPath('/buy/products/b24.php');
 		}
@@ -55,11 +68,11 @@ class UrlProvider
 
 	public function getPurchaseHistoryUrl(): Uri
 	{
-		$license = Application::getInstance()->getLicense();
-		$domain = self::STORE_DOMAINS[$license->getRegion() ?? 'en'] ?? self::STORE_DOMAINS['en'];
+		$region = $this->license->getRegion();
+		$domain = self::STORE_DOMAINS[$region ?? 'en'] ?? self::STORE_DOMAINS['en'];
 		$url = new Uri('https://' . $domain);
 
-		if (in_array($license->getRegion(), ['ru', 'by', 'kz']))
+		if (in_array($region, ['ru', 'by', 'kz']))
 		{
 			$url->setPath('/support/key_info.php');
 		}
@@ -71,9 +84,26 @@ class UrlProvider
 		return $url;
 	}
 
+	public function getPrivacyPolicyUrl(): Uri
+	{
+		$region = $this->license->getRegion();
+		$url = new Uri(self::PUBLIC_DOMAINS[$region ?? 'en'] ?? self::PUBLIC_DOMAINS['en']);
+
+		if (in_array($region, ['ru', 'kz']))
+		{
+			$url->setPath('/about/privacy.php');
+		}
+		else
+		{
+			$url->setPath('/privacy/');
+		}
+
+		return $url;
+	}
+
 	public function getMailingAgreementUrl(): ?Uri
 	{
-		$region = Application::getInstance()->getLicense()->getRegion();
+		$region = $this->license->getRegion();
 
 		if (in_array($region, ['ru', 'by', 'kz']))
 		{
@@ -85,25 +115,34 @@ class UrlProvider
 
 	public function getProductDomain(?string $region = null): Uri
 	{
-		$region ??= Application::getInstance()->getLicense()->getRegion();
+		$region ??= $this->license->getRegion();
 		$domain = self::PRODUCTS_DOMAINS[$region ?? 'en'] ?? self::PRODUCTS_DOMAINS['en'];
 
 		return new Uri('https://' . $domain);
 	}
 
-	public function getTechDomain(?string $region = null): string
+	public function getTechDomain(): string
 	{
-		$region ??= Application::getInstance()->getLicense()->getRegion();
-		$domain = self::TECH_DOMAINS[$region ?? 'en'] ?? self::TECH_DOMAINS['en'];
-
-		return $domain;
+		return $this->license->isCis() ? 'bitrix24.tech' : 'bitrix.info';
 	}
 
-	public function getFeedbackDomain(?string $region = null): string
+	/**
+	 * Returns the portal domain for the current region where feedback forms are hosted.
+	 *
+	 * @return string
+	 */
+	public function getFeedbackDomain(): string
 	{
-		$region ??= Application::getInstance()->getLicense()->getRegion();
-		$domain = self::FEEDBACK_DOMAINS[$region ?? 'en'] ?? self::FEEDBACK_DOMAINS['en'];
+		$region ??= $this->license->getRegion();
 
-		return $domain;
+		return self::FEEDBACK_DOMAINS[$region ?? 'en'] ?? self::FEEDBACK_DOMAINS['en'];
+	}
+
+	public function getPublicDomain(?string $region = null): Uri
+	{
+		$region ??= $this->license->getRegion();
+		$domain = self::PUBLIC_DOMAINS[$region ?? 'en'] ?? self::PUBLIC_DOMAINS['en'];
+
+		return new Uri($domain);
 	}
 }

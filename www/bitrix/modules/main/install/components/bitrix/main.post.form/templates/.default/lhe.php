@@ -6,9 +6,17 @@ if (!CModule::IncludeModule("fileman"))
  * @var array $arParams
  */
 
+use Bitrix\Ui\Public\Services\Copilot\CopilotNameService;
+
+$copilotNameService = GetMessage('MPF_COPILOT');
+if (class_exists(CopilotNameService::class))
+{
+	$copilotNameService = (new CopilotNameService())->getCopilotName();
+}
+
 $possibleButtons = [
 	'Copilot' => [
-		'HTML' => '<i class="ui-icon-set --copilot-ai" id="bx-b-copilot-'.$arParams['FORM_ID'].'"></i><span class="main-post-form-toolbar-button-copilot">'.GetMessage('MPF_COPILOT')."</span>",
+		'HTML' => '<i class="ui-icon-set --copilot-ai" id="bx-b-copilot-'.$arParams['FORM_ID'].'"></i><span class="main-post-form-toolbar-button-copilot">'.$copilotNameService."</span>",
 		'ID' => 'copilot',
 	],
 	'UploadFile' => [ //Custom button
@@ -152,7 +160,7 @@ $res = array_merge(
 		'width' => '100%',
 		'arSmilesSet' => $arResult["SMILES"]["SETS"],
 		'arSmiles' => $arResult["SMILES"]["VALUE"],
-		'content' => htmlspecialcharsBack($arParams["TEXT"]["VALUE"]),
+		'content' => isset($arParams["TEXT"]["VALUE"]) ? htmlspecialcharsBack($arParams["TEXT"]["VALUE"]) : '',
 		'iframeCss' =>
 			'.bx-spoiler {border:1px solid #cecece;background-color:#f6f6f6;padding: 8px 8px 8px 24px;color:#373737;border-radius:var(--ui-border-radius-sm, 2px);min-height:1em;margin: 0;}'.
 			(is_array($arParams["LHE"]) && isset($arParams["LHE"]["iframeCss"]) ? $arParams["LHE"]["iframeCss"] : ""),
