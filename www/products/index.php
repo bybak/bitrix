@@ -42,24 +42,13 @@ $IBLOCK_ID = 4; // Каталог запчастей Motor Force
 
 		<aside class="mf-shop-sidebar" aria-label="Категории (дерево)">
 			<?$APPLICATION->IncludeComponent(
-				"bitrix:catalog.section.list",
-				"mf_shop_tree",
+				"mf:catalog.section.tree.fast",
+				".default",
 				array(
-					"IBLOCK_TYPE" => "catalog",
 					"IBLOCK_ID" => $IBLOCK_ID,
-
-					"SECTION_ID" => 0,
-					"SECTION_CODE" => "",
 					"MF_CURRENT_SECTION_ID" => 0,
-
-					"COUNT_ELEMENTS" => "N",
 					"SECTION_URL" => "/products/category/#SECTION_CODE#/",
-
 					"TOP_DEPTH" => "6",
-					"VIEW_MODE" => "LIST",
-					"SHOW_PARENT_NAME" => "N",
-					"ADD_SECTIONS_CHAIN" => "N",
-
 					"CACHE_TYPE" => "A",
 					"CACHE_TIME" => "36000000",
 					"CACHE_GROUPS" => "Y",
