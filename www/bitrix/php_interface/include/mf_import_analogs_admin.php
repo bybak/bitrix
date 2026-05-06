@@ -354,8 +354,8 @@ function mf_analogs_create_product_stub(int $iblockId, string $brand, string $ar
 	$articleNorm = mf_analogs_norm_article($article);
 
 	$name = $brand . ' ' . $article;
-	$codeBase = $brandNorm . '-' . $articleNorm;
-	$code = mf_analogs_generate_unique_code($iblockId, $codeBase !== '-' ? $codeBase : $name);
+	$codeBase = $brandNorm . $articleNorm;
+	$code = mf_analogs_generate_unique_code($iblockId, $codeBase !== '' ? $codeBase : $name);
 
 	$el = new \CIBlockElement();
 	$newId = (int)$el->Add([

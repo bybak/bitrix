@@ -536,7 +536,7 @@ if (($arID = $lAdmin->GroupAction()) !== false)
 						$articleNorm = function_exists('mf_analogs_norm_article') ? mf_analogs_norm_article($article) : mb_strtoupper($article);
 
 						$name = ($nameFromCsv !== '' ? $nameFromCsv : ($brand . ' ' . $article));
-						$codeBase = ($brandNorm !== '' && $articleNorm !== '') ? ($brandNorm . '-' . $articleNorm) : $name;
+						$codeBase = ($brandNorm !== '' && $articleNorm !== '') ? ($brandNorm . $articleNorm) : $name;
 						$code = mf_analogs_generate_unique_code($iblockId, $codeBase);
 
 						$el = new \CIBlockElement();

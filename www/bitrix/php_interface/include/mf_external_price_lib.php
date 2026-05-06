@@ -279,7 +279,7 @@ if (!function_exists('mf_ep_create_product_from_external_price'))
 			$name = $uniqKey;
 		}
 
-		$codeBase = $articleNorm . '-' . $brandNorm;
+		$codeBase = $brandNorm . $articleNorm;
 		if (mb_strlen($codeBase) > 96)
 		{
 			$codeBase = mb_substr($codeBase, 0, 96);
