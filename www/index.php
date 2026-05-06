@@ -2,18 +2,6 @@
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 $APPLICATION->SetTitle("Motor-Force — запчасти для мототехники");
 $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
-
-/** Картинки слайдера главной: img-motor-force.ru/sections/{ID}.jpg (без Nethouse i.siteapi.org). */
-$mfSliderImg = static function (string $sectionCode): string {
-	if (!function_exists('mf_mf_catalog_section_id_by_code') || !function_exists('mf_mf_section_img_url')) {
-		return '';
-	}
-	$id = mf_mf_catalog_section_id_by_code($sectionCode, 4);
-	return $id > 0 ? (string)mf_mf_section_img_url($id) : (function_exists('mf_mf_placeholder_img_url') ? (string)mf_mf_placeholder_img_url() : '');
-};
-$mfProkatSliderImg = static function (): string {
-	return function_exists('mf_mf_home_prokat_slider_src') ? (string)mf_mf_home_prokat_slider_src() : '';
-};
 ?>
 <div class="mf-breakout">
 	<div ng-cloak on-view class="widget-block nh-editor-panel main-page-slider slider" data-widget-slider data-params="{&quot;route&quot;:&quot;mainPage&quot;}" data-type="43" data-entity-id="22">
@@ -40,7 +28,7 @@ $mfProkatSliderImg = static function (): string {
 													<div class="mrb-image">
 														<div style="text-align: center">
 															<a href="/products/category/zapchasti-dlya-kvadrotsiklov/" target="_blank">
-																<img src="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-kvadrotsiklov'))?>" alt="" loading="eager" decoding="async" width="700" height="500">
+																<img src="//i.siteapi.org/jRTvObf-Q7_5qSZeydhgKBs4DAQ=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/51920f0jfocg0o4wogc8kosg84cgog">
 															</a>
 														</div>
 													</div>
@@ -70,7 +58,7 @@ $mfProkatSliderImg = static function (): string {
 
 					<div class="slider__item slider-item js-slider__item slick-slide slider-item_bg">
 						<div class="slider__item-constraint js-slider__item-constraint"></div>
-						<div class="slider-item__background lazyload" data-bg="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-snegokhodov'))?>"></div>
+						<div class="slider-item__background lazyload" data-bg="//i.siteapi.org/_RRlIB7O5jzFBmnAiPw_ff3iDIE=/fit-in/2000x/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/2h3mnwdz2a040c8k08g8scocg088wg"></div>
 						<div class="slider-item__content row">
 							<div class="column small-12">
 								<div class="user-inner slider__user-content">
@@ -81,7 +69,7 @@ $mfProkatSliderImg = static function (): string {
 													<div class="mrb-image">
 														<div style="text-align: center">
 															<a href="/products/category/zapchasti-dlya-snegokhodov/" target="_blank">
-																<img src="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-snegokhodov'))?>" alt="" loading="lazy" decoding="async" width="700" height="500">
+																<img src="//i.siteapi.org/yCSc4RWdPKyKPZl00ggfHc_2Z6I=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/ot2fwiq4gcg40g0k4g4cgo80ss8cgw">
 															</a>
 														</div>
 													</div>
@@ -111,7 +99,7 @@ $mfProkatSliderImg = static function (): string {
 
 					<div class="slider__item slider-item js-slider__item slick-slide slider-item_bg">
 						<div class="slider__item-constraint js-slider__item-constraint"></div>
-						<div class="slider-item__background lazyload" data-bg="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-mototsiklov'))?>"></div>
+						<div class="slider-item__background lazyload" data-bg="//i.siteapi.org/pGGX37kTX4o_TOndh9OJPVPu0qY=/fit-in/2000x/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/biswv54sio00w8sssgcc0ocw4o0cgo"></div>
 						<div class="slider-item__content row">
 							<div class="column small-12">
 								<div class="user-inner slider__user-content">
@@ -122,7 +110,7 @@ $mfProkatSliderImg = static function (): string {
 													<div class="mrb-image">
 														<div style="text-align: center">
 															<a href="/products/category/zapchasti-dlya-mototsiklov/" target="_blank">
-																<img src="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-mototsiklov'))?>" alt="" loading="lazy" decoding="async" width="700" height="500">
+																<img src="//i.siteapi.org/cDj62SkqsoZi0_F_1tRgRZC51iE=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/8fz3qbxaztoggc4s0occs0cwsokg4c">
 															</a>
 														</div>
 													</div>
@@ -152,7 +140,7 @@ $mfProkatSliderImg = static function (): string {
 
 					<div class="slider__item slider-item js-slider__item slick-slide slider-item_bg">
 						<div class="slider__item-constraint js-slider__item-constraint"></div>
-						<div class="slider-item__background lazyload" data-bg="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-gidrotsiklov'))?>"></div>
+						<div class="slider-item__background lazyload" data-bg="//i.siteapi.org/FTVSQvD96BOc7jgWdV1eiBiULUs=/fit-in/2000x/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/g38aln43u20okc8ccwokw4oko0kows"></div>
 						<div class="slider-item__content row">
 							<div class="column small-12">
 								<div class="user-inner slider__user-content">
@@ -163,7 +151,7 @@ $mfProkatSliderImg = static function (): string {
 													<div class="mrb-image">
 														<div style="text-align: center">
 															<a href="/products/category/zapchasti-dlya-gidrotsiklov/" target="_blank">
-																<img src="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-gidrotsiklov'))?>" alt="" loading="lazy" decoding="async" width="700" height="500">
+																<img src="//i.siteapi.org/TWC3Pu9He4PQTqtHEKYZFXG08zQ=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/20nwqqsc8gf4go00gowo8wkosws0kw">
 															</a>
 														</div>
 													</div>
@@ -193,7 +181,7 @@ $mfProkatSliderImg = static function (): string {
 
 					<div class="slider__item slider-item js-slider__item slick-slide slider-item_bg">
 						<div class="slider__item-constraint js-slider__item-constraint"></div>
-						<div class="slider-item__background lazyload" data-bg="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-lodochnykh-motorov'))?>"></div>
+						<div class="slider-item__background lazyload" data-bg="//i.siteapi.org/UBYk7FUdGV0xK75I-X_8JAscUk4=/fit-in/2000x/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/ayzv3ocf1uokk80sccck0ws8ooc0k4"></div>
 						<div class="slider-item__content row">
 							<div class="column small-12">
 								<div class="user-inner slider__user-content">
@@ -204,7 +192,7 @@ $mfProkatSliderImg = static function (): string {
 													<div class="mrb-image">
 														<div style="text-align: center">
 															<a href="/products/category/zapchasti-dlya-lodochnykh-motorov/" target="_blank">
-																<img src="<?=htmlspecialcharsbx($mfSliderImg('zapchasti-dlya-lodochnykh-motorov'))?>" alt="" loading="lazy" decoding="async" width="700" height="500">
+																<img src="//i.siteapi.org/0JHBVDrPmr2LupaitPCtawPlk3k=/fit-in/1400x1000/center/top/ccdb0156d66a088.ru.s.siteapi.org/img/hmvfg4w4g1kw0os4oc4o8kk4ksckkg">
 															</a>
 														</div>
 													</div>
@@ -234,7 +222,7 @@ $mfProkatSliderImg = static function (): string {
 
 					<div class="slider__item slider-item js-slider__item slick-slide slider-item_bg">
 						<div class="slider__item-constraint js-slider__item-constraint"></div>
-						<div class="slider-item__background lazyload" data-bg="<?=htmlspecialcharsbx($mfSliderImg('aksessuary-i-komplektuyushchie-dlya-katerov-lodok-i-yakht'))?>"></div>
+						<div class="slider-item__background lazyload" data-bg="//i.siteapi.org/fTIF2AxmV1U1bwVTnKEPlW3eN2I=/fit-in/2000x/center/top/s.siteapi.org/ccdb0156d66a088.ru/img/fosdmbkx6zcck0cs8cwss008osw4gg"></div>
 						<div class="slider-item__content row">
 							<div class="column small-12">
 								<div class="user-inner slider__user-content">
@@ -245,7 +233,7 @@ $mfProkatSliderImg = static function (): string {
 													<div class="mrb-image">
 														<div style="text-align: center">
 															<a href="/products/category/aksessuary-i-komplektuyushchie-dlya-katerov-lodok-i-yakht/" target="_blank">
-																<img src="<?=htmlspecialcharsbx($mfSliderImg('aksessuary-i-komplektuyushchie-dlya-katerov-lodok-i-yakht'))?>" alt="" loading="lazy" decoding="async" width="700" height="500">
+																<img src="//i.siteapi.org/oRcI7-04p1jJzBkm5FrpzC1tq1I=/fit-in/1400x1000/center/top/s.siteapi.org/ccdb0156d66a088.ru/img/7v26uzyx2wkcow4s44kkscokwgcgss">
 															</a>
 														</div>
 													</div>
@@ -275,7 +263,7 @@ $mfProkatSliderImg = static function (): string {
 
 					<div class="slider__item slider-item js-slider__item slick-slide slider-item_bg">
 						<div class="slider__item-constraint js-slider__item-constraint"></div>
-						<div class="slider-item__background lazyload" data-bg="<?=htmlspecialcharsbx($mfProkatSliderImg())?>"></div>
+						<div class="slider-item__background lazyload" data-bg="//i.siteapi.org/_nzsNaSnjXHkB2uhMiFFxrar_Tg=/fit-in/2000x/center/top/s.siteapi.org/ccdb0156d66a088.ru/img/k0fjkhzlutcw04o8csgo8gsk48ssc0"></div>
 						<div class="slider-item__content row">
 							<div class="column small-12">
 								<div class="user-inner slider__user-content">
@@ -286,7 +274,7 @@ $mfProkatSliderImg = static function (): string {
 													<div class="mrb-image">
 														<div style="text-align: center">
 															<a href="/prokat/" target="_blank">
-																<img src="<?=htmlspecialcharsbx($mfProkatSliderImg())?>" alt="" loading="lazy" decoding="async" width="700" height="500">
+																<img src="//i.siteapi.org/ezlpGzMTXavshB8wi2AKr5CNNt0=/fit-in/1400x1000/center/top/s.siteapi.org/ccdb0156d66a088.ru/img/gxp4p0fzhgoowsww88gs4kk4kck8cc">
 															</a>
 														</div>
 													</div>
@@ -486,7 +474,8 @@ $mfProkatSliderImg = static function (): string {
 			data-region="1"
 			id="lead-form"
 			class="-widget-lead-form lead-form lead-form -nt-widget on-view lead-form_dark block-24 widget-sort on-plate onmain widget-block nh-editor-panel lazyload"
-			style="background-color: #F0C419;"
+			style="background-position: center;background-repeat: no-repeat;background-size: cover;background-color: #F0C419;background-image: url('https://i.siteapi.org/T-ECSmsQbfGrfNJO7jGOdfq1QqM=/filters:fill(transparent)/ccdb0156d66a088.ru.s.siteapi.org/img/e4f7191ae73030644c92b16275491e622bbed16a.jpg');"
+			data-bg="https://i.siteapi.org/T-ECSmsQbfGrfNJO7jGOdfq1QqM=/filters:fill(transparent)/ccdb0156d66a088.ru.s.siteapi.org/img/e4f7191ae73030644c92b16275491e622bbed16a.jpg"
 	>
 		<div class="widget">
 			<div class="content-block widget__content widget__content_filled">
@@ -606,8 +595,7 @@ $mfProkatSliderImg = static function (): string {
 							<div class="contact-address__map">
 								<iframe src="https://motor-force.ru/contacts/showmap/863360/1/ru_RU"
 										id="ymap-1" style="width:100%;height:100%;"
-										marginheight="0" marginwidth="0" frameborder="0" loading="lazy"
-										data-host="nethouse.ru"
+										marginheight="0" marginwidth="0" frameborder="0" data-host="nethouse.ru"
 										data-lang="ru_RU"></iframe>
 							</div>
 						</div>
