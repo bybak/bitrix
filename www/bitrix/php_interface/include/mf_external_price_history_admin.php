@@ -135,6 +135,7 @@ if ($isView && mf_eh_table_exists())
 	echo '<h2 style="margin:8px 0 12px 0;">Импорт #' . (int)$viewId . '</h2>';
 	echo '<table class="adm-detail-content-table edit-table" style="width:100%;background:#fff;"><tbody>';
 	$kv('Статус', $row['UF_STATUS'] ?? '');
+	$kv('Задание импорта (JOB ID)', $row['UF_JOB_ID'] ?? '');
 	$kv('Начало', $row['UF_STARTED_AT'] ?? '');
 	$kv('Окончание', $row['UF_FINISHED_AT'] ?? '');
 	$kv('Длительность', mf_eh_fmt_duration($row['UF_DURATION_MS'] ?? null));
@@ -318,7 +319,7 @@ $filter = new \CAdminFilter($sTableID . '_filter', [
 
 ?>
 <div style="max-width:1250px">
-	<p style="margin:8px 0;color:#666">Последние <?= (int)$limit ?> записей. Лог пишется при каждой попытке загрузки (в т.ч. ошибки валидации).</p>
+	<p style="margin:8px 0;color:#666">Последние <?= (int)$limit ?> записей. Фоновый импорт сначала добавляет строку со статусом <strong>running</strong> (без даты окончания), после обработки она обновляется на <strong>ok</strong> или <strong>failed</strong>. Ошибки только формы валидации пишутся отдельно (без job), часто <strong>validation_failed</strong>.</p>
 
 	<form name="find_form" method="get" action="<?= mf_eh_escape($APPLICATION->GetCurPage()) ?>">
 		<input type="hidden" name="lang" value="<?= mf_eh_escape($lang) ?>" />
@@ -336,6 +337,7 @@ $filter = new \CAdminFilter($sTableID . '_filter', [
 			<td>
 				<select name="find_status">
 					<option value="">—</option>
+					<option value="running" <?= ($find_status === 'running' ? 'selected' : '') ?>>running</option>
 					<option value="ok" <?= ($find_status === 'ok' ? 'selected' : '') ?>>ok</option>
 					<option value="failed" <?= ($find_status === 'failed' ? 'selected' : '') ?>>failed</option>
 					<option value="validation_failed" <?= ($find_status === 'validation_failed' ? 'selected' : '') ?>>validation_failed</option>

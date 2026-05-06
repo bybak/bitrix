@@ -26,6 +26,44 @@ function mf_epu_release_session_lock_for_long_request(): void
 }
 
 /**
+ * Сериализация UF_RESULT_JSON для завершённого job: битая UTF-8 в stats (например в examples_nf)
+ * давала json_encode = false → статус done не писался, задание залипало в running при полных счётчиках.
+ *
+ * @param array<string,mixed> $stats
+ */
+function mf_epu_external_price_job_stats_json(array $stats): string
+{
+	$flags = JSON_UNESCAPED_UNICODE;
+	if (defined('JSON_INVALID_UTF8_SUBSTITUTE'))
+	{
+		$flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+	}
+	$js = json_encode($stats, $flags);
+	if ($js !== false && $js !== '')
+	{
+		return $js;
+	}
+
+	$safe = [
+		'ok' => (int)($stats['ok'] ?? 0),
+		'not_found' => (int)($stats['not_found'] ?? 0),
+		'created' => (int)($stats['created'] ?? 0),
+		'bad' => (int)($stats['bad'] ?? 0),
+		'brand_skipped' => (int)($stats['brand_skipped'] ?? 0),
+		'zeroed' => (int)($stats['zeroed'] ?? 0),
+		'price_write_fail' => (int)($stats['price_write_fail'] ?? 0),
+		'store' => (string)($stats['store'] ?? ''),
+		'xml' => (string)($stats['xml'] ?? ''),
+		'currency' => (string)($stats['currency'] ?? ''),
+		'feed_code' => (string)($stats['feed_code'] ?? ''),
+		'_stats_json_fallback' => 'non_utf8_or_non_serializable_details_omitted',
+	];
+	$js2 = json_encode($safe, $flags);
+
+	return ($js2 !== false && $js2 !== '') ? $js2 : '{}';
+}
+
+/**
  * Запуск фонового импорта по ID задания (POST с sessid или GET nudge с token, без sessid).
  */
 function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid): void
@@ -180,6 +218,7 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 			'importStartedAt' => $importStartedW,
 			'importT0' => $importT0W,
 			'feedCode' => (string)($jobR['UF_FEED_CODE'] ?? ''),
+			'importLogId' => (int)($jobR['UF_IMPORT_LOG_ID'] ?? 0),
 		];
 		$onPr = static function (int $done, int $total) use ($runJobId): void {
 			if (!function_exists('mf_external_price_import_job_update'))
@@ -213,16 +252,13 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 		$resW = mf_epu_run_external_price_import($absF, $iblockId, $ctxW, $onPr);
 		if (!empty($resW['ok']) && isset($resW['stats']) && is_array($resW['stats']))
 		{
-			$js = json_encode($resW['stats'], JSON_UNESCAPED_UNICODE);
-			if ($js !== false)
-			{
-				mf_external_price_import_job_update($runJobId, [
-					'UF_STATUS' => 'done',
-					'UF_FINISHED_AT' => date('Y-m-d H:i:s'),
-					'UF_ERROR_TEXT' => null,
-					'UF_RESULT_JSON' => $js,
-				]);
-			}
+			$js = mf_epu_external_price_job_stats_json($resW['stats']);
+			mf_external_price_import_job_update($runJobId, [
+				'UF_STATUS' => 'done',
+				'UF_FINISHED_AT' => date('Y-m-d H:i:s'),
+				'UF_ERROR_TEXT' => null,
+				'UF_RESULT_JSON' => $js,
+			]);
 			@unlink($absF);
 		}
 		else

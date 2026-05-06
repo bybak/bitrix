@@ -1887,6 +1887,28 @@ if (!function_exists('mf_external_price_import_log_migrate_schema'))
 					'ALTER TABLE mf_external_price_import_log ADD COLUMN UF_FEED_CODE VARCHAR(64) NULL AFTER UF_PRICE_GROUP_ID'
 				);
 			}
+			$r2 = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_log LIKE 'UF_JOB_ID'"
+			)->fetch();
+			if (!$r2)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_log ADD COLUMN UF_JOB_ID BIGINT UNSIGNED NULL AFTER UF_STATUS'
+				);
+			}
+			$r3 = $conn->query("SHOW INDEX FROM mf_external_price_import_log WHERE Key_name = 'IX_EP_LOG_JOB'")->fetch();
+			if (!$r3)
+			{
+				try
+				{
+					$conn->queryExecute(
+						'ALTER TABLE mf_external_price_import_log ADD KEY IX_EP_LOG_JOB (UF_JOB_ID)'
+					);
+				}
+				catch (\Throwable $e2)
+				{
+				}
+			}
 		}
 		catch (\Throwable $e)
 		{
@@ -1969,6 +1991,69 @@ if (!function_exists('mf_external_price_import_log_insert'))
 	}
 }
 
+if (!function_exists('mf_external_price_import_log_update'))
+{
+	/**
+	 * Обновление строки истории (например running → ok/failed).
+	 *
+	 * @param array<string, mixed> $fields
+	 */
+	function mf_external_price_import_log_update(int $id, array $fields): bool
+	{
+		$id = (int)$id;
+		if ($id <= 0 || empty($fields) || !mf_external_price_import_log_ensure_table())
+		{
+			return false;
+		}
+
+		$conn = mf_external_price_import_log_conn();
+		if (!$conn)
+		{
+			return false;
+		}
+
+		$sets = [];
+		foreach ($fields as $k => $v)
+		{
+			$k = trim((string)$k);
+			if ($k === '')
+			{
+				continue;
+			}
+			$k = str_replace('`', '', $k);
+			if ($v === null)
+			{
+				$sets[] = '`' . $k . '`=NULL';
+			}
+			elseif (is_int($v) || is_float($v))
+			{
+				$sets[] = '`' . $k . '`=' . (is_finite((float)$v) ? (string)$v : 'NULL');
+			}
+			else
+			{
+				$sets[] = '`' . $k . '`=' . mf_external_price_import_log_quote($conn, $v);
+			}
+		}
+		if (empty($sets))
+		{
+			return false;
+		}
+
+		try
+		{
+			$conn->queryExecute(
+				'UPDATE mf_external_price_import_log SET ' . implode(', ', $sets) . ' WHERE ID=' . $id
+			);
+
+			return true;
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+}
+
 // --- Фоновые задания импорта внешнего прайса (админка) -------------------------
 
 if (!function_exists('mf_external_price_import_job_conn'))
@@ -2047,6 +2132,15 @@ if (!function_exists('mf_external_price_import_job_migrate_schema'))
 			{
 				$conn->queryExecute(
 					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_FEED_CODE VARCHAR(64) NULL AFTER UF_STORE_ID'
+				);
+			}
+			$r2 = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_job LIKE 'UF_IMPORT_LOG_ID'"
+			)->fetch();
+			if (!$r2)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_IMPORT_LOG_ID BIGINT UNSIGNED NULL AFTER UF_FINISHED_AT'
 				);
 			}
 		}

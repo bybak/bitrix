@@ -540,6 +540,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 								}
 								else
 								{
+									$queuedAt = date('Y-m-d H:i:s');
+									$importLogIdQueued = 0;
+									if (function_exists('mf_external_price_import_log_insert'))
+									{
+										$importLogIdQueued = (int)mf_external_price_import_log_insert([
+											'UF_STARTED_AT' => $queuedAt,
+											'UF_FINISHED_AT' => null,
+											'UF_DURATION_MS' => null,
+											'UF_STATUS' => 'running',
+											'UF_USER_ID' => $importUserId > 0 ? $importUserId : null,
+											'UF_USER_LOGIN' => $importUserLogin !== '' ? $importUserLogin : null,
+											'UF_STORE_ID' => $storeId,
+											'UF_STORE_XML_ID' => (string)($st['XML_ID'] ?? ''),
+											'UF_STORE_TITLE' => (string)($st['TITLE'] ?? ''),
+											'UF_PRICE_GROUP_ID' => $priceGroupId,
+											'UF_FEED_CODE' => $feedNorm,
+											'UF_INPUT_FILENAME' => $importFileName !== '' ? $importFileName : null,
+											'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
+											'UF_CURRENCY' => $currency,
+											'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
+											'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
+											'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
+											'UF_WEIGHT_MIN_RUB' => 0.0,
+											'UF_JOB_ID' => $newJobId,
+										]);
+									}
+									if ($importLogIdQueued > 0 && function_exists('mf_external_price_import_job_update'))
+									{
+										mf_external_price_import_job_update($newJobId, [
+											'UF_IMPORT_LOG_ID' => $importLogIdQueued,
+										]);
+									}
 									$q = [
 										'import_job' => $newJobId,
 										'token' => $jobToken,

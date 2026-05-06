@@ -5,6 +5,25 @@ declare(strict_types=1);
 use Bitrix\Catalog\StoreTable;
 
 /**
+ * Пометить строку mf_external_price_import_log как упавшую (ранний выход до try/внутри try).
+ */
+function mf_epu_import_log_mark_failed(int $importLogId, float $t0, string $err): void
+{
+	if ($importLogId <= 0 || !function_exists('mf_external_price_import_log_update'))
+	{
+		return;
+	}
+	$fin = date('Y-m-d H:i:s');
+	$dur = (int)round((microtime(true) - $t0) * 1000.0);
+	mf_external_price_import_log_update($importLogId, [
+		'UF_FINISHED_AT' => $fin,
+		'UF_DURATION_MS' => $dur,
+		'UF_STATUS' => 'failed',
+		'UF_ERROR_MESSAGE' => mb_substr($err, 0, 1000),
+	]);
+}
+
+/**
  * Выполняет импорт внешнего прайса из CSV (путь к уже сохранённому файлу).
  *
  * @param array{
@@ -21,15 +40,21 @@ use Bitrix\Catalog\StoreTable;
  *   importUserLogin: string,
  *   importStartedAt: string,
  *   importT0: float,
- *   feedCode: string
+ *   feedCode: string,
+ *   importLogId?: int
  * } $ctx
  * @param callable|null $onProgress function(int $rowsDone, int $rowsTotal): void
  * @return array{ok: bool, stats?: array, error?: string}
  */
 function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, array $ctx, $onProgress = null): array
 {
+	$importLogId = (int)($ctx['importLogId'] ?? 0);
+	$importLogT0 = (float)($ctx['importT0'] ?? microtime(true));
+
 	if (!is_file($absCsvPath) || !is_readable($absCsvPath))
 	{
+		mf_epu_import_log_mark_failed($importLogId, $importLogT0, 'Файл импорта не найден или недоступен.');
+
 		return ['ok' => false, 'error' => 'Файл импорта не найден или недоступен.'];
 	}
 
@@ -45,7 +70,6 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 	$importUserId = (int)($ctx['importUserId'] ?? 0);
 	$importUserLogin = (string)($ctx['importUserLogin'] ?? '');
 	$importStartedAt = (string)($ctx['importStartedAt'] ?? '');
-	$importLogT0 = (float)($ctx['importT0'] ?? microtime(true));
 	$storeId = (int)($st['ID'] ?? 0);
 	$feedCodeNorm = function_exists('mf_esf_normalize_feed_code')
 		? mf_esf_normalize_feed_code((string)($ctx['feedCode'] ?? ''))
@@ -53,6 +77,8 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 
 	if ($feedCodeNorm === '')
 	{
+		mf_epu_import_log_mark_failed($importLogId, $importLogT0, 'В задании не указан код прайса.');
+
 		return ['ok' => false, 'error' => 'В задании не указан код прайса (перезагрузите файл с заполненным полем «Код прайса»).'];
 	}
 
@@ -69,6 +95,8 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 	{
 		if (!function_exists('mf_epu_read_file_utf8'))
 		{
+			mf_epu_import_log_mark_failed($importLogId, $importLogT0, 'Не подключён mf_epu_read_file_utf8.');
+
 			return ['ok' => false, 'error' => 'Не подключён mf_epu_read_file_utf8.'];
 		}
 
@@ -82,6 +110,8 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		$lines = preg_split('~\R~u', $text) ?: [];
 		if (count($lines) < 2)
 		{
+			mf_epu_import_log_mark_failed($importLogId, $importLogT0, 'В файле нет данных (нужна строка заголовка и хотя бы одна строка).');
+
 			return ['ok' => false, 'error' => 'В файле нет данных (нужна строка заголовка и хотя бы одна строка).'];
 		}
 
@@ -91,10 +121,13 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 
 		if (!isset($hmap['manufacturer'], $hmap['article'], $hmap['price']))
 		{
+			$hdrErr = 'Не найдены колонки Производитель / Артикул / Цена в первой строке. Обнаружено: '
+				. implode($delim, $header);
+			mf_epu_import_log_mark_failed($importLogId, $importLogT0, $hdrErr);
+
 			return [
 				'ok' => false,
-				'error' => 'Не найдены колонки Производитель / Артикул / Цена в первой строке. Обнаружено: '
-					. implode($delim, $header),
+				'error' => $hdrErr,
 			];
 		}
 
@@ -314,37 +347,46 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		$importDurMs = (int)round((microtime(true) - $importLogT0) * 1000.0);
 		$headerLineStr = is_array($header) ? mb_substr(implode($delim, $header), 0, 1000) : '';
 		$exNfStr = implode("\n", $examplesNotFound);
-		if (function_exists('mf_external_price_import_log_insert'))
+		$logOkFields = [
+			'UF_FINISHED_AT' => $importFinishedAt,
+			'UF_DURATION_MS' => $importDurMs,
+			'UF_STATUS' => 'ok',
+			'UF_USER_ID' => $importUserId > 0 ? $importUserId : null,
+			'UF_USER_LOGIN' => $importUserLogin !== '' ? $importUserLogin : null,
+			'UF_STORE_ID' => $storeId,
+			'UF_STORE_XML_ID' => (string)($st['XML_ID'] ?? ''),
+			'UF_STORE_TITLE' => (string)($st['TITLE'] ?? ''),
+			'UF_PRICE_GROUP_ID' => $priceGroupId,
+			'UF_FEED_CODE' => $feedCodeNorm,
+			'UF_INPUT_FILENAME' => $importFileName,
+			'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
+			'UF_CURRENCY' => $currency,
+			'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
+			'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
+			'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
+			'UF_WEIGHT_MIN_RUB' => 0.0,
+			'UF_TOTAL_DATA_ROWS' => $totalDataRows,
+			'UF_MATCHED' => $ok,
+			'UF_NOT_FOUND' => $notFound,
+			'UF_BAD_ROWS' => $bad,
+			'UF_ZEROED' => $zeroed,
+			'UF_HEADER_LINE' => $headerLineStr,
+			'UF_EXAMPLES_NOT_FOUND' => $exNfStr !== '' ? $exNfStr : null,
+			'UF_ERROR_MESSAGE' => null,
+		];
+		if ($importLogId > 0 && function_exists('mf_external_price_import_log_update'))
 		{
-			mf_external_price_import_log_insert([
-				'UF_STARTED_AT' => $importStartedAt,
-				'UF_FINISHED_AT' => $importFinishedAt,
-				'UF_DURATION_MS' => $importDurMs,
-				'UF_STATUS' => 'ok',
-				'UF_USER_ID' => $importUserId > 0 ? $importUserId : null,
-				'UF_USER_LOGIN' => $importUserLogin !== '' ? $importUserLogin : null,
-				'UF_STORE_ID' => $storeId,
-				'UF_STORE_XML_ID' => (string)($st['XML_ID'] ?? ''),
-				'UF_STORE_TITLE' => (string)($st['TITLE'] ?? ''),
-				'UF_PRICE_GROUP_ID' => $priceGroupId,
-				'UF_FEED_CODE' => $feedCodeNorm,
-				'UF_INPUT_FILENAME' => $importFileName,
-				'UF_FILE_SIZE' => $importFileSize > 0 ? $importFileSize : null,
-				'UF_CURRENCY' => $currency,
-				'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
-				'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
-				'UF_WEIGHT_RUB_PER_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
-				'UF_WEIGHT_MIN_RUB' => 0.0,
-				'UF_TOTAL_DATA_ROWS' => $totalDataRows,
-				'UF_MATCHED' => $ok,
-				'UF_NOT_FOUND' => $notFound,
-				'UF_BAD_ROWS' => $bad,
-				'UF_ZEROED' => $zeroed,
-				'UF_HEADER_LINE' => $headerLineStr,
-				'UF_EXAMPLES_NOT_FOUND' => $exNfStr !== '' ? $exNfStr : null,
-				'UF_ERROR_MESSAGE' => null,
-			]);
-			$importLogWritten = true;
+			$importLogWritten = mf_external_price_import_log_update($importLogId, $logOkFields);
+		}
+		if (!$importLogWritten && function_exists('mf_external_price_import_log_insert'))
+		{
+			$lid = mf_external_price_import_log_insert(array_merge(
+				[
+					'UF_STARTED_AT' => $importStartedAt,
+				],
+				$logOkFields
+			));
+			$importLogWritten = $lid > 0;
 		}
 
 		if ($onProgress !== null)
@@ -364,10 +406,9 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		{
 			$headerLineStr = mb_substr(implode($delim, $header), 0, 1000);
 		}
-		if (!$importLogWritten && function_exists('mf_external_price_import_log_insert'))
+		if (!$importLogWritten)
 		{
-			mf_external_price_import_log_insert([
-				'UF_STARTED_AT' => $importStartedAt,
+			$failFields = [
 				'UF_FINISHED_AT' => $importFinishedAt,
 				'UF_DURATION_MS' => $importDurMs,
 				'UF_STATUS' => 'failed',
@@ -393,7 +434,18 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				'UF_HEADER_LINE' => $headerLineStr,
 				'UF_EXAMPLES_NOT_FOUND' => null,
 				'UF_ERROR_MESSAGE' => mb_substr($err, 0, 1000),
-			]);
+			];
+			if ($importLogId > 0 && function_exists('mf_external_price_import_log_update'))
+			{
+				mf_external_price_import_log_update($importLogId, $failFields);
+			}
+			elseif (function_exists('mf_external_price_import_log_insert'))
+			{
+				mf_external_price_import_log_insert(array_merge(
+					['UF_STARTED_AT' => $importStartedAt],
+					$failFields
+				));
+			}
 		}
 
 		return ['ok' => false, 'error' => $err];
