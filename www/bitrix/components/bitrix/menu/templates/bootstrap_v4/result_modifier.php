@@ -174,8 +174,9 @@ foreach($arResult as $key=>$arItem)
 
 	$arItem["PARAMS"]["item_id"] = crc32($arItem["LINK"]);
 	$mfSecKey = $arItem["PARAMS"]["item_id"];
-	$arItem["PARAMS"]["picture_src"] = $arSectionsInfo[$mfSecKey]["PICTURE"] ?? null;
-	$arItem["PARAMS"]["description"] = $arSectionsInfo[$mfSecKey]["DESCRIPTION"] ?? null;
+	$mfSecRow = is_array($arSectionsInfo[$mfSecKey] ?? null) ? $arSectionsInfo[$mfSecKey] : array();
+	$arItem["PARAMS"]["picture_src"] = $mfSecRow["PICTURE"] ?? null;
+	$arItem["PARAMS"]["description"] = $mfSecRow["DESCRIPTION"] ?? null;
 
 	if ($arItem["DEPTH_LEVEL"] == "1")
 	{

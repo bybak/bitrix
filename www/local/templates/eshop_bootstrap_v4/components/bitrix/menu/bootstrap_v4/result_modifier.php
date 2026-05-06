@@ -146,8 +146,10 @@ foreach ($arResult as $key => $arItem) {
 	}
 
 	$arItem["PARAMS"]["item_id"] = crc32($arItem["LINK"]);
-	$arItem["PARAMS"]["picture_src"] = $arSectionsInfo[$arItem["PARAMS"]["item_id"]]["PICTURE"] ?? null;
-	$arItem["PARAMS"]["description"] = $arSectionsInfo[$arItem["PARAMS"]["item_id"]]["DESCRIPTION"] ?? null;
+	$mfSecKey = $arItem["PARAMS"]["item_id"];
+	$mfSecRow = is_array($arSectionsInfo[$mfSecKey] ?? null) ? $arSectionsInfo[$mfSecKey] : array();
+	$arItem["PARAMS"]["picture_src"] = $mfSecRow["PICTURE"] ?? null;
+	$arItem["PARAMS"]["description"] = $mfSecRow["DESCRIPTION"] ?? null;
 
 	if ($arItem["DEPTH_LEVEL"] == "1") {
 		$arMenuItemsIDs[$arItem["PARAMS"]["item_id"]] = array();
