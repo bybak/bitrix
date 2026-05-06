@@ -376,7 +376,6 @@ if (!function_exists('mf_product_search_card_render'))
 							<?php foreach ($stores as $s): ?>
 								<?php
 								$mfExternal = !empty($s['external_warehouse']);
-								$mfOrdOnly = !empty($s['order_only']);
 								$mfAmtRounded = round((float)$s['amount'], 3);
 								$mfPendingDisp = trim((string)($s['pending_supplier_display'] ?? ''));
 								$mfStockCell = '';
@@ -414,9 +413,9 @@ if (!function_exists('mf_product_search_card_render'))
 									<td class="mf-ta-r">
 										<?php
 										$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
-										$mfRequestPrice = !$mfExternal && ($mfOrdOnly || $mfNoPrice);
+										$mfRequestPrice = $mfNoPrice;
 										?>
-										<?php if ($mfExternal || !$mfNoPrice): ?>
+										<?php if (!$mfNoPrice): ?>
 											<div class="mf-search-stock__actions">
 												<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
 													<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
