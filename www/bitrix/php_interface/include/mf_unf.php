@@ -38,7 +38,7 @@ final class Config
 
 	/**
 	 * Endpoint for payment updates. If empty, uses the main endpoint().
-	 * By default we resend the same order payload so the 1C handler can upsert by external_id.
+	 * Payload: external_id = unf_order_number = "{USER_ID}-{ORDER_ID}" (печатный ключ и номер в УНФ; без legacy).
 	 */
 	public static function paidEndpoint(): string
 	{
@@ -642,6 +642,12 @@ final class Queue
 			{
 				throw new \RuntimeException('UNF returned HTTP ' . $httpCode);
 			}
+			// Как у paid-очереди: 1С может ответить HTTP 200, но в теле ok=false (ошибка создания заказа).
+			$appErr = QueuePaid::unfResponseCheck(is_string($respBody) ? $respBody : null);
+			if ($appErr !== null)
+			{
+				throw new \RuntimeException($appErr);
+			}
 		}
 		catch (\Throwable $e)
 		{
@@ -702,7 +708,8 @@ final class Queue
 
 final class QueuePaid
 {
-	private static function unfResponseCheck(?string $respBody): ?string
+	/** Проверка JSON-ответа 1С (ok / payment_result). Используется и очередью заказов, и paid. */
+	public static function unfResponseCheck(?string $respBody): ?string
 	{
 		$raw = (string)($respBody ?? '');
 		$raw = trim($raw);
@@ -1189,6 +1196,28 @@ final class Payload
 		return max(0, min(100, $p));
 	}
 
+	/**
+	 * Внешний ключ заказа для УНФ и номер как на сайте: {USER_ID}-{ORDER_ID} (гость → 0-123).
+	 */
+	private static function orderExternalIdForUnf(Order $order): string
+	{
+		$uid = 0;
+		try
+		{
+			$uid = (int)$order->getUserId();
+		}
+		catch (\Throwable $e)
+		{
+			$uid = 0;
+		}
+		if ($uid < 0)
+		{
+			$uid = 0;
+		}
+
+		return $uid . '-' . (int)$order->getId();
+	}
+
 	public static function build(Order $order): array
 	{
 		$orderId = (int)$order->getId();
@@ -1322,21 +1351,50 @@ final class Payload
 		$operation = Config::operation();
 		$taxation = Config::taxation();
 
+		$accountNumberRaw = '';
+		try
+		{
+			$accountNumberRaw = trim((string)$order->getField('ACCOUNT_NUMBER'));
+		}
+		catch (\Throwable $e)
+		{
+			$accountNumberRaw = '';
+		}
+		$accountNumberDisplay = $accountNumberRaw;
+		if ($accountNumberRaw !== '' && function_exists('mf_order_account_number_for_display'))
+		{
+			try
+			{
+				$accountNumberDisplay = mf_order_account_number_for_display((int)$order->getUserId(), $accountNumberRaw);
+			}
+			catch (\Throwable $e)
+			{
+				$accountNumberDisplay = $accountNumberRaw;
+			}
+		}
+
 		// Receipt date is required in some UNF configs.
 		$dateInsert = $order->getDateInsert();
 		$receiptDateAtom = $dateInsert ? $dateInsert->format(\DateTimeInterface::ATOM) : (new DateTime())->format(\DateTimeInterface::ATOM);
 		$receiptDateLocal = $dateInsert ? $dateInsert->format('d.m.Y H:i:s') : (new DateTime())->format('d.m.Y H:i:s');
+
+		$unfOrderKey = self::orderExternalIdForUnf($order);
 
 		return [
 			'meta' => [
 				'source' => 'bitrix',
 				'site_id' => $siteId,
 				'sent_at' => (new DateTime())->format(\DateTimeInterface::ATOM),
-				'schema_version' => 2,
+				'schema_version' => 4,
 			],
 			'order' => [
-				'external_id' => $siteId . ':' . $orderId,
+				'external_id' => $unfOrderKey,
+				// Явный номер для реквизита «Номер» в УНФ (= external_id, формат USER-ORDER).
+				'unf_order_number' => $unfOrderKey,
 				'bitrix_order_id' => $orderId,
+				// Номер заказа для 1С (см. MfOrderNumberFromBitrixJson в HTTP-обработчике УНФ)
+				'account_number' => $accountNumberRaw !== '' ? $accountNumberRaw : null,
+				'account_number_display' => $accountNumberDisplay !== '' ? $accountNumberDisplay : null,
 				'date_insert' => $order->getDateInsert() ? $order->getDateInsert()->format(\DateTimeInterface::ATOM) : null,
 				'status_id' => (string)$order->getField('STATUS_ID'),
 				// UNF-required fields (names duplicated for compatibility with custom HS handlers)

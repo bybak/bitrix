@@ -335,3 +335,10 @@
 2026-05-06T16:30:15+03:00 refreshResult {"ORDER_PROP_6":"","ORDER_PROP_4":"","ORDER_PROP_5":null,"ORDER_PROP_18":null,"ORDER_PROP_16":null,"ORDER_PROP_17":null,"JS_LOC":{"ID":"6","VALUE":["0000073738"],"DEFAULT_VALUE":"0000073738","SOURCE":null},"JS_DELIVERY":[{"ID":"8","NAME":"Стандартный","PRICE":0,"PRICE_FORMATTED":"0 &#8381;","CALC_DESC":""}]}
 2026-05-06T16:34:26+03:00 action=refreshOrderAjax {"PERSON_TYPE":"1","PERSON_TYPE_OLD":"1","location_type":"code","RECENT_DELIVERY_VALUE":"0000073738","ZIP_PROPERTY_CHANGED":"N","ORDER_PROP_6":""}
 2026-05-06T16:34:26+03:00 refreshResult {"ORDER_PROP_6":"","ORDER_PROP_4":"","ORDER_PROP_5":null,"ORDER_PROP_18":null,"ORDER_PROP_16":null,"ORDER_PROP_17":null,"JS_LOC":{"ID":"6","VALUE":["0000073738"],"DEFAULT_VALUE":"0000073738","SOURCE":null},"JS_DELIVERY":[{"ID":"8","NAME":"Стандартный","PRICE":0,"PRICE_FORMATTED":"0 &#8381;","CALC_DESC":""}]}
+2026-05-06T17:36:22+03:00 action=saveOrderAjax []
+2026-05-06T17:43:26+03:00 action=saveOrderAjax []
+2026-05-06T18:07:03+03:00 action=saveOrderAjax []
+2026-05-06T18:12:45+03:00 action=saveOrderAjax []
+2026-05-06T18:18:35+03:00 action=saveOrderAjax []
+2026-05-06T18:24:51+03:00 action=saveOrderAjax []
+2026-05-06T18:50:23+03:00 action=saveOrderAjax []

@@ -231,11 +231,9 @@ $arParams = array(
 	// Бренд (используется частью логики catalog.item + может пригодиться для аналитики)
 	"BRAND_PROPERTY" => "MF_BRAND",
     
-    // Кэширование
-	// IMPORTANT: price/availability are dynamic (per-store RAW price + markup, stocks).
-	// Disable component cache to reflect updates immediately after imports/markup edits.
-    "CACHE_TYPE" => "N",
-    "CACHE_TIME" => "0",
+    // Кэширование: авто (учёт глобальной настройки + тегов каталога). После импорта цен — сброс кеша в админке.
+    "CACHE_TYPE" => "A",
+    "CACHE_TIME" => "3600",
     "CACHE_FILTER" => "Y",
     "CACHE_GROUPS" => "Y",
 

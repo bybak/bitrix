@@ -1,5 +1,4 @@
 <?php
-define("BX_COMPOSITE_DISABLE", true);
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 $APPLICATION->SetTitle("Контакты");
 $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");

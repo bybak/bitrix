@@ -29,7 +29,8 @@ if(CModule::IncludeModule('iblock'))
 				"IBLOCK_TYPE" => $arIBlock['IBLOCK_TYPE_ID'],
 				"IBLOCK_ID" => $arIBlock['ID'],
 				"DEPTH_LEVEL" => "3",
-				"CACHE_TYPE" => "N",
+				"CACHE_TYPE" => "A",
+				"CACHE_TIME" => "3600",
 			), false, Array('HIDE_ICONS' => 'Y'));
 		}
 	}

@@ -187,11 +187,9 @@ $arParams = [
     // Some templates/components use this flag for section gifts too.
     "USE_GIFTS_SECTION" => "N",
     
-    // Кэширование
-	// IMPORTANT: price/availability are dynamic (per-store RAW price + markup, stocks).
-	// Disable component cache to reflect updates immediately after imports/markup edits.
-    "CACHE_TYPE" => "N",
-    "CACHE_TIME" => "0",
+    // Кэширование: авто + теги iblock; после массового обновления цен — «Удалить кеш» в Битрикс.
+    "CACHE_TYPE" => "A",
+    "CACHE_TIME" => "3600",
 ];
 
 $APPLICATION->IncludeComponent(

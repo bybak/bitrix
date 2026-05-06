@@ -26,9 +26,8 @@ $APPLICATION->AddChainItem("Поиск", SITE_DIR."search/");
 	"AJAX_OPTION_JUMP" => "N",
 	"AJAX_OPTION_STYLE" => "Y",
 	"AJAX_OPTION_HISTORY" => "N",
-	// search results must be fresh; the component caches only auxiliary data anyway
-	"CACHE_TYPE" => "N",
-	"CACHE_TIME" => "0",
+	"CACHE_TYPE" => "A",
+	"CACHE_TIME" => "1800",
 	"DISPLAY_TOP_PAGER" => "N",
 	"DISPLAY_BOTTOM_PAGER" => "Y",
 	"PAGER_TITLE" => "Результаты поиска",
