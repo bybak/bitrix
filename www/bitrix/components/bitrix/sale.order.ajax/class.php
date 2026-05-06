@@ -294,6 +294,7 @@ class SaleOrderAjax extends \CBitrixComponent
 		$arParams['SEND_NEW_USER_NOTIFY'] = ($arParams['SEND_NEW_USER_NOTIFY'] ?? 'Y') === 'N' ? 'N' : 'Y';
 		$arParams['ALLOW_NEW_PROFILE'] = ($arParams['ALLOW_NEW_PROFILE'] ?? 'Y') === 'N' ? 'N' : 'Y'; // Unknown parameter
 		$arParams['DELIVERY_NO_SESSION'] = ($arParams['DELIVERY_NO_SESSION'] ?? 'Y') === 'N' ? 'N' : 'Y';
+		$arParams['MF_CUSTOM_GUEST_FLOW'] = ($arParams['MF_CUSTOM_GUEST_FLOW'] ?? 'N') === 'Y' ? 'Y' : 'N';
 
 		if (!isset($arParams['DELIVERY_NO_AJAX']) || !in_array($arParams['DELIVERY_NO_AJAX'], ['Y', 'N', 'H']))
 		{
@@ -782,6 +783,31 @@ class SaleOrderAjax extends \CBitrixComponent
 
 				$this->arUserResult['LAST_ORDER_DATA'] = $showData;
 			}
+			elseif (!empty($this->arUserResult['PERSON_TYPE_ID']))
+			{
+				// Motor-Force customization:
+				// For a newly registered user there may be no previous orders yet,
+				// but the checkout is already prefilled from the created buyer profile.
+				// Expose this current state as preload data so completed steps are shown correctly.
+				$showData['PERSON_TYPE_ID'] = (int)$this->arUserResult['PERSON_TYPE_ID'];
+
+				if (!empty($this->arUserResult['PAY_CURRENT_ACCOUNT']))
+					$showData['PAY_CURRENT_ACCOUNT'] = $this->arUserResult['PAY_CURRENT_ACCOUNT'];
+
+				if (!empty($this->arUserResult['PAY_SYSTEM_ID']))
+					$showData['PAY_SYSTEM_ID'] = (int)$this->arUserResult['PAY_SYSTEM_ID'];
+
+				if (!empty($this->arUserResult['DELIVERY_ID']))
+					$showData['DELIVERY_ID'] = (int)$this->arUserResult['DELIVERY_ID'];
+
+				if (!empty($this->arUserResult['DELIVERY_EXTRA_SERVICES']))
+					$showData['DELIVERY_EXTRA_SERVICES'] = $this->arUserResult['DELIVERY_EXTRA_SERVICES'];
+
+				if (!empty($this->arUserResult['BUYER_STORE']))
+					$showData['BUYER_STORE'] = (int)$this->arUserResult['BUYER_STORE'];
+
+				$this->arUserResult['LAST_ORDER_DATA'] = $showData;
+			}
 		}
 	}
 
@@ -823,9 +849,20 @@ class SaleOrderAjax extends \CBitrixComponent
 	 */
 	protected function initProperties(Order $order, $isPersonTypeChanged)
 	{
+		global $USER;
+
 		$arResult =& $this->arResult;
 		$orderProperties = $this->getPropertyValuesFromRequest();
 		$orderProperties = $this->addLastLocationPropertyValues($orderProperties);
+		$mfResetPersonTypeSwitch = $this->request->get('MF_RESET_PERSON_TYPE_SWITCH') === 'Y';
+		$mfKeepEmptyState =
+			$mfResetPersonTypeSwitch
+			|| (
+				$this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y'
+				&& (!$USER || !$USER->IsAuthorized())
+				&& $this->request->getRequestMethod() !== 'GET'
+				&& (int)($this->arUserResult['PROFILE_ID'] ?? 0) === 0
+			);
 
 		$this->initUserProfiles($order, $isPersonTypeChanged);
 
@@ -837,7 +874,7 @@ class SaleOrderAjax extends \CBitrixComponent
 		$isProfileChanged = $this->arUserResult['PROFILE_CHANGE'] === 'Y';
 		$haveProfileId = (int)$this->arUserResult['PROFILE_ID'] > 0;
 
-		$shouldUseProfile = ($firstLoad || $justAuthorized || $isPersonTypeChanged || $isProfileChanged);
+		$shouldUseProfile = !$mfKeepEmptyState && ($firstLoad || $justAuthorized || $isPersonTypeChanged || $isProfileChanged);
 		$willUseProfile = $shouldUseProfile && $haveProfileId;
 
 		$profileProperties = [];
@@ -849,7 +886,7 @@ class SaleOrderAjax extends \CBitrixComponent
 
 		$ipAddress = '';
 
-		if ($this->arParams['SPOT_LOCATION_BY_GEOIP'] === 'Y')
+		if (!$mfKeepEmptyState && $this->arParams['SPOT_LOCATION_BY_GEOIP'] === 'Y')
 		{
 			$ipAddress = \Bitrix\Main\Service\GeoIp\Manager::getRealIp();
 		}
@@ -932,7 +969,7 @@ class SaleOrderAjax extends \CBitrixComponent
 				$curVal = $this->getNormalizedPhone($curVal);
 			}
 
-			if (empty($curVal))
+			if (empty($curVal) && !$mfKeepEmptyState)
 			{
 				// getting default value for all properties except LOCATION
 				// (LOCATION - just for first load or person type change or new profile)
@@ -1734,6 +1771,8 @@ class SaleOrderAjax extends \CBitrixComponent
 			{
 				if ($USER->IsAuthorized())
 				{
+					$_SESSION['MF_CHECKOUT_REGISTER_SUCCESS'] = 'Y';
+
 					if ($this->arParams['SEND_NEW_USER_NOTIFY'] === 'Y')
 					{
 						CUser::SendUserInfo($USER->GetID(), $this->getSiteId(), Loc::getMessage('INFO_REQ'), true);
@@ -1999,6 +2038,11 @@ class SaleOrderAjax extends \CBitrixComponent
 	protected function needToRegister(): bool
 	{
 		global $USER;
+
+		if ($this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y' && !$USER->IsAuthorized())
+		{
+			return trim((string)$this->request->get('MF_CHECKOUT_MODE')) === 'register';
+		}
 
 		if (!$USER->IsAuthorized())
 		{
@@ -3593,16 +3637,15 @@ class SaleOrderAjax extends \CBitrixComponent
 		$arResult['BASKET_PRICE_DISCOUNT_DIFF_VALUE'] = $basket->getBasePrice() - $basket->getPrice();
 		$arResult['BASKET_PRICE_DISCOUNT_DIFF'] = SaleFormatCurrency($arResult['BASKET_PRICE_DISCOUNT_DIFF_VALUE'], $this->order->getCurrency());
 
-		$arResult['DISCOUNT_PRICE'] = Sale\PriceMaths::roundByFormatCurrency(
-			$this->order->getDiscountPrice() + ($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] - $arResult['ORDER_PRICE']),
-			$this->order->getCurrency(),
+		$arResult['DISCOUNT_PRICE'] = Sale\PriceMaths::roundPrecision(
+			$this->order->getDiscountPrice() + ($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] - $arResult['ORDER_PRICE'])
 		);
 		$arResult['DISCOUNT_PRICE_FORMATED'] = SaleFormatCurrency($arResult['DISCOUNT_PRICE'], $this->order->getCurrency());
 
-		$arResult['DELIVERY_PRICE'] = Sale\PriceMaths::roundByFormatCurrency($this->order->getDeliveryPrice(), $this->order->getCurrency());
+		$arResult['DELIVERY_PRICE'] = Sale\PriceMaths::roundPrecision($this->order->getDeliveryPrice());
 		$arResult['DELIVERY_PRICE_FORMATED'] = SaleFormatCurrency($arResult['DELIVERY_PRICE'], $this->order->getCurrency());
 
-		$arResult['ORDER_TOTAL_PRICE'] = Sale\PriceMaths::roundByFormatCurrency($this->order->getPrice(), $this->order->getCurrency());
+		$arResult['ORDER_TOTAL_PRICE'] = Sale\PriceMaths::roundPrecision($this->order->getPrice());
 		$arResult['ORDER_TOTAL_PRICE_FORMATED'] = SaleFormatCurrency($arResult['ORDER_TOTAL_PRICE'], $this->order->getCurrency());
 	}
 
@@ -3858,9 +3901,39 @@ class SaleOrderAjax extends \CBitrixComponent
 	 */
 	protected function initPersonType(Order $order)
 	{
+		global $USER;
+
 		$arResult =& $this->arResult;
 		$personTypeId = intval($this->arUserResult['PERSON_TYPE_ID']);
 		$personTypeIdOld = intval($this->arUserResult['PERSON_TYPE_OLD']);
+
+		// Motor-Force customization:
+		// After checkout registration, the next GET request may arrive without explicit PERSON_TYPE.
+		// In that case Bitrix falls back to the first person type (usually "Физ лицо"),
+		// which breaks auto-fill for a newly created "Юр лицо" profile.
+		// Prefer the latest buyer profile person type for authorized users.
+		if (
+			$personTypeId <= 0
+			&& $USER
+			&& $USER->IsAuthorized()
+			&& (int)$order->getUserId() > 0
+			&& class_exists('CSaleOrderUserProps')
+		)
+		{
+			$latestProfile = \CSaleOrderUserProps::GetList(
+				['DATE_UPDATE' => 'DESC', 'ID' => 'DESC'],
+				['USER_ID' => (int)$order->getUserId()],
+				false,
+				false,
+				['ID', 'PERSON_TYPE_ID']
+			)->Fetch();
+
+			if (!empty($latestProfile['PERSON_TYPE_ID']))
+			{
+				$personTypeId = (int)$latestProfile['PERSON_TYPE_ID'];
+				$this->arUserResult['PERSON_TYPE_ID'] = $personTypeId;
+			}
+		}
 
 		$personTypes = PersonType::load($this->getSiteId());
 		foreach ($personTypes as $personType)
@@ -3891,7 +3964,18 @@ class SaleOrderAjax extends \CBitrixComponent
 	 */
 	protected function initUserProfiles(Order $order, $isPersonTypeChanged)
 	{
+		global $USER;
+
 		$arResult =& $this->arResult;
+		$mfResetPersonTypeSwitch = $this->request->get('MF_RESET_PERSON_TYPE_SWITCH') === 'Y';
+		$mfKeepProfileUnselected =
+			$mfResetPersonTypeSwitch
+			|| (
+				$this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y'
+				&& (!$USER || !$USER->IsAuthorized())
+				&& $this->request->getRequestMethod() !== 'GET'
+				&& (int)($this->arUserResult['PROFILE_ID'] ?? 0) === 0
+			);
 
 		$arResult['ORDER_PROP']['USER_PROFILES'] = [];
 
@@ -3908,7 +3992,11 @@ class SaleOrderAjax extends \CBitrixComponent
 		);
 		while ($arUserProfiles = $dbUserProfiles->GetNext())
 		{
-			if (!$bFirst && ($profileIsNotSelected || $isPersonTypeChanged || $justAuthorized))
+			if (
+				!$mfKeepProfileUnselected
+				&& !$bFirst
+				&& ($profileIsNotSelected || $isPersonTypeChanged || $justAuthorized)
+			)
 			{
 				$bFirst = true;
 				$this->arUserResult['PROFILE_ID'] = (int)$arUserProfiles['ID'];
@@ -3920,6 +4008,27 @@ class SaleOrderAjax extends \CBitrixComponent
 			}
 
 			$arResult['ORDER_PROP']['USER_PROFILES'][$arUserProfiles['ID']] = $arUserProfiles;
+		}
+
+		try
+		{
+			$host = (string)($_SERVER['HTTP_HOST'] ?? '');
+			if (($host === 'localhost' || $host === '127.0.0.1') && $USER && $USER->IsAuthorized())
+			{
+				$line = date('c') . ' initUserProfiles ' . json_encode([
+					'user_id' => (int)$order->getUserId(),
+					'person_type_id' => (int)$order->getPersonTypeId(),
+					'request_method' => (string)$this->request->getRequestMethod(),
+					'profile_id' => (int)($this->arUserResult['PROFILE_ID'] ?? 0),
+					'profile_change' => (string)($this->arUserResult['PROFILE_CHANGE'] ?? ''),
+					'profiles_count' => count($arResult['ORDER_PROP']['USER_PROFILES'] ?? []),
+				], JSON_UNESCAPED_UNICODE) . PHP_EOL;
+				@file_put_contents($_SERVER['DOCUMENT_ROOT'] . '/.tmp_checkout_auth.log', $line, FILE_APPEND);
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
 		}
 	}
 
@@ -3959,11 +4068,39 @@ class SaleOrderAjax extends \CBitrixComponent
 	 */
 	protected function initDelivery(Shipment $shipment)
 	{
+		global $USER;
+
 		$deliveryId = intval($this->arUserResult['DELIVERY_ID']);
+		$mfResetPersonTypeSwitch = $this->request->get('MF_RESET_PERSON_TYPE_SWITCH') === 'Y';
 		$this->initDeliveryServices($shipment);
 		/** @var Sale\ShipmentCollection $shipmentCollection */
 		$shipmentCollection = $shipment->getCollection();
 		$order = $shipmentCollection->getOrder();
+
+		if (
+			(
+				$mfResetPersonTypeSwitch
+				|| (
+					$this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y'
+					&& (!$USER || !$USER->IsAuthorized())
+				)
+			)
+			&& $deliveryId <= 0
+			&& !empty($this->arDeliveryServiceAll)
+		)
+		{
+			$service = Delivery\Services\Manager::getById(
+				Delivery\Services\EmptyDeliveryService::getEmptyDeliveryServiceId()
+			);
+			$shipment->setFields([
+				'DELIVERY_ID' => $service['ID'],
+				'DELIVERY_NAME' => $service['NAME'],
+				'CURRENCY' => $order->getCurrency(),
+			]);
+			$this->arUserResult['DELIVERY_ID'] = 0;
+			$this->arUserResult['BUYER_STORE'] = 0;
+			return;
+		}
 
 		if (!empty($this->arDeliveryServiceAll))
 		{
@@ -4033,6 +4170,26 @@ class SaleOrderAjax extends \CBitrixComponent
 				'DELIVERY_NAME' => $service['NAME'],
 				'CURRENCY' => $order->getCurrency(),
 			]);
+		}
+
+		try
+		{
+			$host = (string)($_SERVER['HTTP_HOST'] ?? '');
+			if (($host === 'localhost' || $host === '127.0.0.1') && $USER && $USER->IsAuthorized())
+			{
+				$line = date('c') . ' initDelivery ' . json_encode([
+					'user_id' => (int)$order->getUserId(),
+					'person_type_id' => (int)$order->getPersonTypeId(),
+					'delivery_id' => (int)($this->arUserResult['DELIVERY_ID'] ?? 0),
+					'buyer_store' => (int)($this->arUserResult['BUYER_STORE'] ?? 0),
+					'delivery_count' => is_array($this->arDeliveryServiceAll) ? count($this->arDeliveryServiceAll) : 0,
+				], JSON_UNESCAPED_UNICODE) . PHP_EOL;
+				@file_put_contents($_SERVER['DOCUMENT_ROOT'] . '/.tmp_checkout_auth.log', $line, FILE_APPEND);
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
 		}
 	}
 
@@ -4250,7 +4407,10 @@ class SaleOrderAjax extends \CBitrixComponent
 	 */
 	protected function initPayment(Order $order)
 	{
+		global $USER;
+
 		[$sumToSpend, $innerPaySystemList] = $this->getInnerPaySystemInfo($order);
+		$mfResetPersonTypeSwitch = $this->request->get('MF_RESET_PERSON_TYPE_SWITCH') === 'Y';
 
 		if ($sumToSpend > 0)
 		{
@@ -4295,7 +4455,20 @@ class SaleOrderAjax extends \CBitrixComponent
 
 			$this->arPaySystemServiceAll = $this->arActivePaySystems = $extPaySystemList;
 
-			if ($extPaySystemId !== 0 && array_key_exists($extPaySystemId, $this->arPaySystemServiceAll))
+			if (
+				(
+					$mfResetPersonTypeSwitch
+					|| (
+						$this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y'
+						&& (!$USER || !$USER->IsAuthorized())
+					)
+				)
+				&& $extPaySystemId === 0
+			)
+			{
+				$selectedPaySystem = null;
+			}
+			elseif ($extPaySystemId !== 0 && array_key_exists($extPaySystemId, $this->arPaySystemServiceAll))
 			{
 				$selectedPaySystem = $this->arPaySystemServiceAll[$extPaySystemId];
 			}
@@ -4651,10 +4824,10 @@ class SaleOrderAjax extends \CBitrixComponent
 				{
 					if ($calcResult->isSuccess())
 					{
-						$arDelivery['PRICE'] = Sale\PriceMaths::roundByFormatCurrency($calcResult->getPrice(), $calcOrder->getCurrency());
+						$arDelivery['PRICE'] = Sale\PriceMaths::roundPrecision($calcResult->getPrice());
 						$arDelivery['PRICE_FORMATED'] = SaleFormatCurrency($arDelivery['PRICE'], $calcOrder->getCurrency());
 
-						$currentCalcDeliveryPrice = Sale\PriceMaths::roundByFormatCurrency($calcOrder->getDeliveryPrice(), $calcOrder->getCurrency());
+						$currentCalcDeliveryPrice = Sale\PriceMaths::roundPrecision($calcOrder->getDeliveryPrice());
 						if ($currentCalcDeliveryPrice >= 0 && $arDelivery['PRICE'] != $currentCalcDeliveryPrice)
 						{
 							$arDelivery['DELIVERY_DISCOUNT_PRICE'] = $currentCalcDeliveryPrice;
@@ -4794,6 +4967,72 @@ class SaleOrderAjax extends \CBitrixComponent
 			$this->order = $this->createOrder($this->getUserId() ?? 0);
 			$this->prepareResultArray();
 			self::scaleImages($this->arResult['JS_DATA'], $this->arParams['SERVICES_IMAGES_SCALING']);
+
+			// Motor-Force debug: log resulting location/zip values on localhost.
+			try
+			{
+				$host = (string)($_SERVER['HTTP_HOST'] ?? '');
+				if ($host === 'localhost' || $host === '127.0.0.1')
+				{
+					$props = is_array($this->arUserResult['ORDER_PROP'] ?? null) ? $this->arUserResult['ORDER_PROP'] : [];
+					$out = [
+						'ORDER_PROP_6' => $props[6] ?? null,
+						'ORDER_PROP_4' => $props[4] ?? null,
+						'ORDER_PROP_5' => $props[5] ?? null,
+						'ORDER_PROP_18' => $props[18] ?? null,
+						'ORDER_PROP_16' => $props[16] ?? null,
+						'ORDER_PROP_17' => $props[17] ?? null,
+					];
+
+					// Also try to capture what JS_DATA returns for location prop.
+					$jsLoc = null;
+					if (isset($this->arResult['JS_DATA']['ORDER_PROP']['properties']) && is_array($this->arResult['JS_DATA']['ORDER_PROP']['properties']))
+					{
+						foreach ($this->arResult['JS_DATA']['ORDER_PROP']['properties'] as $p)
+						{
+							if (is_array($p) && ($p['IS_LOCATION'] ?? 'N') === 'Y')
+							{
+								$jsLoc = [
+									'ID' => $p['ID'] ?? null,
+									'VALUE' => $p['VALUE'] ?? null,
+									'DEFAULT_VALUE' => $p['DEFAULT_VALUE'] ?? null,
+									'SOURCE' => $p['SOURCE'] ?? null,
+								];
+								break;
+							}
+						}
+					}
+					$out['JS_LOC'] = $jsLoc;
+					// Capture delivery prices returned to UI (first 10).
+					$del = [];
+					if (isset($this->arResult['JS_DATA']['DELIVERY']) && is_array($this->arResult['JS_DATA']['DELIVERY']))
+					{
+						$cnt = 0;
+						foreach ($this->arResult['JS_DATA']['DELIVERY'] as $d)
+						{
+							if (!is_array($d))
+								continue;
+							$del[] = [
+								'ID' => $d['ID'] ?? null,
+								'NAME' => $d['NAME'] ?? null,
+								'PRICE' => $d['PRICE'] ?? null,
+								'PRICE_FORMATTED' => $d['PRICE_FORMATED'] ?? null,
+								'CALC_DESC' => $d['CALCULATE_DESCRIPTION'] ?? null,
+							];
+							$cnt++;
+							if ($cnt >= 10)
+								break;
+						}
+					}
+					$out['JS_DELIVERY'] = $del;
+					$line = date('c') . ' refreshResult ' . json_encode($out, JSON_UNESCAPED_UNICODE) . PHP_EOL;
+					@file_put_contents($_SERVER['DOCUMENT_ROOT'] . '/.tmp_order_make_loc.log', $line, FILE_APPEND);
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
 		}
 		else
 			$error = Loc::getMessage('SESSID_ERROR');
@@ -4835,13 +5074,32 @@ class SaleOrderAjax extends \CBitrixComponent
 			else
 			{
 				$userId = $this->getUserId() ?? 0;
+				if (
+					$this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y'
+					&& (int)$userId <= 0
+					&& class_exists('CSaleUser')
+				)
+				{
+					$userId = (int)\CSaleUser::GetAnonymousUserID();
+				}
 			}
 
 			$this->order = $this->createOrder($userId);
 
 			$isActiveUser = (int)$userId > 0;
+			$canSaveOrder =
+				$isActiveUser
+				|| (
+					$this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y'
+					&& !$needToRegister
+				);
 
-			if ($isActiveUser && empty($this->arResult['ERROR']))
+			if ($this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y' && !$needToRegister)
+			{
+				$saveToSession = true;
+			}
+
+			if ($canSaveOrder && empty($this->arResult['ERROR']))
 			{
 				if (!$this->checkOrderConsistency($this->order))
 				{
@@ -5074,8 +5332,37 @@ class SaleOrderAjax extends \CBitrixComponent
 			}
 			else
 			{
-				// last order data cannot initialize
-				$result['LAST_ORDER_DATA']['FAIL'] = true;
+				// Motor-Force customization:
+				// A user can have no previous orders yet, but the current checkout may already be
+				// fully prefilled from an existing buyer profile. In that case use the current
+				// order state for preload UI instead of marking preload as failed.
+				$status = (int)$this->order->getPersonTypeId() > 0;
+				$result['LAST_ORDER_DATA']['PERSON_TYPE'] = $status;
+
+				$status = false;
+				if ($shipment = $this->getCurrentShipment($this->order))
+				{
+					$status = (int)$shipment->getDeliveryId() > 0;
+				}
+				$result['LAST_ORDER_DATA']['DELIVERY'] = $status;
+
+				$status = false;
+				if ($this->getInnerPayment($this->order))
+				{
+					$status = true;
+				}
+				elseif ($payment = $this->getExternalPayment($this->order))
+				{
+					$status = (int)$payment->getPaymentSystemId() > 0;
+				}
+				$result['LAST_ORDER_DATA']['PAY_SYSTEM'] = $status;
+
+				$status = false;
+				if ($shipment = $this->getCurrentShipment($this->order))
+				{
+					$status = (int)$shipment->getStoreId() > 0;
+				}
+				$result['LAST_ORDER_DATA']['PICK_UP'] = $status;
 			}
 		}
 		else
@@ -5084,13 +5371,34 @@ class SaleOrderAjax extends \CBitrixComponent
 			$result['LAST_ORDER_DATA']['FAIL'] = false;
 		}
 
+		$checkoutMode = trim((string)$this->request->get('MF_CHECKOUT_MODE'));
+		if ($checkoutMode !== 'register')
+		{
+			$checkoutMode = 'guest';
+		}
+
 		$result['ZIP_PROPERTY_CHANGED'] = $this->arUserResult['ZIP_PROPERTY_CHANGED'];
 		$result['ORDER_DESCRIPTION'] = $this->arUserResult['ORDER_DESCRIPTION'];
-		$result['SHOW_AUTH'] = !$USER->IsAuthorized() && $this->arParams['ALLOW_AUTO_REGISTER'] === 'N';
+		$result['SHOW_AUTH'] =
+			!$USER->IsAuthorized()
+			&& $this->arParams['ALLOW_AUTO_REGISTER'] === 'N'
+			&& $this->arParams['MF_CUSTOM_GUEST_FLOW'] !== 'Y';
+		$existingMfCheckout = (isset($result['MF_CHECKOUT']) && is_array($result['MF_CHECKOUT']))
+			? $result['MF_CHECKOUT']
+			: [];
+		$result['MF_CHECKOUT'] = array_merge($existingMfCheckout, [
+			'ENABLED' => $this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y',
+			'MODE' => $checkoutMode,
+		]);
 		$result['SHOW_EMPTY_BASKET'] = $arResult['SHOW_EMPTY_BASKET'];
 		$result['AUTH'] = $arResult['AUTH'];
 		$result['SMS_AUTH'] = $arResult['SMS_AUTH'];
 		$result['OK_MESSAGE'] = $arResult['OK_MESSAGE'] ?? [];
+		if (!empty($_SESSION['MF_CHECKOUT_REGISTER_SUCCESS']) && $_SESSION['MF_CHECKOUT_REGISTER_SUCCESS'] === 'Y')
+		{
+			$result['OK_MESSAGE'][] = 'Вы зарегистрированы. Личный кабинет создан, данные для оформления подставлены автоматически.';
+			unset($_SESSION['MF_CHECKOUT_REGISTER_SUCCESS']);
+		}
 		$result['GRID'] = $arResult['GRID'];
 		$result['PERSON_TYPE'] = $arResult["PERSON_TYPE"];
 		$result['PAY_SYSTEM'] = $arResult["PAY_SYSTEM"];
@@ -5413,8 +5721,7 @@ class SaleOrderAjax extends \CBitrixComponent
 					'PRECACHE_LAST_LEVEL' => 'N',
 					'PRESELECT_TREE_TRUNK' => 'Y',
 					'SUPPRESS_ERRORS' => 'Y',
-					'FILTER_BY_SITE' => 'Y',
-					'FILTER_SITE_ID' => $this->getSiteId(),
+					'FILTER_BY_SITE' => 'N',
 				];
 
 				ob_start();
@@ -5458,8 +5765,7 @@ class SaleOrderAjax extends \CBitrixComponent
 				'PRECACHE_LAST_LEVEL' => 'N',
 				'PRESELECT_TREE_TRUNK' => 'Y',
 				'SUPPRESS_ERRORS' => 'Y',
-				'FILTER_BY_SITE' => 'Y',
-				'FILTER_SITE_ID' => $this->getSiteId(),
+				'FILTER_BY_SITE' => 'N',
 			];
 
 			ob_start();
@@ -6229,7 +6535,12 @@ class SaleOrderAjax extends \CBitrixComponent
 			? $this->request->get($this->arParams['ACTION_VARIABLE'])
 			: $this->request->get('action');
 
-		if (!$USER->IsAuthorized() && $this->arParams['ALLOW_AUTO_REGISTER'] === 'N' && $action !== 'confirmSmsCode')
+		if (
+			!$USER->IsAuthorized()
+			&& $this->arParams['ALLOW_AUTO_REGISTER'] === 'N'
+			&& $this->arParams['MF_CUSTOM_GUEST_FLOW'] !== 'Y'
+			&& $action !== 'confirmSmsCode'
+		)
 		{
 			$action = 'showAuthForm';
 		}
@@ -6450,23 +6761,6 @@ class SaleOrderAjax extends \CBitrixComponent
 			$arResult["ACCOUNT_NUMBER"] = $orderId;
 	}
 
-	private function getUserConsentsFromRequest(): array
-	{
-		$userConsentsFromRequest = $this->request->get('userConsents');
-		if (!is_array($userConsentsFromRequest))
-		{
-			return [];
-		}
-
-		$mappedUserConsentsFromRequest = [];
-		foreach ($userConsentsFromRequest as $userConsent)
-		{
-			$mappedUserConsentsFromRequest[$userConsent['id']] = $userConsent;
-		}
-
-		return $mappedUserConsentsFromRequest;
-	}
-
 	/**
 	 * Action - saves order if there are no errors
 	 * Execution of 'OnSaleComponentOrderOneStepComplete' event
@@ -6488,19 +6782,9 @@ class SaleOrderAjax extends \CBitrixComponent
 
 			if ($this->arParams['USER_CONSENT'] === 'Y')
 			{
-				$userConsentFromRequest = $this->getUserConsentsFromRequest();
-				foreach ($this->arParams['USER_CONSENTS'] as $userConsent)
-				{
-					if (
-						$userConsent['REQUIRED'] === 'Y'
-						|| ($userConsentFromRequest[$userConsent['ID']]['checked'] ?? 'N') === 'Y'
-					)
-					{
-						Main\UserConsent\Consent::addByContext(
-							(int)$userConsent['ID'], 'sale/order', $arResult['ORDER_ID']
-						);
-					}
-				}
+				Main\UserConsent\Consent::addByContext(
+					$this->arParams['USER_CONSENT_ID'], 'sale/order', $arResult['ORDER_ID']
+				);
 			}
 
 			$fUserId = Sale\Fuser::getId();
