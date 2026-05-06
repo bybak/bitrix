@@ -78,4 +78,23 @@ return array (
     ),
     'readonly' => true,
   ),
+  'cache' =>
+  array (
+    'value' =>
+    array (
+      'type' => 'redis',
+      'redis' =>
+      array (
+        'host' => (static function () {
+          $h = getenv('BITRIX_REDIS_HOST');
+          return ($h !== false && $h !== '') ? $h : 'redis';
+        })(),
+        'port' => (static function () {
+          $p = getenv('BITRIX_REDIS_PORT');
+          return ($p !== false && $p !== '') ? (int) $p : 6379;
+        })(),
+      ),
+    ),
+    'readonly' => false,
+  ),
 );

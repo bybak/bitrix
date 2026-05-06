@@ -44,6 +44,7 @@ RUN pecl install redis apcu \
 
 # Копирование конфигурации PHP
 COPY php-bitrix.ini /usr/local/etc/php/conf.d/99-bitrix.ini
+COPY php-fpm-bitrix.conf /usr/local/etc/php-fpm.d/zz-bitrix.conf
 
 # Entry-point: generate ~/.msmtprc from env (optional)
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

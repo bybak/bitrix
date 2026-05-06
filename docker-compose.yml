@@ -50,12 +50,16 @@ services:
       MF_UNF_LOG: "1"
       MF_UNF_OPERATION: "Заказ на продажу"
       MF_UNF_TAXATION: "Не облагается (без НДС)"
+      BITRIX_REDIS_HOST: redis
+      BITRIX_REDIS_PORT: "6379"
     volumes:
       - ./www:/var/www/html
       - /opt/mail_ingest/drop:/var/www/html/supplier_drop:ro
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - bitrix
 
@@ -81,11 +85,27 @@ services:
     networks:
       - bitrix
 
+  redis:
+    image: redis:7-alpine
+    container_name: bitrix_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - bitrix
+
 networks:
   bitrix:
     driver: bridge
 
 volumes:
   mysql_data:
+    driver: local
+  redis_data:
     driver: local
 
