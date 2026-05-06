@@ -74,8 +74,8 @@ function mf_bm_table_exists(\Bitrix\Main\DB\Connection $conn, string $table): bo
 
 /**
  * Варианты для селекта «Считать как бренд каталога» / «Сопоставить с брендом каталога»:
- * те же правила, что список брендов в выгрузке каталога (mf_ce_load_brand_choices — только выгружаемые активные товары
- * инфоблока, MF_BRAND + MF_BRAND_NORM), плюс каноны из HL mf_brand_alias (чтобы цель сопоставления не пропадала из списка).
+ * выгружаемые активные элементы инфоблока; для скорости — только MF_BRAND (меньше строк в JOIN, чем BRAND+NORM).
+ * Плюс каноны из HL mf_brand_alias.
  *
  * @return list<string>
  */
@@ -88,7 +88,7 @@ function mf_bm_select_brand_choices(\Bitrix\Main\DB\Connection $conn, int $ibloc
 	}
 
 	$out = [];
-	foreach (mf_ce_load_brand_choices($iblockId, true) as $b)
+	foreach (mf_ce_load_brand_choices($iblockId, true, ['MF_BRAND']) as $b)
 	{
 		$b = trim((string)$b);
 		if ($b !== '')

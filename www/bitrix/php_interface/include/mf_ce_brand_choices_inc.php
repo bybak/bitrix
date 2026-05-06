@@ -171,12 +171,14 @@ if (!function_exists('mf_ce_brands_only_on_non_exportable_elements'))
 if (!function_exists('mf_ce_load_brand_choices'))
 {
 	/**
-	 * Список непустых значений MF_BRAND / MF_BRAND_NORM для выпадающего списка фильтра.
-	 * По умолчанию только у активных элементов — как у формы с включённой галочкой «только активные».
+	 * Список непустых значений свойств бренда для выпадающего списка.
+	 * По умолчанию MF_BRAND + MF_BRAND_NORM (как фильтр выгрузки).
+	 * Если передан $propertyCodes (например ['MF_BRAND']) — меньше строк в b_iblock_element_property, быстрее на больших каталогах.
 	 *
+	 * @param list<string>|null $propertyCodes коды свойств IBLOCK, null = MF_BRAND и MF_BRAND_NORM
 	 * @return list<string>
 	 */
-	function mf_ce_load_brand_choices(int $iblockId, bool $onlyActiveBrands = true): array
+	function mf_ce_load_brand_choices(int $iblockId, bool $onlyActiveBrands = true, ?array $propertyCodes = null): array
 	{
 		global $DB;
 
@@ -186,7 +188,33 @@ if (!function_exists('mf_ce_load_brand_choices'))
 			return [];
 		}
 
-		$propIds = mf_ce_brand_property_ids($iblockId);
+		if ($propertyCodes === null)
+		{
+			$propIds = mf_ce_brand_property_ids($iblockId);
+		}
+		else
+		{
+			$propIds = [];
+			foreach ($propertyCodes as $code)
+			{
+				$code = trim((string)$code);
+				if ($code === '')
+				{
+					continue;
+				}
+				$rs = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => $code]);
+				if ($p = $rs->Fetch())
+				{
+					$id = (int)($p['ID'] ?? 0);
+					if ($id > 0)
+					{
+						$propIds[$id] = true;
+					}
+				}
+			}
+			$propIds = array_keys($propIds);
+		}
+
 		if ($propIds === [])
 		{
 			return [];
