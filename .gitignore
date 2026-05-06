@@ -8,7 +8,8 @@ dump.sql
 
 # Runtime logs / caches (must not be committed)
 logs/
-www/bitrix/cache/
+www/bitrix/cache/*
+!www/bitrix/cache/.gitkeep
 www/bitrix/stack_cache/
 www/bitrix/site_checker_*.log
 www/bitrix/modules/*.log
@@ -21,7 +22,8 @@ www/lba_moto_*.csv
 www/upload/mf_sync_src/
 www/upload/resize_cache/iblock/
 www/upload/iblock/
-www/bitrix/managed_cache/
+www/bitrix/managed_cache/*
+!www/bitrix/managed_cache/.gitkeep
 www/upload/resize_cache/
 .env
 .tmp_1cxml

@@ -43,6 +43,7 @@ return array (
         'login' => 'root',
         'password' => 'levampass',
         'options' => 2.0,
+        'initCommand' => 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci',
         'className' => '\\Bitrix\\Main\\DB\\MysqliConnection',
       ),
     ),

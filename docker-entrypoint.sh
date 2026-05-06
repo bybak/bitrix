@@ -1,6 +1,17 @@
 #!/usr/bin/env sh
 set -eu
 
+# Каталоги для кеша и upload_tmp (проверка системы Битрикс).
+DOC_ROOT="${DOC_ROOT:-/var/www/html}"
+for d in \
+  "$DOC_ROOT/bitrix/cache" \
+  "$DOC_ROOT/bitrix/managed_cache" \
+  "$DOC_ROOT/bitrix/tmp" \
+  "$DOC_ROOT/bitrix/upload_tmp"
+do
+  mkdir -p "$d" 2>/dev/null || true
+done
+
 # Configure msmtp if SMTP env vars are present.
 # This enables Bitrix (PHP mail()) to actually send emails from the container.
 #
