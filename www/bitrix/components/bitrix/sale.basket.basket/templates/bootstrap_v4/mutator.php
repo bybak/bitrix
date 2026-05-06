@@ -53,6 +53,9 @@ foreach ($this->basketItems as $row)
 		'MODULE' => $row['MODULE'],
 		'PRODUCT_PROVIDER_CLASS' => $row['PRODUCT_PROVIDER_CLASS'],
 		'NOT_AVAILABLE' => isset($row['NOT_AVAILABLE']) && $row['NOT_AVAILABLE'] === true,
+		'MF_PARTIAL_SELECTABLE' => ($row['CAN_BUY'] ?? 'N') === 'Y'
+			&& ($row['DELAY'] ?? 'N') !== 'Y'
+			&& !(isset($row['NOT_AVAILABLE']) && $row['NOT_AVAILABLE'] === true),
 		'DELAYED' => $row['DELAY'] === 'Y',
 		'SKU_BLOCK_LIST' => array(),
 		'COLUMN_LIST' => array(),
@@ -64,21 +67,21 @@ foreach ($this->basketItems as $row)
 	// show price including ratio
 	if ($rowData['MEASURE_RATIO'] != 1)
 	{
-		$price = PriceMaths::roundByFormatCurrency($rowData['PRICE'] * $rowData['MEASURE_RATIO'], $row['CURRENCY']);
+		$price = PriceMaths::roundPrecision($rowData['PRICE'] * $rowData['MEASURE_RATIO']);
 		if ($price != $rowData['PRICE'])
 		{
 			$rowData['PRICE'] = $price;
 			$rowData['PRICE_FORMATED'] = CCurrencyLang::CurrencyFormat($price, $rowData['CURRENCY'], true);
 		}
 
-		$fullPrice = PriceMaths::roundByFormatCurrency($rowData['FULL_PRICE'] * $rowData['MEASURE_RATIO'], $row['CURRENCY']);
+		$fullPrice = PriceMaths::roundPrecision($rowData['FULL_PRICE'] * $rowData['MEASURE_RATIO']);
 		if ($fullPrice != $rowData['FULL_PRICE'])
 		{
 			$rowData['FULL_PRICE'] = $fullPrice;
 			$rowData['FULL_PRICE_FORMATED'] = CCurrencyLang::CurrencyFormat($fullPrice, $rowData['CURRENCY'], true);
 		}
 
-		$discountPrice = PriceMaths::roundByFormatCurrency($rowData['DISCOUNT_PRICE'] * $rowData['MEASURE_RATIO'], $row['CURRENCY']);
+		$discountPrice = PriceMaths::roundPrecision($rowData['DISCOUNT_PRICE'] * $rowData['MEASURE_RATIO']);
 		if ($discountPrice != $rowData['DISCOUNT_PRICE'])
 		{
 			$rowData['DISCOUNT_PRICE'] = $discountPrice;
@@ -87,6 +90,19 @@ foreach ($this->basketItems as $row)
 	}
 
 	$rowData['SHOW_PRICE_FOR'] = (float)$rowData['QUANTITY'] !== (float)$rowData['MEASURE_RATIO'];
+
+	if (trim((string)$rowData['NAME']) === '' && (int)$rowData['PRODUCT_ID'] > 0 && \Bitrix\Main\Loader::includeModule('iblock'))
+	{
+		$rsEl = \CIBlockElement::GetByID((int)$rowData['PRODUCT_ID']);
+		if ($el = $rsEl->GetNext(false, false))
+		{
+			$fn = (string)($el['NAME'] ?? '');
+			if ($fn !== '')
+			{
+				$rowData['NAME'] = $fn;
+			}
+		}
+	}
 
 	$hideDetailPicture = false;
 
@@ -98,6 +114,23 @@ foreach ($this->basketItems as $row)
 	{
 		$hideDetailPicture = true;
 		$rowData['IMAGE_URL'] = $row['DETAIL_PICTURE_SRC'];
+	}
+
+	if (empty($rowData['IMAGE_URL']))
+	{
+		$picId = (int)($row['PREVIEW_PICTURE'] ?? 0);
+		if ($picId <= 0)
+		{
+			$picId = (int)($row['DETAIL_PICTURE'] ?? 0);
+		}
+		if ($picId > 0)
+		{
+			$rImg = \CFile::ResizeImageGet($picId, ['width' => 110, 'height' => 110], BX_RESIZE_IMAGE_PROPORTIONAL, true);
+			if (!empty($rImg['src']))
+			{
+				$rowData['IMAGE_URL'] = $rImg['src'];
+			}
+		}
 	}
 
 	if (!empty($row['SKU_DATA']))
@@ -398,6 +431,7 @@ foreach ($this->basketItems as $row)
 
 $totalData = array(
 	'DISABLE_CHECKOUT' => (int)$result['ORDERABLE_BASKET_ITEMS_COUNT'] === 0,
+	'SHOW_PARTIAL_CHECKOUT' => (int)$result['ORDERABLE_BASKET_ITEMS_COUNT'] > 0,
 	'PRICE' => $result['allSum'],
 	'PRICE_FORMATED' => $result['allSum_FORMATED'],
 	'PRICE_WITHOUT_DISCOUNT_FORMATED' => $result['PRICE_WITHOUT_DISCOUNT'],

@@ -46,17 +46,17 @@ $arParams['HIDE_ORDER_DESCRIPTION'] = ($arParams['HIDE_ORDER_DESCRIPTION'] ?? 'N
 $arParams['ALLOW_USER_PROFILES'] = ($arParams['ALLOW_USER_PROFILES'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['ALLOW_NEW_PROFILE'] = ($arParams['ALLOW_NEW_PROFILE'] ?? 'N') === 'Y' ? 'Y' : 'N';
 $arParams['SHOW_COUPONS'] = ($arParams['SHOW_COUPONS'] ?? 'Y') === 'N' ? 'N' : 'Y';
-if ($arParams['SHOW_COUPONS'] === 'N')
+if ($arParams['SHOW_COUPONS'] === 'Y')
+{
+	$arParams['SHOW_COUPONS_BASKET'] = ($arParams['SHOW_COUPONS_BASKET'] ?? 'Y') === 'N' ? 'N' : 'Y';
+	$arParams['SHOW_COUPONS_DELIVERY'] = ($arParams['SHOW_COUPONS_DELIVERY'] ?? 'N') === 'Y' ? 'Y' : 'N';
+	$arParams['SHOW_COUPONS_PAY_SYSTEM'] = ($arParams['SHOW_COUPONS_PAY_SYSTEM'] ?? 'N') === 'Y' ? 'Y' : 'N';
+}
+else
 {
 	$arParams['SHOW_COUPONS_BASKET'] = 'N';
 	$arParams['SHOW_COUPONS_DELIVERY'] = 'N';
 	$arParams['SHOW_COUPONS_PAY_SYSTEM'] = 'N';
-}
-else
-{
-	$arParams['SHOW_COUPONS_BASKET'] = ($arParams['SHOW_COUPONS_BASKET'] ?? 'Y') === 'N' ? 'N' : 'Y';
-	$arParams['SHOW_COUPONS_DELIVERY'] = ($arParams['SHOW_COUPONS_DELIVERY'] ?? 'Y') === 'N' ? 'N' : 'Y';
-	$arParams['SHOW_COUPONS_PAY_SYSTEM'] = ($arParams['SHOW_COUPONS_PAY_SYSTEM'] ?? 'Y') === 'N' ? 'N' : 'Y';
 }
 
 $arParams['USE_YM_GOALS'] = ($arParams['USE_YM_GOALS'] ?? 'N') === 'Y' ? 'Y' : 'N';
@@ -299,9 +299,13 @@ switch (LANGUAGE_ID)
 }
 
 \Bitrix\Main\UI\Extension::load('ui.fonts.opensans');
-$this->addExternalJs($templateFolder.'/order_ajax.js');
+$orderAjaxPath = Main\Application::getDocumentRoot() . $templateFolder . '/order_ajax.js';
+$orderAjaxVer = @filemtime($orderAjaxPath) ?: time();
+$this->addExternalJs($templateFolder . '/order_ajax.js?v=' . $orderAjaxVer);
 \Bitrix\Sale\PropertyValueCollection::initJs();
-$this->addExternalJs($templateFolder.'/script.js');
+$scriptPath = Main\Application::getDocumentRoot() . $templateFolder . '/script.js';
+$scriptVer = @filemtime($scriptPath) ?: time();
+$this->addExternalJs($templateFolder . '/script.js?v=' . $scriptVer);
 ?>
 	<NOSCRIPT>
 		<div style="color:red"><?=Loc::getMessage('SOA_NO_JS')?></div>
@@ -335,6 +339,8 @@ else
 		<input type="hidden" name="<?=$arParams['ACTION_VARIABLE']?>" value="saveOrderAjax">
 		<input type="hidden" name="location_type" value="code">
 		<input type="hidden" name="BUYER_STORE" id="BUYER_STORE" value="<?=$arResult['BUYER_STORE']?>">
+		<input type="hidden" name="MF_CHECKOUT_MODE" id="MF_CHECKOUT_MODE" value="guest">
+		<input type="hidden" name="MF_RESET_PERSON_TYPE_SWITCH" id="MF_RESET_PERSON_TYPE_SWITCH" value="N">
 		<div id="bx-soa-order" class="row" style="opacity: 0">
 			<!--	MAIN BLOCK	-->
 			<div class="col-lg-8 col-md-7 bx-soa">
@@ -342,6 +348,7 @@ else
 					<div class="alert alert-danger" style="display:none"></div>
 					<div data-type="informer" style="display:none"></div>
 				</div>
+				<div id="bx-soa-checkout-meta" class="mf-checkout-meta"></div>
 				<!--	AUTH BLOCK	-->
 				<div id="bx-soa-auth" class="bx-soa-section bx-soa-auth" style="display: none;">
 					<div class="bx-soa-section-title-container">
@@ -374,8 +381,8 @@ else
 				endif;
 				?>
 
-				<!--	REGION BLOCK	-->
-				<div id="bx-soa-region" data-visited="false" class="bx-soa-section bx-active">
+				<!--	REGION BLOCK (disabled by Motor-Force customizations)	-->
+				<div id="bx-soa-region" data-visited="false" class="bx-soa-section" style="display:none">
 					<div class="bx-soa-section-title-container d-flex justify-content-between align-items-center flex-nowrap">
 						<div class="bx-soa-section-title" data-entity="section-title">
 							<span class="bx-soa-section-title-count"></span><?=$arParams['MESS_REGION_BLOCK_NAME']?>
@@ -488,30 +495,21 @@ else
 						<?php
 						if ($arParams['USER_CONSENT'] === 'Y')
 						{
-							if (isset($arParams['USER_CONSENTS']))
-							{
-								foreach ($arParams['USER_CONSENTS'] as $userConsent)
-								{
-									echo '<div>';
-									$APPLICATION->IncludeComponent(
-										'bitrix:main.userconsent.request',
-										'',
-										[
-											'ID' => $userConsent['ID'],
-											'IS_CHECKED' => $userConsent['CHECKED'],
-											'REQUIRED' => $userConsent['REQUIRED'],
-											'IS_LOADED' => $arParams['USER_CONSENT_IS_LOADED'],
-											'AUTO_SAVE' => 'N',
-											'SUBMIT_EVENT_NAME' => 'bx-soa-order-save-' . $userConsent['ID'],
-											'REPLACE' => [
-												'button_caption' => $arParams['~MESS_ORDER'] ?? $arParams['MESS_ORDER'],
-												'fields' => $arResult['USER_CONSENT_PROPERTY_DATA']
-											]
-										]
-									);
-									echo '</div>';
-								}
-							}
+							$APPLICATION->IncludeComponent(
+								'bitrix:main.userconsent.request',
+								'',
+								array(
+									'ID' => $arParams['USER_CONSENT_ID'],
+									'IS_CHECKED' => $arParams['USER_CONSENT_IS_CHECKED'],
+									'IS_LOADED' => $arParams['USER_CONSENT_IS_LOADED'],
+									'AUTO_SAVE' => 'N',
+									'SUBMIT_EVENT_NAME' => 'bx-soa-order-save',
+									'REPLACE' => array(
+										'button_caption' => $arParams['~MESS_ORDER'] ?? $arParams['MESS_ORDER'],
+										'fields' => $arResult['USER_CONSENT_PROPERTY_DATA']
+									)
+								)
+							);
 						}
 						?>
 					</div>
@@ -630,6 +628,7 @@ else
 				}
 			},
 			orderBlockId: 'bx-soa-order',
+			checkoutMetaBlockId: 'bx-soa-checkout-meta',
 			authBlockId: 'bx-soa-auth',
 			basketBlockId: 'bx-soa-basket',
 			regionBlockId: 'bx-soa-region',
