@@ -1549,6 +1549,28 @@ if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 					$d['MF_DELIVERY_TERM'] = $deliveryTerm;
 				}
 			}
+			// Не выводим служебные свойства склада в составе заказа (иначе в шаблоне видны «MF_STORE_ID» как текст).
+			if (!empty($d['PROPS']) && is_array($d['PROPS']))
+			{
+				$d['PROPS'] = array_values(array_filter($d['PROPS'], static function ($prop) {
+					if (!is_array($prop))
+					{
+						return true;
+					}
+					$code = trim((string)($prop['CODE'] ?? ''));
+					$name = trim((string)($prop['NAME'] ?? ''));
+					if ($code !== '' && strncmp($code, 'MF_STORE_', 9) === 0)
+					{
+						return false;
+					}
+					if ($name !== '' && strncmp($name, 'MF_STORE_', 9) === 0)
+					{
+						return false;
+					}
+
+					return true;
+				}));
+			}
 			unset($d);
 		}
 		unset($row);

@@ -5567,6 +5567,32 @@ class SaleOrderAjax extends \CBitrixComponent
 		{
 			ExecuteModuleEventEx($arEvent, [&$this->arResult, &$this->arParams]);
 		}
+
+		// Резервные ссылки для гостевого чекаута: если обработчик OnSaleComponentOrderJsData
+		// не отработал (init.php, ошибка в mf_checkout и т.д.), верхний блок MF в JS остаётся пустым.
+		if ($this->arParams['MF_CUSTOM_GUEST_FLOW'] === 'Y')
+		{
+			if (!isset($this->arResult['JS_DATA']['MF_CHECKOUT']) || !is_array($this->arResult['JS_DATA']['MF_CHECKOUT']))
+			{
+				$this->arResult['JS_DATA']['MF_CHECKOUT'] = [];
+			}
+			$mfCheckoutRef =& $this->arResult['JS_DATA']['MF_CHECKOUT'];
+			$orderBack = (string)($this->arParams['PATH_TO_ORDER'] ?? '/personal/order/make/');
+			$orderBack = '/' . ltrim(str_replace('\\', '/', $orderBack), '/');
+			if ($orderBack === '/' || $orderBack === '')
+			{
+				$orderBack = '/personal/order/make/';
+			}
+			$orderBackEnc = rawurlencode($orderBack);
+			if (empty($mfCheckoutRef['LOGIN_HREF']))
+			{
+				$mfCheckoutRef['LOGIN_HREF'] = '/login/?login=yes&backurl=' . $orderBackEnc;
+			}
+			if (empty($mfCheckoutRef['REGISTER_HREF']))
+			{
+				$mfCheckoutRef['REGISTER_HREF'] = '/login/?register=yes&backurl=' . $orderBackEnc;
+			}
+		}
 	}
 
 	/**

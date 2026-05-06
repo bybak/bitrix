@@ -1615,6 +1615,13 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					this.deliveryPagination.show = false;
 				}
 			}
+			else
+			{
+				this.result.DELIVERY = [];
+				this.deliveryPagination.pageNumber = 1;
+				this.deliveryPagination.currentPage = [];
+				this.deliveryPagination.show = false;
+			}
 
 			if (this.result.PAY_SYSTEM)
 			{
@@ -2687,7 +2694,19 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.editCheckoutMetaBlock();
 
-			if (this.result.DELIVERY.length > 0)
+			var deliveryList = this.result.DELIVERY,
+				deliveryCount = 0;
+
+			if (BX.type.isArray(deliveryList))
+			{
+				deliveryCount = deliveryList.length;
+			}
+			else if (deliveryList && typeof deliveryList === 'object')
+			{
+				deliveryCount = Object.keys(deliveryList).length;
+			}
+
+			if (deliveryCount > 0)
 			{
 				BX.addClass(this.deliveryBlockNode, 'bx-active');
 				this.deliveryBlockNode.removeAttribute('style');
@@ -2760,12 +2779,12 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 		editCheckoutMetaBlock: function()
 		{
-			if (!this.checkoutMetaBlockNode || !this.result || !this.result.PERSON_TYPE)
+			if (!this.checkoutMetaBlockNode || !this.result)
 				return;
 
 			var node = this.checkoutMetaBlockNode,
 				form = BX('bx-soa-order-form') || node,
-				personTypes = this.getPersonTypeSortedArray(this.result.PERSON_TYPE),
+				personTypes = this.getPersonTypeSortedArray(this.result.PERSON_TYPE || {}),
 				personTypesCount = personTypes.length,
 				selectedId = null,
 				checkoutModeInput = form.querySelector('input[name="MF_CHECKOUT_MODE"]'),
@@ -5465,6 +5484,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		{
 			var personTypes = [], k;
 
+			if (objPersonType == null || typeof objPersonType !== 'object')
+			{
+				return personTypes;
+			}
+
 			for (k in objPersonType)
 			{
 				if (objPersonType.hasOwnProperty(k))
@@ -7326,6 +7350,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					}
 				},
 				k;
+
+			if (objDelivery == null || typeof objDelivery !== 'object')
+			{
+				return deliveries.concat(problemDeliveries);
+			}
 
 			for (k in objDelivery)
 			{
