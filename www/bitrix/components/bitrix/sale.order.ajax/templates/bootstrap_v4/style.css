@@ -1185,6 +1185,29 @@ input[type=checkbox].bx-soa-pp-company-checkbox {
 
 .bx-soa-pp-desc-container .bx-soa-pp-company-logo { max-width: 150px; }
 
+/* Выбранный способ оплаты: логотип на всю ширину колонки описания (не 150px) */
+#bx-soa-paysystem .bx-soa-pp-desc-container .bx-soa-pp-company-logo,
+#bx-soa-paysystem-hidden .bx-soa-pp-desc-container .bx-soa-pp-company-logo {
+	max-width: none;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+#bx-soa-paysystem .bx-soa-pp-desc-container .bx-soa-pp-company-graf-container,
+#bx-soa-paysystem-hidden .bx-soa-pp-desc-container .bx-soa-pp-company-graf-container {
+	width: 100%;
+	padding-top: 46%;
+	min-height: 168px;
+}
+
+#bx-soa-paysystem .bx-soa-pp-desc-container .bx-soa-pp-company-image,
+#bx-soa-paysystem-hidden .bx-soa-pp-desc-container .bx-soa-pp-company-image {
+	top: 8px;
+	right: 8px;
+	bottom: 8px;
+	left: 8px;
+}
+
 .bx-soa-pp-company-smalltitle {
 	padding-top: 9px;
 	padding-bottom: 5px;
