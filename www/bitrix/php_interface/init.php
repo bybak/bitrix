@@ -205,6 +205,88 @@ if (!function_exists('mf_mf_product_img_url'))
 	}
 }
 
+if (!function_exists('mf_mf_product_card_preview_src'))
+{
+	/**
+	 * Первое изображение для карточки (поиск, списки): как catalog.element bootstrap_v4 —
+	 * сначала MF_EXT_IMAGES, иначе mf_analogs_meta_images_for_product, иначе mf_mf_product_img_url(CODE,1).
+	 *
+	 * @param array<string,mixed>|null $prefetchRow строка CIBlockElement::GetList с PROPERTY_MF_EXT_IMAGES_VALUE, если уже подгружена
+	 */
+	function mf_mf_product_card_preview_src(int $productId, string $code, ?array $prefetchRow = null, int $iblockId = 4): string
+	{
+		$productId = (int)$productId;
+		$code = trim($code);
+		$iblockId = (int)$iblockId;
+		$urls = [];
+
+		if (is_array($prefetchRow))
+		{
+			$v = $prefetchRow['PROPERTY_MF_EXT_IMAGES_VALUE'] ?? null;
+			if (is_array($v))
+			{
+				foreach ($v as $one)
+				{
+					$s = trim((string)$one);
+					if ($s !== '')
+					{
+						$urls[] = $s;
+					}
+				}
+			}
+			elseif ($v !== null && $v !== '')
+			{
+				$s = trim((string)$v);
+				if ($s !== '')
+				{
+					$urls[] = $s;
+				}
+			}
+		}
+
+		if (empty($urls) && $productId > 0 && $iblockId > 0 && class_exists('CIBlockElement'))
+		{
+			$rsP = \CIBlockElement::GetProperty($iblockId, $productId, ['sort' => 'asc'], ['CODE' => 'MF_EXT_IMAGES']);
+			while ($p = $rsP->Fetch())
+			{
+				$u = trim((string)($p['VALUE'] ?? ''));
+				if ($u !== '')
+				{
+					$urls[] = $u;
+				}
+			}
+		}
+
+		if (!empty($urls))
+		{
+			return (string)$urls[0];
+		}
+
+		if ($productId > 0 && function_exists('mf_analogs_meta_images_for_product'))
+		{
+			$meta = mf_analogs_meta_images_for_product($productId);
+			if (is_array($meta))
+			{
+				foreach ($meta as $u)
+				{
+					$u = trim((string)$u);
+					if ($u !== '')
+					{
+						return $u;
+					}
+				}
+			}
+		}
+
+		if ($code !== '')
+		{
+			return (string)mf_mf_product_img_url($code, 1);
+		}
+
+		return '';
+	}
+}
+
 // Ensure catalog IBlock URL templates are set (needed for search URLs).
 if (!function_exists('mf_ensure_catalog_iblock_url_templates'))
 {

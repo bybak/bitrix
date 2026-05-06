@@ -67,7 +67,7 @@ $mfStoresForProduct = static function (int $productId): array {
 	return function_exists('mf_product_search_card_stores') ? mf_product_search_card_stores($productId) : [];
 };
 
-$mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard, $mfPlaceholder, $mfStoresForProduct, $mfSearchMinPricePrint) {
+$mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard, $mfPlaceholder, $mfStoresForProduct, $mfSearchMinPricePrint, $mfCatalogIblockId) {
 	$id = (int)($data['id'] ?? 0);
 	$url = (string)($data['url'] ?? '');
 	$titleHtml = (string)($data['title_html'] ?? '');
@@ -78,7 +78,16 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 	$analogs = (is_array($data['analogs'] ?? null) ? (array)$data['analogs'] : []);
 
 	$img = $mfPlaceholder;
-	if ($code !== '' && function_exists('mf_mf_product_img_url'))
+	$prefetchRow = (isset($data['prefetch_row']) && is_array($data['prefetch_row'])) ? $data['prefetch_row'] : null;
+	if (function_exists('mf_mf_product_card_preview_src'))
+	{
+		$u = (string)mf_mf_product_card_preview_src($id, $code, $prefetchRow, $mfCatalogIblockId);
+		if ($u !== '')
+		{
+			$img = $u;
+		}
+	}
+	elseif ($code !== '' && function_exists('mf_mf_product_img_url'))
 	{
 		$u = (string)mf_mf_product_img_url($code, 1);
 		if ($u !== '') $img = $u;
@@ -347,6 +356,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								'PROPERTY_MF_BRAND',
 								'PROPERTY_MF_BRAND_NORM',
 								'PROPERTY_OEM',
+								'PROPERTY_MF_EXT_IMAGES',
 							]
 						);
 						while ($r = $rsP->Fetch())
@@ -401,6 +411,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 									'PROPERTY_MF_BRAND',
 									'PROPERTY_MF_BRAND_NORM',
 									'PROPERTY_OEM',
+									'PROPERTY_MF_EXT_IMAGES',
 								]
 							);
 							while ($r = $rsA->Fetch())
@@ -525,6 +536,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 									'id' => $aid2,
 									'url' => $urlA,
 									'code' => $codeA,
+									'prefetch_row' => $rA,
 									'title_html' => htmlspecialcharsbx($nameA),
 									'brand' => trim((string)($rA['PROPERTY_MF_BRAND_VALUE'] ?? ($rA['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
 									'article' => trim((string)($rA['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
@@ -534,11 +546,23 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							}
 						}
 
+						// Название из индекса устаревает после правок в каталоге — как у аналогов, берём NAME из префетча.
+						$mfTitleHtml = (string)($arItem['TITLE_FORMATED'] ?? htmlspecialcharsbx((string)($arItem['TITLE'] ?? '')));
+						if (is_array($mfRow))
+						{
+							$mfNameFresh = trim((string)($mfRow['NAME'] ?? ''));
+							if ($mfNameFresh !== '')
+							{
+								$mfTitleHtml = htmlspecialcharsbx($mfNameFresh);
+							}
+						}
+
 						$mfRenderProductCard([
 							'id' => $mfItemId,
 							'url' => $href,
 							'code' => $mfCode,
-							'title_html' => (string)($arItem['TITLE_FORMATED'] ?? htmlspecialcharsbx((string)($arItem['TITLE'] ?? ''))),
+							'prefetch_row' => is_array($mfRow) ? $mfRow : null,
+							'title_html' => $mfTitleHtml,
 							'brand' => $mfBrand,
 							'article' => $mfArticle,
 							'oem' => $mfOem,

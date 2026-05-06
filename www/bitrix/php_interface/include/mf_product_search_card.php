@@ -301,7 +301,15 @@ if (!function_exists('mf_product_search_card_render'))
 			? (string)mf_mf_placeholder_img_url()
 			: '/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg';
 		$img = $placeholder;
-		if ($code !== '' && function_exists('mf_mf_product_img_url'))
+		if (function_exists('mf_mf_product_card_preview_src'))
+		{
+			$u = (string)mf_mf_product_card_preview_src($id, $code, null, 4);
+			if ($u !== '')
+			{
+				$img = $u;
+			}
+		}
+		elseif ($code !== '' && function_exists('mf_mf_product_img_url'))
 		{
 			$u = (string)mf_mf_product_img_url($code, 1);
 			if ($u !== '')
