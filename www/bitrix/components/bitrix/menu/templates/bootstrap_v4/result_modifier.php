@@ -26,13 +26,32 @@ if(!function_exists("FillAllPicturesAndDescriptions"))
 {
 	function FillAllPicturesAndDescriptions(&$arAllItems, $arMenuItemsIDs, &$arImgDesc)
 	{
+		foreach ($arAllItems as $id => &$__row)
+		{
+			if (!is_array($__row))
+			{
+				unset($arAllItems[$id]);
+				continue;
+			}
+			if (!isset($__row["PARAMS"]) || !is_array($__row["PARAMS"]))
+			{
+				$__row["PARAMS"] = array();
+			}
+		}
+		unset($__row);
+
 		//find picture or description for the first level, if it hasn't
 		foreach ($arMenuItemsIDs as $itemIdLevel_1=>$arLevels2)
 		{
+			if (!isset($arAllItems[$itemIdLevel_1]) || !is_array($arAllItems[$itemIdLevel_1]))
+				continue;
+
 			if (!$arAllItems[$itemIdLevel_1]["PARAMS"]["picture_src"] || !$arAllItems[$itemIdLevel_1]["PARAMS"]["description"])
 			{
 				foreach($arLevels2 as $itemIdLevel_2=>$arLevels3)
 				{
+					if (!isset($arAllItems[$itemIdLevel_2]) || !is_array($arAllItems[$itemIdLevel_2]))
+						continue;
 					if (!$arAllItems[$itemIdLevel_1]["PARAMS"]["picture_src"] && $arAllItems[$itemIdLevel_2]["PARAMS"]["picture_src"])
 					{
 						$arAllItems[$itemIdLevel_1]["PARAMS"]["picture_src"] = $arAllItems[$itemIdLevel_2]["PARAMS"]["picture_src"];
@@ -50,6 +69,8 @@ if(!function_exists("FillAllPicturesAndDescriptions"))
 					{
 						foreach($arLevels3 as $itemIdLevel_3)
 						{
+							if (!isset($arAllItems[$itemIdLevel_3]) || !is_array($arAllItems[$itemIdLevel_3]))
+								continue;
 							if (!$arAllItems[$itemIdLevel_1]["PARAMS"]["picture_src"] && $arAllItems[$itemIdLevel_3]["PARAMS"]["picture_src"])
 							{
 								$arAllItems[$itemIdLevel_1]["PARAMS"]["picture_src"] = $arAllItems[$itemIdLevel_3]["PARAMS"]["picture_src"];
@@ -68,8 +89,16 @@ if(!function_exists("FillAllPicturesAndDescriptions"))
 			}
 		}
 
+		$pictureLevel_1 = null;
+		$descriptionLevel_1 = null;
+		$pictureLevel_2 = null;
+		$descriptionLevel_2 = null;
+
 		foreach($arAllItems as $itemID=>$arItem)
 		{
+			if (!is_array($arItem))
+				continue;
+
 			if ($arItem["DEPTH_LEVEL"] == "1")
 			{
 				if ($arItem["IS_PARENT"])
@@ -82,9 +111,9 @@ if(!function_exists("FillAllPicturesAndDescriptions"))
 			elseif($arItem["DEPTH_LEVEL"] == "2")
 			{
 				if (!$arItem["PARAMS"]["picture_src"])
-					$arItem["PARAMS"]["picture_src"] = $pictureLevel_1;
+					$arItem["PARAMS"]["picture_src"] = $pictureLevel_1 ?? null;
 				if (!$arItem["PARAMS"]["description"])
-					$arItem["PARAMS"]["description"] = $descriptionLevel_1;
+					$arItem["PARAMS"]["description"] = $descriptionLevel_1 ?? null;
 				if ($arItem["IS_PARENT"])
 				{
 					$pictureLevel_2 = $arItem["PARAMS"]["picture_src"];
@@ -95,14 +124,16 @@ if(!function_exists("FillAllPicturesAndDescriptions"))
 			elseif($arItem["DEPTH_LEVEL"] == "3")
 			{
 				if (!$arItem["PARAMS"]["picture_src"])
-					$arItem["PARAMS"]["picture_src"] = $pictureLevel_2;
+					$arItem["PARAMS"]["picture_src"] = $pictureLevel_2 ?? null;
 				if (!$arItem["PARAMS"]["description"])
-					$arItem["PARAMS"]["description"] = $descriptionLevel_2;
+					$arItem["PARAMS"]["description"] = $descriptionLevel_2 ?? null;
 				$arAllItems[$itemID] = $arItem;
 			}
 
-			$arImgDesc[$itemID]["PICTURE"] = $arItem["PARAMS"]["picture_src"];
-			$arImgDesc[$itemID]["DESC"] = $arItem["PARAMS"]["description"];
+			if (!isset($arItem["PARAMS"]) || !is_array($arItem["PARAMS"]))
+				$arItem["PARAMS"] = array();
+			$arImgDesc[$itemID]["PICTURE"] = $arItem["PARAMS"]["picture_src"] ?? null;
+			$arImgDesc[$itemID]["DESC"] = $arItem["PARAMS"]["description"] ?? null;
 		}
 	}
 }
@@ -166,6 +197,12 @@ $arAllItems = array();
 $arImgDesc = array();
 foreach($arResult as $key=>$arItem)
 {
+	if (!is_array($arItem))
+		continue;
+
+	if (!isset($arItem["PARAMS"]) || !is_array($arItem["PARAMS"]))
+		$arItem["PARAMS"] = array();
+
 	if($arItem["DEPTH_LEVEL"] > $arParams["MAX_LEVEL"])
 	{
 		unset($arResult[$key]);
