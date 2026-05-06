@@ -1614,6 +1614,10 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 			}
 			$orderBackEnc = rawurlencode($orderReturnPath);
 
+			$request = \Bitrix\Main\Application::getInstance()->getContext()->getRequest();
+			$tidPost = trim((string)$request->getPost('MF_EDOST_TARIF_ID'));
+			$managerDeliveryPost = (trim((string)$request->getPost('MF_EDOST_MANAGER_FALLBACK')) === 'Y' && $tidPost === '');
+
 			$arResult['JS_DATA']['MF_CHECKOUT'] = array_merge(
 				is_array($arResult['JS_DATA']['MF_CHECKOUT'] ?? null) ? $arResult['JS_DATA']['MF_CHECKOUT'] : [],
 				[
@@ -1624,6 +1628,7 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 					'CURRENT_PERSON_TYPE_ID' => $currentPersonTypeId,
 					'LOGIN_HREF' => '/login/?login=yes&backurl=' . $orderBackEnc,
 					'REGISTER_HREF' => '/login/?register=yes&backurl=' . $orderBackEnc,
+					'MANAGER_DELIVERY_POST' => $managerDeliveryPost ? 'Y' : 'N',
 				]
 			);
 
@@ -1635,16 +1640,6 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 			)
 			{
 				mf_checkout_apply_pay_system_filter($arResult['JS_DATA']['PAY_SYSTEM'], $invoiceIds);
-			}
-
-			$defaultEdostOffer = mf_checkout_default_edost_offer($arResult['JS_DATA']);
-			if (
-				is_array($defaultEdostOffer)
-				&& !empty($defaultEdostOffer['id'])
-				&& (!empty($defaultEdostOffer['name']) || !empty($defaultEdostOffer['company']))
-			)
-			{
-				$arResult['JS_DATA']['MF_EDOST_DEFAULT'] = $defaultEdostOffer;
 			}
 		}
 		catch (\Throwable $e)

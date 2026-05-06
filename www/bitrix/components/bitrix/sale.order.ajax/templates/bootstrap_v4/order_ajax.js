@@ -90,7 +90,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.defaultBasketItemLogo = this.templateFolder + "/images/product_logo.png";
 			this.defaultStoreLogo = this.templateFolder + "/images/pickup_logo.png";
 			this.defaultDeliveryLogo = this.templateFolder + "/images/delivery_logo.png";
-			this.defaultPaySystemLogo = this.templateFolder + "/images/pay_system_logo.png";
+			this.defaultPaySystemLogo = this.templateFolder + "/images/pay/generic.svg";
 
 			this.orderBlockNode = BX(parameters.orderBlockId);
 			this.checkoutMetaBlockNode = BX(parameters.checkoutMetaBlockId);
@@ -638,6 +638,57 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				src_2x: item[key + '_SRC_2X'],
 				src_orig: item[key + '_SRC_ORIGINAL']
 			};
+		},
+
+		/**
+		 * Локальные SVG для способов оплаты без загруженного PSA_LOGOTIP / LOGOTIP в БД.
+		 */
+		getPaySystemPlaceholderLogoUrl: function(item)
+		{
+			if (!item)
+				return '';
+
+			var afRaw = String(item.ACTION_FILE || '');
+			var af = afRaw.toLowerCase().replace(/\\/g, '/').split('/').pop().replace(/\.php$/i, '');
+			var code = String(item.CODE || '').toLowerCase();
+			var nm = String(item.NAME || '').toLowerCase();
+			var psa = String(item.PSA_NAME || '').toLowerCase();
+			var hay = af + ' ' + code + ' ' + nm + ' ' + psa;
+			var base = this.templateFolder + '/images/pay/';
+
+			if (hay.indexOf('paykeeper') !== -1 || /mfpaykeeper|mf_paykeeper/.test(hay))
+				return base + 'paykeeper.svg';
+			if (/card2card|mf_card|mfcard|bank.?card|sberbank|tbank|тинькофф/.test(hay))
+				return base + 'card.svg';
+			if (af === 'cash' || /\bналич/.test(nm) || /\bналич/.test(psa))
+				return base + 'cash.svg';
+			if (af === 'bill' || /счет|счёт|invoice|mf_bill|аккредитив/.test(hay))
+				return base + 'invoice.svg';
+			if (/qiwi|webmoney|юmoney|wallet|кошел/.test(hay))
+				return base + 'wallet.svg';
+			if (/yandex|yookassa|robok|robox|alpha|paypal|apple|google|sbp|paymaster|cloudpayments|онлайн|online|link/.test(hay))
+				return base + 'online.svg';
+
+			if (af === 'cash')
+				return base + 'cash.svg';
+			if (af === 'bill')
+				return base + 'invoice.svg';
+
+			return base + 'generic.svg';
+		},
+
+		resolvePaySystemLogo: function(item, key)
+		{
+			key = key || 'PSA_LOGOTIP';
+			var logo = this.getImageSources(item, key);
+			if (logo && (logo.src_1x || logo.src_2x))
+				return logo;
+
+			var url = this.getPaySystemPlaceholderLogoUrl(item);
+			if (!url)
+				return logo || false;
+
+			return {src_1x: url, src_2x: url, src_orig: url};
 		},
 
 		getErrorContainer: function(node)
@@ -1911,7 +1962,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 						try {
 							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
 							{
-								BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+								BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
 							}
 						} catch(e3) {}
 					}, 30);
@@ -1966,7 +2017,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 						try {
 							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
 							{
-								BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+								BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
 							}
 						} catch(e2) {}
 					}, 30);
@@ -2344,7 +2395,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 						try {
 							if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
 							{
-								BX.saleOrderAjax.__mfEdost.onEnterDelivery();
+								BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
 							}
 						} catch(e2) {}
 					}, 30);
@@ -5622,7 +5673,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				title, label, itemNode;
 
 			logoNode = BX.create('DIV', {props: {className: 'bx-soa-pp-company-image'}});
-			logotype = this.getImageSources(item, 'PSA_LOGOTIP');
+			logotype = this.resolvePaySystemLogo(item, 'PSA_LOGOTIP');
 			if (logotype && logotype.src_2x)
 			{
 				logoNode.setAttribute('style',
@@ -5693,7 +5744,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (currentPaySystem)
 			{
 				logoNode = BX.create('DIV', {props: {className: 'bx-soa-pp-company-image'}});
-				logotype = this.getImageSources(currentPaySystem, 'PSA_LOGOTIP');
+				logotype = this.resolvePaySystemLogo(currentPaySystem, 'PSA_LOGOTIP');
 				if (logotype && logotype.src_2x)
 				{
 					logoNode.setAttribute('style',
@@ -5779,7 +5830,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			}
 
 			logoNode = BX.create('DIV', {props: {className: 'bx-soa-pp-company-image'}});
-			logotype = this.getImageSources(paySystem, 'LOGOTIP');
+			logotype = this.resolvePaySystemLogo(paySystem, 'LOGOTIP');
 			if (logotype && logotype.src_2x)
 			{
 				logoNode.setAttribute('style',
@@ -5867,7 +5918,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (this.isSelectedInnerPayment())
 			{
-				logotype = this.getImageSources(this.result.INNER_PAY_SYSTEM, 'LOGOTIP');
+				logotype = this.resolvePaySystemLogo(this.result.INNER_PAY_SYSTEM, 'LOGOTIP');
 				imgSrc = logotype && logotype.src_1x || this.defaultPaySystemLogo;
 
 				addedHtml += '<div class="bx-soa-pp-company-selected">';
@@ -5878,7 +5929,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (selectedPaySystem && selectedPaySystem.NAME)
 			{
-				logotype = this.getImageSources(selectedPaySystem, 'PSA_LOGOTIP');
+				logotype = this.resolvePaySystemLogo(selectedPaySystem, 'PSA_LOGOTIP');
 				imgSrc = logotype && logotype.src_1x || this.defaultPaySystemLogo;
 
 				addedHtml += '<div class="bx-soa-pp-company-selected">';
@@ -6430,24 +6481,27 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			edostPrice = form ? BX.util.trim(String((form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_PRICE"]') || {}).value || '')) : '';
 			displayPriceText = ((selectedDelivery && typeof selectedDelivery.PRICE !== 'undefined') ? (String(selectedDelivery.PRICE) + ' ₽') : '0 ₽');
 
-			if (
-				(edostId === '' || edostName === '')
-				&& this.result
-				&& this.result.MF_EDOST_DEFAULT
-				&& this.result.MF_EDOST_DEFAULT.id
-				&& this.result.MF_EDOST_DEFAULT.name
-			)
-			{
-				edostId = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.id || ''));
-				edostCompany = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.company || ''));
-				edostName = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.name || this.result.MF_EDOST_DEFAULT.company || ''));
-				edostPrice = BX.util.trim(String(this.result.MF_EDOST_DEFAULT.price || ''));
-			}
+			var mfCheckoutEnabled = !!(this.result && this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED);
+			var mfEd = (typeof BX !== 'undefined' && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost) ? BX.saleOrderAjax.__mfEdost : null;
+			var managerFb = !!(mfEd && mfEd._managerDeliveryFallback);
 
 			if (edostId !== '' && edostName !== '')
 			{
 				name = (edostCompany ? (edostCompany + ' — ') : '') + edostName;
 				displayPriceText = edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении';
+			}
+			else if (mfCheckoutEnabled)
+			{
+				if (managerFb)
+				{
+					name = 'Стоимость доставки уточняет менеджер';
+					displayPriceText = '0 ₽';
+				}
+				else
+				{
+					name = 'Способ доставки не выбран';
+					displayPriceText = '—';
+				}
 			}
 
 			if (errorNode && errorNode.innerHTML)

@@ -2845,12 +2845,46 @@ if (!function_exists('mf_on_order_before_saved'))
 					}
 				}
 
+				$managerFb = (trim((string)$req->getPost('MF_EDOST_MANAGER_FALLBACK')) === 'Y');
 				$tid = trim((string)$req->getPost('MF_EDOST_TARIF_ID'));
+				if ($managerFb && $tid === '')
+				{
+					$shipmentCollection = $order->getShipmentCollection();
+					if ($shipmentCollection)
+					{
+						foreach ($shipmentCollection as $shipment)
+						{
+							if (!$shipment || $shipment->isSystem())
+							{
+								continue;
+							}
+							try
+							{
+								$shipment->setField('CUSTOM_PRICE_DELIVERY', 'Y');
+								$shipment->setField('BASE_PRICE_DELIVERY', 0.0);
+								$shipment->setField('PRICE_DELIVERY', 0.0);
+							}
+							catch (\Throwable $eShip)
+							{
+							}
+						}
+					}
+					$comments = (string)$order->getField('COMMENTS');
+					$comments = preg_replace('~\\n?Доставка: стоимость будет рассчитана менеджером[^\\n]*~u', '', $comments);
+					$comments = trim((string)$comments);
+					$comments = trim($comments . "\n" . 'Доставка: стоимость будет рассчитана менеджером (оформление без тарифа eDost, 0 ₽ в заказе).');
+					$order->setField('COMMENTS', $comments);
+				}
+
 				if ($tid !== '')
 				{
 					$company = trim((string)$req->getPost('MF_EDOST_TARIF_COMPANY'));
 					$name = trim((string)$req->getPost('MF_EDOST_TARIF_NAME'));
 					$price = trim((string)$req->getPost('MF_EDOST_TARIF_PRICE'));
+
+					$comments = (string)$order->getField('COMMENTS');
+					$comments = preg_replace('~\\n?Доставка: стоимость будет рассчитана менеджером[^\\n]*~u', '', $comments);
+					$comments = trim((string)$comments);
 
 					$line = 'Доставка (eDost, справочно, не входит в Итого): '
 						. ($company !== '' ? ($company . ' — ') : '')
@@ -2858,8 +2892,6 @@ if (!function_exists('mf_on_order_before_saved'))
 						. ' — ' . ($price !== '' ? ($price . ' ₽') : 'оплата при получении')
 						. ' (tarif_id=' . $tid . ')';
 
-					$comments = (string)$order->getField('COMMENTS');
-					// Replace previous line if it exists (avoid duplicates on multiple saves).
 					$comments = preg_replace('~^Доставка \\(eDost, справочно, не входит в Итого\\):.*$~mu', '', $comments);
 					$comments = trim((string)$comments);
 					$comments = trim($comments . "\n" . $line);

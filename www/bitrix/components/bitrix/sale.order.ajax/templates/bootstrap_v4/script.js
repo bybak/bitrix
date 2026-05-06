@@ -171,6 +171,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			mfEdost.offers = [];
 			mfEdost.selectedId = '';
 			mfEdost.selected = null;
+			mfEdost._managerDeliveryFallback = false;
 			mfEdost.isAuthorized = function(){
 				try {
 					return !!(
@@ -256,6 +257,31 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				return '';
 			};
 
+			// JSON выбора Nominatim (mf_edost_offers.php считает to_city и без Bitrix LOCATION_CODE).
+			mfEdost.peekNominatimJson = function(){
+				try {
+					var form = BX('bx-soa-order-form');
+					var j = form ? form.querySelector('input[name="MF_NOMINATIM_JSON"]') : null;
+					var v = j ? String(j.value || '').trim() : '';
+					if (v !== '')
+						return v;
+					if (ctx.__mfNominatimJsonLast && String(ctx.__mfNominatimJsonLast).trim() !== '')
+						return String(ctx.__mfNominatimJsonLast).trim();
+					if (window.MF_CHECKOUT_GEO && window.MF_CHECKOUT_GEO.nominatimJson)
+						return String(window.MF_CHECKOUT_GEO.nominatimJson).trim();
+				} catch(eNj) {}
+				return '';
+			};
+
+			// Есть ли данные для расчёта eDost помимо кода местоположения Bitrix (см. mf_edost_offers.php).
+			mfEdost.hasDestinationSignal = function(){
+				if (BX.type.isNotEmptyString(String(mfEdost.getEffectiveLocationCode() || '')))
+					return true;
+				if (BX.type.isNotEmptyString(String(mfEdost.getEdostCity() || '')))
+					return true;
+				return BX.type.isNotEmptyString(mfEdost.peekNominatimJson());
+			};
+
 			mfEdost.ensureFields = function(){
 				var form = BX('bx-soa-order-form');
 				if (!form) return;
@@ -276,6 +302,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var pEl = ensureHidden('MF_EDOST_TARIF_PRICE');
 				var jNom = ensureHidden('MF_NOMINATIM_JSON');
 				var cToCity = ensureHidden('MF_EDOST_TO_CITY');
+				ensureHidden('MF_EDOST_MANAGER_FALLBACK');
 				try {
 					if (ctx.__mfNominatimJsonLast && String(jNom.value || '').trim() === '')
 						jNom.value = ctx.__mfNominatimJsonLast;
@@ -290,6 +317,20 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					}
 				} catch(eMf) {}
 
+				try {
+					var mc0 = mfEdost.getMfCheckout();
+					if (mc0 && String(mc0.MANAGER_DELIVERY_POST || '') === 'Y')
+					{
+						var mfbIn = form.querySelector('input[name="MF_EDOST_MANAGER_FALLBACK"]');
+						if (mfbIn)
+							mfbIn.value = 'Y';
+						var idChk0 = form.querySelector('input[name="MF_EDOST_TARIF_ID"]');
+						var idVal0 = idChk0 ? String(idChk0.value || '').trim() : '';
+						if (!BX.type.isNotEmptyString(idVal0))
+							mfEdost._managerDeliveryFallback = true;
+					}
+				} catch(eMpost) {}
+
 				// Restore selection after Bitrix re-renders the form.
 				try {
 					if (mfEdost.selectedId && (!idEl.value || String(idEl.value) === ''))
@@ -298,14 +339,6 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						cEl.value = mfEdost.selected && mfEdost.selected.company ? String(mfEdost.selected.company) : '';
 						nEl.value = mfEdost.selected && mfEdost.selected.name ? String(mfEdost.selected.name) : '';
 						pEl.value = mfEdost.selected && typeof mfEdost.selected.price !== 'undefined' ? String(mfEdost.selected.price) : '';
-					}
-					else if (!idEl.value && window.BX && BX.Sale && BX.Sale.OrderAjaxComponent && BX.Sale.OrderAjaxComponent.result && BX.Sale.OrderAjaxComponent.result.MF_EDOST_DEFAULT)
-					{
-						var d = BX.Sale.OrderAjaxComponent.result.MF_EDOST_DEFAULT;
-						idEl.value = String(d.id || '');
-						cEl.value = String(d.company || '');
-						nEl.value = String(d.name || d.company || '');
-						pEl.value = String(d.price || '');
 					}
 				} catch(e) {}
 
@@ -418,12 +451,15 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 				var hasTariff = idEl && BX.type.isNotEmptyString(idEl.value);
 				var eff = mfEdost.getEffectiveLocationCode();
-				var hasLoc = BX.type.isNotEmptyString(String(eff || ''));
+				var hasLoc = BX.type.isNotEmptyString(String(eff || ''))
+					|| BX.type.isNotEmptyString(String(mfEdost.getEdostCity() || ''))
+					|| BX.type.isNotEmptyString(mfEdost.peekNominatimJson());
 
 				var nextBtn = del.querySelector('.bx-soa-more-btn button.pull-right.btn.btn-primary, .bx-soa-more-btn button.btn.btn-primary');
+				var canProceedDelivery = hasLoc && (hasTariff || mfEdost._managerDeliveryFallback);
 				if (nextBtn)
 				{
-					if (!hasLoc || !hasTariff)
+					if (!canProceedDelivery)
 					{
 						nextBtn.setAttribute('disabled', 'disabled');
 						BX.addClass(nextBtn, 'disabled');
@@ -444,6 +480,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						warn.className = 'alert alert-warning';
 						warn.textContent = 'Выберите местоположение, чтобы увидеть варианты доставки.';
 					}
+					else if (!hasTariff && mfEdost._managerDeliveryFallback)
+					{
+						warn.style.display = '';
+						warn.className = 'alert alert-info';
+						warn.textContent = 'По выбранному адресу нет готовых тарифов доставки. Можно продолжить: в заказе доставка указана как 0 ₽, итоговую стоимость рассчитает менеджер.';
+					}
 					else if (!hasTariff)
 					{
 						warn.style.display = '';
@@ -461,6 +503,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			};
 
 			mfEdost.setSelected = function(offer){
+				try {
+					if (offer && offer.id)
+						mfEdost.clearManagerDeliveryFallback();
+				} catch(eClr) {}
 				mfEdost.selected = offer || null;
 				var form = BX('bx-soa-order-form');
 				if (!form) return;
@@ -482,7 +528,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				{
 					if (idEl.value)
 					{
-						sel.textContent = 'Выбрано: ' + (cEl.value ? (cEl.value + ' — ') : '') + nEl.value + ' — ' + (pEl.value !== '' ? (pEl.value + ' ₽') : 'оплата при получении');
+						sel.textContent = 'Выбрано: ' + (cEl.value ? (cEl.value + ' — ') : '') + nEl.value + ' — ' + (pEl.value !== '' ? (pEl.value + ' ₽') : 'оплата доставки при получении');
 					}
 					else
 					{
@@ -498,6 +544,30 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				try { mfEdost.applyDeliverySummary(); } catch(e) {}
 				try { mfEdost.applyTotalDeliveryLine(); } catch(e2) {}
 				try { mfEdost.deferApplyDeliverySummary(); } catch(eDeferred) {}
+			};
+
+			mfEdost.clearManagerDeliveryFallback = function(){
+				mfEdost._managerDeliveryFallback = false;
+				try {
+					var form = BX('bx-soa-order-form');
+					var m = form ? form.querySelector('input[name="MF_EDOST_MANAGER_FALLBACK"]') : null;
+					if (m)
+						m.value = '';
+				} catch(eM) {}
+			};
+
+			mfEdost.applyManagerDeliveryFallback = function(){
+				try {
+					mfEdost._managerDeliveryFallback = true;
+					mfEdost.ensureFields();
+					var form = BX('bx-soa-order-form');
+					var m = form ? form.querySelector('input[name="MF_EDOST_MANAGER_FALLBACK"]') : null;
+					if (m)
+						m.value = 'Y';
+					mfEdost.clearSelection();
+				} catch(eA) {}
+				try { mfEdost.updateGate(mfEdost.getEffectiveLocationCode()); } catch(eG) {}
+				try { mfEdost.applyTotalDeliveryLine(); } catch(eT) {}
 			};
 
 			mfEdost.clearSelection = function(){
@@ -578,8 +648,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var tid = tidEl ? String(tidEl.value || '') : '';
 					var price = priceEl ? String(priceEl.value || '') : '';
 
-					var text = 'Не выбрано';
-					if (tid)
+					var text = '—';
+					if (mfEdost._managerDeliveryFallback)
+					{
+						text = '0 ₽ (уточняется менеджером)';
+					}
+					else if (tid)
 					{
 						text = price !== '' ? (price + ' ₽') : 'При получении';
 					}
@@ -679,7 +753,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var fetchOpts = force ? { allowInactive: true } : {};
 					// Re-render cached offers for current location (fetchOffers already does a cheap re-render
 					// when key matches and offers are cached).
-					if (BX.type.isNotEmptyString(loc))
+					if (BX.type.isNotEmptyString(loc) || mfEdost.hasDestinationSignal())
 					{
 						mfEdost.fetchOffers(loc, zipDigits, fetchOpts);
 					}
@@ -793,7 +867,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 						// If location is not chosen yet, don't show "no delivery options" message.
 						// The warning above ("Выберите местоположение...") is enough.
-						if (!BX.type.isNotEmptyString(String(locEmpty || '')))
+						if (!mfEdost.hasDestinationSignal())
 						{
 							return;
 						}
@@ -872,10 +946,15 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				locationCode = String(locationCode || '');
 				zipDigits = String(zipDigits || '');
 				var edostCity = mfEdost.getEdostCity();
-				if (!BX || !BX.ajax || !BX.type || !BX.type.isNotEmptyString(locationCode))
+				var nomJsonPeek = mfEdost.peekNominatimJson();
+				if (!BX || !BX.ajax || !BX.type)
+					return;
+				// Сервер mf_edost_offers.php принимает только mf_edost_to_city / mf_nominatim_json без location_code;
+				// ранний return по пустому locationCode блокировал расчёт после выбора адреса без FALLBACK в Bitrix.
+				if (!BX.type.isNotEmptyString(locationCode) && !BX.type.isNotEmptyString(edostCity) && !BX.type.isNotEmptyString(nomJsonPeek))
 					return;
 
-				var key = locationCode + '|' + zipDigits + '|' + edostCity;
+				var key = (locationCode || '__geo__') + '|' + zipDigits + '|' + edostCity;
 				// If form was re-rendered, we may need to re-render offers even without refetch.
 				if (!mfEdost._inFlight && mfEdost._lastKey === key && mfEdost.offers && mfEdost.offers.length)
 				{
@@ -899,6 +978,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				// New destination: require user to re-select eDost tariff.
 				if (mfEdost._lastKey !== '' && mfEdost._lastKey !== key)
 				{
+					try { mfEdost.clearManagerDeliveryFallback(); } catch(eK) {}
 					mfEdost.clearSelection();
 				}
 
@@ -931,6 +1011,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						mfEdost._inFlight = false;
 						if (resp && resp.ok && resp.offers && resp.offers.length)
 						{
+							try { mfEdost.clearManagerDeliveryFallback(); } catch(eM0) {}
 							mfEdost.offers = resp.offers;
 							mfEdost.ensureFields();
 							mfEdost.renderOffers(resp.offers);
@@ -951,6 +1032,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							mfEdost.ensureFields();
 							try {
 								var warn = BX('bx-soa-delivery') ? BX('bx-soa-delivery').querySelector('#mf-edost-warning') : null;
+								if (resp && resp.ok && (!resp.offers || !resp.offers.length))
+								{
+									try { mfEdost.applyManagerDeliveryFallback(); } catch(eMf) {}
+								}
+								else
+								{
+									try { mfEdost.clearManagerDeliveryFallback(); } catch(eM1) {}
+								}
 								if (warn && resp && !resp.ok)
 								{
 									warn.style.display = '';
@@ -960,12 +1049,6 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 										detail += ' ' + String(resp.message);
 									warn.textContent = 'Не удалось получить тарифы eDost: ' + detail + '. Обновите страницу или проверьте адрес.';
 								}
-								else if (warn && resp && resp.ok && (!resp.offers || !resp.offers.length))
-								{
-									warn.style.display = '';
-									warn.className = 'alert alert-warning';
-									warn.textContent = 'eDost не вернул тарифов для «' + String(resp.to_city || '') + '». Проверьте логин/пароль eDost, ограничения по направлению или вес товаров в корзине.';
-								}
 							} catch(eWn) {}
 							mfEdost.renderOffers([]);
 							mfEdost.hideBitrixDeliveryCards();
@@ -974,6 +1057,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					onfailure: function(){
 						mfEdost._inFlight = false;
 						mfEdost.offers = [];
+						try { mfEdost.clearManagerDeliveryFallback(); } catch(eF) {}
 						mfEdost.ensureFields();
 						mfEdost.renderOffers([]);
 						mfEdost.hideBitrixDeliveryCards();
@@ -1529,9 +1613,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 										} catch(eG) {}
 										if (!BX.type.isNotEmptyString(locForFetch) && BX.type.isNotEmptyString(fb))
 											locForFetch = fb;
-										if (BX.type.isNotEmptyString(locForFetch))
+										if (BX.type.isNotEmptyString(locForFetch) || mfEdost.hasDestinationSignal())
 										{
-											// Пока открыт не шаг «Доставка», иначе fetchOffers сразу выходил и тарифы не запрашивались.
 											mfEdost.fetchOffers(locForFetch, zipDigits, {allowInactive: true});
 										}
 										try {
@@ -1876,21 +1959,40 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 			// Pull offers on each refresh using current LOCATION/ZIP values.
 			var locInit = mfEdost.getEffectiveLocationCode();
-			// For authorized users, prefill eDost tariff in background even if Delivery is collapsed.
-			if (mfEdost.isDeliveryActive && (mfEdost.isDeliveryActive() || mfEdost.isAuthorized()))
+			var zipInit = '';
+			try {
+				if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getInputByCode === 'function')
+				{
+					var zInp0 = ctx.__mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+					if (zInp0 && zInp0 !== false)
+						zipInit = String(zInp0.value || '').replace(/\D+/g, '');
+				}
+			} catch(eZip0) {}
+			// У гостя до открытия шага «Доставка» раньше не вызывался fetchOffers (allowInactive только у авторизованных),
+			// поэтому после выбора адреса («Адрес доставки» / Nominatim) тарифы eDost не подгружались.
+			if (BX.type.isNotEmptyString(String(locInit || '')))
 			{
-				mfEdost.fetchOffers(locInit, '', {allowInactive: mfEdost.isAuthorized()});
+				mfEdost.fetchOffers(locInit, zipInit, {allowInactive: true});
 			}
-			if (!BX.type.isNotEmptyString(String(locInit || '')))
+			else if (mfEdost.hasDestinationSignal())
 			{
+				mfEdost.fetchOffers(locInit, zipInit, {allowInactive: true});
+			}
+			else if (mfEdost.isDeliveryActive && (mfEdost.isDeliveryActive() || mfEdost.isAuthorized()))
+			{
+				mfEdost.fetchOffers(locInit, zipInit, {allowInactive: mfEdost.isAuthorized()});
+			}
+			if (!mfEdost.hasDestinationSignal())
+			{
+				try { mfEdost.clearManagerDeliveryFallback(); } catch(eMf0) {}
 				mfEdost.clearSelection();
 			}
 			mfEdost.updateGate(locInit);
 			mfEdost.applyDeliverySummary();
 			mfEdost.applyTotalDeliveryLine();
 			try { mfEdost.installSummaryObserver(); } catch(eObserver) {}
-			// If Delivery step is currently open, ensure offers are shown and selection is restored.
-			try { mfEdost.onEnterDelivery(); } catch(e) {}
+			// force: иначе при гонке с bx-selected onEnterDelivery может выйти до ensureFields/fetch.
+			try { mfEdost.onEnterDelivery(true); } catch(e) {}
 		} catch(e) {}
 
 		//set location initialized flag and refresh region & property actual content
