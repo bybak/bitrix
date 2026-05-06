@@ -69,7 +69,7 @@ services:
     restart: unless-stopped
     environment:
       TZ: Europe/Moscow
-      MYSQL_ROOT_PASSWORD: levampass
+      MYSQL_ROOT_PASSWORD: motorforceXgpyopxj1$
       MYSQL_DATABASE: bitrix_motor_force
       MYSQL_CHARACTER_SET_SERVER: utf8mb4
       MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
@@ -78,7 +78,7 @@ services:
       - ./mysql/my.cnf:/etc/mysql/conf.d/bitrix.cnf:ro
     command: --default-authentication-plugin=mysql_native_password --sql_mode="NO_ENGINE_SUBSTITUTION"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-plevampass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pmotorforceXgpyopxj1$"]
       interval: 5s
       timeout: 3s
       retries: 30

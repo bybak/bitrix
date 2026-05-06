@@ -41,7 +41,7 @@ return array (
         'host' => 'mysql:3306',
         'database' => 'bitrix_motor_force',
         'login' => 'root',
-        'password' => 'levampass',
+        'password' => 'motorforceXgpyopxj1$',
         'options' => 2.0,
         'initCommand' => 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci',
         'className' => '\\Bitrix\\Main\\DB\\MysqliConnection',
