@@ -1399,8 +1399,9 @@ if (!function_exists('mf_ep_product_weight_grams_cluster'))
 if (!function_exists('mf_store_delivery_spb_ui'))
 {
 	/**
-	 * Индикатор «доставка до склада СПб» для строки склада: внешний склад + UF «учитывать вес», иначе по правилам витрины.
-	 * Если задан $productId: на внешнем складе при весе товара 0 — всегда «не ок» (крестик), независимо от настроек UF склада.
+	 * Индикатор «доставка до склада СПб» для строки склада.
+	 * Красный (не ок) только если: внешний склад, на складе включён учёт веса (UF), и у товара вес 0 / не задан.
+	 * Во всех остальных случаях — зелёный (включая внешний склад без учёта веса или без productId).
 	 *
 	 * @return array{ok:bool,title:string}
 	 */
@@ -1409,7 +1410,6 @@ if (!function_exists('mf_store_delivery_spb_ui'))
 		$storeId = (int)$storeId;
 		$productId = (int)$productId;
 		$titleOk = 'Доставка до склада СПб включена';
-		$titleBad = 'Доставка до склада СПб не включена';
 		$titleNoWeight = 'Вес товара не задан (0 г) — доставка до СПб с внешнего склада недоступна';
 		if ($storeId <= 0)
 		{
@@ -1417,7 +1417,18 @@ if (!function_exists('mf_store_delivery_spb_ui'))
 		}
 
 		$external = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId);
-		if ($external && $productId > 0)
+		if (!$external)
+		{
+			return ['ok' => true, 'title' => $titleOk];
+		}
+
+		$raw = function_exists('mf_ep_store_weight_uf_raw') ? mf_ep_store_weight_uf_raw($storeId) : ['use' => false];
+		if (empty($raw['use']))
+		{
+			return ['ok' => true, 'title' => $titleOk];
+		}
+
+		if ($productId > 0)
 		{
 			$w = function_exists('mf_ep_product_weight_grams_cluster')
 				? mf_ep_product_weight_grams_cluster($productId)
@@ -1428,26 +1439,15 @@ if (!function_exists('mf_store_delivery_spb_ui'))
 			}
 		}
 
-		if (!$external)
-		{
-			return ['ok' => true, 'title' => $titleOk];
-		}
-
-		$raw = function_exists('mf_ep_store_weight_uf_raw') ? mf_ep_store_weight_uf_raw($storeId) : ['use' => false];
-		if (!empty($raw['use']))
-		{
-			return ['ok' => true, 'title' => $titleOk];
-		}
-
-		return ['ok' => false, 'title' => $titleBad];
+		return ['ok' => true, 'title' => $titleOk];
 	}
 }
 
 if (!function_exists('mf_store_delivery_spb_icon_html'))
 {
 	/**
-	 * Колонка «Доставка»: зелёная галочка или красный крестик в кружке + title для подсказки.
-	 * $productId: для внешнего склада и веса 0 — крестик (см. mf_store_delivery_spb_ui).
+	 * Колонка «Доставка»: зелёный или оранжевый круг (без символов внутри) + title для подсказки.
+	 * Оранжевый при внешнем складе с учётом веса и нулевом/не заданном весе товара ($productId).
 	 */
 	function mf_store_delivery_spb_icon_html(int $storeId, int $productId = 0): string
 	{
@@ -1456,9 +1456,8 @@ if (!function_exists('mf_store_delivery_spb_icon_html'))
 		$title = (string)($ui['title'] ?? '');
 		$mod = $ok ? 'ok' : 'bad';
 		$t = htmlspecialcharsbx($title);
-		$glyph = $ok ? '✓' : '×';
 
-		return '<span class="mf-store-delivery-spb mf-store-delivery-spb--'.$mod.'" title="'.$t.'" aria-label="'.$t.'"><span class="mf-store-delivery-spb__glyph" aria-hidden="true">'.$glyph.'</span></span>';
+		return '<span class="mf-store-delivery-spb mf-store-delivery-spb--'.$mod.'" title="'.$t.'" aria-label="'.$t.'"></span>';
 	}
 }
 

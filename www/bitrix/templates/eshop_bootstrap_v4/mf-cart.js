@@ -124,7 +124,6 @@
   function mfDeliverySpbIconHtml(ok, title) {
     var mod = ok ? 'ok' : 'bad';
     var t = title || '';
-    var glyph = ok ? '\u2713' : '\u00D7';
     return (
       '<span class="mf-store-delivery-spb mf-store-delivery-spb--' +
       mod +
@@ -132,9 +131,7 @@
       BX.util.htmlspecialchars(t) +
       '" aria-label="' +
       BX.util.htmlspecialchars(t) +
-      '"><span class="mf-store-delivery-spb__glyph" aria-hidden="true">' +
-      glyph +
-      '</span></span>'
+      '"></span>'
     );
   }
 
