@@ -160,6 +160,105 @@ function mf_bm_get_alias_exact(string $alias): string
 	}
 }
 
+/**
+ * UF_ALIAS_NORM → true для записей «не импортировать» (без N+1 на каждый бренд).
+ *
+ * @param list<string> $norms
+ * @return array<string, true>
+ */
+function mf_bm_batch_import_skip_by_norm(array $norms): array
+{
+	$norms = array_values(array_unique(array_filter(array_map('trim', $norms), static fn($s) => $s !== '')));
+	if ($norms === [] || !function_exists('mf_brand_import_skip_ensure_table') || !mf_brand_import_skip_ensure_table())
+	{
+		return [];
+	}
+	$out = [];
+	$conn = Application::getConnection();
+	$h = $conn->getSqlHelper();
+	$chunk = 400;
+	for ($i = 0; $i < count($norms); $i += $chunk)
+	{
+		$part = array_slice($norms, $i, $chunk);
+		$in = implode(',', array_map(static fn($n) => "'" . $h->forSql($n) . "'", $part));
+		if ($in === '')
+		{
+			continue;
+		}
+		try
+		{
+			$rs = $conn->query("SELECT UF_ALIAS_NORM FROM mf_brand_import_skip WHERE UF_ACTIVE='Y' AND UF_ALIAS_NORM IN ({$in})");
+			while ($r = $rs->fetch())
+			{
+				$k = trim((string)($r['UF_ALIAS_NORM'] ?? ''));
+				if ($k !== '')
+				{
+					$out[$k] = true;
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			continue;
+		}
+	}
+
+	return $out;
+}
+
+/**
+ * Канон по нормализованному алиасу (как mf_bm_get_alias_exact, но пакетом).
+ * Порядок выборки: UF_SORT DESC, ID DESC — берём первую строку на каждый норм.
+ *
+ * @param list<string> $norms
+ * @return array<string, string>
+ */
+function mf_bm_batch_alias_canonical_by_norm(array $norms, ?array $hl): array
+{
+	$norms = array_values(array_unique(array_filter(array_map('trim', $norms), static fn($s) => $s !== '')));
+	if ($norms === [] || !$hl || empty($hl['DATA_CLASS']))
+	{
+		return [];
+	}
+	$dc = $hl['DATA_CLASS'];
+	$out = [];
+	$chunk = 400;
+	for ($i = 0; $i < count($norms); $i += $chunk)
+	{
+		$part = array_slice($norms, $i, $chunk);
+		if ($part === [])
+		{
+			continue;
+		}
+		try
+		{
+			$rs = $dc::getList([
+				'filter' => [
+					'@UF_ALIAS_NORM' => $part,
+					'=UF_ACTIVE' => 1,
+				],
+				'select' => ['UF_ALIAS_NORM', 'UF_CANONICAL', 'UF_SORT', 'ID'],
+				'order' => ['UF_SORT' => 'DESC', 'ID' => 'DESC'],
+			]);
+			while ($r = $rs->fetch())
+			{
+				$n = trim((string)($r['UF_ALIAS_NORM'] ?? ''));
+				if ($n === '' || array_key_exists($n, $out))
+				{
+					continue;
+				}
+				$out[$n] = trim((string)($r['UF_CANONICAL'] ?? ''));
+			}
+		}
+		catch (\Throwable $e)
+		{
+			continue;
+		}
+	}
+
+	return $out;
+}
+
 $conn = Application::getConnection();
 if (!mf_bm_table_exists($conn, 'mf_stock_import_missing'))
 {
@@ -390,6 +489,7 @@ if ($find_warehouse !== '')
 }
 
 $missing = [];
+$missingRaw = [];
 try
 {
 	$rs = $conn->query("
@@ -402,20 +502,66 @@ try
 	while ($r = $rs->fetch())
 	{
 		$b = trim((string)($r['BRAND'] ?? ''));
-		if ($b === '') continue;
-		$isSkip = function_exists('mf_brand_import_is_skipped') && mf_brand_import_is_skipped($b);
-		$missing[] = [
+		if ($b === '')
+		{
+			continue;
+		}
+		$missingRaw[] = [
 			'BRAND' => $b,
 			'CNT' => (int)($r['CNT'] ?? 0),
 			'LAST_SEEN' => (string)($r['LAST_SEEN'] ?? ''),
-			'CANON' => $isSkip ? '' : mf_bm_get_alias_exact($b),
-			'IS_SKIP' => $isSkip,
 		];
 	}
 }
 catch (\Throwable $e)
 {
-	$missing = [];
+	$missingRaw = [];
+}
+
+$normsForBatch = [];
+foreach ($missingRaw as $row)
+{
+	$b = (string)$row['BRAND'];
+	if (!function_exists('mf_brand_norm'))
+	{
+		continue;
+	}
+	$n = mf_brand_norm($b);
+	if ($n !== '')
+	{
+		$normsForBatch[$n] = true;
+	}
+}
+$normList = array_keys($normsForBatch);
+$skipSet = function_exists('mf_bm_batch_import_skip_by_norm') ? mf_bm_batch_import_skip_by_norm($normList) : [];
+$hlForBatch = null;
+try
+{
+	$hlForBatch = mf_brand_hl_ensure(false);
+}
+catch (\Throwable $e)
+{
+	$hlForBatch = null;
+}
+$canonByNorm = mf_bm_batch_alias_canonical_by_norm($normList, $hlForBatch);
+
+foreach ($missingRaw as $row)
+{
+	$b = (string)$row['BRAND'];
+	$n = function_exists('mf_brand_norm') ? mf_brand_norm($b) : '';
+	$isSkip = ($n !== '' && isset($skipSet[$n]));
+	$canon = '';
+	if (!$isSkip && $n !== '')
+	{
+		$canon = (string)($canonByNorm[$n] ?? '');
+	}
+	$missing[] = [
+		'BRAND' => $b,
+		'CNT' => (int)$row['CNT'],
+		'LAST_SEEN' => (string)$row['LAST_SEEN'],
+		'CANON' => $canon,
+		'IS_SKIP' => $isSkip,
+	];
 }
 
 /**
@@ -451,6 +597,12 @@ if ($bm_sort_canon !== '' && $missing !== [])
 }
 
 $catalogBrands = mf_bm_select_brand_choices($conn, 4);
+$catalogBrandsJson = json_encode(
+	$catalogBrands,
+	JSON_UNESCAPED_UNICODE
+	| (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0)
+);
+$catalogBrandsLookup = array_fill_keys($catalogBrands, true);
 
 /** Записи HL, созданные блоком «Ручное сопоставление» (UF_SORT >= MF_BM_MANUAL_ALIAS_SORT). */
 $manualAliasRows = [];
@@ -651,6 +803,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 				(по <?= (int)$bmPerPage ?> на странице<span class="js-bm-pagenum-wrap"<?= $bmTotalPages < 2 ? ' style="display:none;"' : '' ?>>, стр. <span class="js-bm-curpage"><?= (int)$bmClientPage ?></span> из <span class="js-bm-ntp"><?= (int)$bmTotalPages ?></span></span>).
 				Перелистывание без запроса к серверу.
 				Сортировка по колонке «Сейчас сопоставлен» — ссылки <b>↑</b> <b>↓</b> в заголовке таблицы (по тексту как на экране; «сброс» — снова порядок по имени бренда из базы).
+				<br/><span style="color:#555;">Список брендов каталога в выпадашках строк подгружается в браузере при открытии страницы пачки (меньше HTML и быстрее отклик).</span>
 			</div>
 			<div class="js-bm-nav bm-pager-ui" style="margin:0 0 12px 0;contain:layout;isolation:isolate;transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden;user-select:none;touch-action:manipulation;"></div>
 		<?php endif; ?>
@@ -712,17 +865,19 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 						<td class="adm-list-table-cell"><?= mf_bm_escape((string)$m['LAST_SEEN']) ?></td>
 						<td class="adm-list-table-cell"><?= $isSkip ? '— не импортировать —' : ($canon !== '' ? mf_bm_escape($canon) : '—') ?></td>
 						<td class="adm-list-table-cell">
-							<select name="map[<?= mf_bm_escape($alias) ?>]" style="min-width:420px;">
+							<?php
+							$bmPrefCatalog = '';
+							if (!$isSkip && $canon !== '' && isset($catalogBrandsLookup[$canon]))
+							{
+								$bmPrefCatalog = $canon;
+							}
+							?>
+							<select name="map[<?= mf_bm_escape($alias) ?>]" class="js-bm-catalog-select" style="min-width:420px;" data-bm-pref="<?= htmlspecialcharsbx($bmPrefCatalog) ?>">
 								<option value="">— не менять —</option>
 								<option value="<?= mf_bm_escape(MF_BM_MAP_SKIP) ?>" <?= ($isSkip ? 'selected' : '') ?>>— Не сопоставлять (пропуск при импорте) —</option>
-								<?php if ($canon !== '' && !in_array($canon, $catalogBrands, true)): ?>
-									<option value="<?= mf_bm_escape($canon) ?>"><?= mf_bm_escape($canon) ?> (текущий)</option>
+								<?php if ($canon !== '' && !isset($catalogBrandsLookup[$canon])): ?>
+									<option value="<?= mf_bm_escape($canon) ?>" <?= (!$isSkip ? 'selected' : '') ?>><?= mf_bm_escape($canon) ?> (текущий)</option>
 								<?php endif; ?>
-								<?php foreach ($catalogBrands as $b): ?>
-									<option value="<?= mf_bm_escape((string)$b) ?>" <?= (!$isSkip && $canon !== '' && $canon === (string)$b ? 'selected' : '') ?>>
-										<?= mf_bm_escape((string)$b) ?>
-									</option>
-								<?php endforeach; ?>
 							</select>
 							<div style="margin-top:6px;">
 								<label style="font-size:12px;color:#555;display:block;margin-bottom:2px;">Свой канон (необязательно; если заполнено — сохранится вместо выбора выше)</label>
@@ -745,6 +900,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	</form>
 	</div>
 
+<script>window.MF_BM_CATALOG_BRANDS=<?= is_string($catalogBrandsJson) ? $catalogBrandsJson : '[]' ?>;</script>
 <script>
 (function () {
 	var root = document.getElementById("bm-client-pager");
@@ -766,6 +922,39 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	if (rows.length !== n) { return; }
 
 	var navPrevS = (cur - 1) * per, navPrevE = cur * per;
+
+	var brands = Array.isArray(window.MF_BM_CATALOG_BRANDS) ? window.MF_BM_CATALOG_BRANDS : [];
+
+	function mfBmFillOneCatalogSelect(sel) {
+		if (!sel || sel.getAttribute("data-bm-filled") === "1") {
+			return;
+		}
+		sel.setAttribute("data-bm-filled", "1");
+		var pref = sel.getAttribute("data-bm-pref") || "";
+		for (var i = 0; i < brands.length; i++) {
+			var b = brands[i];
+			var o = document.createElement("option");
+			o.value = b;
+			o.textContent = b;
+			if (pref !== "" && b === pref) {
+				o.selected = true;
+			}
+			sel.appendChild(o);
+		}
+	}
+
+	function mfBmFillCatalogSelectsInRange(start, end) {
+		for (var i = start; i < end; i++) {
+			var row = rows[i];
+			if (!row) {
+				continue;
+			}
+			var sel = row.querySelector("select.js-bm-catalog-select");
+			if (sel) {
+				mfBmFillOneCatalogSelect(sel);
+			}
+		}
+	}
 
 	function setUrlPage(p) {
 		var q = { lang: lang, find_warehouse: wh };
@@ -831,6 +1020,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	var lastNavBuildForCur = -1;
 	function paint() {
 		showRows();
+		mfBmFillCatalogSelectsInRange((cur - 1) * per, Math.min(cur * per, n));
 		updateRange();
 		if (cur === lastNavBuildForCur) { return; }
 		lastNavBuildForCur = cur;
