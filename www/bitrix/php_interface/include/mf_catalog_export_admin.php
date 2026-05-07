@@ -590,8 +590,8 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 			$props['MF_EXT_IMAGES'] = array_values($photoUrls);
 		}
 	}
-	$fields['PROPERTY_VALUES'] = $props;
-
+	// Не передаём PROPERTY_VALUES в Update: иначе ядро проходит по всем свойствам инфоблока и обнуляет
+	// не указанные в массиве (в т.ч. MF_UNIQ_KEY). SetPropertyValuesEx меняет только ключи из $props.
 	$ibEl = new \CIBlockElement();
 	if (!$ibEl->Update($id, $fields, false, false))
 	{
@@ -599,6 +599,8 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 
 		return;
 	}
+
+	\CIBlockElement::SetPropertyValuesEx($id, $iblockId, $props);
 
 	$stats['updated']++;
 }
