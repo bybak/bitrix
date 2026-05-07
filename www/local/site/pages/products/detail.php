@@ -471,7 +471,11 @@ if ($elementId > 0)
 								}
 								?>
 								<?php if ($mfIsExtRow): ?>
-									Под заказ
+									<?php if ($amt > 1e-9): ?>
+										<?=htmlspecialcharsbx((string)round($amt, 3))?>
+									<?php else: ?>
+										Под заказ
+									<?php endif; ?>
 								<?php elseif ($mfPendingTxt !== ''): ?>
 									<?=htmlspecialcharsbx($mfPendingTxt)?>
 								<?php else: ?>
@@ -487,7 +491,7 @@ if ($elementId > 0)
 								$mfMaxQtyDetail = 0.0;
 								if ($mfRowExternal)
 								{
-									$mfMaxQtyDetail = 0.0;
+									$mfMaxQtyDetail = ($amt > 1e-9) ? round($amt, 3) : 0.0;
 								}
 								elseif ($mfPendingTxt !== '' && $mfPendingQty > 1e-9)
 								{
