@@ -76,6 +76,38 @@ function mf_ce_col_letter(int $n): string
 	return $s;
 }
 
+/** Как normalizeArticle в mf_update_supplier_stock.php — для MF_ARTICLE_NORM и MF_UNIQ_KEY. */
+function mf_ce_normalize_article(string $s): string
+{
+	$s = mb_strtoupper(trim($s));
+	$s = preg_replace('~[^A-Z0-9]+~', '', $s) ?? '';
+
+	return $s;
+}
+
+/** Как normalizeBrand в mf_update_supplier_stock.php. */
+function mf_ce_normalize_brand(string $s): string
+{
+	$s = mb_strtoupper(trim($s));
+	$s = str_replace('Ё', 'Е', $s);
+	$s = preg_replace('~[^A-ZА-Я0-9]+~u', '', $s) ?? '';
+
+	return $s;
+}
+
+/** Как makeUniqKey в mf_update_supplier_stock.php. */
+function mf_ce_make_uniq_key(string $articleNorm, string $brandNorm): string
+{
+	$articleNorm = trim($articleNorm);
+	$brandNorm = trim($brandNorm);
+	if ($brandNorm === '')
+	{
+		$brandNorm = 'UNKNOWNBRAND';
+	}
+
+	return $articleNorm . '_' . $brandNorm;
+}
+
 /**
  * @param array<string, mixed> $el fetch из CIBlockElement::GetList(GetNext)
  * @return list<string> непустые URL из свойства MF_EXT_IMAGES
@@ -487,7 +519,7 @@ function mf_ce_section_id_by_chain_path(int $iblockId, string $path): ?int
 
 /**
  * @param array<string, string> $row колонки по заголовкам выгрузки
- * @param array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, errors:list<string>} $stats
+ * @param array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, skipped_brand:int, errors:list<string>} $stats
  */
 function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &$stats): void
 {
@@ -519,6 +551,14 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 	if (is_array($red) && (string)($red['VALUE'] ?? '') === 'Y')
 	{
 		$stats['skipped_redirect']++;
+
+		return;
+	}
+
+	$brandFromCsv = trim((string)($row['Бренд'] ?? ''));
+	if ($brandFromCsv !== '' && function_exists('mf_brand_import_is_skipped') && mf_brand_import_is_skipped($brandFromCsv))
+	{
+		$stats['skipped_brand']++;
 
 		return;
 	}
@@ -565,12 +605,28 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 		}
 	}
 
+	// Как mf_update_supplier_stock с --brand-dict=Y: канон из mf_brand_dict.php для MF_BRAND* и MF_UNIQ_KEY.
+	$brandRaw = $brandFromCsv;
+	if ($brandRaw !== '' && function_exists('mf_brand_find'))
+	{
+		$canon = (string)mf_brand_find($brandRaw, true);
+		if ($canon !== '')
+		{
+			$brandRaw = $canon;
+		}
+	}
+	$artRaw = trim((string)($row['Артикул'] ?? ''));
+	$articleNorm = mf_ce_normalize_article($artRaw);
+	$brandNorm = $brandRaw !== '' ? mf_ce_normalize_brand($brandRaw) : '';
+	$uniqKey = mf_ce_make_uniq_key($articleNorm, $brandNorm);
+
 	$props = [
-		'MF_BRAND' => trim((string)($row['Бренд'] ?? '')),
-		'MF_BRAND_NORM' => trim((string)($row['Бренд'] ?? '')),
-		'CML2_ARTICLE' => trim((string)($row['Артикул'] ?? '')),
-		'MF_ARTICLE_NORM' => trim((string)($row['Артикул'] ?? '')),
+		'MF_BRAND' => $brandRaw,
+		'MF_BRAND_NORM' => $brandRaw,
+		'CML2_ARTICLE' => $artRaw,
+		'MF_ARTICLE_NORM' => $articleNorm,
 		'OEM' => trim((string)($row['OEM'] ?? '')),
+		'MF_UNIQ_KEY' => $uniqKey,
 	];
 	$photo = trim((string)($row['Фото'] ?? ''));
 	if ($photo !== '')
@@ -591,7 +647,7 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 		}
 	}
 	// Не передаём PROPERTY_VALUES в Update: иначе ядро проходит по всем свойствам инфоблока и обнуляет
-	// не указанные в массиве (в т.ч. MF_UNIQ_KEY). SetPropertyValuesEx меняет только ключи из $props.
+	// не указанные в массиве. SetPropertyValuesEx меняет только ключи из $props (включая MF_UNIQ_KEY).
 	$ibEl = new \CIBlockElement();
 	if (!$ibEl->Update($id, $fields, false, false))
 	{
@@ -606,7 +662,7 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 }
 
 /**
- * @return array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, errors:list<string>}
+ * @return array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, skipped_brand:int, errors:list<string>}
  */
 function mf_ce_run_csv_import(int $iblockId, string $absolutePath): array
 {
@@ -615,6 +671,7 @@ function mf_ce_run_csv_import(int $iblockId, string $absolutePath): array
 		'skipped' => 0,
 		'skipped_redirect' => 0,
 		'skipped_no_id' => 0,
+		'skipped_brand' => 0,
 		'errors' => [],
 	];
 
@@ -1197,10 +1254,12 @@ if (is_array($mfCeImportReport))
 		$tNoId = (int)($st['skipped_no_id'] ?? 0);
 		$tRed = (int)($st['skipped_redirect'] ?? 0);
 		$tEmpty = (int)($st['skipped'] ?? 0);
+		$tBrandSkip = (int)($st['skipped_brand'] ?? 0);
 		$errs = $st['errors'] ?? [];
 		$msg = 'Импорт завершён. Обновлено элементов: ' . $tUp
 			. '; пропущено строк без id: ' . $tNoId
 			. '; пропущено редиректов: ' . $tRed
+			. '; пропущено брендов из списка «не сопоставлять»: ' . $tBrandSkip
 			. '; пустых строк: ' . $tEmpty . '.';
 		\CAdminMessage::ShowMessage(['TYPE' => 'OK', 'MESSAGE' => $msg]);
 		if ($errs !== [])
@@ -1277,7 +1336,9 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 	<p class="adm-info-message" style="max-width:720px">
 		Файл должен быть в <strong>том же формате</strong>, что и выгрузка CSV: первая строка — заголовки, разделитель полей «<strong>;</strong>», кодировка UTF-8 (с BOM или без).
 		Строки с <strong>id</strong>, существующим в инфоблоке <?= (int)$iblockId ?> и не являющимся редиректом (MF_IS_REDIRECT), будут обновлены.
-		Новые товары этим способом <strong>не создаются</strong>. Колонка «Фото»: непустое значение задаёт множественное свойство <strong>MF_EXT_IMAGES</strong> — все URL из ячейки, разделённые в выгрузке через « | » (один URL без разделителя тоже сохраняется); пустая ячейка — внешние URL из свойства не меняем.
+		Новые товары этим способом <strong>не создаются</strong>.
+		Свойство <strong>MF_UNIQ_KEY</strong> и нормализованный артикул <strong>MF_ARTICLE_NORM</strong> пересчитываются из колонок «Артикул» и «Бренд» по тем же правилам, что и импорт остатков с <strong>--brand-dict=Y</strong>: подключается <code>mf_brand_dict.php</code> (канон бренда, список пропуска), затем нормализация как в <code>mf_update_supplier_stock.php</code>.
+		Колонка «Фото»: непустое значение задаёт множественное свойство <strong>MF_EXT_IMAGES</strong> — все URL из ячейки, разделённые в выгрузке через « | » (один URL без разделителя тоже сохраняется); пустая ячейка — внешние URL из свойства не меняем.
 		«Раздел товара»: цепочка <strong>Родитель =&gt; Дочерний =&gt; …</strong> (как в выгрузке; для старых CSV допускается « / ») или одно имя раздела — подбирается активный раздел; если цепочка не найдена, остальные поля строки всё равно сохраняются, привязку к разделу не меняем.
 	</p>
 
