@@ -23,32 +23,53 @@ use Bitrix\Main\Loader;
 Loader::includeModule("iblock");
 Loader::includeModule("catalog");
 
-// Параметры
-$CSV_FILE = $_GET['file'] ?? 'supplier_stock.csv';
-$IBLOCK_ID = $_GET['iblock_id'] ?? 4; // ID каталога
-$PRICE_TYPE = $_GET['price_type'] ?? 'BASE'; // Тип цены
-$SUPPLIER_NAME = $_GET['supplier'] ?? 'Поставщик';
+/**
+ * Безопасный вывод в HTML (устранение XSS).
+ */
+if (!function_exists('usfc_h')) {
+	function usfc_h(string $s): string
+	{
+		return function_exists('htmlspecialcharsbx')
+			? (string)htmlspecialcharsbx($s)
+			: htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+	}
+}
 
-echo "<h1>Обновление остатков из CSV</h1>";
-echo "<p>Файл: $CSV_FILE</p>";
-echo "<p>Инфоблок: $IBLOCK_ID</p>";
-echo "<p>Поставщик: $SUPPLIER_NAME</p>";
-echo "<hr>";
+// Параметры: имя файла только в текущей директории (без ../)
+$CSV_FILE = basename((string)($_GET['file'] ?? 'supplier_stock.csv'));
+if ($CSV_FILE === '' || $CSV_FILE === '.' || $CSV_FILE === '..') {
+	$CSV_FILE = 'supplier_stock.csv';
+}
+$IBLOCK_ID = (int)($_GET['iblock_id'] ?? 4);
+if ($IBLOCK_ID <= 0) {
+	$IBLOCK_ID = 4;
+}
+$PRICE_TYPE = trim((string)($_GET['price_type'] ?? 'BASE'));
+if ($PRICE_TYPE === '') {
+	$PRICE_TYPE = 'BASE';
+}
+$SUPPLIER_NAME = (string)($_GET['supplier'] ?? 'Поставщик');
+
+echo '<h1>Обновление остатков из CSV</h1>';
+echo '<p>Файл: ' . usfc_h($CSV_FILE) . '</p>';
+echo '<p>Инфоблок: ' . (int)$IBLOCK_ID . '</p>';
+echo '<p>Поставщик: ' . usfc_h($SUPPLIER_NAME) . '</p>';
+echo '<hr>';
 
 $csvPath = __DIR__ . '/' . $CSV_FILE;
 
 if (!file_exists($csvPath)) {
-    die("<p style='color: red;'>✗ Файл не найден: $csvPath</p>");
+	die('<p style="color: red;">✗ Файл не найден: ' . usfc_h($csvPath) . '</p>');
 }
 
 // Получаем ID типа цены
 $priceTypeId = CCatalogGroup::GetList([], ['NAME' => $PRICE_TYPE])->Fetch()['ID'];
 
 if (!$priceTypeId) {
-    die("<p style='color: red;'>✗ Тип цены $PRICE_TYPE не найден</p>");
+	die('<p style="color: red;">✗ Тип цены ' . usfc_h($PRICE_TYPE) . ' не найден</p>');
 }
 
-echo "<p>✓ Тип цены: $PRICE_TYPE (ID: $priceTypeId)</p>";
+echo '<p>✓ Тип цены: ' . usfc_h($PRICE_TYPE) . ' (ID: ' . (int)$priceTypeId . ')</p>';
 
 // Читаем CSV
 $handle = fopen($csvPath, 'r');
@@ -70,8 +91,13 @@ if ($artPos === false || $qtyPos === false) {
     die("<p style='color: red;'>✗ Не найдены обязательные колонки (Артикул, Остаток)</p>");
 }
 
-echo "<p>✓ Найдены колонки: Артикул={$headers[$artPos]}, Остаток={$headers[$qtyPos]}" . 
-     ($pricePos !== false ? ", Цена={$headers[$pricePos]}" : "") . "</p>";
+$hdrArt = usfc_h((string)($headers[$artPos] ?? ''));
+$hdrQty = usfc_h((string)($headers[$qtyPos] ?? ''));
+$hdrPricePart = '';
+if ($pricePos !== false) {
+	$hdrPricePart = ', Цена=' . usfc_h((string)($headers[$pricePos] ?? ''));
+}
+echo '<p>✓ Найдены колонки: Артикул=' . $hdrArt . ', Остаток=' . $hdrQty . $hdrPricePart . '</p>';
 
 echo "<hr>";
 echo "<h2>Обработка...</h2>";
@@ -117,8 +143,8 @@ while (($row = fgetcsv($handle, 0, ';', '"', '\\')) !== false) {
     
     if (!$element) {
         echo "<tr style='background: #fff3cd;'>";
-        echo "<td>$article</td><td colspan='3'>Не найден</td><td>⚠️ Пропущен</td>";
-        echo "</tr>";
+        echo '<td>' . usfc_h($article) . '</td><td colspan="3">Не найден</td><td>⚠️ Пропущен</td>';
+        echo '</tr>';
         $notFound++;
         continue;
     }
@@ -142,22 +168,23 @@ while (($row = fgetcsv($handle, 0, ';', '"', '\\')) !== false) {
     
     if ($result) {
         echo "<tr style='background: #d4edda;'>";
-        echo "<td>$article</td>";
-        echo "<td>$productName...</td>";
-        echo "<td>$qty</td>";
-        echo "<td>" . ($priceUpdated ? "$price ₽" : "-") . "</td>";
-        echo "<td>✓ Обновлен</td>";
-        echo "</tr>";
+        echo '<td>' . usfc_h($article) . '</td>';
+        echo '<td>' . usfc_h($productName) . '...</td>';
+        echo '<td>' . (int)$qty . '</td>';
+        echo '<td>' . ($priceUpdated ? usfc_h((string)$price) . ' ₽' : '-') . '</td>';
+        echo '<td>✓ Обновлен</td>';
+        echo '</tr>';
         $updated++;
     } else {
         echo "<tr style='background: #f8d7da;'>";
-        echo "<td>$article</td><td>$productName...</td><td colspan='2'>-</td><td>✗ Ошибка</td>";
-        echo "</tr>";
+        echo '<td>' . usfc_h($article) . '</td><td>' . usfc_h($productName) . '...</td><td colspan="2">-</td><td>✗ Ошибка</td>';
+        echo '</tr>';
         $errors++;
     }
     
     if (($updated + $notFound + $errors) % 50 === 0) {
-        echo "<tr><td colspan='5'><em>Обработано: " . ($updated + $notFound + $errors) . "...</em></td></tr>";
+        $progress = (int)($updated + $notFound + $errors);
+        echo '<tr><td colspan="5"><em>Обработано: ' . $progress . '...</em></td></tr>';
     }
 }
 
@@ -166,9 +193,9 @@ fclose($handle);
 echo "</table>";
 echo "<hr>";
 echo "<h2>✅ Обновление завершено</h2>";
-echo "<p><strong>Обновлено:</strong> $updated товаров</p>";
-echo "<p><strong>Не найдено:</strong> $notFound товаров</p>";
-echo "<p><strong>Ошибок:</strong> $errors</p>";
+echo '<p><strong>Обновлено:</strong> ' . (int)$updated . ' товаров</p>';
+echo '<p><strong>Не найдено:</strong> ' . (int)$notFound . ' товаров</p>';
+echo '<p><strong>Ошибок:</strong> ' . (int)$errors . '</p>';
 
 echo "<hr>";
 echo "<h3>📝 Что дальше:</h3>";

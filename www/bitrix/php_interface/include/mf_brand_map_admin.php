@@ -271,8 +271,10 @@ if (!mf_bm_table_exists($conn, 'mf_stock_import_missing'))
 $h = $conn->getSqlHelper();
 $adminNotice = null;
 
-// Filters: warehouse
+// Filters: warehouse, brand substring, «only rows without mapping»
 $find_warehouse = trim((string)($_REQUEST['find_warehouse'] ?? ''));
+$find_brand = trim((string)($_REQUEST['find_brand'] ?? ''));
+$bm_only_unmapped = isset($_REQUEST['bm_only_unmapped']) && (string)$_REQUEST['bm_only_unmapped'] === 'Y';
 
 /** Сортировка таблицы ненайденных по колонке «Сейчас сопоставлен»: asc | desc | '' (как в SQL: по имени бренда). */
 $bm_sort_canon = trim((string)($_REQUEST['bm_sort_canon'] ?? ''));
@@ -487,6 +489,10 @@ if ($find_warehouse !== '')
 {
 	$where .= " AND UF_WAREHOUSE_XML_ID='" . $h->forSql($find_warehouse) . "'";
 }
+if ($find_brand !== '')
+{
+	$where .= " AND UF_BRAND LIKE '%" . $h->forSql($find_brand) . "%'";
+}
 
 $missing = [];
 $missingRaw = [];
@@ -562,6 +568,21 @@ foreach ($missingRaw as $row)
 		'CANON' => $canon,
 		'IS_SKIP' => $isSkip,
 	];
+}
+
+if ($bm_only_unmapped)
+{
+	$missing = array_values(array_filter(
+		$missing,
+		static function (array $m): bool {
+			if (!empty($m['IS_SKIP']))
+			{
+				return false;
+			}
+
+			return trim((string)($m['CANON'] ?? '')) === '';
+		}
+	));
 }
 
 /**
@@ -670,21 +691,42 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 		<?php if ($bm_sort_canon !== ''): ?>
 			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
 		<?php endif; ?>
-		<label style="display:inline-block;min-width:160px;">Склад:</label>
-		<select name="find_warehouse" style="min-width:420px;" onchange="this.form.submit();">
-			<option value="" <?= ($find_warehouse === '' ? 'selected' : '') ?>>— все —</option>
-			<?php foreach ($warehouses as $xml => $title): ?>
-				<option value="<?= mf_bm_escape((string)$xml) ?>" <?= ($find_warehouse === (string)$xml ? 'selected' : '') ?>>
-					<?= mf_bm_escape((string)$title) ?> (<?= mf_bm_escape((string)$xml) ?>)
-				</option>
-			<?php endforeach; ?>
-		</select>
+		<div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin-bottom:8px;">
+			<div>
+				<label style="display:block;margin-bottom:4px;">Склад</label>
+				<select name="find_warehouse" style="min-width:380px;" onchange="this.form.submit();">
+					<option value="" <?= ($find_warehouse === '' ? 'selected' : '') ?>>— все —</option>
+					<?php foreach ($warehouses as $xml => $title): ?>
+						<option value="<?= mf_bm_escape((string)$xml) ?>" <?= ($find_warehouse === (string)$xml ? 'selected' : '') ?>>
+							<?= mf_bm_escape((string)$title) ?> (<?= mf_bm_escape((string)$xml) ?>)
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div>
+				<label style="display:block;margin-bottom:4px;">Бренд содержит</label>
+				<input type="text" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>" placeholder="подстрока" style="min-width:200px;padding:4px 8px;" />
+			</div>
+			<div style="padding-bottom:4px;">
+				<label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;">
+					<input type="checkbox" name="bm_only_unmapped" value="Y" <?= $bm_only_unmapped ? 'checked' : '' ?> />
+					Только без сопоставления
+				</label>
+			</div>
+			<div>
+				<input type="submit" class="adm-btn" value="Применить" />
+			</div>
+		</div>
 	</form>
 
 	<form method="post" action="<?= mf_bm_escape($APPLICATION->GetCurPageParam('', ['sessid'])) ?>" style="margin:14px 0 18px 0; padding:12px; border:1px solid #d0d4dc; background:#f9fafb; border-radius:2px; max-width: 1160px;">
 		<?= bitrix_sessid_post() ?>
 		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
 		<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+		<input type="hidden" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>">
+		<?php if ($bm_only_unmapped): ?>
+			<input type="hidden" name="bm_only_unmapped" value="Y">
+		<?php endif; ?>
 		<?php if ($bm_sort_canon !== ''): ?>
 			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
 		<?php endif; ?>
@@ -770,6 +812,10 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 							<?= bitrix_sessid_post() ?>
 							<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
 							<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+							<input type="hidden" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>">
+							<?php if ($bm_only_unmapped): ?>
+								<input type="hidden" name="bm_only_unmapped" value="Y">
+							<?php endif; ?>
 							<?php if ($bm_sort_canon !== ''): ?>
 								<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
 							<?php endif; ?>
@@ -795,6 +841,8 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 		data-bm-cur-url="<?= mf_bm_escape((string)$APPLICATION->GetCurPage()) ?>"
 		data-bm-lang="<?= mf_bm_escape((string)LANGUAGE_ID) ?>"
 		data-bm-warehouse="<?= mf_bm_escape($find_warehouse) ?>"
+		data-bm-find-brand="<?= mf_bm_escape($find_brand) ?>"
+		data-bm-only-unmapped="<?= $bm_only_unmapped ? '1' : '0' ?>"
 		data-bm-sort-canon="<?= mf_bm_escape($bm_sort_canon) ?>"
 		data-bm-n="<?= (int)$bmN ?>">
 		<?php if ($bmN > 0): ?>
@@ -812,6 +860,10 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 		<?= bitrix_sessid_post() ?>
 		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
 		<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
+		<input type="hidden" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>">
+		<?php if ($bm_only_unmapped): ?>
+			<input type="hidden" name="bm_only_unmapped" value="Y">
+		<?php endif; ?>
 		<?php if ($bm_sort_canon !== ''): ?>
 			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
 		<?php endif; ?>
@@ -916,6 +968,8 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	var baseUrl = root.getAttribute("data-bm-cur-url") || window.location.pathname;
 	var lang = root.getAttribute("data-bm-lang") || "";
 	var wh = root.getAttribute("data-bm-warehouse") || "";
+	var findBrand = root.getAttribute("data-bm-find-brand") || "";
+	var onlyUnmapped = root.getAttribute("data-bm-only-unmapped") || "0";
 	var sortCanon = root.getAttribute("data-bm-sort-canon") || "";
 
 	var rows = Array.prototype.slice.call(root.querySelectorAll("tr.js-bm-row"));
@@ -958,6 +1012,8 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 
 	function setUrlPage(p) {
 		var q = { lang: lang, find_warehouse: wh };
+		if (findBrand !== "") { q.find_brand = findBrand; }
+		if (onlyUnmapped === "1") { q.bm_only_unmapped = "Y"; }
 		if (p > 1) { q.bm_page = p; }
 		if (sortCanon === "asc" || sortCanon === "desc") { q.bm_sort_canon = sortCanon; }
 		var qs = Object.keys(q).map(function (k) {

@@ -11,6 +11,9 @@
  *   php .../mf_stock_import_missing_dedupe.php --progress-every=5   (лог прогресса каждые N батчей; по умолчанию 1)
  *   php .../mf_stock_import_missing_dedupe.php --queue-chunks=8   (N проходов по таблице при сборе очереди; меньше пиковый /tmp у MySQL)
  *
+ * Ошибка без текста («.settings.php»): скрипт включает debug вывода исключений в CLI; если падение до ядра —
+ * временно в bitrix/.settings.php: exception_handling → value → debug => true.
+ *
  * Таблица-очередь ID к удалению: mf_sim_dedupe_ids (временная, создаётся скриптом).
  * По завершении дропается. При обрыве можно --skip-build и добить батчи вручную.
  */
@@ -29,6 +32,23 @@ define('NOT_CHECK_PERMISSIONS', true);
 define('BX_CRONTAB', true);
 
 require $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_before.php';
+
+if (PHP_SAPI === 'cli')
+{
+	try
+	{
+		$mfDedupeEhApp = \Bitrix\Main\Application::getInstance();
+		$mfDedupeEh = $mfDedupeEhApp ? $mfDedupeEhApp->getExceptionHandler() : null;
+		if ($mfDedupeEh !== null)
+		{
+			$mfDedupeEh->setDebugMode(true);
+		}
+	}
+	catch (\Throwable $mfDedupeEhErr)
+	{
+		fwrite(STDERR, '[mf_stock_import_missing_dedupe] ' . $mfDedupeEhErr->getMessage() . PHP_EOL);
+	}
+}
 
 use Bitrix\Main\Application;
 
