@@ -5,6 +5,7 @@
  * Запуск (внутри контейнера bitrix_php):
  *   php /var/www/html/mf_update_supplier_stock.php --dry-run --warehouse-code=YAMAHA --file=/var/www/html/supplier_stock.csv
  *   php /var/www/html/mf_update_supplier_stock.php --apply   --warehouse-code=YAMAHA --warehouse-title="Yamaha (поставщик)" --file=/var/www/html/supplier_stock.csv
+ *   php /var/www/html/mf_update_supplier_stock.php --apply   --warehouse-code=YAMAHA_STOCK --zero-stock-warehouse-code=YAMAHA_ORDER --file=...
  *
  * Back-compat:
  *   --supplier=SupplierA (используется как warehouse-code и дефолтное имя)
@@ -28,6 +29,8 @@
  *   --iblock-id=4
  *   --warehouse-code=UniqueCode
  *   --warehouse-title=Human name (optional; потом можно отредактировать в админке)
+ *   --zero-stock-warehouse-code=Code (optional) — если указан: строки с остатком 0 или без количества пишутся на этот склад (и с основного склада для товара сбрасывается остаток); строки с остатком > 0 — только на --warehouse-code, на складе из «zero» для этого товара ставится 0. Если ключ не задан — вся запись как раньше только в --warehouse-code.
+ *   --zero-stock-warehouse-title=Name (optional) — человекочитаемое имя склада для --zero-stock-warehouse-code при автосоздании
  *   --supplier=NameOrCode (deprecated)
  *   --file=/path/file.csv
  *   --encoding=cp1251|utf-8
@@ -1283,6 +1286,8 @@ try
 	$iblockId = (int)(arg('--iblock-id') ?: 4);
 	$warehouseCode = arg('--warehouse-code') ?: '';
 	$warehouseTitle = arg('--warehouse-title') ?: '';
+	$zeroStockWarehouseCode = trim((string)(arg('--zero-stock-warehouse-code') ?: ''));
+	$zeroStockWarehouseTitle = trim((string)(arg('--zero-stock-warehouse-title') ?: ''));
 	$supplier = arg('--supplier') ?: '';
 	$file = arg('--file') ?: '';
 	$encoding = arg('--encoding') ?: 'cp1251';
@@ -1317,6 +1322,10 @@ try
 		if ($warehouseTitle === '') $warehouseTitle = $supplier;
 	}
 	if ($warehouseCode === '') throw new RuntimeException("Укажи --warehouse-code=CODE (или --supplier=NAME)");
+	if ($zeroStockWarehouseCode !== '' && sanitizeStoreCode($warehouseCode) === sanitizeStoreCode($zeroStockWarehouseCode))
+	{
+		throw new RuntimeException('--zero-stock-warehouse-code должен отличаться от --warehouse-code');
+	}
 	if ($file === '') throw new RuntimeException("Укажи --file=/path/file.csv");
 	if (!file_exists($file)) throw new RuntimeException("Файл не найден: $file");
 
@@ -1358,6 +1367,11 @@ try
 	out("IBLOCK_ID: $iblockId");
 	out("WAREHOUSE_CODE: $warehouseCode");
 	if ($warehouseTitle !== '') out("WAREHOUSE_TITLE: $warehouseTitle");
+	if ($zeroStockWarehouseCode !== '')
+	{
+		out("ZERO_STOCK_WAREHOUSE_CODE: $zeroStockWarehouseCode");
+		if ($zeroStockWarehouseTitle !== '') out("ZERO_STOCK_WAREHOUSE_TITLE: $zeroStockWarehouseTitle");
+	}
 	out("FILE: $file");
 	out("ENCODING: $encoding");
 	out("MODE: " . ($apply ? 'APPLY' : 'DRY-RUN'));
@@ -1378,6 +1392,12 @@ try
 	}
 
 	[$storeId, $storeXmlId] = getOrCreateStoreByCode($warehouseCode, $warehouseTitle, $apply);
+	$zeroStoreId = 0;
+	$zeroStoreXmlId = '';
+	if ($zeroStockWarehouseCode !== '')
+	{
+		[$zeroStoreId, $zeroStoreXmlId] = getOrCreateStoreByCode($zeroStockWarehouseCode, $zeroStockWarehouseTitle, $apply);
+	}
 	if ($storeId <= 0)
 	{
 		out("STORE_ID: отсутствует (dry-run). При --apply будет создан склад SUPPLIER_... по warehouse-code.");
@@ -1386,6 +1406,18 @@ try
 	{
 		out("STORE_ID: $storeId");
 		out("STORE_XML_ID: $storeXmlId");
+	}
+	if ($zeroStockWarehouseCode !== '')
+	{
+		if ($zeroStoreId <= 0)
+		{
+			out("ZERO_STORE_ID: отсутствует (dry-run). При --apply будет создан/найден склад по zero-stock-warehouse-code.");
+		}
+		else
+		{
+			out("ZERO_STORE_ID: $zeroStoreId");
+			out("ZERO_STORE_XML_ID: $zeroStoreXmlId");
+		}
 	}
 
 	if ($runLogEnabled && $runLogId > 0)
@@ -1661,7 +1693,23 @@ try
 
 		try
 		{
-			upsertStoreAmount($productId, $storeId, $qty);
+			if ($zeroStockWarehouseCode !== '' && $zeroStoreId > 0)
+			{
+				if ($qty > 1e-9)
+				{
+					upsertStoreAmount($productId, $storeId, $qty);
+					upsertStoreAmount($productId, $zeroStoreId, 0.0);
+				}
+				else
+				{
+					upsertStoreAmount($productId, $storeId, 0.0);
+					upsertStoreAmount($productId, $zeroStoreId, 0.0);
+				}
+			}
+			else
+			{
+				upsertStoreAmount($productId, $storeId, $qty);
+			}
 			$touchedProducts[$productId] = true;
 			if ($syncBrandFromDict && $brandDictReady && $brandRaw !== '' && $idxBrand !== null)
 			{
@@ -1747,11 +1795,23 @@ try
 
 	// If a product is missing in the supplier file, treat it as out of stock on this warehouse.
 	// This prevents stale quantities from keeping items "in stock".
-		if ($apply && !$dry && $syncMissing && $storeId > 0)
+	if ($apply && !$dry && $syncMissing)
+	{
+		$mfZeroStaleStores = [$storeId > 0 ? $storeId : 0];
+		if ($zeroStockWarehouseCode !== '' && $zeroStoreId > 0)
 		{
+			$mfZeroStaleStores[] = $zeroStoreId;
+		}
+		foreach ($mfZeroStaleStores as $mfStaleSid)
+		{
+			$mfStaleSid = (int)$mfStaleSid;
+			if ($mfStaleSid <= 0)
+			{
+				continue;
+			}
 			$rsStale = CCatalogStoreProduct::GetList(
 				[],
-				['STORE_ID' => $storeId, '>AMOUNT' => 0],
+				['STORE_ID' => $mfStaleSid, '>AMOUNT' => 0],
 				false,
 				false,
 				['ID', 'PRODUCT_ID', 'AMOUNT']
@@ -1778,6 +1838,7 @@ try
 				}
 			}
 		}
+	}
 
 	// Batch update QUANTITY/AVAILABLE after all store updates.
 	if ($apply && !$dry && $fastProductUpdate && !empty($touchedProducts))
