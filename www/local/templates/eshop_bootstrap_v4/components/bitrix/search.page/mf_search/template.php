@@ -149,7 +149,9 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							$mfStockCell = '';
 							if ($mfExternal)
 							{
-								$mfStockCell = 'Под заказ';
+								$mfStockCell = ((float)$s['amount'] > 1e-9)
+									? htmlspecialcharsbx((string)$mfAmtRounded)
+									: 'Под заказ';
 							}
 							elseif ($mfPendingDisp !== '')
 							{
@@ -160,7 +162,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 								$mfStockCell = htmlspecialcharsbx((string)$mfAmtRounded);
 							}
 							$mfMaxQtyRounded = $mfExternal
-								? 0.0
+								? (((float)$s['amount'] > 1e-9) ? $mfAmtRounded : 0.0)
 								: (isset($s['pending_supplier_qty'])
 									? round((float)$s['pending_supplier_qty'], 3)
 									: $mfAmtRounded);
