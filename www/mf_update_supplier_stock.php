@@ -62,7 +62,7 @@ Loader::includeModule("catalog");
 Loader::includeModule("highloadblock");
 
 // Тот же PRODUCT_ID, что и у импорта внешних прайсов (родитель SKU → первый оффер).
-$mfEpLib = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_external_price_lib.php';
+$mfEpLib = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_external_price_lib.php';
 if (is_file($mfEpLib))
 {
 	require_once $mfEpLib;

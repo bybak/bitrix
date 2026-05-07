@@ -1,1 +1,2 @@
-Пн–Чт: 10:00–18:00 (обед 13:30–14:00)<br>Пт: 10:00–17:00 (обед 13:30–14:00)<br>Сб–Вс: выходной
+<?php
+require $_SERVER['DOCUMENT_ROOT'].'/local/site/include/schedule.php';

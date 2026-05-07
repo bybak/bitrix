@@ -54,6 +54,8 @@ services:
       BITRIX_REDIS_PORT: "6379"
     volumes:
       - ./www:/var/www/html
+      # Подмена без пересборки образа; важно для clear_env / getenv из .env в PHP-FPM
+      - ./php-fpm-bitrix.conf:/usr/local/etc/php-fpm.d/zz-bitrix.conf:ro
       - /opt/mail_ingest/drop:/var/www/html/supplier_drop:ro
     depends_on:
       mysql:
@@ -67,6 +69,11 @@ services:
     image: mysql:8.0
     container_name: bitrix_mysql
     restart: unless-stopped
+    # После смены пароля root выполняйте для ОБОИХ учёток (иначе PHP с сети Docker попадает в root@'%',
+    # а «mysql -uroot» из этого контейнера — в root@'localhost', пароли могут разъехаться):
+    #   ALTER USER 'root'@'localhost' IDENTIFIED BY '...';
+    #   ALTER USER 'root'@'%' IDENTIFIED BY '...';
+    #   FLUSH PRIVILEGES;
     environment:
       TZ: Europe/Moscow
       MYSQL_ROOT_PASSWORD: motorforceXgpyopxj1$

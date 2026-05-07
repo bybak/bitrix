@@ -1,1 +1,2 @@
-<img src="/include/logo_mobile.png"  srcset="/include/logo_mobile_retina.png" />
+<?php
+require $_SERVER['DOCUMENT_ROOT'].'/local/site/include/company_logo_mobile.php';

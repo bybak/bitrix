@@ -1,9 +1,2 @@
-<?if(!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)die();?>
-<?
-$APPLICATION->IncludeComponent("bitrix:eshop.facebook.plugin", "",
-	array(
-		"ESHOP_FACEBOOK_LINK"=>"http://www.facebook.com/1CBitrix"
-	),
-	false
-);
-?>
+<?php
+require $_SERVER['DOCUMENT_ROOT'].'/local/site/include/facebook_plugin.php';

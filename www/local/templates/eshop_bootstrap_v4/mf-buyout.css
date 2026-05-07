@@ -1,0 +1,98 @@
+.mf-buyout{
+  --mf-radius: 16px;
+  --mf-border: 1px solid rgba(0,0,0,.08);
+  --mf-shadow: 0 14px 30px rgba(0,0,0,.08);
+  --mf-yellow: #ebbd2f;
+  --mf-muted: rgba(0,0,0,.55);
+  --mf-muted2: rgba(0,0,0,.45);
+}
+
+/* Main copy as a card for readability */
+.mf-buyout{
+  border: var(--mf-border);
+  border-radius: var(--mf-radius);
+  background: #fff;
+  box-shadow: var(--mf-shadow);
+  padding: 16px;
+}
+@media (min-width: 992px){
+  .mf-buyout{ padding: 20px 20px; }
+}
+
+/* Typography (mf-text-page sets margins to 0; we add rhythm) */
+.mf-buyout p{
+  margin: 0 !important;
+  color: rgba(0,0,0,.74);
+  line-height: 1.65;
+  font-weight: 550;
+}
+.mf-buyout p + p{
+  margin-top: 12px !important;
+}
+
+.mf-buyout h2{
+  margin: 0 !important;
+  font-weight: 900;
+  color: #000;
+  line-height: 1.15;
+  letter-spacing: .2px;
+}
+.mf-buyout h2 + p{
+  margin-top: 12px !important;
+}
+
+.mf-buyout ol{
+  margin: 10px 0 0 0 !important;
+  padding-left: 22px;
+}
+.mf-buyout ol li{
+  margin: 8px 0;
+  color: rgba(0,0,0,.74);
+}
+
+/* Feedback form as its own card, within main card */
+.mf-buyout .mf-feedback{
+  margin-top: 18px;
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(235,189,47,.18), rgba(235,189,47,.06));
+  padding: 16px;
+}
+.mf-buyout .mf-feedback__title{
+  margin: 0 0 12px 0;
+  font-weight: 900;
+  color: #000;
+  text-align: center;
+}
+
+.mf-buyout .mf-feedback .form-control{
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.14);
+  box-shadow: none !important;
+  background: #fff;
+}
+.mf-buyout .mf-feedback textarea.form-control{
+  height: auto;
+  min-height: 160px;
+}
+.mf-buyout .mf-feedback .form-control:focus{
+  border-color: rgba(0,0,0,.35);
+  box-shadow: 0 0 0 3px rgba(235,189,47,.25) !important;
+}
+
+/* Keep semantics but make it our primary */
+.mf-buyout .mf-feedback .btn.btn-success{
+  border-radius: 12px;
+  background: var(--mf-yellow) !important;
+  border: 0 !important;
+  color: #000 !important;
+  font-weight: 900 !important;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+.mf-buyout .mf-feedback .btn.btn-success:hover{ opacity: .92; }
+.mf-buyout .mf-feedback .btn.btn-success:active{ opacity: .85; }
+

@@ -1,1 +1,2 @@
-© Интернет-магазин одежды, 2020
+<?php
+require $_SERVER['DOCUMENT_ROOT'].'/local/site/include/copyright.php';

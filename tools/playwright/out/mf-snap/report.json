@@ -1,0 +1,966 @@
+{
+  "base": "http://127.0.0.1",
+  "generatedAt": "2026-05-07T07:13:49.766Z",
+  "results": [
+    {
+      "route": "/",
+      "slug": "home-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/home-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Запчасти для квадроциклов и снегоходов в Санкт-Петербурге",
+        "h1Count": 1,
+        "h1": [
+          "Запчастии обслуживаниемототехники"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": true,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/faq/",
+      "slug": "faq-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/faq-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Текстовая страница",
+        "h1Count": 1,
+        "h1": [
+          "Часто задаваемые вопросы"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/delivery/",
+      "slug": "delivery-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/delivery-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Доставка",
+        "h1Count": 1,
+        "h1": [
+          "Доставка"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/oplata/",
+      "slug": "oplata-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/oplata-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Оплата",
+        "h1Count": 1,
+        "h1": [
+          "Способы оплаты"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/documents/",
+      "slug": "documents-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/documents-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Документы",
+        "h1Count": 1,
+        "h1": [
+          "Документы"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/sotrudnichestvo/",
+      "slug": "sotrudnichestvo-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/sotrudnichestvo-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Текстовая страница",
+        "h1Count": 1,
+        "h1": [
+          "Сотрудничество с Motor-Force"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/remont_motorov/",
+      "slug": "remont_motorov-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/remont_motorov-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Ремонт ДВС",
+        "h1Count": 1,
+        "h1": [
+          "Ремонт двигателей внутреннего сгорания"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/prokat/",
+      "slug": "prokat-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/prokat-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Прокат",
+        "h1Count": 1,
+        "h1": [
+          "Прокат квадроциклов"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/vikup_mototehniki/",
+      "slug": "vikup_mototehniki-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/vikup_mototehniki-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Выкуп мототехники",
+        "h1Count": 1,
+        "h1": [
+          "Выкупим вашу мототехнику"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/contacts/",
+      "slug": "contacts-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/contacts-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Контакты",
+        "h1Count": 1,
+        "h1": [
+          "Контакты"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/about/",
+      "slug": "about-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/about-desktop.png",
+      "audit": {
+        "title": "О магазине",
+        "h1Count": 1,
+        "h1": [
+          "О магазине"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/oferta/",
+      "slug": "oferta-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/oferta-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Договор Оферты",
+        "h1Count": 1,
+        "h1": [
+          "Оферта договора поставки"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/dogovor-oferti/",
+      "slug": "dogovor-oferti-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/dogovor-oferti-desktop.png",
+      "audit": {
+        "title": "Motor-Force - Договор Оферты",
+        "h1Count": 1,
+        "h1": [
+          "Оферта договора поставки"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/login/",
+      "slug": "login-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/login-desktop.png",
+      "audit": {
+        "title": "Вход на сайт",
+        "h1Count": 1,
+        "h1": [
+          "Вход на сайт"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": true,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/login/?register=yes",
+      "slug": "register-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/register-desktop.png",
+      "audit": {
+        "title": "Вход на сайт",
+        "h1Count": 1,
+        "h1": [
+          "Вход на сайт"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": true,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/search/",
+      "slug": "search-empty-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/search-empty-desktop.png",
+      "audit": {
+        "title": "Поиск",
+        "h1Count": 1,
+        "h1": [
+          "Поиск"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/search/?q=ремень",
+      "slug": "search-result-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/search-result-desktop.png",
+      "audit": {
+        "title": "Поиск",
+        "h1Count": 1,
+        "h1": [
+          "Поиск"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/products/",
+      "slug": "products-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/products-desktop.png",
+      "audit": {
+        "title": "Магазин",
+        "h1Count": 1,
+        "h1": [
+          "Магазин"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/products/category/zapchasti-dlya-kvadrotsiklov/",
+      "slug": "category-quad-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/category-quad-desktop.png",
+      "audit": {
+        "title": "Запчасти для квадроциклов",
+        "h1Count": 1,
+        "h1": [
+          "Запчасти для квадроциклов"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/__definitely_not_existing__/",
+      "slug": "404-desktop",
+      "viewport": "desktop",
+      "status": "ok",
+      "httpStatus": 404,
+      "screenshot": "tools/playwright/out/mf-snap/404-desktop.png",
+      "audit": {
+        "title": "Страница не найдена",
+        "h1Count": 1,
+        "h1": [
+          "Страница не найдена"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/",
+      "slug": "home-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/home-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Запчасти для квадроциклов и снегоходов в Санкт-Петербурге",
+        "h1Count": 1,
+        "h1": [
+          "Запчастии обслуживаниемототехники"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": true,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/faq/",
+      "slug": "faq-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/faq-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Текстовая страница",
+        "h1Count": 1,
+        "h1": [
+          "Часто задаваемые вопросы"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/delivery/",
+      "slug": "delivery-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/delivery-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Доставка",
+        "h1Count": 1,
+        "h1": [
+          "Доставка"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/oplata/",
+      "slug": "oplata-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/oplata-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Оплата",
+        "h1Count": 1,
+        "h1": [
+          "Способы оплаты"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/documents/",
+      "slug": "documents-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/documents-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Документы",
+        "h1Count": 1,
+        "h1": [
+          "Документы"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/sotrudnichestvo/",
+      "slug": "sotrudnichestvo-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/sotrudnichestvo-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Текстовая страница",
+        "h1Count": 1,
+        "h1": [
+          "Сотрудничество с Motor-Force"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/remont_motorov/",
+      "slug": "remont_motorov-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/remont_motorov-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Ремонт ДВС",
+        "h1Count": 1,
+        "h1": [
+          "Ремонт двигателей внутреннего сгорания"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/prokat/",
+      "slug": "prokat-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/prokat-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Прокат",
+        "h1Count": 1,
+        "h1": [
+          "Прокат квадроциклов"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/vikup_mototehniki/",
+      "slug": "vikup_mototehniki-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/vikup_mototehniki-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Выкуп мототехники",
+        "h1Count": 1,
+        "h1": [
+          "Выкупим вашу мототехнику"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/contacts/",
+      "slug": "contacts-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/contacts-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Контакты",
+        "h1Count": 1,
+        "h1": [
+          "Контакты"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/about/",
+      "slug": "about-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/about-mobile.png",
+      "audit": {
+        "title": "О магазине",
+        "h1Count": 1,
+        "h1": [
+          "О магазине"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/oferta/",
+      "slug": "oferta-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/oferta-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Договор Оферты",
+        "h1Count": 1,
+        "h1": [
+          "Оферта договора поставки"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/dogovor-oferti/",
+      "slug": "dogovor-oferti-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/dogovor-oferti-mobile.png",
+      "audit": {
+        "title": "Motor-Force - Договор Оферты",
+        "h1Count": 1,
+        "h1": [
+          "Оферта договора поставки"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/login/",
+      "slug": "login-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/login-mobile.png",
+      "audit": {
+        "title": "Вход на сайт",
+        "h1Count": 1,
+        "h1": [
+          "Вход на сайт"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": true,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/login/?register=yes",
+      "slug": "register-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/register-mobile.png",
+      "audit": {
+        "title": "Вход на сайт",
+        "h1Count": 1,
+        "h1": [
+          "Вход на сайт"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": true,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/search/",
+      "slug": "search-empty-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/search-empty-mobile.png",
+      "audit": {
+        "title": "Поиск",
+        "h1Count": 1,
+        "h1": [
+          "Поиск"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/search/?q=ремень",
+      "slug": "search-result-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/search-result-mobile.png",
+      "audit": {
+        "title": "Поиск",
+        "h1Count": 1,
+        "h1": [
+          "Поиск"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/products/",
+      "slug": "products-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/products-mobile.png",
+      "audit": {
+        "title": "Магазин",
+        "h1Count": 1,
+        "h1": [
+          "Магазин"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/products/category/zapchasti-dlya-kvadrotsiklov/",
+      "slug": "category-quad-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 200,
+      "screenshot": "tools/playwright/out/mf-snap/category-quad-mobile.png",
+      "audit": {
+        "title": "Запчасти для квадроциклов",
+        "h1Count": 1,
+        "h1": [
+          "Запчасти для квадроциклов"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    },
+    {
+      "route": "/__definitely_not_existing__/",
+      "slug": "404-mobile",
+      "viewport": "mobile",
+      "status": "ok",
+      "httpStatus": 404,
+      "screenshot": "tools/playwright/out/mf-snap/404-mobile.png",
+      "audit": {
+        "title": "Страница не найдена",
+        "h1Count": 1,
+        "h1": [
+          "Страница не найдена"
+        ],
+        "hasMfRedesign": true,
+        "hasMfHomeCss": false,
+        "hasMfPersonalCss": false,
+        "hasMfAuthCss": false,
+        "issuesSample": [],
+        "horizontalScroll": false,
+        "scrollWidth": 414,
+        "clientWidth": 414,
+        "doubleNumberedLists": []
+      }
+    }
+  ]
+}

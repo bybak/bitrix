@@ -1,1 +1,2 @@
-Motor-Force
+<?php
+require $_SERVER['DOCUMENT_ROOT'].'/local/site/include/company_name.php';

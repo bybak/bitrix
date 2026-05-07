@@ -41,7 +41,11 @@ return array (
         'host' => 'mysql:3306',
         'database' => 'bitrix_motor_force',
         'login' => 'root',
-        'password' => 'motorforceXgpyopxj1$',
+        // В Docker задайте BITRIX_MYSQL_PASSWORD в .env (тот же пароль, что у root в MySQL).
+        'password' => (static function (): string {
+          $p = getenv('BITRIX_MYSQL_PASSWORD');
+          return ($p !== false && $p !== '') ? $p : 'motorforceXgpyopxj1$';
+        })(),
         'options' => 2.0,
         'initCommand' => 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci',
         'className' => '\\Bitrix\\Main\\DB\\MysqliConnection',

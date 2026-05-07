@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" role="img" aria-label="Нет изображения">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f2f4f7"/>
+      <stop offset="1" stop-color="#e6eaef"/>
+    </linearGradient>
+    <linearGradient id="stroke" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#c9d2dc"/>
+      <stop offset="1" stop-color="#b8c3cf"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="400" height="300" fill="url(#bg)"/>
+  <rect x="26" y="26" width="348" height="248" rx="18" fill="none" stroke="url(#stroke)" stroke-width="8"/>
+  <circle cx="140" cy="120" r="22" fill="#c1cad5"/>
+  <path d="M70 235l90-90 55 55 35-35 80 80" fill="none" stroke="#c1cad5" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="200" y="165" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif" font-size="20" fill="#7b8897">
+    Нет изображения
+  </text>
+</svg>
+

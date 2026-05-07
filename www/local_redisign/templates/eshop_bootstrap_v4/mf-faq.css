@@ -1,0 +1,113 @@
+.mf-faq{
+  --mf-radius: 16px;
+  --mf-border: 1px solid rgba(0,0,0,.08);
+  --mf-shadow: 0 14px 30px rgba(0,0,0,.08);
+  --mf-yellow: #ebbd2f;
+  --mf-muted: rgba(0,0,0,.55);
+  --mf-muted2: rgba(0,0,0,.45);
+}
+
+/* Main card wrapper */
+.mf-faq{
+  border: var(--mf-border);
+  border-radius: var(--mf-radius);
+  background: #fff;
+  box-shadow: var(--mf-shadow);
+  padding: 16px;
+}
+@media (min-width: 992px){
+  .mf-faq{ padding: 20px; }
+}
+
+/* Typography rhythm (mf-text-page sets margins to 0 by default) */
+.mf-faq h2,
+.mf-faq h3{
+  margin: 0 !important;
+  font-weight: 900;
+  color: #000;
+  line-height: 1.2;
+}
+.mf-faq h2 + p,
+.mf-faq h2 + ul,
+.mf-faq h3 + p,
+.mf-faq h3 + ul{
+  margin-top: 10px !important;
+}
+.mf-faq p{
+  margin: 0 !important;
+  color: rgba(0,0,0,.74);
+  line-height: 1.65;
+  font-weight: 550;
+}
+.mf-faq p + p{
+  margin-top: 12px !important;
+}
+
+.mf-faq ul{
+  margin: 10px 0 0 0 !important;
+  padding-left: 18px;
+}
+.mf-faq li{
+  margin: 6px 0;
+}
+.mf-faq li p{
+  margin: 0 !important;
+}
+.mf-faq ul li::marker{ color: rgba(0,0,0,.5); }
+
+/* Underlined question headings */
+.mf-faq .-underline{
+  position: relative;
+  display: inline-block;
+  padding-bottom: 6px;
+}
+.mf-faq .-underline::after{
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 72px;
+  height: 3px;
+  background: var(--mf-yellow);
+  border-radius: 999px;
+}
+
+/* Images inside answers */
+.mf-faq img{
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,.06);
+  box-shadow: 0 10px 22px rgba(0,0,0,.10);
+  display: block;
+  max-width: 100% !important;
+  height: auto !important;
+  margin-top: 10px;
+}
+
+/* TOC: responsive wrapper + keep table content intact */
+.mf-faq .mf-faq-toc{
+  margin-top: 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(0,0,0,.02);
+}
+.mf-faq .mf-faq-toc table.bordered{
+  width: 100% !important; /* override inline 110% */
+  min-width: 840px;
+  background: transparent !important;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.mf-faq .mf-faq-toc table.bordered td,
+.mf-faq .mf-faq-toc table.bordered th{
+  border: 0;
+  border-bottom: 1px solid rgba(0,0,0,.10);
+  border-right: 1px solid rgba(0,0,0,.08);
+  padding: 10px 12px;
+  vertical-align: top;
+  background: transparent;
+}
+.mf-faq .mf-faq-toc table.bordered tr > :last-child{ border-right: 0; }
+.mf-faq .mf-faq-toc table.bordered tr:last-child td{ border-bottom: 0; }
+
