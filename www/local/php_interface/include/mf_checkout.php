@@ -4,7 +4,8 @@ if (!function_exists('mf_checkout_custom_flow_enabled'))
 {
 	function mf_checkout_custom_flow_enabled(array $arParams): bool
 	{
-		return (($arParams['MF_CUSTOM_GUEST_FLOW'] ?? 'N') === 'Y');
+		return (($arParams['MF_CUSTOM_GUEST_FLOW'] ?? 'N') === 'Y')
+			|| (($arParams['MF_ORDER_MAKE_SIGNATURE'] ?? 'N') === 'Y');
 	}
 }
 
@@ -1210,6 +1211,213 @@ if (!function_exists('mf_checkout_on_order_user_result'))
 				}
 			}
 		}
+
+		// eDost / Nominatim: тарифы считаются по MF_* в POST, а обязательное IS_LOCATION в ORDER_PROP может быть пустым.
+		try
+		{
+			$personTypeId = (int)($arUserResult['PERSON_TYPE_ID'] ?? 0);
+			if ($personTypeId <= 0)
+			{
+				$personTypeId = (int)$request->getPost('PERSON_TYPE');
+			}
+			if ($personTypeId <= 0 || !\Bitrix\Main\Loader::includeModule('sale'))
+			{
+				return;
+			}
+			$locationPropId = 0;
+			if (class_exists(\CSaleOrderProps::class))
+			{
+				$dbRes = \CSaleOrderProps::GetList(
+					['SORT' => 'ASC'],
+					[
+						'PERSON_TYPE_ID' => $personTypeId,
+						'ACTIVE' => 'Y',
+						'IS_LOCATION' => 'Y',
+					],
+					false,
+					false,
+					['ID']
+				);
+				if ($row = $dbRes->Fetch())
+				{
+					$locationPropId = (int)($row['ID'] ?? 0);
+				}
+			}
+			if ($locationPropId <= 0)
+			{
+				return;
+			}
+			if (!isset($arUserResult['ORDER_PROP']) || !is_array($arUserResult['ORDER_PROP']))
+			{
+				$arUserResult['ORDER_PROP'] = [];
+			}
+			$cur = '';
+			if (array_key_exists($locationPropId, $arUserResult['ORDER_PROP']))
+			{
+				$v = $arUserResult['ORDER_PROP'][$locationPropId];
+				$cur = is_array($v) ? trim((string)reset($v)) : trim((string)$v);
+			}
+			if ($cur === '')
+			{
+				$cur = trim((string)$request->getPost('ORDER_PROP_' . $locationPropId));
+			}
+			if ($cur !== '')
+			{
+				return;
+			}
+			$edostTid = trim((string)$request->getPost('MF_EDOST_TARIF_ID'));
+			$nom = trim((string)$request->getPost('MF_NOMINATIM_JSON'));
+			$toCity = trim((string)$request->getPost('MF_EDOST_TO_CITY'));
+			if ($toCity === '')
+			{
+				$toCity = trim((string)$request->getPost('mf_edost_to_city'));
+			}
+			if ($edostTid === '' && $nom === '' && $toCity === '')
+			{
+				return;
+			}
+			$fb = mf_checkout_resolve_fallback_location_code();
+			if ($fb === '')
+			{
+				return;
+			}
+			$arUserResult['ORDER_PROP'][$locationPropId] = $fb;
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_order_prop_scalar'))
+{
+	function mf_checkout_order_prop_scalar(array $arUserResult, int $propId): string
+	{
+		if ($propId <= 0 || !isset($arUserResult['ORDER_PROP'][$propId]))
+		{
+			return '';
+		}
+		$v = $arUserResult['ORDER_PROP'][$propId];
+		if (is_array($v))
+		{
+			$v = reset($v);
+		}
+
+		return trim((string)$v);
+	}
+}
+
+if (!function_exists('mf_checkout_on_order_properties'))
+{
+	/**
+	 * Подставляет в «легаси» обязательное свойство «Адрес доставки» (и аналоги) строку из DELIVERY_*,
+	 * если оно не попало в POST (в форме только город/улица Motor-Force).
+	 */
+	function mf_checkout_on_order_properties(array &$arUserResult, $request, array &$arParams, array &$arResult): void
+	{
+		if (!mf_checkout_custom_flow_enabled($arParams))
+		{
+			return;
+		}
+		if (!isset($arUserResult['ORDER_PROP']) || !is_array($arUserResult['ORDER_PROP']))
+		{
+			return;
+		}
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale') || !class_exists('CSaleOrderProps'))
+		{
+			return;
+		}
+
+		$personTypeId = (int)($arUserResult['PERSON_TYPE_ID'] ?? 0);
+		if ($personTypeId <= 0)
+		{
+			return;
+		}
+
+		$byCode = [];
+		$db = \CSaleOrderProps::GetList(
+			['SORT' => 'ASC'],
+			['PERSON_TYPE_ID' => $personTypeId, 'ACTIVE' => 'Y'],
+			false,
+			false,
+			['ID', 'CODE']
+		);
+		while ($row = $db->Fetch())
+		{
+			$cid = strtoupper(trim((string)($row['CODE'] ?? '')));
+			if ($cid === 'DELIVERY_LOCATION_TEXT' || $cid === 'DELIVERY_ADDRESS' || $cid === 'DELIVERY_ZIP')
+			{
+				$byCode[$cid] = (int)($row['ID'] ?? 0);
+			}
+		}
+
+		$locId = (int)($byCode['DELIVERY_LOCATION_TEXT'] ?? 0);
+		$strId = (int)($byCode['DELIVERY_ADDRESS'] ?? 0);
+		$zipId = (int)($byCode['DELIVERY_ZIP'] ?? 0);
+
+		$city = mf_checkout_order_prop_scalar($arUserResult, $locId);
+		$street = mf_checkout_order_prop_scalar($arUserResult, $strId);
+		$zip = mf_checkout_order_prop_scalar($arUserResult, $zipId);
+
+		$parts = [];
+		if ($city !== '')
+		{
+			$parts[] = $city;
+		}
+		if ($street !== '')
+		{
+			$parts[] = $street;
+		}
+		$combined = implode(', ', $parts);
+		if ($zip !== '')
+		{
+			$combined = trim($combined . ($combined !== '' ? ', ' : '') . $zip);
+		}
+		if ($combined === '')
+		{
+			return;
+		}
+
+		$db2 = \CSaleOrderProps::GetList(
+			['SORT' => 'ASC'],
+			['PERSON_TYPE_ID' => $personTypeId, 'ACTIVE' => 'Y', 'REQUIRED' => 'Y'],
+			false,
+			false,
+			['ID', 'CODE', 'NAME', 'TYPE', 'UTIL']
+		);
+		while ($row = $db2->Fetch())
+		{
+			if (($row['UTIL'] ?? 'N') === 'Y')
+			{
+				continue;
+			}
+			$pid = (int)($row['ID'] ?? 0);
+			if ($pid <= 0 || $pid === $locId || $pid === $strId || $pid === $zipId)
+			{
+				continue;
+			}
+			$type = strtoupper((string)($row['TYPE'] ?? ''));
+			if (!in_array($type, ['STRING', 'TEXT', 'TEXTAREA'], true))
+			{
+				continue;
+			}
+			$name = trim((string)($row['NAME'] ?? ''));
+			$code = strtoupper(trim((string)($row['CODE'] ?? '')));
+			$legacy = ($name === 'Адрес доставки')
+				|| ($code === 'ADDRESS')
+				|| ($code === 'FULL_ADDRESS')
+				|| ($code === 'DELIVERY_ADDR');
+			if (!$legacy)
+			{
+				continue;
+			}
+			if (mf_checkout_order_prop_scalar($arUserResult, $pid) !== '')
+			{
+				continue;
+			}
+			$arUserResult['ORDER_PROP'][$pid] = $combined;
+		}
 	}
 }
 
@@ -1343,6 +1551,91 @@ if (!function_exists('mf_checkout_default_edost_offer'))
 	}
 }
 
+if (!function_exists('mf_checkout_virtual_delivery_stub_for_js'))
+{
+	/**
+	 * Одна реальная служба доставки из БД для JS sale.order.ajax при пустом списке (виртуальный eDost).
+	 * Иначе getSelectedDelivery() = false и ломается свёрнутый блок / инициализация.
+	 */
+	function mf_checkout_virtual_delivery_stub_for_js(\Bitrix\Sale\Order $order): ?array
+	{
+		try
+		{
+			if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+			{
+				return null;
+			}
+
+			$row = null;
+			$envId = (int)(getenv('MF_CHECKOUT_PLACEHOLDER_DELIVERY_ID') ?: 0);
+			if ($envId > 0 && class_exists(\Bitrix\Sale\Delivery\Services\Table::class))
+			{
+				$row = \Bitrix\Sale\Delivery\Services\Table::getRowById($envId);
+				if ($row && (($row['ACTIVE'] ?? 'N') !== 'Y'))
+				{
+					$row = null;
+				}
+			}
+
+			if (!$row && class_exists(\Bitrix\Sale\Delivery\Services\Table::class))
+			{
+				$res = \Bitrix\Sale\Delivery\Services\Table::getList([
+					'filter' => [
+						'=ACTIVE' => 'Y',
+						'=PARENT_ID' => 0,
+					],
+					'select' => ['ID', 'NAME', 'DESCRIPTION', 'SORT'],
+					'order' => ['SORT' => 'ASC', 'ID' => 'ASC'],
+					'limit' => 1,
+				]);
+				$row = $res->fetch() ?: null;
+			}
+
+			if (!$row || (int)($row['ID'] ?? 0) <= 0)
+			{
+				return null;
+			}
+
+			$currency = (string)$order->getCurrency();
+			if ($currency === '')
+			{
+				$currency = 'RUB';
+			}
+
+			$name = trim((string)($row['NAME'] ?? ''));
+			if ($name === '')
+			{
+				$name = 'Доставка';
+			}
+
+			$zeroFormatted = function_exists('SaleFormatCurrency')
+				? SaleFormatCurrency(0.0, $currency)
+				: '0';
+
+			return [
+				'ID' => (int)$row['ID'],
+				'NAME' => $name,
+				'OWN_NAME' => $name,
+				'DESCRIPTION' => (string)($row['DESCRIPTION'] ?? ''),
+				'CHECKED' => 'Y',
+				'SORT' => (int)($row['SORT'] ?? 100),
+				'PRICE' => 0.0,
+				'PRICE_FORMATED' => $zeroFormatted,
+				'DELIVERY_DISCOUNT_PRICE' => 0.0,
+				'DELIVERY_DISCOUNT_PRICE_FORMATED' => $zeroFormatted,
+				'CURRENCY' => $currency,
+				'EXTRA_SERVICES' => [],
+				'STORE' => false,
+				'CALCULATE_ERRORS' => false,
+			];
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
+	}
+}
+
 if (!function_exists('mf_checkout_resolve_fallback_location_code'))
 {
 	/**
@@ -1386,6 +1679,79 @@ if (!function_exists('mf_checkout_resolve_fallback_location_code'))
 					AND l.CODE IS NOT NULL AND l.CODE <> ''
 				ORDER BY l.DEPTH_LEVEL DESC, l.ID ASC
 				LIMIT 1"
+			);
+			$code = trim($code);
+			if ($code !== '')
+			{
+				return $code;
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		// Магазин по умолчанию (настройки модуля sale).
+		try
+		{
+			if (class_exists(\CSaleHelper::class))
+			{
+				$sl = \CSaleHelper::getShopLocation(false);
+				if (is_array($sl))
+				{
+					$c = trim((string)($sl['CODE'] ?? ''));
+					if ($c !== '')
+					{
+						return $c;
+					}
+					$lid = (int)($sl['ID'] ?? 0);
+					if ($lid > 0 && class_exists(\CSaleLocation::class))
+					{
+						$byId = \CSaleLocation::GetByID($lid, defined('LANGUAGE_ID') ? LANGUAGE_ID : 'ru');
+						if (is_array($byId))
+						{
+							$c2 = trim((string)($byId['CODE'] ?? ''));
+							if ($c2 !== '')
+							{
+								return $c2;
+							}
+						}
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		// D7: любая ненулевая локация с кодом (последний шанс до «голого» поля).
+		try
+		{
+			if (class_exists(\Bitrix\Sale\Location\LocationTable::class))
+			{
+				$res = \Bitrix\Sale\Location\LocationTable::getList([
+					'select' => ['CODE'],
+					'order' => ['SORT' => 'ASC', 'ID' => 'ASC'],
+					'limit' => 100,
+				]);
+				while ($row = $res->fetch())
+				{
+					$c = trim((string)($row['CODE'] ?? ''));
+					if ($c !== '')
+					{
+						return $c;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		try
+		{
+			$conn = \Bitrix\Main\Application::getConnection();
+			$code = (string)$conn->queryScalar(
+				"SELECT CODE FROM b_sale_location WHERE CODE IS NOT NULL AND CODE <> '' ORDER BY SORT ASC, ID ASC LIMIT 1"
 			);
 
 			return trim($code);
@@ -1759,6 +2125,7 @@ if (!function_exists('mf_checkout_bootstrap'))
 		$em = \Bitrix\Main\EventManager::getInstance();
 		$em->addEventHandler('sale', 'OnSaleComponentOrderUserResult', 'mf_checkout_on_order_user_result');
 		$em->addEventHandler('sale', 'OnSaleComponentOrderJsData', 'mf_checkout_on_order_js_data');
+		$em->addEventHandler('sale', 'OnSaleComponentOrderProperties', 'mf_checkout_on_order_properties');
 	}
 }
 

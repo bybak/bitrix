@@ -1343,6 +1343,91 @@ if (!function_exists('mf_checkout_default_edost_offer'))
 	}
 }
 
+if (!function_exists('mf_checkout_virtual_delivery_stub_for_js'))
+{
+	/**
+	 * Одна реальная служба доставки из БД для JS sale.order.ajax при пустом списке (виртуальный eDost).
+	 * Иначе getSelectedDelivery() = false и ломается свёрнутый блок / инициализация.
+	 */
+	function mf_checkout_virtual_delivery_stub_for_js(\Bitrix\Sale\Order $order): ?array
+	{
+		try
+		{
+			if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+			{
+				return null;
+			}
+
+			$row = null;
+			$envId = (int)(getenv('MF_CHECKOUT_PLACEHOLDER_DELIVERY_ID') ?: 0);
+			if ($envId > 0 && class_exists(\Bitrix\Sale\Delivery\Services\Table::class))
+			{
+				$row = \Bitrix\Sale\Delivery\Services\Table::getRowById($envId);
+				if ($row && (($row['ACTIVE'] ?? 'N') !== 'Y'))
+				{
+					$row = null;
+				}
+			}
+
+			if (!$row && class_exists(\Bitrix\Sale\Delivery\Services\Table::class))
+			{
+				$res = \Bitrix\Sale\Delivery\Services\Table::getList([
+					'filter' => [
+						'=ACTIVE' => 'Y',
+						'=PARENT_ID' => 0,
+					],
+					'select' => ['ID', 'NAME', 'DESCRIPTION', 'SORT'],
+					'order' => ['SORT' => 'ASC', 'ID' => 'ASC'],
+					'limit' => 1,
+				]);
+				$row = $res->fetch() ?: null;
+			}
+
+			if (!$row || (int)($row['ID'] ?? 0) <= 0)
+			{
+				return null;
+			}
+
+			$currency = (string)$order->getCurrency();
+			if ($currency === '')
+			{
+				$currency = 'RUB';
+			}
+
+			$name = trim((string)($row['NAME'] ?? ''));
+			if ($name === '')
+			{
+				$name = 'Доставка';
+			}
+
+			$zeroFormatted = function_exists('SaleFormatCurrency')
+				? SaleFormatCurrency(0.0, $currency)
+				: '0';
+
+			return [
+				'ID' => (int)$row['ID'],
+				'NAME' => $name,
+				'OWN_NAME' => $name,
+				'DESCRIPTION' => (string)($row['DESCRIPTION'] ?? ''),
+				'CHECKED' => 'Y',
+				'SORT' => (int)($row['SORT'] ?? 100),
+				'PRICE' => 0.0,
+				'PRICE_FORMATED' => $zeroFormatted,
+				'DELIVERY_DISCOUNT_PRICE' => 0.0,
+				'DELIVERY_DISCOUNT_PRICE_FORMATED' => $zeroFormatted,
+				'CURRENCY' => $currency,
+				'EXTRA_SERVICES' => [],
+				'STORE' => false,
+				'CALCULATE_ERRORS' => false,
+			];
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
+	}
+}
+
 if (!function_exists('mf_checkout_resolve_fallback_location_code'))
 {
 	/**
@@ -1386,6 +1471,79 @@ if (!function_exists('mf_checkout_resolve_fallback_location_code'))
 					AND l.CODE IS NOT NULL AND l.CODE <> ''
 				ORDER BY l.DEPTH_LEVEL DESC, l.ID ASC
 				LIMIT 1"
+			);
+			$code = trim($code);
+			if ($code !== '')
+			{
+				return $code;
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		// Магазин по умолчанию (настройки модуля sale).
+		try
+		{
+			if (class_exists(\CSaleHelper::class))
+			{
+				$sl = \CSaleHelper::getShopLocation(false);
+				if (is_array($sl))
+				{
+					$c = trim((string)($sl['CODE'] ?? ''));
+					if ($c !== '')
+					{
+						return $c;
+					}
+					$lid = (int)($sl['ID'] ?? 0);
+					if ($lid > 0 && class_exists(\CSaleLocation::class))
+					{
+						$byId = \CSaleLocation::GetByID($lid, defined('LANGUAGE_ID') ? LANGUAGE_ID : 'ru');
+						if (is_array($byId))
+						{
+							$c2 = trim((string)($byId['CODE'] ?? ''));
+							if ($c2 !== '')
+							{
+								return $c2;
+							}
+						}
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		// D7: первая локация с непустым CODE.
+		try
+		{
+			if (class_exists(\Bitrix\Sale\Location\LocationTable::class))
+			{
+				$res = \Bitrix\Sale\Location\LocationTable::getList([
+					'select' => ['CODE'],
+					'order' => ['SORT' => 'ASC', 'ID' => 'ASC'],
+					'limit' => 100,
+				]);
+				while ($row = $res->fetch())
+				{
+					$c = trim((string)($row['CODE'] ?? ''));
+					if ($c !== '')
+					{
+						return $c;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		try
+		{
+			$conn = \Bitrix\Main\Application::getConnection();
+			$code = (string)$conn->queryScalar(
+				"SELECT CODE FROM b_sale_location WHERE CODE IS NOT NULL AND CODE <> '' ORDER BY SORT ASC, ID ASC LIMIT 1"
 			);
 
 			return trim($code);

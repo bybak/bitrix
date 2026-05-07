@@ -1,4 +1,12 @@
 <?if(!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)die();
+// Единственный актуальный header — в /local/templates/… Если на сервере открывается этот файл из /bitrix/templates/,
+// без шима правки «оформление заказа» (mf-order.css, sale.order.ajax style.css) никогда не применятся.
+$__mfSiteHeader = $_SERVER['DOCUMENT_ROOT'].'/local/templates/'.SITE_TEMPLATE_ID.'/header.php';
+if (is_file($__mfSiteHeader))
+{
+	require $__mfSiteHeader;
+	return;
+}
 IncludeTemplateLangFile($_SERVER["DOCUMENT_ROOT"]."/bitrix/templates/".SITE_TEMPLATE_ID."/header.php");
 CJSCore::Init(array("fx"));
 

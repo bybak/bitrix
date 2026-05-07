@@ -11,6 +11,7 @@ $APPLICATION->SetTitle("Заказы");
 	"ONLY_FULL_PAY_FROM_ACCOUNT" => "N",
 	"ALLOW_AUTO_REGISTER" => "N",
 	"MF_CUSTOM_GUEST_FLOW" => "Y",
+	"MF_ORDER_MAKE_SIGNATURE" => "Y",
 	"SEND_NEW_USER_NOTIFY" => "Y",
 	// 'H' = считать стоимость заранее только для доставок с isCalculatePriceImmediately()=true
 	// чтобы цены отображались прямо в списке доставок до выбора.

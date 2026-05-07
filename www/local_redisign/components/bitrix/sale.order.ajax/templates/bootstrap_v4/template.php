@@ -299,6 +299,9 @@ switch (LANGUAGE_ID)
 }
 
 \Bitrix\Main\UI\Extension::load('ui.fonts.opensans');
+$styleAbs = Main\Application::getDocumentRoot() . $templateFolder . '/style.css';
+$styleVer = @filemtime($styleAbs) ?: time();
+$this->addExternalCss($templateFolder . '/style.css?v=' . $styleVer);
 $orderAjaxPath = Main\Application::getDocumentRoot() . $templateFolder . '/order_ajax.js';
 $orderAjaxVer = @filemtime($orderAjaxPath) ?: time();
 $this->addExternalJs($templateFolder . '/order_ajax.js?v=' . $orderAjaxVer);
@@ -325,7 +328,14 @@ else
 	Main\UI\Extension::load('phone_auth');
 
 	$themeClass = !empty($arParams['TEMPLATE_THEME']) ? ' bx-'.$arParams['TEMPLATE_THEME'] : '';
-	$hideDelivery = empty($arResult['DELIVERY']);
+	$mfVirtualDelivery = (($arParams['MF_CUSTOM_GUEST_FLOW'] ?? 'N') === 'Y')
+		|| (($arParams['MF_ORDER_MAKE_SIGNATURE'] ?? 'N') === 'Y');
+	$hideDelivery = empty($arResult['DELIVERY']) && !$mfVirtualDelivery;
+	$mfCheckoutBoot = ['FALLBACK_LOCATION_CODE' => ''];
+	if ($mfVirtualDelivery && function_exists('mf_checkout_resolve_fallback_location_code'))
+	{
+		$mfCheckoutBoot['FALLBACK_LOCATION_CODE'] = (string)mf_checkout_resolve_fallback_location_code();
+	}
 	?>
 	<form action="<?=POST_FORM_ACTION_URI?>" method="POST" name="ORDER_FORM" class="bx-soa-wrapper mb-4<?=$themeClass?>" id="bx-soa-order-form" enctype="multipart/form-data">
 		<?php
@@ -341,6 +351,7 @@ else
 		<input type="hidden" name="BUYER_STORE" id="BUYER_STORE" value="<?=$arResult['BUYER_STORE']?>">
 		<input type="hidden" name="MF_CHECKOUT_MODE" id="MF_CHECKOUT_MODE" value="guest">
 		<input type="hidden" name="MF_RESET_PERSON_TYPE_SWITCH" id="MF_RESET_PERSON_TYPE_SWITCH" value="N">
+		<script>window.MF_CHECKOUT_BOOT = <?=CUtil::PhpToJSObject($mfCheckoutBoot)?>;</script>
 		<div id="bx-soa-order" class="row" style="opacity: 0">
 			<!--	MAIN BLOCK	-->
 			<div class="col-lg-8 col-md-7 bx-soa">

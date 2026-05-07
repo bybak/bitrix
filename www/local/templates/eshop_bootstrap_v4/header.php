@@ -28,7 +28,13 @@ $isProducts = (strpos($curPage, SITE_DIR."products/") === 0);
 $isSearch = (strpos($curPage, SITE_DIR."search/") === 0);
 $cartPathPrefix = SITE_DIR . "personal/cart/";
 $isCart = ($curPage === rtrim($cartPathPrefix, "/") || strpos($curPage, $cartPathPrefix) === 0);
-$isOrderMake = (strpos($curPage, SITE_DIR."personal/order/make/") === 0);
+$orderMakePrefix = rtrim((string)SITE_DIR, '/') . '/personal/order/make';
+$curDir = $APPLICATION->GetCurDir();
+$isOrderMake = (
+	strpos($curPage, $orderMakePrefix) === 0
+	|| stripos($curPage, 'personal/order/make') !== false
+	|| stripos($curDir, 'personal/order/make') !== false
+);
 $isPersonal = (strpos($curPage, SITE_DIR."personal/") === 0);
 $isAuth = (strpos($curPage, SITE_DIR."auth/") === 0);
 $isLogin = (strpos($curPage, SITE_DIR."login/") === 0);
@@ -149,6 +155,9 @@ if (function_exists('mf_seo_apply_for_current_page'))
 	{
 		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-order.css");
 		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
+		// Стили карточек MF-чекаута (.mf-checkout-meta / .mf-checkout-choice) — всегда с канонического пути компонента.
+		$soaCss = '/local/components/bitrix/sale.order.ajax/templates/bootstrap_v4/style.css';
+		echo '<link rel="stylesheet" href="' . htmlspecialcharsbx($mfAssetVer($soaCss)) . '" />' . "\n";
 	}
 	if ($isPayment)
 	{

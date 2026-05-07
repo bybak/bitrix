@@ -295,6 +295,11 @@ class SaleOrderAjax extends \CBitrixComponent
 		$arParams['ALLOW_NEW_PROFILE'] = ($arParams['ALLOW_NEW_PROFILE'] ?? 'Y') === 'N' ? 'N' : 'Y'; // Unknown parameter
 		$arParams['DELIVERY_NO_SESSION'] = ($arParams['DELIVERY_NO_SESSION'] ?? 'Y') === 'N' ? 'N' : 'Y';
 		$arParams['MF_CUSTOM_GUEST_FLOW'] = ($arParams['MF_CUSTOM_GUEST_FLOW'] ?? 'N') === 'Y' ? 'Y' : 'N';
+		$arParams['MF_ORDER_MAKE_SIGNATURE'] = ($arParams['MF_ORDER_MAKE_SIGNATURE'] ?? 'N') === 'Y' ? 'Y' : 'N';
+		if ($arParams['MF_ORDER_MAKE_SIGNATURE'] === 'Y')
+		{
+			$arParams['MF_CUSTOM_GUEST_FLOW'] = 'Y';
+		}
 
 		if (!isset($arParams['DELIVERY_NO_AJAX']) || !in_array($arParams['DELIVERY_NO_AJAX'], ['Y', 'N', 'H']))
 		{
@@ -5403,7 +5408,7 @@ class SaleOrderAjax extends \CBitrixComponent
 		$result['PERSON_TYPE'] = $arResult["PERSON_TYPE"];
 		$result['PAY_SYSTEM'] = $arResult["PAY_SYSTEM"];
 		$result['INNER_PAY_SYSTEM'] = $arResult["INNER_PAY_SYSTEM"] ?? null;
-		$result['DELIVERY'] = $arResult["DELIVERY"];
+		$result['DELIVERY'] = is_array($arResult['DELIVERY'] ?? null) ? $arResult['DELIVERY'] : [];
 
 		foreach ($result['DELIVERY'] as &$delivery)
 		{
@@ -5430,6 +5435,23 @@ class SaleOrderAjax extends \CBitrixComponent
 				}
 
 				$delivery['EXTRA_SERVICES'] = $arExtraService;
+			}
+		}
+		unset($delivery);
+
+		if (
+			($this->arParams['MF_CUSTOM_GUEST_FLOW'] ?? 'N') === 'Y'
+			|| ($this->arParams['MF_ORDER_MAKE_SIGNATURE'] ?? 'N') === 'Y'
+		)
+		{
+			$__delCnt = is_array($result['DELIVERY']) ? count($result['DELIVERY']) : 0;
+			if ($__delCnt === 0 && function_exists('mf_checkout_virtual_delivery_stub_for_js'))
+			{
+				$__stub = mf_checkout_virtual_delivery_stub_for_js($this->order);
+				if (is_array($__stub) && (int)($__stub['ID'] ?? 0) > 0)
+				{
+					$result['DELIVERY'][(int)$__stub['ID']] = $__stub;
+				}
 			}
 		}
 

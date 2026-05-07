@@ -115,6 +115,49 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.propsBlockNode = BX(parameters.propsBlockId);
 			this.propsHiddenBlockNode = BX(parameters.propsBlockId + '-hidden');
 
+			// Motor-Force: если вёрстка из типового bootstrap_v4 (шаблон сайта без копирования из local/components),
+			// нет #bx-soa-checkout-meta и скрытых полей — гостевой UI и eDost не работают.
+			try
+			{
+				var repairForm = BX('bx-soa-order-form'),
+					metaId = parameters.checkoutMetaBlockId || 'bx-soa-checkout-meta';
+				if (!this.checkoutMetaBlockNode && this.orderBlockNode && !BX(metaId))
+				{
+					var col = this.orderBlockNode.querySelector('.bx-soa');
+					if (col)
+					{
+						var notif = col.querySelector('#bx-soa-main-notifications');
+						this.checkoutMetaBlockNode = BX.create('DIV', {
+							attrs: {id: metaId, className: 'mf-checkout-meta'}
+						});
+						if (notif)
+						{
+							col.insertBefore(this.checkoutMetaBlockNode, notif.nextSibling);
+						}
+						else
+						{
+							col.insertBefore(this.checkoutMetaBlockNode, col.firstChild);
+						}
+					}
+				}
+				if (repairForm && !repairForm.querySelector('input[name="MF_CHECKOUT_MODE"]'))
+				{
+					repairForm.appendChild(BX.create('INPUT', {
+						props: {type: 'hidden', name: 'MF_CHECKOUT_MODE', id: 'MF_CHECKOUT_MODE', value: 'guest'}
+					}));
+				}
+				if (repairForm && !repairForm.querySelector('input[name="MF_RESET_PERSON_TYPE_SWITCH"]'))
+				{
+					repairForm.appendChild(BX.create('INPUT', {
+						props: {type: 'hidden', name: 'MF_RESET_PERSON_TYPE_SWITCH', id: 'MF_RESET_PERSON_TYPE_SWITCH', value: 'N'}
+					}));
+				}
+			}
+			catch (repairDomError)
+			{
+				// ignore
+			}
+
 			if (this.result.SHOW_AUTH)
 			{
 				this.authBlockNode.style.display = '';
@@ -382,6 +425,14 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				}
 				this.mapsReady && this.initMaps();
 				BX.saleOrderAjax && BX.saleOrderAjax.initDeferredControl();
+				try
+				{
+					if (typeof BX !== 'undefined' && BX.onCustomEvent)
+					{
+						BX.onCustomEvent(window, 'mf-checkout-order-refreshed', [this, result]);
+					}
+				}
+				catch (eMfRef) {}
 			}
 
 			return true;
@@ -1409,7 +1460,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 							this.deliveryLocationInfo.city = curProp.INPUT_FIELD_LOCATION;
 						}
 
-						if (!this.deliveryLocationInfo.loc && curProp.IS_LOCATION == 'Y')
+						if (!this.deliveryLocationInfo.loc && (curProp.IS_LOCATION == 'Y' || curProp.IS_LOCATION === true))
 							this.deliveryLocationInfo.loc = curProp.ID;
 
 						if (!this.deliveryLocationInfo.zip && curProp.IS_ZIP == 'Y')
@@ -1896,24 +1947,24 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				section = this.getNextSection(actionSection),
 				allSections, titleNode, editStep;
 
-			// Motor-Force customization:
-			// In "virtual eDost tariffs" mode, do not allow leaving Delivery step
-			// until user explicitly selects a tariff (MF_EDOST_TARIF_ID).
+			// Motor-Force: виртуальные тарифы eDost — нельзя уходить с доставки без выбранного MF_EDOST_TARIF_ID
+			// (проверка по флагам params/result, иначе до ensureFields() в DOM нет hidden — валидация молча отключается).
 			try
 			{
 				if (actionSection && actionSection.id === this.deliveryBlockNode.id)
 				{
 					var f = BX('bx-soa-order-form');
+					var mfVirtualEdost = (this.params.MF_CUSTOM_GUEST_FLOW === 'Y')
+						|| (this.params.MF_ORDER_MAKE_SIGNATURE === 'Y')
+						|| !!(this.result && this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED);
 					var virtual = f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box'));
-					if (virtual)
+					if (mfVirtualEdost || virtual)
 					{
 						var tidEl = f ? f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 						var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
-						// Also require location to be chosen (the selector may exist but be empty).
-						var locHidden = f ? f.querySelector('input[type="hidden"][name^="ORDER_PROP_"]') : null;
 						if (!tid)
 						{
-							this.showError(this.deliveryBlockNode, 'Выберите способ доставки, чтобы перейти дальше.', true);
+							this.showError(this.deliveryBlockNode, 'Выберите способ доставки (тариф eDost), чтобы перейти дальше.', true);
 							this.animateScrollTo(this.deliveryBlockNode, 400, 20);
 							return BX.PreventDefault(event);
 						}
@@ -2086,12 +2137,17 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (section.id === this.deliveryBlockNode.id)
 				{
-					// Motor-Force customization:
-					// We use a single technical Bitrix delivery ("Стандартный", price=0) and show
-					// real delivery options as virtual eDost tariffs. Therefore we must NOT skip
-					// the Delivery step even if Bitrix sees only one delivery service.
+					// Motor-Force: виртуальные тарифы eDost — не пропускать доставку до появления полей в форме
+					// (иначе changeVisibleContent на firstLoad срабатывает раньше initDeferredControl из script.js).
 					try
 					{
+						var mfVirtualEdost = (this.params.MF_CUSTOM_GUEST_FLOW === 'Y')
+							|| (this.params.MF_ORDER_MAKE_SIGNATURE === 'Y')
+							|| !!(this.result && this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED);
+						if (mfVirtualEdost)
+						{
+							return false;
+						}
 						var f = BX('bx-soa-order-form');
 						if (f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box')))
 						{
@@ -5177,7 +5233,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			{
 				if (this.result.ORDER_PROP.properties.hasOwnProperty(i))
 				{
-					if (this.result.ORDER_PROP.properties[i].IS_LOCATION == 'Y'
+					if ((this.result.ORDER_PROP.properties[i].IS_LOCATION == 'Y'
+						|| this.result.ORDER_PROP.properties[i].IS_LOCATION === true)
 						&& this.result.ORDER_PROP.properties[i].ID == this.deliveryLocationInfo.loc)
 					{
 						locationProperty = this.result.ORDER_PROP.properties[i];
@@ -5288,7 +5345,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				if (this.result.ORDER_PROP.properties.hasOwnProperty(k))
 				{
 					currentProperty = this.result.ORDER_PROP.properties[k];
-					if (currentProperty.IS_LOCATION == 'Y')
+					if (currentProperty.IS_LOCATION == 'Y' || currentProperty.IS_LOCATION === true)
 					{
 						locationId = currentProperty.ID;
 						altId = parseInt(currentProperty.INPUT_FIELD_LOCATION);
@@ -5375,6 +5432,65 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				this.bindValidation(altProperty.ID, altNode);
 			}
+
+			// Motor-Force: если Bitrix не отдал LOCATIONS[].output, getDeliveryLocationInput ничего не рисует —
+			// шаг «Доставка» пустой, хотя eDost и валидация требуют ORDER_PROP местоположения.
+			try
+			{
+				var mfVirtLoc = (this.params.MF_CUSTOM_GUEST_FLOW === 'Y')
+					|| (this.params.MF_ORDER_MAKE_SIGNATURE === 'Y')
+					|| !!(this.result && this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED);
+				if (!mfVirtLoc || !this.result || !this.result.ORDER_PROP || !this.result.ORDER_PROP.properties)
+				{
+					this.getZipLocationInput(node);
+					return;
+				}
+				var mfLp = null, mfLid = 0, kk;
+				for (kk in this.result.ORDER_PROP.properties)
+				{
+					if (!this.result.ORDER_PROP.properties.hasOwnProperty(kk))
+						continue;
+					if (this.result.ORDER_PROP.properties[kk].IS_LOCATION == 'Y'
+						|| this.result.ORDER_PROP.properties[kk].IS_LOCATION === true)
+					{
+						mfLp = this.result.ORDER_PROP.properties[kk];
+						mfLid = parseInt(mfLp.ID, 10) || 0;
+						break;
+					}
+				}
+				if (mfLid > 0 && !node.querySelector('[data-property-id-row="' + mfLid + '"]'))
+				{
+					var fbCode = (this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.FALLBACK_LOCATION_CODE)
+						? String(this.result.MF_CHECKOUT.FALLBACK_LOCATION_CODE || '').trim()
+						: '';
+					if (!BX.type.isNotEmptyString(fbCode) && typeof window !== 'undefined' && window.MF_CHECKOUT_BOOT && window.MF_CHECKOUT_BOOT.FALLBACK_LOCATION_CODE)
+						fbCode = String(window.MF_CHECKOUT_BOOT.FALLBACK_LOCATION_CODE || '').trim();
+					if (!BX.type.isNotEmptyString(fbCode) && mfLp && mfLp.VALUE)
+					{
+						var pv = mfLp.VALUE;
+						fbCode = BX.type.isArray(pv) ? String(pv[0] || '').trim() : String(pv || '').trim();
+					}
+					if (BX.type.isNotEmptyString(fbCode))
+					{
+						this.regionBlockNotEmpty = true;
+						node.appendChild(BX.create('DIV', {
+							attrs: {'data-property-id-row': mfLid},
+							props: {className: 'form-group bx-soa-location-input-container mf-checkout-loc-fallback'},
+							children: [
+								BX.create('INPUT', {
+									attrs: {'data-mf-bitrix-fallback-loc': 'Y'},
+									props: {
+										type: 'hidden',
+										name: 'ORDER_PROP_' + mfLid,
+										value: fbCode
+									}
+								})
+							]
+						}));
+					}
+				}
+			}
+			catch (eMfFallbackLoc) {}
 
 			this.getZipLocationInput(node);
 
@@ -6073,8 +6189,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 		editDeliveryBlock: function(active)
 		{
-			if (!this.deliveryBlockNode || !this.deliveryHiddenBlockNode || !this.result.DELIVERY)
+			if (!this.deliveryBlockNode || !this.deliveryHiddenBlockNode)
 				return;
+			if (!this.result.DELIVERY)
+				this.result.DELIVERY = [];
 
 			if (active)
 				this.editActiveDeliveryBlock(true);
@@ -6489,11 +6607,16 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		editFadeDeliveryContent: function(node)
 		{
 			var selectedDelivery = this.getSelectedDelivery(),
-				name = this.params.SHOW_DELIVERY_PARENT_NAMES != 'N' ? selectedDelivery.NAME : selectedDelivery.OWN_NAME,
+				name = '',
 				errorNode = this.deliveryHiddenBlockNode.querySelector('div.alert.alert-danger'),
 				warningNode = this.deliveryHiddenBlockNode.querySelector('div.alert.alert-warning.alert-show'),
 				extraService, logotype, imgSrc, arNodes, i,
 				form, edostId, edostCompany, edostName, edostPrice, displayPriceText;
+
+			if (selectedDelivery)
+			{
+				name = this.params.SHOW_DELIVERY_PARENT_NAMES != 'N' ? (selectedDelivery.NAME || '') : (selectedDelivery.OWN_NAME || '');
+			}
 
 			// Motor-Force customization:
 			// For virtual eDost tariffs, the collapsed delivery summary must show the
@@ -6514,19 +6637,24 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				name = (edostCompany ? (edostCompany + ' — ') : '') + edostName;
 				displayPriceText = edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении';
 			}
-			else if (mfCheckoutEnabled)
+			else if (edostId !== '' && edostName === '' && mfEd && mfEd.selected && mfEd.selected.name)
 			{
-				if (managerFb)
-				{
-					name = 'Стоимость доставки уточняет менеджер';
-					displayPriceText = '0 ₽';
-				}
-				else
-				{
-					name = 'Способ доставки не выбран';
-					displayPriceText = '—';
-				}
+				edostName = String(mfEd.selected.name || '');
+				edostCompany = (mfEd.selected.company) ? String(mfEd.selected.company) : edostCompany;
+				edostPrice = (typeof mfEd.selected.price !== 'undefined' && mfEd.selected.price !== null && mfEd.selected.price !== '')
+					? String(mfEd.selected.price)
+					: edostPrice;
+				name = (edostCompany ? (edostCompany + ' — ') : '') + edostName;
+				displayPriceText = edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении';
 			}
+			else if (mfCheckoutEnabled && managerFb)
+			{
+				name = 'Стоимость доставки уточняет менеджер';
+				displayPriceText = '0 ₽';
+			}
+
+			var mfTariffOk = (edostId !== '' && edostName !== '') || managerFb;
+			var showDeliveryFadeRow = !!(selectedDelivery && selectedDelivery.NAME) || mfTariffOk;
 
 			if (errorNode && errorNode.innerHTML)
 				node.appendChild(errorNode.cloneNode(true));
@@ -6536,16 +6664,16 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (warningNode && warningNode.innerHTML)
 				node.appendChild(warningNode.cloneNode(true));
 
-			if (selectedDelivery && selectedDelivery.NAME)
+			if (showDeliveryFadeRow && BX.type.isNotEmptyString(String(name || '')))
 			{
-				logotype = this.getImageSources(selectedDelivery, 'LOGOTIP');
+				logotype = selectedDelivery ? this.getImageSources(selectedDelivery, 'LOGOTIP') : null;
 				imgSrc = logotype && logotype.src_1x || this.defaultDeliveryLogo;
 				arNodes = [
 					BX.create('IMG', {props: {src: imgSrc, alt: ''}, style: {height: '18px'}}),
 					BX.create('STRONG', {text: name})
 				];
 
-				if (this.params.DELIVERY_FADE_EXTRA_SERVICES == 'Y' && BX.util.object_keys(selectedDelivery.EXTRA_SERVICES).length)
+				if (selectedDelivery && this.params.DELIVERY_FADE_EXTRA_SERVICES == 'Y' && BX.util.object_keys(selectedDelivery.EXTRA_SERVICES).length)
 				{
 					arNodes.push(BX.create('BR'));
 
@@ -6584,8 +6712,12 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				node.appendChild(BX.create('STRONG', {text: BX.message('SOA_DELIVERY_SELECT_ERROR')}));
 
 			node.appendChild(BX.create('DIV', {style: {clear: 'both'}}));
-			BX.bind(node.querySelector('.alert.alert-danger'), 'click', BX.proxy(this.showByClick, this));
-			BX.bind(node.querySelector('.alert.alert-warning'), 'click', BX.proxy(this.showByClick, this));
+			var errBind = node.querySelector('.alert.alert-danger');
+			if (errBind)
+				BX.bind(errBind, 'click', BX.proxy(this.showByClick, this));
+			var warnBind = node.querySelector('.alert.alert-warning');
+			if (warnBind)
+				BX.bind(warnBind, 'click', BX.proxy(this.showByClick, this));
 		},
 
 		selectDelivery: function(event)
@@ -6835,7 +6967,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (!currentPickUp)
 				{
-					stores = this.getSelectedDelivery().STORE;
+					var selDel = this.getSelectedDelivery();
+					stores = selDel && selDel.STORE ? selDel.STORE : null;
 					if (stores)
 					{
 						for (i in stores)
@@ -6952,7 +7085,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				if (this.result.ORDER_PROP.properties.hasOwnProperty(k))
 				{
 					currentProperty = this.result.ORDER_PROP.properties[k];
-					if (currentProperty.IS_LOCATION == 'Y')
+					if (currentProperty.IS_LOCATION == 'Y' || currentProperty.IS_LOCATION === true)
 					{
 						locationId = currentProperty.ID;
 						break;
@@ -7494,6 +7627,52 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				fadeParamName = 'PROPS_FADE_LIST_' + personType.ID;
 				props = this.params[fadeParamName];
 			}
+
+			try
+			{
+				var mfFadeIds = [], pIdx, pr, c;
+				if (this.result && this.result.ORDER_PROP && Array.isArray(this.result.ORDER_PROP.properties))
+				{
+					for (pIdx = 0; pIdx < this.result.ORDER_PROP.properties.length; pIdx++)
+					{
+						pr = this.result.ORDER_PROP.properties[pIdx];
+						if (!pr || !pr.ID)
+							continue;
+						c = String(pr.CODE || '').toUpperCase();
+						if (c === 'DELIVERY_LOCATION_TEXT' || c === 'DELIVERY_ADDRESS' || c === 'DELIVERY_ZIP')
+							mfFadeIds.push(parseInt(pr.ID, 10));
+					}
+				}
+				if (mfFadeIds.length)
+				{
+					if (!props || !props.length)
+					{
+						props = mfFadeIds.slice();
+					}
+					else
+					{
+						var seen = {}, merged = [], j, id;
+						for (j = 0; j < props.length; j++)
+						{
+							id = parseInt(props[j], 10);
+							if (!id || seen[id])
+								continue;
+							seen[id] = true;
+							merged.push(id);
+						}
+						for (j = 0; j < mfFadeIds.length; j++)
+						{
+							id = mfFadeIds[j];
+							if (!id || seen[id])
+								continue;
+							seen[id] = true;
+							merged.push(id);
+						}
+						props = merged;
+					}
+				}
+			}
+			catch (eMfFade) {}
 
 			if (!props || props.length === 0)
 			{
@@ -8149,8 +8328,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!this.options.propertyValidation)
 				return true;
 
+			// Motor-Force: «Местоположение» в «Покупателе» скрыто (Photon/Nominatim), значение в DELIVERY_*.
 			var regionErrors = this.isValidRegionBlock(),
-				propsErrors = this.isValidPropertiesBlock(),
+				propsErrors = this.isValidPropertiesBlock(true),
 				navigated = false, tooltips, i;
 
 			if (regionErrors.length)
@@ -8221,6 +8401,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!this.options.propertyValidation)
 				return [];
 
+			try {
+				if (BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress && typeof BX.saleOrderAjax.__mfBuyerAddress.syncPickupFromSelectedStore === 'function')
+					BX.saleOrderAjax.__mfBuyerAddress.syncPickupFromSelectedStore();
+			} catch (eMfPvzProps) {}
+
 			var props = this.orderBlockNode.querySelectorAll('.bx-soa-customer-field[data-property-id-row]'),
 				propsErrors = [],
 				id, propContainer, arProperty, data, i;
@@ -8232,10 +8417,32 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				if (!!excludeLocation && this.locations[id])
 					continue;
 
+				if (BX.hasClass(props[i], 'mf-checkout-hide-location'))
+					continue;
+
 				propContainer = props[i].querySelector('.soa-property-container');
 				if (propContainer)
 				{
 					arProperty = this.validation.properties[id];
+					if (!arProperty)
+						continue;
+
+					if (String(arProperty.TYPE || '').toUpperCase() === 'LOCATION')
+					{
+						try {
+							var hidSk = this.orderBlockNode.querySelector('input[type="hidden"][name="ORDER_PROP_' + id + '"]');
+							if (hidSk && String(hidSk.value || '').trim() !== '')
+								continue;
+							var mfbSk = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+							if (mfbSk && typeof mfbSk.getInputByCode === 'function')
+							{
+								var dltSk = mfbSk.getInputByCode('DELIVERY_LOCATION_TEXT');
+								if (dltSk && dltSk !== false && String(dltSk.value || '').trim() !== '')
+									continue;
+							}
+						} catch (eMfLocSk) {}
+					}
+
 					data = this.getValidationData(arProperty, propContainer);
 					propsErrors = propsErrors.concat(this.isValidProperty(data, true));
 				}
@@ -8304,7 +8511,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 						return this.validateString(input, arProperty, fieldName);
 					}, this);
 
-					inputs = propContainer.querySelectorAll('input[type=text]');
+					inputs = propContainer.querySelectorAll('input[type=text], input[type=tel], input[type=email], input[type=number]');
 					if (inputs.length)
 					{
 						data.inputs = inputs;
