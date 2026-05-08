@@ -65,6 +65,44 @@ services:
     networks:
       - bitrix
 
+  # Агенты Bitrix (в т.ч. \\Mf\\Unf\\Agent::run — отправка заказов в 1С из mf_unf_queue).
+  # Без периодического cron_events.php очередь остаётся в статусе new, пока кто-то не откроет сайт.
+  bitrix_cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.php
+    container_name: bitrix_cron
+    restart: unless-stopped
+    working_dir: /var/www/html
+    user: www-data
+    env_file:
+      - ./.env
+    environment:
+      TZ: Europe/Moscow
+      MF_UNF_ENABLED: "1"
+      MF_UNF_ENDPOINT: "http://95.161.174.134:25555/unf/hs/orders/create"
+      MF_UNF_PAID_ENDPOINT: "http://95.161.174.134:25555/unf/hs/orders/update"
+      MF_UNF_TIMEOUT: "10"
+      MF_UNF_LOG: "1"
+      MF_UNF_OPERATION: "Заказ на продажу"
+      MF_UNF_TAXATION: "Не облагается (без НДС)"
+    volumes:
+      - ./www:/var/www/html
+      - ./php-fpm-bitrix.conf:/usr/local/etc/php-fpm.d/zz-bitrix.conf:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - bitrix
+    command:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          php -d short_open_tag=1 -f bitrix/modules/main/tools/cron_events.php || true
+          sleep 60
+        done
+
   mysql:
     image: mysql:8.0
     container_name: bitrix_mysql

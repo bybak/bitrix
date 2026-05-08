@@ -599,6 +599,32 @@ final class Queue
 		$orderId = (int)($row['ORDER_ID'] ?? 0);
 		$attempts = (int)($row['ATTEMPTS'] ?? 0);
 		$payloadJson = (string)($row['PAYLOAD_JSON'] ?? '');
+		// JSON формируется при постановке в очередь (OnSaleOrderSaved) — отгрузка в БД может дописаться позже.
+		// Перед HTTP-отправкой пересобираем payload из актуального заказа, чтобы в 1С ушли доставка и цена.
+		if ($orderId > 0)
+		{
+			try
+			{
+				if (Loader::includeModule('sale'))
+				{
+					$oFresh = Order::load($orderId);
+					if ($oFresh instanceof Order)
+					{
+						$payloadFresh = Payload::build($oFresh);
+						$enc = \json_encode($payloadFresh, JSON_UNESCAPED_SLASHES);
+						if (\is_string($enc) && $enc !== '')
+						{
+							$payloadJson = $enc;
+						}
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				Bootstrap::log('UNF payload refresh failed; using queued JSON', ['orderId' => $orderId, 'e' => $e->getMessage()]);
+			}
+		}
+
 		$endpoint = Config::endpoint();
 		$token = Config::token();
 		$basicUser = Config::basicUser();
@@ -1218,6 +1244,68 @@ final class Payload
 		return $uid . '-' . (int)$order->getId();
 	}
 
+	/**
+	 * First non-empty order property by CODE candidates (Bitrix sites use different property codes).
+	 */
+	private static function firstNonEmptyPropValue(array $props, array $codes): string
+	{
+		foreach ($codes as $code)
+		{
+			$code = (string)$code;
+			if ($code === '' || !\array_key_exists($code, $props))
+			{
+				continue;
+			}
+			$v = $props[$code];
+			if ($v === null || $v === '' || $v === false)
+			{
+				continue;
+			}
+			if (\is_array($v))
+			{
+				$parts = [];
+				foreach ($v as $item)
+				{
+					$s = \trim((string)$item);
+					if ($s !== '')
+					{
+						$parts[] = $s;
+					}
+				}
+				$v = \implode(', ', $parts);
+			}
+			$v = \trim((string)$v);
+			if ($v !== '')
+			{
+				return $v;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * If property codes differ (e.g. MF_PHONE), pick any prop whose CODE looks like a phone field.
+	 */
+	private static function pickPhoneFromPropsLoose(array $props): string
+	{
+		foreach ($props as $code => $v)
+		{
+			$codeU = \strtoupper((string)$code);
+			if ($codeU === '' || (!\str_contains($codeU, 'PHONE') && !\str_contains($codeU, 'MOBILE') && !\str_contains($codeU, 'TEL')))
+			{
+				continue;
+			}
+			$s = self::firstNonEmptyPropValue($props, [(string)$code]);
+			if ($s !== '')
+			{
+				return $s;
+			}
+		}
+
+		return '';
+	}
+
 	public static function build(Order $order): array
 	{
 		$orderId = (int)$order->getId();
@@ -1238,10 +1326,52 @@ final class Payload
 			}
 		}
 
-		$userEmail = (string)($props['EMAIL'] ?? '');
-		$userPhone = (string)($props['PHONE'] ?? '');
-		$userName = (string)($props['FIO'] ?? '');
-		$address = (string)($props['ADDRESS'] ?? ($props['LOCATION'] ?? ''));
+		$checkoutHints = self::extractCheckoutSnapshot($propCollection, $props);
+
+		$userEmail = self::firstNonEmptyPropValue($props, ['EMAIL', 'email', 'E_MAIL', 'MAIL']);
+		$userPhone = self::firstNonEmptyPropValue($props, ['PHONE', 'PHONE_MOBILE', 'MOBILE', 'TEL', 'CONTACT_PHONE', 'TEL_MOBILE', 'USER_PHONE']);
+		if ($userPhone === '')
+		{
+			$userPhone = self::pickPhoneFromPropsLoose($props);
+		}
+		$userName = self::firstNonEmptyPropValue($props, ['FIO', 'CONTACT_PERSON', 'NAME', 'FULL_NAME', 'BUYER_NAME']);
+		$address = self::firstNonEmptyPropValue($props, ['ADDRESS', 'LOCATION', 'DELIVERY_ADDRESS', 'ADDRESS_FULL', 'ADRES', 'LOCATION_ADDRESS', 'FULL_ADDRESS']);
+
+		$userId = (int)$order->getUserId();
+		if ($userId > 0 && ($userEmail === '' || $userPhone === '' || $userName === ''))
+		{
+			try
+			{
+				$u = \CUser::GetByID($userId)->Fetch();
+				if (\is_array($u))
+				{
+					if ($userEmail === '')
+					{
+						$userEmail = \trim((string)($u['EMAIL'] ?? ''));
+					}
+					if ($userPhone === '')
+					{
+						$userPhone = \trim((string)($u['PERSONAL_PHONE'] ?? ''));
+						if ($userPhone === '')
+						{
+							$userPhone = \trim((string)($u['PERSONAL_MOBILE'] ?? ''));
+						}
+						if ($userPhone === '')
+						{
+							$userPhone = \trim((string)($u['WORK_PHONE'] ?? ''));
+						}
+					}
+					if ($userName === '')
+					{
+						$userName = \trim(\trim((string)($u['NAME'] ?? '')) . ' ' . \trim((string)($u['LAST_NAME'] ?? '')));
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
 
 		$basketItems = [];
 		$basket = $order->getBasket();
@@ -1274,29 +1404,223 @@ final class Payload
 					'vat_rate' => (float)$vatRate,
 					'vat_percent' => $vatPercent,
 					'nds_percent' => $vatPercent, // alias for some 1C handlers
+					// Заполняется ниже из склада отгрузки (для комментария в 1С).
+					'warehouse_name' => null,
 				];
 			}
 		}
 
 		$deliveryName = '';
+		$deliveryPrice = (float)$order->getDeliveryPrice();
 		$warehouse = null;
 		$shipmentCollection = $order->getShipmentCollection();
-		if ($shipmentCollection)
+		$emptyDeliveryId = 0;
+		try
 		{
-			foreach ($shipmentCollection as $shipment)
+			if (\class_exists(\Bitrix\Sale\Delivery\Services\Manager::class))
 			{
-				if ($shipment->isSystem())
-				{
-					continue;
-				}
-				if ($deliveryName === '')
-				{
-					$deliveryName = (string)$shipment->getDeliveryName();
-				}
-
-				// Try to resolve warehouse (catalog store) from shipment items.
-				$warehouse = $warehouse ?? self::warehouseFromShipment($shipment);
+				$emptyDeliveryId = (int)\Bitrix\Sale\Delivery\Services\Manager::getEmptyDeliveryServiceId();
 			}
+		}
+		catch (\Throwable $e)
+		{
+			$emptyDeliveryId = 0;
+		}
+
+		$chosenShipment = self::pickChosenShipment($shipmentCollection, $emptyDeliveryId);
+
+		if ($chosenShipment !== null)
+		{
+			$deliveryName = self::resolveDeliveryServiceName($chosenShipment);
+			if ($deliveryName === '')
+			{
+				$didShip = 0;
+				try
+				{
+					$didShip = (int)$chosenShipment->getDeliveryId();
+				}
+				catch (\Throwable $e)
+				{
+					$didShip = 0;
+				}
+				if ($didShip > 0)
+				{
+					$deliveryName = self::deliveryServiceHumanName($didShip);
+				}
+			}
+			try
+			{
+				$deliveryPrice = (float)$chosenShipment->getField('PRICE_DELIVERY');
+			}
+			catch (\Throwable $e)
+			{
+				$deliveryPrice = (float)$order->getDeliveryPrice();
+			}
+			$shipmentForWarehouse = $chosenShipment;
+			try
+			{
+				if ($shipmentForWarehouse->isSystem() && $shipmentCollection)
+				{
+					foreach ($shipmentCollection as $s)
+					{
+						if (!$s->isSystem())
+						{
+							$shipmentForWarehouse = $s;
+							break;
+						}
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				$shipmentForWarehouse = $chosenShipment;
+			}
+			$warehouse = self::warehouseFromShipment($shipmentForWarehouse);
+		}
+
+		$orderDeliveryId = 0;
+		try
+		{
+			$orderDeliveryId = (int)$order->getField('DELIVERY_ID');
+		}
+		catch (\Throwable $e)
+		{
+			$orderDeliveryId = 0;
+		}
+		if ($orderDeliveryId <= 0)
+		{
+			$orderDeliveryId = (int)self::firstNonEmptyPropValue($props, ['DELIVERY_ID']);
+		}
+		if ($deliveryName === '' && $orderDeliveryId > 0 && $orderDeliveryId !== $emptyDeliveryId)
+		{
+			$deliveryName = self::deliveryServiceHumanName($orderDeliveryId);
+		}
+		if ($deliveryName === '' || self::isTrivialEmptyDeliveryName($deliveryName))
+		{
+			$hint = self::firstNonEmptyPropValue($props, [
+				'MF_DELIVERY_NAME',
+				'MF_DELIVERY_LABEL',
+				'CHECKOUT_DELIVERY',
+				'DELIVERY_SERVICE_NAME',
+				'SELECTED_DELIVERY',
+				'DELIVERY_TYPE',
+				'DELIVERY_SERVICE',
+				'SHIPMENT_NAME',
+				'SPOSOB_DOSTAVKI',
+				'DELIVERY_NAME_USER',
+			]);
+			if ($hint !== '' && !self::isTrivialEmptyDeliveryName($hint))
+			{
+				$deliveryName = $hint;
+			}
+		}
+		if ($deliveryName === '' || self::isTrivialEmptyDeliveryName($deliveryName))
+		{
+			$snap = self::loadDeliverySnapshotFromDb($orderId, $emptyDeliveryId);
+			if ($snap['name'] !== '')
+			{
+				$deliveryName = $snap['name'];
+			}
+			if ($snap['price'] > 0.0 && $deliveryPrice <= 0.0)
+			{
+				$deliveryPrice = $snap['price'];
+			}
+		}
+		if ($deliveryName === '' || self::isTrivialEmptyDeliveryName($deliveryName))
+		{
+			$chk = \trim((string)($checkoutHints['delivery_service'] ?? ''));
+			if ($chk !== '' && !self::isTrivialEmptyDeliveryName($chk))
+			{
+				$deliveryName = $chk;
+			}
+		}
+		if (($deliveryName === '' || self::isTrivialEmptyDeliveryName($deliveryName)) && $orderId > 0)
+		{
+			try
+			{
+				if (Loader::includeModule('sale'))
+				{
+					$oReload = Order::load($orderId);
+					if ($oReload instanceof Order)
+					{
+						$scReload = $oReload->getShipmentCollection();
+						$chReload = self::pickChosenShipment($scReload, $emptyDeliveryId);
+						if ($chReload !== null)
+						{
+							$dnR = self::resolveDeliveryServiceName($chReload);
+							if ($dnR !== '' && !self::isTrivialEmptyDeliveryName($dnR))
+							{
+								$deliveryName = $dnR;
+							}
+							else
+							{
+								$didR = 0;
+								try
+								{
+									$didR = (int)$chReload->getDeliveryId();
+								}
+								catch (\Throwable $e)
+								{
+									$didR = 0;
+								}
+								if ($didR > 0)
+								{
+									$dnR = self::deliveryServiceHumanName($didR);
+									if ($dnR !== '' && !self::isTrivialEmptyDeliveryName($dnR))
+									{
+										$deliveryName = $dnR;
+									}
+								}
+							}
+							if ($deliveryPrice <= 0.0)
+							{
+								try
+								{
+									$dpR = (float)$chReload->getField('PRICE_DELIVERY');
+									if ($dpR > 0.0)
+									{
+										$deliveryPrice = $dpR;
+									}
+								}
+								catch (\Throwable $e)
+								{
+									// ignore
+								}
+							}
+						}
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+		if ($deliveryPrice <= 0.0)
+		{
+			try
+			{
+				$dp = (float)$order->getDeliveryPrice();
+				if ($dp > 0.0)
+				{
+					$deliveryPrice = $dp;
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		$basketWarehouse = self::warehouseFromOrderBasket($order);
+		if ($basketWarehouse !== null)
+		{
+			$warehouse = $basketWarehouse;
+		}
+
+		if (self::isTrivialEmptyDeliveryName($deliveryName))
+		{
+			$deliveryName = '';
 		}
 
 		$paymentName = '';
@@ -1380,12 +1704,32 @@ final class Payload
 
 		$unfOrderKey = self::orderExternalIdForUnf($order);
 
+		$basketItems = self::attachWarehouseNameToBasketItems($basketItems, $warehouse);
+
+		$userComment = '';
+		try
+		{
+			$userComment = \trim((string)$order->getField('USER_DESCRIPTION'));
+		}
+		catch (\Throwable $e)
+		{
+			$userComment = '';
+		}
+		if ($userComment === '' && isset($checkoutHints['order_comment_hint']) && \is_string($checkoutHints['order_comment_hint']))
+		{
+			$t = \trim($checkoutHints['order_comment_hint']);
+			if ($t !== '')
+			{
+				$userComment = $t;
+			}
+		}
+
 		return [
 			'meta' => [
 				'source' => 'bitrix',
 				'site_id' => $siteId,
 				'sent_at' => (new DateTime())->format(\DateTimeInterface::ATOM),
-				'schema_version' => 4,
+				'schema_version' => 5,
 			],
 			'order' => [
 				'external_id' => $unfOrderKey,
@@ -1431,10 +1775,14 @@ final class Payload
 				'price' => (float)$order->getPrice(),
 				'bitrix_currency' => (string)$order->getCurrency(),
 				'warehouse' => $warehouse,
+				'user_comment' => $userComment !== '' ? $userComment : null,
+				// Дублирует delivery.name — часть HTTP-цепочек в 1С читает плоские ключи; для п.11 комментария в УНФ.
+				'delivery_label' => ($deliveryName !== '' && !self::isTrivialEmptyDeliveryName($deliveryName)) ? $deliveryName : null,
 				'delivery' => [
 					'name' => $deliveryName,
-					'price' => (float)$order->getDeliveryPrice(),
+					'price' => $deliveryPrice,
 				],
+				'checkout' => $checkoutHints,
 				'payment' => [
 					'name' => $paymentName,
 					'paid' => (string)$order->getField('PAYED') === 'Y',
@@ -1454,6 +1802,781 @@ final class Payload
 		];
 	}
 
+	private static function mbLc(string $s): string
+	{
+		if ($s === '')
+		{
+			return '';
+		}
+		if (!\function_exists('mb_strtolower'))
+		{
+			return \strtolower($s);
+		}
+
+		return \mb_strtolower($s, 'UTF-8');
+	}
+
+	/**
+	 * @param \Bitrix\Sale\PropertyValue|\Bitrix\Sale\PropertyValueBase $prop
+	 */
+	private static function orderPropertyPlainValue($prop): string
+	{
+		try
+		{
+			$v = $prop->getValue();
+		}
+		catch (\Throwable $e)
+		{
+			return '';
+		}
+		if (\is_array($v))
+		{
+			$v = \array_filter(\array_map('strval', $v), static fn ($x) => \trim((string)$x) !== '');
+
+			return \trim(\implode(', ', $v));
+		}
+
+		return \trim((string)$v);
+	}
+
+	/**
+	 * @return array{confirm: string, city_region: string, street_house: string, zip: string, delivery_address: string, order_comment_hint: string, delivery_service: string}
+	 */
+	private static function extractCheckoutSnapshot($propCollection, array $props): array
+	{
+		$out = [
+			'confirm' => '',
+			'city_region' => '',
+			'street_house' => '',
+			'zip' => '',
+			'delivery_address' => '',
+			'order_comment_hint' => '',
+			'delivery_service' => self::firstNonEmptyPropValue($props, [
+				'MF_DELIVERY_NAME',
+				'MF_DELIVERY_LABEL',
+				'CHECKOUT_DELIVERY',
+				'DELIVERY_SERVICE_NAME',
+				'SELECTED_DELIVERY',
+				'DELIVERY_TYPE',
+				'DELIVERY_SERVICE',
+				'SHIPMENT_NAME',
+				'SPOSOB_DOSTAVKI',
+				'DELIVERY_NAME_USER',
+			]),
+		];
+		$out['confirm'] = self::firstNonEmptyPropValue($props, [
+			'TELEGRAM', 'TELEGRAM_USERNAME', 'CONFIRM_METHOD', 'CONFIRMATION_METHOD', 'SPOSOB_PODTV',
+			'SPOSOB_PODTVERZHDENIYA', 'UDOBNYJ_SPOSOB', 'UDOBNYY_SPOSOB', 'SMS_CONFIRM', 'HOW_TO_CONFIRM',
+		]);
+
+		if (!$propCollection)
+		{
+			return $out;
+		}
+
+		foreach ($propCollection as $prop)
+		{
+			$name = self::mbLc(\trim((string)$prop->getField('NAME')));
+			if ($name === '')
+			{
+				continue;
+			}
+
+			$type = (string)$prop->getField('TYPE');
+			$v = self::orderPropertyPlainValue($prop);
+			if ($v === '')
+			{
+				continue;
+			}
+			if ($type === 'LOCATION' && \preg_match('/^\d+$/', $v))
+			{
+				continue;
+			}
+
+			if (\mb_strpos($name, 'адрес доставки', 0, 'UTF-8') !== false)
+			{
+				$out['delivery_address'] = $out['delivery_address'] ?: $v;
+
+				continue;
+			}
+
+			if (
+				\mb_strpos($name, 'достав', 0, 'UTF-8') !== false
+				&& \mb_strpos($name, 'адрес', 0, 'UTF-8') === false
+				&& \mb_strpos($name, 'срок', 0, 'UTF-8') === false
+				&& (
+					\mb_strpos($name, 'способ', 0, 'UTF-8') !== false
+					|| \mb_strpos($name, 'служба', 0, 'UTF-8') !== false
+					|| \mb_strpos($name, 'вариант', 0, 'UTF-8') !== false
+					|| \mb_strpos($name, 'тариф', 0, 'UTF-8') !== false
+					|| $name === 'доставка'
+				)
+			)
+			{
+				$out['delivery_service'] = $out['delivery_service'] ?: $v;
+
+				continue;
+			}
+
+			if (
+				\mb_strpos($name, 'подтверж', 0, 'UTF-8') !== false
+				&& (
+					\mb_strpos($name, 'способ', 0, 'UTF-8') !== false
+					|| \mb_strpos($name, 'заказ', 0, 'UTF-8') !== false
+					|| \mb_strpos($name, 'удобн', 0, 'UTF-8') !== false
+				)
+			)
+			{
+				$out['confirm'] = $out['confirm'] ?: $v;
+
+				continue;
+			}
+
+			if (
+				(\mb_strpos($name, 'населен', 0, 'UTF-8') !== false && \mb_strpos($name, 'область', 0, 'UTF-8') !== false)
+				|| (\mb_strpos($name, 'город', 0, 'UTF-8') !== false && \mb_strpos($name, 'область', 0, 'UTF-8') !== false)
+				|| (\mb_strpos($name, 'область', 0, 'UTF-8') !== false && \mb_strpos($name, 'край', 0, 'UTF-8') !== false)
+				|| (\mb_strpos($name, 'город', 0, 'UTF-8') !== false && \mb_strpos($name, 'населен', 0, 'UTF-8') !== false)
+			)
+			{
+				$out['city_region'] = $out['city_region'] ?: $v;
+
+				continue;
+			}
+
+			if (
+				\mb_strpos($name, 'улиц', 0, 'UTF-8') !== false
+				|| \mb_strpos($name, 'квартир', 0, 'UTF-8') !== false
+				|| (\mb_strpos($name, 'дом', 0, 'UTF-8') !== false && (\mb_strpos($name, 'улиц', 0, 'UTF-8') !== false || \mb_strpos($name, 'квартир', 0, 'UTF-8') !== false))
+			)
+			{
+				$out['street_house'] = $out['street_house'] ?: $v;
+
+				continue;
+			}
+
+			if (\mb_strpos($name, 'индекс', 0, 'UTF-8') !== false || \mb_strpos($name, 'почтов', 0, 'UTF-8') !== false)
+			{
+				$out['zip'] = $out['zip'] ?: $v;
+
+				continue;
+			}
+
+			if (\mb_strpos($name, 'коммент', 0, 'UTF-8') !== false && \mb_strpos($name, 'заказ', 0, 'UTF-8') !== false)
+			{
+				$out['order_comment_hint'] = $out['order_comment_hint'] ?: $v;
+			}
+		}
+
+		if ($out['city_region'] === '' && $out['delivery_address'] !== '')
+		{
+			$out['city_region'] = $out['delivery_address'];
+		}
+
+		// Индекс: свойство DELIVERY_ZIP (шаг «доставка») важнее INDEX/101000 из модулей местоположений.
+		$zipDelivery = self::firstNonEmptyPropValue($props, ['DELIVERY_ZIP', 'DELIVERY_POSTAL']);
+		$zipLoose = self::firstNonEmptyPropValue($props, ['ZIP', 'POSTAL_CODE', 'POSTCODE']);
+		$zipIndex = self::firstNonEmptyPropValue($props, ['INDEX']);
+		$out['zip'] = $zipDelivery !== '' ? $zipDelivery : ($out['zip'] !== '' ? $out['zip'] : ($zipLoose !== '' ? $zipLoose : $zipIndex));
+		if ($out['zip'] === '' || $out['zip'] === '101000')
+		{
+			$blob = $out['delivery_address'] . ' ' . $out['city_region'];
+			if ($blob !== ' ' && \preg_match('/\b([1-9]\d{5})\b/u', $blob, $m))
+			{
+				$out['zip'] = $m[1];
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Отгрузка с реальной доставкой: все отгрузки заказа (в т.ч. системная), при равенстве — несистемная.
+	 * Часто DELIVERY_ID в момент сохранения есть только в системной отгрузке или в поле заказа DELIVERY_ID.
+	 *
+	 * @param \Bitrix\Sale\ShipmentCollection|null $shipmentCollection
+	 *
+	 * @return \Bitrix\Sale\Shipment|null
+	 */
+	private static function pickChosenShipment($shipmentCollection, int $emptyDeliveryId): ?object
+	{
+		if (!$shipmentCollection)
+		{
+			return null;
+		}
+
+		$candidates = [];
+		foreach ($shipmentCollection as $shipment)
+		{
+			$did = 0;
+			try
+			{
+				$did = (int)$shipment->getDeliveryId();
+			}
+			catch (\Throwable $e)
+			{
+				$did = 0;
+			}
+			if ($did <= 0 || $did === $emptyDeliveryId)
+			{
+				continue;
+			}
+			$isSystem = false;
+			try
+			{
+				$isSystem = (bool)$shipment->isSystem();
+			}
+			catch (\Throwable $e)
+			{
+				$isSystem = false;
+			}
+			$name = self::resolveDeliveryServiceName($shipment);
+			if ($name === '')
+			{
+				$name = self::deliveryServiceHumanName($did);
+			}
+			$price = 0.0;
+			try
+			{
+				$price = (float)$shipment->getField('PRICE_DELIVERY');
+			}
+			catch (\Throwable $e)
+			{
+				$price = 0.0;
+			}
+			$candidates[] = [
+				'shipment' => $shipment,
+				'name' => $name,
+				'price' => $price,
+				'did' => $did,
+				'sys' => $isSystem,
+			];
+		}
+
+		if ($candidates !== [])
+		{
+			\usort($candidates, static function (array $a, array $b): int {
+				$sa = !empty($a['sys']) ? 1 : 0;
+				$sb = !empty($b['sys']) ? 1 : 0;
+				if ($sa !== $sb)
+				{
+					return $sa <=> $sb;
+				}
+				$na = $a['name'] !== '' ? 1 : 0;
+				$nb = $b['name'] !== '' ? 1 : 0;
+				if ($na !== $nb)
+				{
+					return $nb <=> $na;
+				}
+				if ($a['price'] != $b['price'])
+				{
+					return $b['price'] <=> $a['price'];
+				}
+
+				return $a['did'] <=> $b['did'];
+			});
+
+			return $candidates[0]['shipment'];
+		}
+
+		$items = null;
+		try
+		{
+			if (\method_exists($shipmentCollection, 'getNotSystemItems'))
+			{
+				$items = $shipmentCollection->getNotSystemItems();
+			}
+		}
+		catch (\Throwable $e)
+		{
+			$items = null;
+		}
+		if ($items)
+		{
+			foreach ($items as $shipment)
+			{
+				$n = self::resolveDeliveryServiceName($shipment);
+				if ($n !== '')
+				{
+					return $shipment;
+				}
+			}
+			foreach ($items as $shipment)
+			{
+				return $shipment;
+			}
+		}
+
+		try
+		{
+			if (\method_exists($shipmentCollection, 'getSystemShipment'))
+			{
+				$sys = $shipmentCollection->getSystemShipment();
+				if ($sys)
+				{
+					$did = 0;
+					try
+					{
+						$did = (int)$sys->getDeliveryId();
+					}
+					catch (\Throwable $e)
+					{
+						$did = 0;
+					}
+					if ($did > 0 && $did !== $emptyDeliveryId)
+					{
+						return $sys;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		return null;
+	}
+
+	/**
+	 * Склад, выбранный покупателем в корзине (MF_STORE_ID), надёжнее строк отгрузки с «резервом».
+	 */
+	private static function warehouseFromOrderBasket(Order $order): ?array
+	{
+		try
+		{
+			$basket = $order->getBasket();
+			if (!$basket)
+			{
+				return null;
+			}
+			foreach ($basket->getBasketItems() as $item)
+			{
+				$pc = null;
+				try
+				{
+					$pc = $item->getPropertyCollection();
+				}
+				catch (\Throwable $e)
+				{
+					$pc = null;
+				}
+				if (!$pc)
+				{
+					continue;
+				}
+				foreach ($pc as $p)
+				{
+					$code = \trim((string)$p->getField('CODE'));
+					if ($code !== 'MF_STORE_ID')
+					{
+						continue;
+					}
+					$v = \trim((string)$p->getField('VALUE'));
+					$sid = (int)$v;
+					if ($sid > 0)
+					{
+						return self::buildStorePayloadFromId($sid, [$sid]);
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Локализованное имя пустой службы («Без доставки») — не считается выбранной доставкой.
+	 */
+	private static function isTrivialEmptyDeliveryName(string $name): bool
+	{
+		$n = \trim($name);
+		if ($n === '')
+		{
+			return true;
+		}
+		if (!\function_exists('mb_strtolower'))
+		{
+			$lc = \strtolower($n);
+
+			return \in_array($lc, ['без доставки', 'no delivery'], true);
+		}
+		$lc = \mb_strtolower($n, 'UTF-8');
+
+		return \in_array($lc, [
+			'без доставки',
+			'без доставки.',
+			'no delivery',
+			'without delivery',
+		], true) || \mb_strpos($lc, 'без доставки', 0, 'UTF-8') === 0;
+	}
+
+	/**
+	 * Чтение b_sale_order_delivery напрямую (на случай сбоев ORM / кеша).
+	 *
+	 * @return array{name: string, price: float, delivery_id: int}
+	 */
+	private static function loadDeliverySnapshotFromDbSql(int $orderId, int $emptyDeliveryId): array
+	{
+		$out = ['name' => '', 'price' => 0.0, 'delivery_id' => 0];
+		if ($orderId <= 0)
+		{
+			return $out;
+		}
+		try
+		{
+			$conn = Application::getConnection();
+			// JOIN b_sale_delivery_srv: в ряде конфигов DELIVERY_NAME в отгрузке пуст, а справочник служб — источник имени (в т.ч. профили с PARENT_ID).
+			$sql = 'SELECT od.`DELIVERY_ID`, od.`DELIVERY_NAME`, od.`PRICE_DELIVERY`, od.`SYSTEM`, od.`CANCELED`,'
+				. ' s.`NAME` AS `SRV_NAME`, s.`PARENT_ID` AS `SRV_PARENT_ID`, sp.`NAME` AS `SRV_PARENT_NAME`'
+				. ' FROM `b_sale_order_delivery` od'
+				. ' LEFT JOIN `b_sale_delivery_srv` s ON s.`ID` = od.`DELIVERY_ID`'
+				. ' LEFT JOIN `b_sale_delivery_srv` sp ON sp.`ID` = s.`PARENT_ID`'
+				. ' WHERE od.`ORDER_ID` = ' . $orderId
+				. ' AND od.`DELIVERY_ID` > 0';
+			if ($emptyDeliveryId > 0)
+			{
+				$sql .= ' AND od.`DELIVERY_ID` <> ' . (int)$emptyDeliveryId;
+			}
+			$sql .= ' ORDER BY od.`SYSTEM` ASC, od.`PRICE_DELIVERY` DESC, od.`ID` DESC LIMIT 20';
+			$res = $conn->query($sql);
+			while ($row = $res->fetch())
+			{
+				if (((string)($row['CANCELED'] ?? 'N')) === 'Y')
+				{
+					continue;
+				}
+				$did = (int)($row['DELIVERY_ID'] ?? 0);
+				if ($did <= 0 || ($emptyDeliveryId > 0 && $did === $emptyDeliveryId))
+				{
+					continue;
+				}
+				$dn = \trim((string)($row['DELIVERY_NAME'] ?? ''));
+				$name = $dn;
+				if ($name === '' || self::isTrivialEmptyDeliveryName($name))
+				{
+					$name = self::deliveryServiceHumanName($did);
+				}
+				if ($name === '' || self::isTrivialEmptyDeliveryName($name))
+				{
+					$name = \trim((string)($row['SRV_NAME'] ?? ''));
+				}
+				if ($name === '' || self::isTrivialEmptyDeliveryName($name))
+				{
+					$name = \trim((string)($row['SRV_PARENT_NAME'] ?? ''));
+				}
+				if ($name === '' || self::isTrivialEmptyDeliveryName($name))
+				{
+					$pid = (int)($row['SRV_PARENT_ID'] ?? 0);
+					if ($pid > 0)
+					{
+						$name = self::deliveryServiceHumanName($pid);
+					}
+				}
+				if ($name === '' || self::isTrivialEmptyDeliveryName($name))
+				{
+					continue;
+				}
+				$out['name'] = $name;
+				$out['price'] = (float)($row['PRICE_DELIVERY'] ?? 0.0);
+				$out['delivery_id'] = $did;
+
+				return $out;
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Прямое чтение отгрузок из БД: при OnSaleOrderSaved объект заказа иногда ещё без актуальных DELIVERY_NAME / ID.
+	 *
+	 * @return array{name: string, price: float, delivery_id: int}
+	 */
+	private static function loadDeliverySnapshotFromDb(int $orderId, int $emptyDeliveryId): array
+	{
+		$out = ['name' => '', 'price' => 0.0, 'delivery_id' => 0];
+		if ($orderId <= 0)
+		{
+			return $out;
+		}
+		if (!Loader::includeModule('sale'))
+		{
+			return $out;
+		}
+
+		$sqlOut = self::loadDeliverySnapshotFromDbSql($orderId, $emptyDeliveryId);
+		if ($sqlOut['name'] !== '')
+		{
+			return $sqlOut;
+		}
+
+		try
+		{
+			if (\class_exists(\Bitrix\Sale\Internals\ShipmentTable::class))
+			{
+				$filter = [
+					'=ORDER_ID' => $orderId,
+					'>DELIVERY_ID' => 0,
+				];
+				if ($emptyDeliveryId > 0)
+				{
+					$filter['!=DELIVERY_ID'] = $emptyDeliveryId;
+				}
+				$res = \Bitrix\Sale\Internals\ShipmentTable::getList([
+					'filter' => $filter,
+					'select' => ['DELIVERY_ID', 'DELIVERY_NAME', 'PRICE_DELIVERY', 'SYSTEM', 'CANCELED'],
+					'order' => ['SYSTEM' => 'ASC', 'PRICE_DELIVERY' => 'DESC', 'ID' => 'DESC'],
+					'limit' => 40,
+				]);
+				while ($row = $res->fetch())
+				{
+					if (((string)($row['CANCELED'] ?? 'N')) === 'Y')
+					{
+						continue;
+					}
+					$did = (int)($row['DELIVERY_ID'] ?? 0);
+					if ($did <= 0 || ($emptyDeliveryId > 0 && $did === $emptyDeliveryId))
+					{
+						continue;
+					}
+					$dn = \trim((string)($row['DELIVERY_NAME'] ?? ''));
+					$name = $dn;
+					if ($name === '' || self::isTrivialEmptyDeliveryName($name))
+					{
+						$name = self::deliveryServiceHumanName($did);
+					}
+					if ($name === '' || self::isTrivialEmptyDeliveryName($name))
+					{
+						continue;
+					}
+					$out['name'] = $name;
+					$out['price'] = (float)($row['PRICE_DELIVERY'] ?? 0.0);
+					$out['delivery_id'] = $did;
+
+					return $out;
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		try
+		{
+			if (\class_exists(\Bitrix\Sale\Internals\OrderTable::class))
+			{
+				$row = \Bitrix\Sale\Internals\OrderTable::getList([
+					'filter' => ['=ID' => $orderId],
+					'select' => ['DELIVERY_ID', 'PRICE_DELIVERY'],
+					'limit' => 1,
+				])->fetch();
+				if (\is_array($row))
+				{
+					$oid = (int)($row['DELIVERY_ID'] ?? 0);
+					if ($oid > 0 && ($emptyDeliveryId <= 0 || $oid !== $emptyDeliveryId))
+					{
+						$name = self::deliveryServiceHumanName($oid);
+						if ($name !== '' && !self::isTrivialEmptyDeliveryName($name))
+						{
+							$out['name'] = $name;
+							$out['price'] = (float)($row['PRICE_DELIVERY'] ?? 0.0);
+							$out['delivery_id'] = $oid;
+						}
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Человекочитаемое имя службы доставки по ID (профили, группы, автоматические службы).
+	 */
+	private static function deliveryServiceHumanName(int $deliveryId): string
+	{
+		$deliveryId = (int)$deliveryId;
+		if ($deliveryId <= 0)
+		{
+			return '';
+		}
+		$result = '';
+		try
+		{
+			if (\class_exists(\Bitrix\Sale\Delivery\Services\Manager::class))
+			{
+				$obj = \Bitrix\Sale\Delivery\Services\Manager::getObjectById($deliveryId);
+				if ($obj !== null)
+				{
+					$n = '';
+					if (\method_exists($obj, 'getNameWithParent'))
+					{
+						try
+						{
+							$t = $obj->getNameWithParent();
+							$n = \trim(\is_string($t) ? $t : (string)$t);
+						}
+						catch (\Throwable $e)
+						{
+							$n = '';
+						}
+					}
+					if ($n === '' && \method_exists($obj, 'getName'))
+					{
+						try
+						{
+							$t = $obj->getName();
+							$n = \trim(\is_string($t) ? $t : (string)$t);
+						}
+						catch (\Throwable $e)
+						{
+							$n = '';
+						}
+					}
+					if ($n !== '')
+					{
+						$result = $n;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		if ($result === '' || self::isTrivialEmptyDeliveryName($result))
+		{
+			try
+			{
+				if (\class_exists(\Bitrix\Sale\Delivery\Services\Table::class))
+				{
+					$row = \Bitrix\Sale\Delivery\Services\Table::getByPrimary($deliveryId, ['select' => ['NAME']])->fetch();
+					if (\is_array($row))
+					{
+						$result = \trim((string)($row['NAME'] ?? ''));
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		if (self::isTrivialEmptyDeliveryName($result))
+		{
+			return '';
+		}
+
+		return $result;
+	}
+
+	/**
+	 * @param \Bitrix\Sale\Shipment $shipment
+	 */
+	private static function resolveDeliveryServiceName($shipment): string
+	{
+		$name = '';
+		try
+		{
+			$name = \trim((string)$shipment->getField('DELIVERY_NAME'));
+		}
+		catch (\Throwable $e)
+		{
+			$name = '';
+		}
+		if ($name === '')
+		{
+			try
+			{
+				$name = \trim((string)$shipment->getDeliveryName());
+			}
+			catch (\Throwable $e)
+			{
+				$name = '';
+			}
+		}
+		if ($name !== '' && !self::isTrivialEmptyDeliveryName($name))
+		{
+			return $name;
+		}
+		$id = 0;
+		try
+		{
+			$id = (int)$shipment->getDeliveryId();
+		}
+		catch (\Throwable $e)
+		{
+			$id = 0;
+		}
+		if ($id <= 0)
+		{
+			return '';
+		}
+
+		return self::deliveryServiceHumanName($id);
+	}
+
+	/**
+	 * @param array<int>|null $allIds
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private static function buildStorePayloadFromId(int $primaryStoreId, ?array $allIds = null): ?array
+	{
+		$primaryStoreId = (int)$primaryStoreId;
+		if ($primaryStoreId <= 0)
+		{
+			return null;
+		}
+		$ids = \is_array($allIds) && $allIds !== [] ? \array_values(\array_unique(\array_map('intval', $allIds))) : [$primaryStoreId];
+		\sort($ids);
+		$store = [
+			'bitrix_store_id' => $primaryStoreId,
+			'bitrix_store_ids' => $ids,
+			'is_multi' => \count($ids) > 1,
+			'xml_id' => null,
+			'title' => null,
+			'address' => null,
+		];
+		try
+		{
+			if (Loader::includeModule('catalog') && \class_exists('\\Bitrix\\Catalog\\StoreTable'))
+			{
+				$row = \Bitrix\Catalog\StoreTable::getByPrimary($primaryStoreId, [
+					'select' => ['ID', 'XML_ID', 'TITLE', 'ADDRESS'],
+				])->fetch();
+				if (\is_array($row))
+				{
+					$store['xml_id'] = (string)($row['XML_ID'] ?? '') ?: null;
+					$store['title'] = (string)($row['TITLE'] ?? '') ?: null;
+					$store['address'] = (string)($row['ADDRESS'] ?? '') ?: null;
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		return $store;
+	}
+
 	/**
 	 * Tries to extract catalog store (warehouse) from a shipment.
 	 * Returns null when store control is not used / not specified.
@@ -1462,7 +2585,23 @@ final class Payload
 	{
 		try
 		{
-			$storeIds = [];
+			if (\method_exists($shipment, 'getStoreId'))
+			{
+				try
+				{
+					$sidHead = (int)$shipment->getStoreId();
+					if ($sidHead > 0)
+					{
+						return self::buildStorePayloadFromId($sidHead, [$sidHead]);
+					}
+				}
+				catch (\Throwable $e)
+				{
+					// fallback: склады из строк отгрузки (часто «резерв»)
+				}
+			}
+
+			$qtyByStore = [];
 			$shipmentItemCollection = $shipment->getShipmentItemCollection();
 			if ($shipmentItemCollection)
 			{
@@ -1484,51 +2623,87 @@ final class Payload
 							continue;
 						}
 						$sid = (int)$storeItem->getStoreId();
-						if ($sid > 0)
+						if ($sid <= 0)
 						{
-							$storeIds[$sid] = true;
+							continue;
 						}
+						$qty = 0.0;
+						try
+						{
+							$qty = (float)$storeItem->getQuantity();
+						}
+						catch (\Throwable $e)
+						{
+							try
+							{
+								$qty = (float)$storeItem->getField('QUANTITY');
+							}
+							catch (\Throwable $e2)
+							{
+								$qty = 0.0;
+							}
+						}
+						$qtyByStore[$sid] = ($qtyByStore[$sid] ?? 0.0) + $qty;
 					}
 				}
 			}
 
-			$storeIds = array_keys($storeIds);
-			sort($storeIds);
-			if (empty($storeIds))
+			if ($qtyByStore === [])
 			{
 				return null;
 			}
-
-			$primaryStoreId = (int)$storeIds[0];
-			$store = [
-				'bitrix_store_id' => $primaryStoreId,
-				'bitrix_store_ids' => $storeIds,
-				'is_multi' => count($storeIds) > 1,
-				'xml_id' => null,
-				'title' => null,
-				'address' => null,
-			];
-
-			// Enrich with store metadata when catalog module is available.
-			if (Loader::includeModule('catalog') && class_exists('\\Bitrix\\Catalog\\StoreTable'))
+			\arsort($qtyByStore, SORT_NUMERIC);
+			$primaryStoreId = 0;
+			foreach ($qtyByStore as $sid => $qty)
 			{
-				$row = \Bitrix\Catalog\StoreTable::getByPrimary($primaryStoreId, [
-					'select' => ['ID', 'XML_ID', 'TITLE', 'ADDRESS'],
-				])->fetch();
-				if (is_array($row))
+				if ($qty > 0.0)
 				{
-					$store['xml_id'] = (string)($row['XML_ID'] ?? '') ?: null;
-					$store['title'] = (string)($row['TITLE'] ?? '') ?: null;
-					$store['address'] = (string)($row['ADDRESS'] ?? '') ?: null;
+					$primaryStoreId = (int)$sid;
+					break;
 				}
 			}
+			if ($primaryStoreId <= 0)
+			{
+				$primaryStoreId = (int)\array_key_first($qtyByStore);
+			}
+			$allIds = \array_keys($qtyByStore);
+			\sort($allIds);
 
-			return $store;
+			return self::buildStorePayloadFromId($primaryStoreId, $allIds);
 		}
 		catch (\Throwable $e)
 		{
 			return null;
 		}
+	}
+
+	/**
+	 * Подставляет в строки корзины название склада Bitrix (из отгрузки) для передачи в 1С в комментарий.
+	 *
+	 * @param array<int, array<string, mixed>> $basketItems
+	 * @param array<string, mixed>|null        $warehouse
+	 */
+	private static function attachWarehouseNameToBasketItems(array $basketItems, ?array $warehouse): array
+	{
+		$title = '';
+		if (\is_array($warehouse) && isset($warehouse['title']))
+		{
+			$title = \trim((string)$warehouse['title']);
+		}
+		if ($title === '')
+		{
+			return $basketItems;
+		}
+		foreach ($basketItems as $k => $row)
+		{
+			if (!\is_array($row))
+			{
+				continue;
+			}
+			$basketItems[$k]['warehouse_name'] = $title;
+		}
+
+		return $basketItems;
 	}
 
 	private static function productExternalId(int $productId): string
