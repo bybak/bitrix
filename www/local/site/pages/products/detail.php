@@ -486,8 +486,9 @@ if ($elementId > 0)
 								<?php
 								$mfRowExternal = $mfIsExtRow;
 								$mfNoPriceRow = ($storePrice === null || (float)$storePrice <= 0);
-								$mfRequestPriceRow = !$mfRowExternal && $mfNoPriceRow;
-								$mfShowCartBtn = $mfRowExternal || (!$mfNoPriceRow && (float)$amt > 1e-9);
+								// Без цены — «Запросить цену» и для внешнего склада (раньше внешний без цены вёл в «В корзину»).
+								$mfRequestPriceRow = $mfNoPriceRow;
+								$mfShowCartBtn = !$mfNoPriceRow && ($mfRowExternal || (float)$amt > 1e-9);
 								$mfMaxQtyDetail = 0.0;
 								if ($mfRowExternal)
 								{
