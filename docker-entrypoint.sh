@@ -23,6 +23,10 @@ done
 # - MF_SMTP_FROM (envelope-from)
 # - MF_SMTP_TLS ("1"/"0", default 1)
 #
+# Уведомление о новом заказе (mf_order_notify.php):
+# - MF_ORDER_NOTIFY_EMAIL (default andrey@motor-force.ru if unset)
+# - MF_ORDER_NOTIFY_ENABLED=0 to disable
+#
 # For local dev you can use Mailhog:
 #   MF_SMTP_HOST=mailhog
 #   MF_SMTP_PORT=1025

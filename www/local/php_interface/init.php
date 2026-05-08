@@ -3015,3 +3015,14 @@ if (is_file($mfC2CInclude))
         \Mf\Card2Card\Bootstrap::init();
     }
 }
+
+// --- Новый заказ: полное описание на e-mail -----------------------------------
+$mfOrderNotifyInclude = __DIR__ . '/include/mf_order_notify.php';
+if (is_file($mfOrderNotifyInclude))
+{
+    require_once $mfOrderNotifyInclude;
+    if (class_exists('\\Mf\\OrderNotify\\Bootstrap'))
+    {
+        \Mf\OrderNotify\Bootstrap::init();
+    }
+}

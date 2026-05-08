@@ -70,10 +70,33 @@ try
 		$errors[] = 'Укажите корректный e-mail.';
 	}
 
-	$to = trim((string)getenv('MF_C2C_BCC'));
-	if ($to === '')
+	$rawTo = trim((string)getenv('MF_C2C_BCC'));
+	$toDedup = [];
+	if ($rawTo !== '')
+	{
+		foreach (preg_split('~[;,]+~', $rawTo) ?: [] as $chunk)
+		{
+			$chunk = trim((string)$chunk);
+			if ($chunk === '')
+			{
+				continue;
+			}
+			if (!filter_var($chunk, FILTER_VALIDATE_EMAIL))
+			{
+				$errors[] = 'Некорректный e-mail в MF_C2C_BCC: ' . $chunk;
+				continue;
+			}
+			$toDedup[mb_strtolower($chunk)] = $chunk;
+		}
+	}
+	$to = implode(', ', $toDedup);
+	if ($rawTo === '')
 	{
 		$errors[] = 'Не настроен адрес получателя.';
+	}
+	elseif ($to === '')
+	{
+		$errors[] = 'В MF_C2C_BCC нет ни одного корректного адреса.';
 	}
 
 	if (!empty($errors))
@@ -115,9 +138,17 @@ try
 		$header['From'] = $from;
 	}
 
+	$subject = 'Запрос цены: ' . $productName;
+	$subject = preg_replace('~[\r\n]+~u', ' ', $subject) ?? $subject;
+	$subject = trim(preg_replace('~\s+~u', ' ', $subject) ?? $subject);
+	if (function_exists('mb_substr') && mb_strlen($subject) > 900)
+	{
+		$subject = mb_substr($subject, 0, 900) . '…';
+	}
+
 	$params = [
 		'TO' => $to,
-		'SUBJECT' => 'Запрос цены: ' . $productName,
+		'SUBJECT' => $subject,
 		'BODY' => $body,
 		'CHARSET' => 'UTF-8',
 		'CONTENT_TYPE' => 'text',
