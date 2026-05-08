@@ -263,6 +263,11 @@ final class Stock
 					continue;
 				}
 
+				if (self::isExternalSupplierStore($storeId))
+				{
+					continue;
+				}
+
 				// Atomic: don't allow negative stock.
 				$sql = "UPDATE b_catalog_store_product
 						SET AMOUNT = AMOUNT - " . (float)$qty . "
@@ -301,6 +306,11 @@ final class Stock
 				$storeId = (int)($l['store_id'] ?? 0);
 				$qty = (float)($l['qty'] ?? 0);
 				if ($productId <= 0 || $storeId <= 0 || $qty <= 0)
+				{
+					continue;
+				}
+
+				if (self::isExternalSupplierStore($storeId))
 				{
 					continue;
 				}
@@ -366,6 +376,18 @@ final class Stock
 		{
 			return 0.0;
 		}
+	}
+
+	/**
+	 * Внешний склад (прайс поставщика): оформление «под заказ», в Битрикс не блокируем и не списываем остаток.
+	 */
+	public static function isExternalSupplierStore(int $storeId): bool
+	{
+		$storeId = (int)$storeId;
+
+		return $storeId > 0
+			&& function_exists('mf_ep_store_is_external_warehouse')
+			&& \mf_ep_store_is_external_warehouse($storeId);
 	}
 }
 
@@ -434,6 +456,11 @@ final class Handlers
 			$sid = (int)($l['store_id'] ?? 0);
 			$need = (float)($l['qty'] ?? 0);
 			if ($pid <= 0 || $sid <= 0 || $need <= 0)
+			{
+				continue;
+			}
+
+			if (Stock::isExternalSupplierStore($sid))
 			{
 				continue;
 			}
@@ -554,9 +581,24 @@ final class Handlers
 			return;
 		}
 
-		if (Stock::deduct($lines))
+		$deductLines = [];
+		foreach ($lines as $l)
 		{
-			Db::markDeducted($orderId, $lines);
+			$sid = (int)($l['store_id'] ?? 0);
+			if ($sid <= 0 || Stock::isExternalSupplierStore($sid))
+			{
+				continue;
+			}
+			$deductLines[] = $l;
+		}
+		if ($deductLines === [])
+		{
+			return;
+		}
+
+		if (Stock::deduct($deductLines))
+		{
+			Db::markDeducted($orderId, $deductLines);
 		}
 		else
 		{
