@@ -284,8 +284,9 @@ function mf_epu_read_file_utf8(string $path): string
 }
 
 /**
- * Долгий импорт CSV: снимает лимит времени PHP (без этого бывает 504 при быстром ответе nginx).
- * Таймауты прокси до PHP (fastcgi_read_timeout, proxy_read_timeout) на сервере всё равно нужно поднять для очень больших файлов.
+ * Долгий импорт CSV: снимает лимит времени PHP (max_execution_time / set_time_limit).
+ * На сервере дополнительно нужен запас по PHP-FPM request_terminate_timeout и nginx fastcgi_read_timeout
+ * (в docker: php-fpm-bitrix.conf и nginx/conf.d/default.conf).
  */
 function mf_epu_bootstrap_long_import(): void
 {

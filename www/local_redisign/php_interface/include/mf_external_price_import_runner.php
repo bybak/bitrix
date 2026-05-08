@@ -289,7 +289,12 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		$zeroed = 0;
 		if ($zeroMissing)
 		{
+			if (function_exists('mf_epu_bootstrap_long_import'))
+			{
+				mf_epu_bootstrap_long_import();
+			}
 			$candidates = mf_ep_collect_candidates_for_store($storeId, $priceGroupId);
+			$zi = 0;
 			foreach ($candidates as $cpid)
 			{
 				if (isset($matchedIds[$cpid]))
@@ -302,13 +307,34 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 					mf_esf_untouch_price_product($storeId, $feedCodeNorm, (int)$cpid);
 				}
 				$zeroed++;
+				$zi++;
+				if ($zi % 200 === 0 && function_exists('mf_epu_bootstrap_long_import'))
+				{
+					mf_epu_bootstrap_long_import();
+				}
 			}
 		}
 
-		foreach (array_keys($matchedIds) as $cpid)
+		if (function_exists('mf_epu_bootstrap_long_import'))
 		{
-			mf_ep_sync_catalog_qty_from_stores((int)$cpid);
-			mf_ep_recalc_base_one((int)$cpid);
+			mf_epu_bootstrap_long_import();
+		}
+
+		$syncIds = array_values(array_map('intval', array_keys($matchedIds)));
+		$syncTotal = count($syncIds);
+		for ($si = 0; $si < $syncTotal; $si++)
+		{
+			if ($si > 0 && ($si % 200) === 0 && function_exists('mf_epu_bootstrap_long_import'))
+			{
+				mf_epu_bootstrap_long_import();
+			}
+			$cpid = $syncIds[$si];
+			if ($cpid <= 0)
+			{
+				continue;
+			}
+			mf_ep_sync_catalog_qty_from_stores($cpid);
+			mf_ep_recalc_base_one($cpid);
 		}
 
 		if (function_exists('mf_esf_register_store_feed'))

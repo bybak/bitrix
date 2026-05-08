@@ -64,6 +64,115 @@ function mf_epu_external_price_job_stats_json(array $stats): string
 }
 
 /**
+ * Довести mf_external_price_import_log из «running», если runner не смог обновить строку (ошибка UPDATE, таймаут до COMMIT и т.д.).
+ *
+ * @param array{ok?:bool,error?:string,stats?:array<string,mixed>} $resW
+ */
+function mf_epu_reconcile_import_log_after_job_run(int $importLogId, float $importT0, array $resW): void
+{
+	$importLogId = (int)$importLogId;
+	if ($importLogId <= 0 || !function_exists('mf_external_price_import_log_conn') || !function_exists('mf_external_price_import_log_update'))
+	{
+		return;
+	}
+	$conn = mf_external_price_import_log_conn();
+	if (!$conn)
+	{
+		return;
+	}
+	try
+	{
+		$row = $conn->query(
+			'SELECT UF_STATUS FROM mf_external_price_import_log WHERE ID=' . $importLogId . ' LIMIT 1'
+		)->fetch();
+		if (!is_array($row) || mb_strtolower(trim((string)($row['UF_STATUS'] ?? ''))) !== 'running')
+		{
+			return;
+		}
+	}
+	catch (\Throwable $e)
+	{
+		return;
+	}
+
+	$fin = date('Y-m-d H:i:s');
+	$dur = (int)round((microtime(true) - $importT0) * 1000.0);
+
+	if (!empty($resW['ok']) && isset($resW['stats']) && is_array($resW['stats']))
+	{
+		$st = $resW['stats'];
+		$matched = (int)($st['ok'] ?? 0);
+		$notFound = (int)($st['not_found'] ?? 0);
+		$bad = (int)($st['bad'] ?? 0);
+		$brandSkipped = (int)($st['brand_skipped'] ?? 0);
+		$zeroed = (int)($st['zeroed'] ?? 0);
+		$totalRows = $matched + $notFound + $bad + $brandSkipped;
+
+		mf_external_price_import_log_update($importLogId, [
+			'UF_FINISHED_AT' => $fin,
+			'UF_DURATION_MS' => $dur,
+			'UF_STATUS' => 'ok',
+			'UF_TOTAL_DATA_ROWS' => $totalRows > 0 ? $totalRows : null,
+			'UF_MATCHED' => $matched,
+			'UF_NOT_FOUND' => $notFound,
+			'UF_BAD_ROWS' => $bad,
+			'UF_ZEROED' => $zeroed,
+			'UF_ERROR_MESSAGE' => null,
+		]);
+	}
+	else
+	{
+		mf_external_price_import_log_update($importLogId, [
+			'UF_FINISHED_AT' => $fin,
+			'UF_DURATION_MS' => $dur,
+			'UF_STATUS' => 'failed',
+			'UF_ERROR_MESSAGE' => mb_substr((string)($resW['error'] ?? 'Ошибка импорта'), 0, 1000),
+		]);
+	}
+}
+
+/**
+ * Ранний выход воркера до/вместо runner: запись истории остаётся running — помечаем failed, не трогая уже завершённые строки.
+ */
+function mf_epu_import_log_mark_failed_if_running(int $importLogId, float $t0, string $err): void
+{
+	$importLogId = (int)$importLogId;
+	$err = trim($err);
+	if ($importLogId <= 0 || $err === '' || !function_exists('mf_external_price_import_log_conn') || !function_exists('mf_external_price_import_log_update'))
+	{
+		return;
+	}
+	$conn = mf_external_price_import_log_conn();
+	if (!$conn)
+	{
+		return;
+	}
+	try
+	{
+		$row = $conn->query(
+			'SELECT UF_STATUS FROM mf_external_price_import_log WHERE ID=' . $importLogId . ' LIMIT 1'
+		)->fetch();
+		if (!is_array($row) || mb_strtolower(trim((string)($row['UF_STATUS'] ?? ''))) !== 'running')
+		{
+			return;
+		}
+	}
+	catch (\Throwable $e)
+	{
+		return;
+	}
+
+	$fin = date('Y-m-d H:i:s');
+	$dur = (int)round((microtime(true) - $t0) * 1000.0);
+	mf_external_price_import_log_update($importLogId, [
+		'UF_FINISHED_AT' => $fin,
+		'UF_DURATION_MS' => $dur,
+		'UF_STATUS' => 'failed',
+		'UF_ERROR_MESSAGE' => mb_substr($err, 0, 1000),
+	]);
+}
+
+/**
  * Запуск фонового импорта по ID задания (POST с sessid или GET nudge с token, без sessid).
  */
 function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid): void
@@ -123,6 +232,8 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 		return;
 	}
 	$locked = true;
+	$importLogEarlyId = (int)($jobR['UF_IMPORT_LOG_ID'] ?? 0);
+	$workerT0 = microtime(true);
 
 	try
 	{
@@ -135,6 +246,7 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 				'UF_FINISHED_AT' => date('Y-m-d H:i:s'),
 				'UF_ERROR_TEXT' => 'Не подключён runner импорта.',
 			]);
+			mf_epu_import_log_mark_failed_if_running($importLogEarlyId, $workerT0, 'Не подключён runner импорта.');
 			echo json_encode(['ok' => false, 'error' => 'runner'], JSON_UNESCAPED_UNICODE);
 
 			return;
@@ -150,6 +262,7 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 				'UF_FINISHED_AT' => date('Y-m-d H:i:s'),
 				'UF_ERROR_TEXT' => 'Файл задания не найден на сервере.',
 			]);
+			mf_epu_import_log_mark_failed_if_running($importLogEarlyId, $workerT0, 'Файл задания не найден на сервере.');
 			echo json_encode(['ok' => false, 'error' => 'file'], JSON_UNESCAPED_UNICODE);
 
 			return;
@@ -163,6 +276,7 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 				'UF_FINISHED_AT' => date('Y-m-d H:i:s'),
 				'UF_ERROR_TEXT' => 'Склад не найден.',
 			]);
+			mf_epu_import_log_mark_failed_if_running($importLogEarlyId, $workerT0, 'Склад не найден.');
 			echo json_encode(['ok' => false, 'error' => 'store'], JSON_UNESCAPED_UNICODE);
 
 			return;
@@ -175,6 +289,7 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 				'UF_FINISHED_AT' => date('Y-m-d H:i:s'),
 				'UF_ERROR_TEXT' => 'У склада нет XML_ID.',
 			]);
+			mf_epu_import_log_mark_failed_if_running($importLogEarlyId, $workerT0, 'У склада нет XML_ID.');
 			echo json_encode(['ok' => false, 'error' => 'xml'], JSON_UNESCAPED_UNICODE);
 
 			return;
@@ -187,6 +302,7 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 				'UF_FINISHED_AT' => date('Y-m-d H:i:s'),
 				'UF_ERROR_TEXT' => 'Не удалось получить тип цены.',
 			]);
+			mf_epu_import_log_mark_failed_if_running($importLogEarlyId, $workerT0, 'Не удалось получить тип цены.');
 			echo json_encode(['ok' => false, 'error' => 'price_group'], JSON_UNESCAPED_UNICODE);
 
 			return;
@@ -250,6 +366,18 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 
 		mf_epu_bootstrap_long_import();
 		$resW = mf_epu_run_external_price_import($absF, $iblockId, $ctxW, $onPr);
+
+		$logIdReconcile = (int)($ctxW['importLogId'] ?? 0);
+		if ($logIdReconcile <= 0)
+		{
+			$jobFresh = function_exists('mf_external_price_import_job_get') ? mf_external_price_import_job_get($runJobId) : null;
+			if (is_array($jobFresh))
+			{
+				$logIdReconcile = (int)($jobFresh['UF_IMPORT_LOG_ID'] ?? 0);
+			}
+		}
+		mf_epu_reconcile_import_log_after_job_run($logIdReconcile, $importT0W, $resW);
+
 		if (!empty($resW['ok']) && isset($resW['stats']) && is_array($resW['stats']))
 		{
 			$js = mf_epu_external_price_job_stats_json($resW['stats']);

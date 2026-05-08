@@ -1928,6 +1928,23 @@ if (!function_exists('mf_external_price_import_log_quote'))
 	}
 }
 
+if (!function_exists('mf_external_price_import_log_diag_exception'))
+{
+	/** Запись в mf_external_price_import.log в корне сайта (DOCUMENT_ROOT), построчно через append. */
+	function mf_external_price_import_log_diag_exception(string $context, \Throwable $e): void
+	{
+		if (!class_exists(\Bitrix\Main\Diag\Debug::class))
+		{
+			return;
+		}
+		\Bitrix\Main\Diag\Debug::writeToFile(
+			date('c') . ' ' . $context . ' | ' . $e->getMessage(),
+			'',
+			'mf_external_price_import.log'
+		);
+	}
+}
+
 if (!function_exists('mf_external_price_import_log_insert'))
 {
 	/**
@@ -1985,6 +2002,11 @@ if (!function_exists('mf_external_price_import_log_insert'))
 		}
 		catch (\Throwable $e)
 		{
+			if (function_exists('mf_external_price_import_log_diag_exception'))
+			{
+				mf_external_price_import_log_diag_exception('mf_external_price_import_log_insert', $e);
+			}
+
 			return 0;
 		}
 	}
@@ -2048,6 +2070,11 @@ if (!function_exists('mf_external_price_import_log_update'))
 		}
 		catch (\Throwable $e)
 		{
+			if (function_exists('mf_external_price_import_log_diag_exception'))
+			{
+				mf_external_price_import_log_diag_exception('mf_external_price_import_log_update id=' . $id, $e);
+			}
+
 			return false;
 		}
 	}
