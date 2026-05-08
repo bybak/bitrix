@@ -56,7 +56,7 @@ services:
       - ./www:/var/www/html
       # Подмена без пересборки образа; важно для clear_env / getenv из .env в PHP-FPM
       - ./php-fpm-bitrix.conf:/usr/local/etc/php-fpm.d/zz-bitrix.conf:ro
-      - /opt/mail_ingest/drop:/var/www/html/supplier_drop:ro
+      #- /opt/mail_ingest/drop:/var/www/html/supplier_drop:ro
     depends_on:
       mysql:
         condition: service_healthy

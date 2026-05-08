@@ -89,12 +89,13 @@ try
 			$toDedup[mb_strtolower($chunk)] = $chunk;
 		}
 	}
-	$to = implode(', ', $toDedup);
+	$toList = array_values($toDedup);
+	$toPrimary = $toList[0] ?? '';
 	if ($rawTo === '')
 	{
 		$errors[] = 'Не настроен адрес получателя.';
 	}
-	elseif ($to === '')
+	elseif ($toPrimary === '')
 	{
 		$errors[] = 'В MF_C2C_BCC нет ни одного корректного адреса.';
 	}
@@ -108,6 +109,10 @@ try
 	if ($from === '')
 	{
 		$from = trim((string)Option::get('main', 'email_from', ''));
+	}
+	if ($from === '' || !filter_var($from, FILTER_VALIDATE_EMAIL))
+	{
+		$from = $toPrimary;
 	}
 
 	$lines = [];
@@ -129,13 +134,19 @@ try
 	$lines[] = ($comment !== '' ? $comment : '—');
 	$body = implode("\n", $lines) . "\n";
 
-	// Bitrix\Main\Mail\Mail ожидает HEADER как массив имя => значение, плюс CHARSET и CONTENT_TYPE.
+	// Bitrix\Main\Mail\Mail: HEADER — массив. Несколько адресов в To ломают часть MTA (Mail.ru + Gmail).
+	// Один основной получатель в To, остальные — Bcc.
 	$header = [
-		'Reply-To' => $email,
+		'From' => $from,
 	];
-	if ($from !== '')
+	if (filter_var($email, FILTER_VALIDATE_EMAIL))
 	{
-		$header['From'] = $from;
+		$header['Reply-To'] = $email;
+	}
+	$bccRest = array_slice($toList, 1);
+	if ($bccRest !== [])
+	{
+		$header['Bcc'] = implode(', ', $bccRest);
 	}
 
 	$subject = 'Запрос цены: ' . $productName;
@@ -147,7 +158,7 @@ try
 	}
 
 	$params = [
-		'TO' => $to,
+		'TO' => $toPrimary,
 		'SUBJECT' => $subject,
 		'BODY' => $body,
 		'CHARSET' => 'UTF-8',

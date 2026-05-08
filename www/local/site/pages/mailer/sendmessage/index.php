@@ -64,14 +64,14 @@ if (!empty($errors))
 	LocalRedirect("/?lead_form=error#lead-form");
 }
 
-$emailTo = "";
-if (class_exists("COption"))
+$emailTo = function_exists("mf_mail_admin_inbox") ? mf_mail_admin_inbox() : "";
+if ($emailTo === "" && class_exists("COption"))
 {
-	$emailTo = (string)COption::GetOptionString("main", "email_from", "");
+	$emailTo = trim((string)COption::GetOptionString("main", "email_from", ""));
 }
-if ($emailTo === "")
+if ($emailTo === "" || !filter_var($emailTo, FILTER_VALIDATE_EMAIL))
 {
-	$emailTo = "admin@".$_SERVER["HTTP_HOST"];
+	$emailTo = "andrey@motor-force.ru";
 }
 
 $subject = "Заявка с сайта (Оставьте заявку)";
@@ -95,18 +95,40 @@ $body = implode("\n", $lines)."\n";
 $sent = false;
 if (class_exists(Mail::class))
 {
-	$from = $emailTo;
+	$from = function_exists("mf_mail_default_from") ? mf_mail_default_from() : "";
+	if ($from === "" || !filter_var($from, FILTER_VALIDATE_EMAIL))
+	{
+		$from = $emailTo;
+	}
+	$header = [
+		"From" => $from,
+	];
+	if (filter_var($fields["email"], FILTER_VALIDATE_EMAIL))
+	{
+		$header["Reply-To"] = $fields["email"];
+	}
 	$sent = (bool)Mail::send([
 		"TO" => $emailTo,
 		"SUBJECT" => $subject,
 		"BODY" => $body,
-		"HEADER" => "Content-Type: text/plain; charset=UTF-8\r\nFrom: ".$from."\r\n",
+		"CHARSET" => "UTF-8",
+		"CONTENT_TYPE" => "text",
+		"HEADER" => $header,
 	]);
 }
 else
 {
-	$headers = "Content-Type: text/plain; charset=UTF-8\r\n";
-	$sent = @mail($emailTo, $subject, $body, $headers);
+	$fromHdr = function_exists("mf_mail_default_from") ? mf_mail_default_from() : "";
+	$h = "Content-Type: text/plain; charset=UTF-8\r\n";
+	if ($fromHdr !== "" && filter_var($fromHdr, FILTER_VALIDATE_EMAIL))
+	{
+		$h .= "From: " . $fromHdr . "\r\n";
+	}
+	if (filter_var($fields["email"], FILTER_VALIDATE_EMAIL))
+	{
+		$h .= "Reply-To: " . $fields["email"] . "\r\n";
+	}
+	$sent = @mail($emailTo, $subject, $body, $h);
 }
 
 if (mf_is_ajax_request())

@@ -75,16 +75,35 @@ if (!function_exists('mf_handle_static_form'))
 		$sent = false;
 		if (class_exists('\\Bitrix\\Main\\Mail\\Mail'))
 		{
+			$header = [];
+			if (function_exists('mf_mail_default_from'))
+			{
+				$mfFrom = mf_mail_default_from();
+				if ($mfFrom !== '' && filter_var($mfFrom, FILTER_VALIDATE_EMAIL))
+				{
+					$header['From'] = $mfFrom;
+				}
+			}
 			$sent = (bool)\Bitrix\Main\Mail\Mail::send([
 				'TO' => $emailTo,
 				'SUBJECT' => $subject,
 				'BODY' => $body,
-				'HEADER' => "Content-Type: text/plain; charset=UTF-8\r\n",
+				'CHARSET' => 'UTF-8',
+				'CONTENT_TYPE' => 'text',
+				'HEADER' => $header,
 			]);
 		}
 		else
 		{
 			$headers = "Content-Type: text/plain; charset=UTF-8\r\n";
+			if (function_exists('mf_mail_default_from'))
+			{
+				$mfFrom = mf_mail_default_from();
+				if ($mfFrom !== '' && filter_var($mfFrom, FILTER_VALIDATE_EMAIL))
+				{
+					$headers .= 'From: ' . $mfFrom . "\r\n";
+				}
+			}
 			$sent = @mail($emailTo, $subject, $body, $headers);
 		}
 

@@ -35,6 +35,13 @@ if (!function_exists('str_ends_with'))
 	}
 }
 
+$_mfMailTransport = __DIR__ . '/include/mf_mail_transport.php';
+if (is_file($_mfMailTransport))
+{
+	require_once $_mfMailTransport;
+}
+unset($_mfMailTransport);
+
 // Global config for external Motor-Force image host.
 // We intentionally generate URLs deterministically (no downloads into Bitrix).
 if (!defined('MF_MOTOR_FORCE_IMG_HOST'))
@@ -429,6 +436,10 @@ if (!function_exists('mf_admin_menu_missing_stock_items'))
 
 if (class_exists(\Bitrix\Main\EventManager::class))
 {
+	if (function_exists('mf_mail_register_transport_handlers'))
+	{
+		mf_mail_register_transport_handlers();
+	}
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_missing_stock_items');
 }
 

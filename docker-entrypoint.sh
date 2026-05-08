@@ -21,6 +21,7 @@ done
 # - MF_SMTP_USER
 # - MF_SMTP_PASS
 # - MF_SMTP_FROM (envelope-from)
+# - MF_SMTP_EHLO_DOMAIN (optional; EHLO/Message-ID domain; default: part after @ in MF_SMTP_FROM)
 # - MF_SMTP_TLS ("1"/"0", default 1)
 #
 # Уведомление о новом заказе (mf_order_notify.php):
@@ -69,6 +70,17 @@ if [ "${MF_SMTP_HOST:-}" != "" ]; then
     if [ "${FROM}" != "" ]; then
       echo "from ${FROM}"
     fi
+
+    # Mail.ru / Gmail: EHLO с docker-hostname часто даёт «550 invalid headers».
+    # Берём MF_SMTP_EHLO_DOMAIN или домен из MF_SMTP_FROM, иначе motor-force.ru.
+    EHLO_DOMAIN="${MF_SMTP_EHLO_DOMAIN:-}"
+    if [ -z "${EHLO_DOMAIN}" ] && [ -n "${FROM}" ]; then
+      EHLO_DOMAIN="${FROM#*@}"
+    fi
+    if [ -z "${EHLO_DOMAIN}" ]; then
+      EHLO_DOMAIN="motor-force.ru"
+    fi
+    echo "domain ${EHLO_DOMAIN}"
   } > "${CONF}"
 
   chmod 600 "${CONF}" || true

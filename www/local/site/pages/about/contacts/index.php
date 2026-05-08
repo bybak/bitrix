@@ -18,7 +18,7 @@ $APPLICATION->SetTitle("Задайте вопрос");
 		"bitrix:main.feedback",
 		"bootstrap_v4",
 		Array(
-			"EMAIL_TO" => "sale@nyuta.bx",
+			"EMAIL_TO" => "andrey@motor-force.ru",
 			"EVENT_MESSAGE_ID" => array(),
 			"OK_TEXT" => "Спасибо, ваше сообщение принято.",
 			"REQUIRED_FIELDS" => array("NAME","EMAIL"),
