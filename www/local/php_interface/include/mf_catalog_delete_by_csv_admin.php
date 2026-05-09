@@ -330,7 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid())
 						'ids_total' => count($ids),
 					]);
 					$t0 = microtime(true);
-					$st = mf_cdc_run_delete_list($ids, $allowedIblocks);
+					$st = mf_cdc_run_delete_list($ids, $allowedIblocks, $logId, 0);
 					$dt = microtime(true) - $t0;
 					if ($logId > 0)
 					{

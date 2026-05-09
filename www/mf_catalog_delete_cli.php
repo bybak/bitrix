@@ -26,6 +26,13 @@ if (PHP_SAPI !== 'cli')
 	exit(1);
 }
 
+@ini_set('output_buffering', '0');
+@ini_set('implicit_flush', '1');
+while (ob_get_level() > 0)
+{
+	@ob_end_flush();
+}
+
 $longopts = ['file:', 'apply', 'dry-run', 'log-id:'];
 $opts = getopt('', $longopts);
 if ($opts === false)
@@ -81,6 +88,12 @@ if ($lib === null)
 	exit(1);
 }
 require_once $lib;
+
+@ini_set('output_buffering', '0');
+while (ob_get_level() > 0)
+{
+	@ob_end_flush();
+}
 
 $iblockMain = mf_cdc_catalog_iblock_id();
 $allowed = mf_cdc_allowed_catalog_iblocks($iblockMain);
@@ -142,7 +155,22 @@ else
 	mf_cdc_log_ensure_table();
 }
 
-$st = mf_cdc_run_delete_list($ids, $allowed);
+$progressEvery = (int)(getenv('MF_CDC_CLI_PROGRESS_EVERY') ?: 50);
+if ($progressEvery < 0)
+{
+	$progressEvery = 0;
+}
+
+if ($logId > 0)
+{
+	mf_cdc_cli_log_append(
+		$logId,
+		'Старт PHP CLI PID=' . getmypid() . ' всего ID=' . count($ids) . ' файл=' . $file
+			. ' прогресс_каждые_N=' . ($progressEvery > 0 ? (string)$progressEvery : 'выкл')
+	);
+}
+
+$st = mf_cdc_run_delete_list($ids, $allowed, $logId, $progressEvery);
 $dt = microtime(true) - $t0;
 $sum = mf_cdc_errors_to_summary($st['errors']);
 if ($logId > 0)
@@ -155,6 +183,15 @@ if ($logId > 0)
 		'completed',
 		$sum
 	);
+	mf_cdc_cli_log_append(
+		$logId,
+		sprintf(
+			'Финиш за %.2f с: удалено=%d ошибок=%d',
+			$dt,
+			(int)$st['deleted'],
+			(int)$st['failed']
+		)
+	);
 }
 fwrite(STDOUT, sprintf(
 	"Готово за %.2f с: удалено %d, ошибок %d, всего ID в файле %d\n",
@@ -163,8 +200,10 @@ fwrite(STDOUT, sprintf(
 	(int)$st['failed'],
 	count($ids)
 ));
+@fflush(STDOUT);
 foreach ($st['errors'] as $ln)
 {
 	fwrite(STDOUT, $ln . "\n");
 }
+@fflush(STDOUT);
 exit((int)$st['failed'] > 0 ? 3 : 0);

@@ -216,6 +216,31 @@ if (!function_exists('mf_cdc_log_fail'))
 	}
 }
 
+if (!function_exists('mf_cdc_log_progress'))
+{
+	/**
+	 * Промежуточные IDS_DELETED / IDS_FAILED во время STATUS=running (без FINISHED_AT).
+	 * Чтобы по БД отличать «ещё работает» от «процесс умер, строка зависла в running».
+	 */
+	function mf_cdc_log_progress(int $id, int $deleted, int $failed): void
+	{
+		if ($id <= 0 || !mf_cdc_log_ensure_table())
+		{
+			return;
+		}
+		$conn = mf_cdc_log_conn();
+		if (!$conn)
+		{
+			return;
+		}
+		$conn->queryExecute(
+			'UPDATE mf_catalog_delete_run SET IDS_DELETED=' . max(0, $deleted)
+			. ', IDS_FAILED=' . max(0, $failed)
+			. " WHERE ID=" . (int)$id . " AND STATUS='running'"
+		);
+	}
+}
+
 if (!function_exists('mf_cdc_log_fetch_recent'))
 {
 	/**
@@ -499,18 +524,65 @@ if (!function_exists('mf_cdc_delete_one_catalog_element'))
 	}
 }
 
+if (!function_exists('mf_cdc_cli_progress_log_path'))
+{
+	function mf_cdc_cli_progress_log_path(int $logId): string
+	{
+		$logId = max(0, $logId);
+		$doc = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+
+		return $doc . '/upload/tmp/mf_cdc_cli_' . $logId . '.log';
+	}
+}
+
+if (!function_exists('mf_cdc_cli_log_append'))
+{
+	/**
+	 * Пишет строку в лог CLI (обходит буферизацию STDOUT при перенаправлении в файл).
+	 */
+	function mf_cdc_cli_log_append(int $logId, string $line): void
+	{
+		if ($logId <= 0)
+		{
+			return;
+		}
+		$path = mf_cdc_cli_progress_log_path($logId);
+		$dir = dirname($path);
+		if (!is_dir($dir))
+		{
+			@mkdir($dir, 0775, true);
+		}
+		$ts = date('Y-m-d H:i:s');
+		@file_put_contents($path, '[' . $ts . '] ' . $line . "\n", FILE_APPEND | LOCK_EX);
+	}
+}
+
 if (!function_exists('mf_cdc_run_delete_list'))
 {
 	/**
 	 * @param list<int> $ids
 	 * @param int[]     $allowedIblocks
+	 * @param int       $cliProgressLogId  ID строки журнала: прогресс в upload/tmp/mf_cdc_cli_{id}.log и в БД (IDS_*)
+	 * @param int       $cliProgressEvery  раз в столько элементов писать в файл (0 — только БД, см. MF_CDC_DB_PROGRESS_EVERY)
 	 * @return array{deleted: int, failed: int, errors: list<string>}
 	 */
-	function mf_cdc_run_delete_list(array $ids, array $allowedIblocks): array
-	{
+	function mf_cdc_run_delete_list(
+		array $ids,
+		array $allowedIblocks,
+		int $cliProgressLogId = 0,
+		int $cliProgressEvery = 0
+	): array {
 		$ok = 0;
 		$fail = 0;
 		$errors = [];
+		$total = count($ids);
+		$every = max(0, $cliProgressEvery);
+		$dbEvery = (int)(getenv('MF_CDC_DB_PROGRESS_EVERY') ?: 100);
+		if ($dbEvery < 1)
+		{
+			$dbEvery = 0;
+		}
+		$idx = 0;
 		foreach ($ids as $pid)
 		{
 			$r = mf_cdc_delete_one_catalog_element((int)$pid, $allowedIblocks);
@@ -525,6 +597,18 @@ if (!function_exists('mf_cdc_run_delete_list'))
 				{
 					$errors[] = 'ID ' . $pid . ': ' . $r['message'];
 				}
+			}
+			$idx++;
+			if ($cliProgressLogId > 0 && $dbEvery > 0 && ($idx % $dbEvery === 0 || $idx === $total))
+			{
+				mf_cdc_log_progress($cliProgressLogId, $ok, $fail);
+			}
+			if ($cliProgressLogId > 0 && $every > 0 && ($idx % $every === 0 || $idx === $total))
+			{
+				mf_cdc_cli_log_append(
+					$cliProgressLogId,
+					sprintf('прогресс %d/%d удалено=%d ошибок=%d', $idx, $total, $ok, $fail)
+				);
 			}
 		}
 
@@ -676,6 +760,16 @@ if (!function_exists('mf_cdc_spawn_cli_delete'))
 
 		$doc = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
 		$logFile = $doc . '/upload/tmp/mf_cdc_cli_' . $logIdN . '.log';
+		$dir = dirname($logFile);
+		if (!is_dir($dir))
+		{
+			@mkdir($dir, 0775, true);
+		}
+		@file_put_contents(
+			$logFile,
+			'[' . date('Y-m-d H:i:s') . "] Фон из админки: передан процесс в shell (nohup). log_id={$logIdN} php={$php}\n",
+			FILE_APPEND | LOCK_EX
+		);
 
 		if (stripos(PHP_OS, 'WIN') === 0)
 		{
