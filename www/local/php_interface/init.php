@@ -681,6 +681,7 @@ if (!function_exists('mf_admin_menu_catalog_export'))
 			'url' => 'mf_catalog_delete_by_csv.php?lang=' . urlencode($lang),
 			'more_url' => [
 				'mf_catalog_delete_by_csv.php',
+				'mf_catalog_delete_by_csv.php?mode=history',
 			],
 		];
 		$aModuleMenu[] = [

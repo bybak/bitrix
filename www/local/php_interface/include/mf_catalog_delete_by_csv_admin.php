@@ -3,10 +3,9 @@
 declare(strict_types=1);
 
 /**
- * Админка: пакетное удаление товаров по списку ID из CSV (первая колонка — ID элемента инфоблока каталога).
+ * Админка: пакетное удаление товаров по списку ID из CSV + журнал + запуск CLI.
  */
 
-use Bitrix\Catalog\ProductTable;
 use Bitrix\Main\Loader;
 
 if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
@@ -34,37 +33,33 @@ if (!Loader::includeModule('iblock') || !Loader::includeModule('catalog'))
 	return;
 }
 
-$mfCdcIblockId = (int)(getenv('MF_SUPPLIER_ORDERS_IBLOCK_ID') ?: 0);
-if ($mfCdcIblockId <= 0 && class_exists(\Bitrix\Main\Config\Option::class))
+$libCandidates = [
+	$_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_catalog_delete_by_csv_lib.php',
+	$_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_catalog_delete_by_csv_lib.php',
+];
+$libPath = null;
+foreach ($libCandidates as $p)
 {
-	$mfCdcIblockId = (int)\Bitrix\Main\Config\Option::get('mf.supplier_orders', 'catalog_iblock_id', '0');
+	if (is_file($p))
+	{
+		$libPath = $p;
+		break;
+	}
 }
-if ($mfCdcIblockId <= 0)
+if ($libPath === null)
 {
-	$mfCdcIblockId = 4;
+	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
+	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Не найден mf_catalog_delete_by_csv_lib.php']);
+	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
+
+	return;
 }
+require_once $libPath;
+
+$mfCdcIblockId = mf_cdc_catalog_iblock_id();
 
 const MF_CDC_SESSION_TOKEN = 'mf_cdc_del_token';
 const MF_CDC_PENDING_PREFIX = 'mf_cdc_pending_';
-
-/**
- * @return int[]
- */
-function mf_cdc_allowed_catalog_iblocks(int $productIblockId): array
-{
-	$out = [$productIblockId];
-	if ($productIblockId <= 0 || !class_exists(\CCatalogSKU::class))
-	{
-		return $out;
-	}
-	$skuInfo = \CCatalogSKU::GetInfoByProductIBlock($productIblockId);
-	if (is_array($skuInfo) && !empty($skuInfo['IBLOCK_ID']))
-	{
-		$out[] = (int)$skuInfo['IBLOCK_ID'];
-	}
-
-	return array_values(array_unique(array_filter($out, static fn (int $v) => $v > 0)));
-}
 
 function mf_cdc_pending_file_path(string $token): string
 {
@@ -157,231 +152,6 @@ function mf_cdc_clear_pending_session(?string $token = null): void
 	unset($_SESSION[MF_CDC_SESSION_TOKEN]);
 }
 
-/**
- * @return list<int>
- */
-function mf_cdc_parse_ids_from_csv(string $path): array
-{
-	$content = file_get_contents($path);
-	if ($content === false || $content === '')
-	{
-		return [];
-	}
-	if (str_starts_with($content, "\xEF\xBB\xBF"))
-	{
-		$content = substr($content, 3);
-	}
-	$lines = preg_split('~\r\n|\n|\r~', $content) ?: [];
-	$ids = [];
-	foreach ($lines as $line)
-	{
-		$line = trim($line);
-		if ($line === '')
-		{
-			continue;
-		}
-		$delim = str_contains($line, ';') ? ';' : ',';
-		$cells = str_getcsv($line, $delim);
-		$first = trim((string)($cells[0] ?? ''));
-		if ($first === '' || !ctype_digit($first))
-		{
-			continue;
-		}
-		$ids[] = (int)$first;
-	}
-
-	return array_values(array_unique($ids));
-}
-
-/**
- * ID из файла, по которым элемент есть и в разрешённых инфоблоках (будут удалены при успешном CIBlockElement::Delete).
- *
- * @param list<int>        $ids
- * @param array<int, int> $allowedIblocks
- * @return list<int>
- */
-function mf_cdc_filter_eligible_ids(array $ids, array $allowedIblocks): array
-{
-	$eligible = [];
-	foreach ($ids as $pid)
-	{
-		$pid = (int)$pid;
-		if ($pid <= 0)
-		{
-			continue;
-		}
-		$el = \CIBlockElement::GetList(
-			[],
-			['ID' => $pid, 'CHECK_PERMISSIONS' => 'N'],
-			false,
-			false,
-			['ID', 'IBLOCK_ID']
-		)->Fetch();
-		if (!is_array($el))
-		{
-			continue;
-		}
-		$ibEl = (int)($el['IBLOCK_ID'] ?? 0);
-		if (in_array($ibEl, $allowedIblocks, true))
-		{
-			$eligible[] = $pid;
-		}
-	}
-
-	return $eligible;
-}
-
-/**
- * @param int[] $allowedIblocks
- * @return array{ok: bool, message: string}
- */
-function mf_cdc_delete_one_catalog_element(int $elementId, array $allowedIblocks): array
-{
-	global $APPLICATION;
-
-	$elementId = (int)$elementId;
-	if ($elementId <= 0)
-	{
-		return ['ok' => false, 'message' => 'Некорректный ID'];
-	}
-
-	$el = \CIBlockElement::GetList(
-		[],
-		['ID' => $elementId, 'CHECK_PERMISSIONS' => 'N'],
-		false,
-		false,
-		['ID', 'IBLOCK_ID', 'NAME']
-	)->Fetch();
-	if (!is_array($el))
-	{
-		return ['ok' => false, 'message' => 'Элемент не найден'];
-	}
-
-	$ibEl = (int)($el['IBLOCK_ID'] ?? 0);
-	if (!in_array($ibEl, $allowedIblocks, true))
-	{
-		return ['ok' => false, 'message' => 'IBLOCK_ID ' . $ibEl . ' не каталог (ожид. ' . implode(', ', $allowedIblocks) . ')'];
-	}
-
-	$prod = \CCatalogProduct::GetByID($elementId);
-	$type = $prod ? (int)$prod['TYPE'] : 0;
-
-	if ($type === ProductTable::TYPE_SKU && class_exists(\CCatalogSKU::class))
-	{
-		$list = \CCatalogSKU::getOffersList($elementId, $ibEl, [], [], [], [], ['ID' => 'ASC']);
-		if (!empty($list[$elementId]) && is_array($list[$elementId]))
-		{
-			foreach ($list[$elementId] as $offerRow)
-			{
-				$oid = (int)($offerRow['ID'] ?? 0);
-				if ($oid <= 0)
-				{
-					continue;
-				}
-				if (!\CIBlockElement::Delete($oid))
-				{
-					$ex = $APPLICATION->GetException();
-
-					return ['ok' => false, 'message' => 'Оффер ' . $oid . ': ' . ($ex ? $ex->GetString() : 'ошибка удаления')];
-				}
-			}
-		}
-	}
-
-	if (!\CIBlockElement::Delete($elementId))
-	{
-		$ex = $APPLICATION->GetException();
-
-		return ['ok' => false, 'message' => $ex ? $ex->GetString() : 'CIBlockElement::Delete'];
-	}
-
-	return ['ok' => true, 'message' => ''];
-}
-
-/**
- * @param list<int> $ids
- * @return array{TYPE: string, MESSAGE: string, DETAILS: string}
- */
-function mf_cdc_run_delete_list(array $ids, array $allowedIblocks): array
-{
-	$ok = 0;
-	$fail = 0;
-	$errors = [];
-	foreach ($ids as $pid)
-	{
-		$r = mf_cdc_delete_one_catalog_element((int)$pid, $allowedIblocks);
-		if ($r['ok'])
-		{
-			$ok++;
-		}
-		else
-		{
-			$fail++;
-			if (count($errors) < 40)
-			{
-				$errors[] = 'ID ' . $pid . ': ' . $r['message'];
-			}
-		}
-	}
-
-	$msg = 'Уникальных ID в списке: ' . count($ids) . '. Удалено: ' . $ok . ', ошибок: ' . $fail . '.';
-
-	return [
-		'TYPE' => $fail > 0 ? 'ERROR' : 'OK',
-		'MESSAGE' => $msg,
-		'DETAILS' => $errors !== [] ? '<pre style="white-space:pre-wrap">' . mf_cdc_h(implode("\n", $errors)) . '</pre>' : '',
-	];
-}
-
-/**
- * @param list<int> $ids
- * @return array{TYPE: string, MESSAGE: string, DETAILS: string}
- */
-function mf_cdc_run_dry_list(array $ids, array $allowedIblocks): array
-{
-	$ok = 0;
-	$fail = 0;
-	$errors = [];
-	foreach ($ids as $pid)
-	{
-		$el = \CIBlockElement::GetList(
-			[],
-			['ID' => $pid, 'CHECK_PERMISSIONS' => 'N'],
-			false,
-			false,
-			['ID', 'IBLOCK_ID', 'NAME']
-		)->Fetch();
-		if (!is_array($el))
-		{
-			$fail++;
-			if (count($errors) < 40)
-			{
-				$errors[] = 'ID ' . $pid . ': элемент не найден';
-			}
-			continue;
-		}
-		$ibEl = (int)($el['IBLOCK_ID'] ?? 0);
-		if (!in_array($ibEl, $allowedIblocks, true))
-		{
-			$fail++;
-			if (count($errors) < 40)
-			{
-				$errors[] = 'ID ' . $pid . ': IBLOCK_ID ' . $ibEl . ' не в списке каталога';
-			}
-			continue;
-		}
-		$ok++;
-	}
-	$msg = 'Проверка без удаления. Уникальных ID в файле: ' . count($ids) . '. '
-		. 'Готово к удалению: ' . $ok . ', проблем: ' . $fail . '.';
-
-	return [
-		'TYPE' => $fail > 0 ? 'ERROR' : 'OK',
-		'MESSAGE' => $msg,
-		'DETAILS' => $errors !== [] ? '<pre style="white-space:pre-wrap">' . mf_cdc_h(implode("\n", $errors)) . '</pre>' : '',
-	];
-}
-
 function mf_cdc_h(?string $s): string
 {
 	$s = (string)$s;
@@ -389,18 +159,61 @@ function mf_cdc_h(?string $s): string
 	return function_exists('htmlspecialcharsbx') ? (string)htmlspecialcharsbx($s) : htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-$APPLICATION->SetTitle('Удаление товаров по CSV');
+$mode = (string)($_GET['mode'] ?? '');
+$APPLICATION->SetTitle($mode === 'history' ? 'Журнал: удаление товаров по CSV' : 'Удаление товаров по CSV');
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 
 $allowedIblocks = mf_cdc_allowed_catalog_iblocks($mfCdcIblockId);
 $lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 
+mf_cdc_log_ensure_table();
+$cdcRunBlock = mf_cdc_log_get_blocking_run(null);
+$cdcRunStale = ($cdcRunBlock === null) ? mf_cdc_log_get_stale_running_row() : null;
+
 $adminPage = (string)$APPLICATION->GetCurPage();
 $adminPageQs = $adminPage . '?lang=' . rawurlencode($lang);
+$historyQs = $adminPage . '?lang=' . rawurlencode($lang) . '&mode=history';
 
 $resultBlock = null;
 $confirmState = null;
+
+if ($mode === 'history')
+{
+	$rows = mf_cdc_log_fetch_recent(80);
+	echo '<p><a href="' . mf_cdc_h($adminPageQs) . '">← К форме удаления</a></p>';
+	echo '<p class="adm-info-message">Таблица <code>mf_catalog_delete_run</code>. Для фоновых CLI смотрите также лог <code>/upload/tmp/mf_cdc_cli_<i>ID</i>.log</code>.</p>';
+	if (is_array($cdcRunBlock))
+	{
+		$rid = (int)($cdcRunBlock['ID'] ?? 0);
+		echo '<p class="adm-info-message" style="background:#f8d7da;border-color:#f5c6cb;"><strong>Сейчас выполняется удаление.</strong> Журнал №' . $rid
+			. ' (см. лог <code>/upload/tmp/mf_cdc_cli_' . $rid . '.log</code>).</p>';
+	}
+	echo '<table class="internal" cellspacing="0" style="width:100%;max-width:1200px;">';
+	echo '<tr class="heading"><td>ID</td><td>Создан</td><td>Источник</td><td>User</td><td>Файл</td><td>Всего ID</td><td>Удалено</td><td>Ошибок</td><td>сек</td><td>Статус</td></tr>';
+	foreach ($rows as $r)
+	{
+		$sum = trim((string)($r['ERROR_SUMMARY'] ?? ''));
+		$sumShort = $sum !== '' ? mf_cdc_h(mb_substr($sum, 0, 120)) . (mb_strlen($sum) > 120 ? '…' : '') : '—';
+		echo '<tr>';
+		echo '<td>' . (int)($r['ID'] ?? 0) . '</td>';
+		echo '<td>' . mf_cdc_h((string)($r['CREATED_AT'] ?? '')) . '</td>';
+		echo '<td>' . mf_cdc_h((string)($r['SOURCE'] ?? '')) . '</td>';
+		echo '<td>' . (int)($r['INIT_USER_ID'] ?? 0) . '</td>';
+		echo '<td title="' . mf_cdc_h((string)($r['FILE_PATH'] ?? '')) . '">' . mf_cdc_h((string)($r['FILE_NAME'] ?? '')) . '</td>';
+		echo '<td>' . (int)($r['IDS_TOTAL'] ?? 0) . '</td>';
+		echo '<td>' . (int)($r['IDS_DELETED'] ?? 0) . '</td>';
+		echo '<td>' . (int)($r['IDS_FAILED'] ?? 0) . '</td>';
+		$dur = $r['DURATION_SECONDS'] ?? null;
+		echo '<td>' . ($dur !== null && $dur !== '' ? mf_cdc_h((string)$dur) : '—') . '</td>';
+		echo '<td>' . mf_cdc_h((string)($r['STATUS'] ?? '')) . '<div style="color:#666;font-size:11px;margin-top:4px;">' . $sumShort . '</div></td>';
+		echo '</tr>';
+	}
+	echo '</table>';
+	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
+
+	return;
+}
 
 if (
 	$_SERVER['REQUEST_METHOD'] === 'GET'
@@ -426,6 +239,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid())
 		@set_time_limit(0);
 		$postToken = (string)($_POST['mf_cdc_token'] ?? '');
 		$sessToken = isset($_SESSION[MF_CDC_SESSION_TOKEN]) ? (string)$_SESSION[MF_CDC_SESSION_TOKEN] : '';
+		$useCli = (string)($_POST['mf_cdc_cli'] ?? '') === 'Y';
+
 		if ($postToken === '' || $sessToken === '' || !hash_equals($sessToken, $postToken))
 		{
 			$resultBlock = ['TYPE' => 'ERROR', 'MESSAGE' => 'Сессия подтверждения устарела. Загрузите CSV снова.'];
@@ -441,8 +256,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid())
 			}
 			else
 			{
-				$resultBlock = mf_cdc_run_delete_list($ids, $allowedIblocks);
-				mf_cdc_clear_pending_session($sessToken);
+				$blockRow = mf_cdc_log_get_blocking_run(null);
+				if (is_array($blockRow))
+				{
+					$bid = (int)($blockRow['ID'] ?? 0);
+					$bst = mf_cdc_h((string)($blockRow['STARTED_AT'] ?? ''));
+					$src = mf_cdc_h((string)($blockRow['SOURCE'] ?? ''));
+					$n = (int)($blockRow['IDS_TOTAL'] ?? 0);
+					$resultBlock = [
+						'TYPE' => 'ERROR',
+						'MESSAGE' => 'Сейчас уже выполняется удаление товаров (журнал №' . $bid . ', источник ' . $src . ', старт ' . $bst . ', в файле ID: ' . $n . '). Дождитесь завершения. Откройте <a href="' . mf_cdc_h($historyQs) . '">журнал</a> или смотрите лог <code>/upload/tmp/mf_cdc_cli_' . $bid . '.log</code>.',
+						'HTML' => true,
+					];
+				}
+				elseif ($useCli)
+				{
+					$uid = (int)$USER->GetID();
+					$logId = mf_cdc_log_insert_running([
+						'source' => 'admin_cli',
+						'init_user_id' => $uid > 0 ? $uid : null,
+						'file_name' => 'web_confirm_cli.csv',
+						'ids_total' => count($ids),
+					]);
+					if ($logId <= 0)
+					{
+						$resultBlock = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не создана запись журнала. Проверьте таблицу mf_catalog_delete_run.'];
+					}
+					else
+					{
+						$doc = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/');
+						$csvPath = $doc . '/upload/tmp/mf_cdc_run_' . $logId . '.csv';
+						if (!mf_cdc_save_ids_to_csv_file($ids, $csvPath))
+						{
+							mf_cdc_log_fail($logId, 0.0, 'Не удалось записать CSV для CLI');
+							$resultBlock = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не удалось сохранить список ID в upload/tmp для CLI.'];
+						}
+						else
+						{
+							$conn = mf_cdc_log_conn();
+							if ($conn)
+							{
+								$fp = mf_cdc_log_escape(mb_substr($csvPath, 0, 1024));
+								$conn->queryExecute("UPDATE mf_catalog_delete_run SET FILE_PATH='{$fp}' WHERE ID=" . $logId);
+							}
+							$cliScript = $doc . '/mf_catalog_delete_cli.php';
+							$spawn = mf_cdc_spawn_cli_delete($cliScript, $csvPath, $logId);
+							if (!$spawn['ok'])
+							{
+								mf_cdc_log_fail($logId, 0.0, 'Не удалось запустить CLI. Проверьте MF_PHP_CLI, права, open_basedir.');
+								$resultBlock = ['TYPE' => 'ERROR', 'MESSAGE' => 'Фоновый процесс не запущен. Запустите вручную: <code>php ' . mf_cdc_h($cliScript) . ' --apply --file=' . mf_cdc_h($csvPath) . ' --log-id=' . $logId . '</code>'];
+							}
+							else
+							{
+								$resultBlock = [
+									'TYPE' => 'OK',
+									'MESSAGE' => 'Запущено фоновое удаление, запись журнала №' . $logId . '.',
+									'DETAILS' => 'Через некоторое время откройте <a href="' . mf_cdc_h($historyQs) . '">журнал</a>. '
+										. 'Лог процесса: <code>/upload/tmp/mf_cdc_cli_' . $logId . '.log</code>. PHP: ' . mf_cdc_h($spawn['php']),
+									'HTML' => true,
+								];
+							}
+						}
+					}
+					mf_cdc_clear_pending_session($sessToken);
+				}
+				else
+				{
+					$uid = (int)$USER->GetID();
+					$logId = mf_cdc_log_insert_running([
+						'source' => 'admin_web',
+						'init_user_id' => $uid > 0 ? $uid : null,
+						'file_name' => 'web_confirm',
+						'ids_total' => count($ids),
+					]);
+					$t0 = microtime(true);
+					$st = mf_cdc_run_delete_list($ids, $allowedIblocks);
+					$dt = microtime(true) - $t0;
+					if ($logId > 0)
+					{
+						mf_cdc_log_complete(
+							$logId,
+							(int)$st['deleted'],
+							(int)$st['failed'],
+							$dt,
+							'completed',
+							mf_cdc_errors_to_summary($st['errors'])
+						);
+					}
+					$resultBlock = mf_cdc_format_admin_result_delete($ids, $st);
+					if ($logId > 0)
+					{
+						$resultBlock['MESSAGE'] .= ' Журнал №' . $logId . '.';
+					}
+					mf_cdc_clear_pending_session($sessToken);
+				}
 			}
 		}
 	}
@@ -481,10 +388,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid())
 					}
 					elseif ($dry)
 					{
-						$resultBlock = mf_cdc_run_dry_list($ids, $allowedIblocks);
+						$st = mf_cdc_run_dry_list($ids, $allowedIblocks);
+						$resultBlock = mf_cdc_format_admin_result_dry($ids, $st);
 					}
 					else
 					{
+						$blockRow = mf_cdc_log_get_blocking_run(null);
+						if (is_array($blockRow))
+						{
+							$bid = (int)($blockRow['ID'] ?? 0);
+							$bst = mf_cdc_h((string)($blockRow['STARTED_AT'] ?? ''));
+							$resultBlock = [
+								'TYPE' => 'ERROR',
+								'MESSAGE' => 'Уже выполняется удаление (журнал №' . $bid . ', старт ' . $bst . '). Дождитесь окончания. Доступна только проверка CSV без удаления.',
+							];
+						}
+						else
+						{
 						mf_cdc_clear_pending_session();
 
 						$eligible = mf_cdc_filter_eligible_ids($ids, $allowedIblocks);
@@ -504,6 +424,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid())
 								'first10' => $first10,
 							];
 						}
+						}
 					}
 				}
 			}
@@ -516,8 +437,37 @@ if (is_array($resultBlock))
 	\CAdminMessage::ShowMessage($resultBlock);
 }
 
+if (is_array($cdcRunBlock))
+{
+	$cbId = (int)($cdcRunBlock['ID'] ?? 0);
+	$cbSt = mf_cdc_h((string)($cdcRunBlock['STARTED_AT'] ?? ''));
+	$cbSrc = mf_cdc_h((string)($cdcRunBlock['SOURCE'] ?? ''));
+	$cbN = (int)($cdcRunBlock['IDS_TOTAL'] ?? 0);
+	\CAdminMessage::ShowMessage([
+		'TYPE' => 'ERROR',
+		'MESSAGE' => 'Сейчас выполняется удаление товаров (журнал №' . $cbId . ', ' . $cbSrc . ', старт ' . $cbSt . ', ID в задании: ' . $cbN . '). Новое удаление и переход к подтверждению недоступны; проверка CSV без удаления — доступна.',
+		'DETAILS' => 'Журнал: <a href="' . mf_cdc_h($historyQs) . '">' . mf_cdc_h($historyQs) . '</a>. Лог CLI: <code>/upload/tmp/mf_cdc_cli_' . $cbId . '.log</code>',
+		'HTML' => true,
+	]);
+}
+
+if ($cdcRunBlock === null && is_array($cdcRunStale))
+{
+	$csId = (int)($cdcRunStale['ID'] ?? 0);
+	$csSt = mf_cdc_h((string)($cdcRunStale['STARTED_AT'] ?? ''));
+	$ttl = (int)mf_cdc_log_running_ttl_minutes();
+	\CAdminMessage::ShowMessage([
+		'TYPE' => 'OK',
+		'MESSAGE' => 'В журнале есть незавершённая запись №' . $csId . ' (старт ' . $csSt . '), статус running дольше ' . $ttl . ' мин. Возможно, процесс завершился с ошибкой. Новое удаление разрешено; при необходимости пометьте запись вручную в БД.',
+	]);
+}
+
+$cliExample = 'php ' . mf_cdc_h(rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') . '/mf_catalog_delete_cli.php') . ' --dry-run --file=/path/to/ids.csv';
+$cliApplyExample = 'php ' . mf_cdc_h(rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') . '/mf_catalog_delete_cli.php') . ' --apply --file=/path/to/ids.csv';
+
 ?>
 <div class="adm-detail-content-wrap" style="padding:12px;">
+	<p><a href="<?= mf_cdc_h($historyQs) ?>">Журнал запусков (таблица mf_catalog_delete_run)</a></p>
 	<?php
 	if (is_array($confirmState))
 	{
@@ -537,14 +487,34 @@ if (is_array($resultBlock))
 				<li>Первые 10 ID из списка допустимых к удалению: <strong><?= $f10s !== '' ? mf_cdc_h($f10s) : '—' ?></strong></li>
 			</ul>
 			<p style="margin:0 0 12px 0;color:#666;">
-				Остальные ID из файла будут обработаны при подтверждении; по ним возможны ошибки (нет элемента, неверный инфоблок) — они попадут в отчёт.
+				Остальные ID из файла будут обработаны при подтверждении; по ним возможны ошибки (нет элемента, неверный инфоблок) — они попадут в отчёт и в журнал.
 			</p>
-			<form method="post" style="display:inline-block;margin-right:8px;" action="">
+			<?php
+			$cdcLocked = is_array($cdcRunBlock);
+			if ($cdcLocked)
+			{
+				?>
+				<p style="color:#c00;font-weight:bold;">Сейчас уже выполняется другое удаление — кнопка подтверждения отключена. Дождитесь окончания или нажмите «Отмена», чтобы сбросить черновик.</p>
+				<?php
+			}
+			else
+			{
+				?>
+			<form method="post" style="display:inline-block;margin-right:8px;vertical-align:top;" action="">
 				<?= bitrix_sessid_post() ?>
 				<input type="hidden" name="mf_cdc_action" value="confirm">
 				<input type="hidden" name="mf_cdc_token" value="<?= $tok ?>">
+				<p style="margin:0 0 8px 0;">
+					<label>
+						<input type="checkbox" name="mf_cdc_cli" value="Y" checked>
+						<strong>Фон (CLI)</strong> — для больших списков (рекомендуется). Иначе удаление в этом HTTP-запросе.
+					</label>
+				</p>
 				<input type="submit" class="adm-btn-save" value="OK — подтвердить удаление">
 			</form>
+				<?php
+			}
+			?>
 			<form method="post" style="display:inline-block;" action="">
 				<?= bitrix_sessid_post() ?>
 				<input type="hidden" name="mf_cdc_action" value="cancel">
@@ -565,8 +535,14 @@ if (is_array($resultBlock))
 		Для товара с SKU сначала удаляются офферы, затем родитель. Операция <strong>необратима</strong>.
 	</p>
 	<p class="adm-info-message" style="background:#f8f9fa;">
-		Если снять галку «Только проверить», после загрузки файла откроется окно подтверждения
-		(сколько позиций готово к удалению и первые 10 ID), затем нужно нажать <strong>OK</strong> или <strong>Отмена</strong>.
+		<strong>Консоль (без таймаута браузера):</strong><br>
+		<code><?= $cliExample ?></code><br>
+		<code><?= $cliApplyExample ?></code><br>
+		Переменная <code>MF_PHP_CLI</code> задаёт бинарник PHP для фонового запуска из админки (по приоритету над <code>PHP_BINDIR</code>).
+		<br>Порог «активного» running для блокировки новых удалений: <code>MF_CDC_RUNNING_TTL_MINUTES</code> (по умолчанию 180 мин); старше — только предупреждение о «зависшей» записи.
+	</p>
+	<p class="adm-info-message" style="background:#f8f9fa;">
+		Если снять галку «Только проверить», после загрузки откроется подтверждение (в т.ч. флаг «Фон (CLI)»).
 	</p>
 	<form method="post" enctype="multipart/form-data" action="">
 		<?= bitrix_sessid_post() ?>
