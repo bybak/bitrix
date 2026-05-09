@@ -13,7 +13,7 @@
  * CSV формат (рекомендуется):
  *   Бренд;Артикул;Название;Остаток;Цена
  *
- * Колонка "Название/Наименование" — опциональна: используется только для записи в "ненайденные товары"
+ * Колонка "Название" — опциональна: используется для create-not-found (имя карточки) и для записи в "ненайденные товары"
  * (mf_stock_import_missing), чтобы потом проще создавать товары-заглушки в админке.
  *
  * Сопоставление с товаром при указанном бренде в строке: только точное попадание в MF_UNIQ_KEY
@@ -1480,11 +1480,26 @@ try
 	foreach ($headers as $i => $hdr)
 	{
 		$h2 = mb_strtolower(trim($hdr));
-		if (in_array($h2, ['бренд', 'brand', 'производитель', 'manufacturer', 'vendor'], true)) $idxBrand = $i;
-		if (in_array($h2, ['артикул', 'article', 'sku'], true)) $idxArt = $i;
-		if (in_array($h2, ['название', 'наименование', 'товар', 'product', 'name', 'title'], true)) $idxName = $i;
-		if (in_array($h2, ['остаток', 'количество', 'кол-во', 'qty', 'stock'], true)) $idxQty = $i;
-		if (in_array($h2, ['цена', 'price', 'стоимость'], true)) $idxPrice = $i;
+		if (in_array($h2, ['бренд', 'brand', 'производитель', 'manufacturer', 'vendor'], true))
+		{
+			$idxBrand = $i;
+		}
+		if (in_array($h2, ['артикул', 'article', 'sku'], true))
+		{
+			$idxArt = $i;
+		}
+		if (in_array($h2, ['название', 'наименование', 'товар', 'product', 'name', 'title'], true))
+		{
+			$idxName = $i;
+		}
+		if (in_array($h2, ['остаток', 'количество', 'кол-во', 'qty', 'stock'], true))
+		{
+			$idxQty = $i;
+		}
+		if (in_array($h2, ['цена', 'price', 'стоимость'], true))
+		{
+			$idxPrice = $i;
+		}
 	}
 	if ($idxArt === null || $idxQty === null)
 	{
