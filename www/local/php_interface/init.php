@@ -666,6 +666,21 @@ if (!function_exists('mf_admin_menu_catalog_export'))
 			'url' => 'mf_catalog_export.php?lang=' . urlencode($lang),
 			'more_url' => [
 				'mf_catalog_export.php',
+				'mf_catalog_delete_by_csv.php',
+			],
+		];
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_catalog_delete_by_csv',
+			'sort' => 20546,
+			'text' => 'Удаление товаров (CSV)',
+			'title' => 'Пакетное удаление по ID из CSV (первая колонка)',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_catalog_delete_by_csv',
+			'url' => 'mf_catalog_delete_by_csv.php?lang=' . urlencode($lang),
+			'more_url' => [
+				'mf_catalog_delete_by_csv.php',
 			],
 		];
 		$aModuleMenu[] = [
