@@ -781,10 +781,24 @@ if (!function_exists('mf_cdc_spawn_cli_delete'))
 			return $out;
 		}
 
-		$cmd = "nohup {$phpE} -f {$scrE} -- --apply --file={$fileE} --log-id={$logIdN} >> " . escapeshellarg($logFile) . " 2>&1 &";
+		// Важно: exec() без оболочки не обрабатывает >>, 2>&1 и & — фон мог не стартовать, в логе только строка выше.
+		$inner = "nohup {$phpE} -f {$scrE} -- --apply --file={$fileE} --log-id={$logIdN} >> "
+			. escapeshellarg($logFile) . " 2>&1 </dev/null &";
+		$cmd = '/bin/sh -c ' . escapeshellarg($inner);
 		$out['cmd'] = $cmd;
-		@exec($cmd);
-		$out['ok'] = true;
+		$execOut = [];
+		$ret = -1;
+		@exec($cmd . ' 2>&1', $execOut, $ret);
+		$out['ok'] = $ret === 0;
+		if (!$out['ok'])
+		{
+			$tail = $execOut !== [] ? implode("\n", array_slice($execOut, 0, 5)) : ('код ' . $ret);
+			@file_put_contents(
+				$logFile,
+				'[' . date('Y-m-d H:i:s') . "] Ошибка запуска через /bin/sh -c ({$tail})\n",
+				FILE_APPEND | LOCK_EX
+			);
+		}
 
 		return $out;
 	}
