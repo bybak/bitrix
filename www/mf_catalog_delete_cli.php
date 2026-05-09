@@ -64,7 +64,35 @@ if (!$apply && !$dry)
 	exit(1);
 }
 
+if ($logId > 0)
+{
+	$docRoot = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/');
+	$earlyLog = $docRoot . '/upload/tmp/mf_cdc_cli_' . $logId . '.log';
+	$earlyDir = dirname($earlyLog);
+	if (!is_dir($earlyDir))
+	{
+		@mkdir($earlyDir, 0775, true);
+	}
+	@file_put_contents(
+		$earlyLog,
+		'[' . date('Y-m-d H:i:s') . '] CLI до Bitrix prolog PID=' . getmypid()
+			. ' apply=' . ($apply ? '1' : '0') . ' file=' . $file . "\n",
+		FILE_APPEND | LOCK_EX
+	);
+}
+
 require $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_before.php';
+
+if ($logId > 0)
+{
+	$docRoot = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/');
+	$earlyLog = $docRoot . '/upload/tmp/mf_cdc_cli_' . $logId . '.log';
+	@file_put_contents(
+		$earlyLog,
+		'[' . date('Y-m-d H:i:s') . "] CLI после Bitrix prolog_before\n",
+		FILE_APPEND | LOCK_EX
+	);
+}
 
 \Bitrix\Main\Loader::includeModule('iblock');
 \Bitrix\Main\Loader::includeModule('catalog');
