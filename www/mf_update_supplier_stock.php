@@ -29,7 +29,7 @@
  *   --iblock-id=4
  *   --warehouse-code=UniqueCode
  *   --warehouse-title=Human name (optional; потом можно отредактировать в админке)
- *   --zero-stock-warehouse-code=Code (optional) — если указан: строки с остатком 0 или без количества пишутся на этот склад (и с основного склада для товара сбрасывается остаток); строки с остатком > 0 — только на --warehouse-code, на складе из «zero» для этого товара ставится 0. Если ключ не задан — вся запись как раньше только в --warehouse-code.
+ *   --zero-stock-warehouse-code=Code (optional) — если указан: при остатке >0 в файле количество пишется только на --warehouse-code, привязка к zero-складу удаляется (если была); при остатке 0 — привязка к --warehouse-code удаляется (если была), на zero-складе выставляется количество 0 (строка создаётся/обновляется). sync-missing: «зависший» остаток на --warehouse-code — удаление привязки, на zero-складе — AMOUNT=0. Без ключа — как раньше только --warehouse-code.
  *   --zero-stock-warehouse-title=Name (optional) — человекочитаемое имя склада для --zero-stock-warehouse-code при автосоздании
  *   --supplier=NameOrCode (deprecated)
  *   --file=/path/file.csv
@@ -850,6 +850,32 @@ function upsertStoreAmount(int $productId, int $storeId, float $amount): void
 	else
 	{
 		CCatalogStoreProduct::Add(['PRODUCT_ID' => $productId, 'STORE_ID' => $storeId, 'AMOUNT' => $amount]);
+	}
+}
+
+/**
+ * Удалить связь товар–склад (не оставлять строку с AMOUNT=0).
+ */
+function deleteStoreProductForProduct(int $productId, int $storeId): void
+{
+	if ($productId <= 0 || $storeId <= 0)
+	{
+		return;
+	}
+	$rs = CCatalogStoreProduct::GetList(
+		[],
+		['PRODUCT_ID' => $productId, 'STORE_ID' => $storeId],
+		false,
+		false,
+		['ID']
+	);
+	while ($row = $rs->Fetch())
+	{
+		$id = (int)$row['ID'];
+		if ($id > 0)
+		{
+			CCatalogStoreProduct::Delete($id);
+		}
 	}
 }
 
@@ -1713,11 +1739,11 @@ try
 				if ($qty > 1e-9)
 				{
 					upsertStoreAmount($productId, $storeId, $qty);
-					upsertStoreAmount($productId, $zeroStoreId, 0.0);
+					deleteStoreProductForProduct($productId, $zeroStoreId);
 				}
 				else
 				{
-					upsertStoreAmount($productId, $storeId, 0.0);
+					deleteStoreProductForProduct($productId, $storeId);
 					upsertStoreAmount($productId, $zeroStoreId, 0.0);
 				}
 			}
@@ -1839,7 +1865,21 @@ try
 
 				try
 				{
-					CCatalogStoreProduct::Update((int)$sp['ID'], ['AMOUNT' => 0]);
+					if ($zeroStockWarehouseCode !== '' && $zeroStoreId > 0)
+					{
+						if ($mfStaleSid === $storeId)
+						{
+							CCatalogStoreProduct::Delete((int)$sp['ID']);
+						}
+						else
+						{
+							CCatalogStoreProduct::Update((int)$sp['ID'], ['AMOUNT' => 0]);
+						}
+					}
+					else
+					{
+						CCatalogStoreProduct::Update((int)$sp['ID'], ['AMOUNT' => 0]);
+					}
 					$touchedProducts[$pid] = true;
 					if ($usePrice && $recalcBase)
 					{
