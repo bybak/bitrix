@@ -13,7 +13,25 @@ declare(strict_types=1);
  * Если уже есть активное удаление (статус running в журнале, не старше MF_CDC_RUNNING_TTL_MINUTES), --apply завершится с кодом 4.
  */
 
-$_SERVER['DOCUMENT_ROOT'] = dirname(__DIR__);
+// DOCUMENT_ROOT: скрипт лежит в корне сайта (www), а не на уровень выше.
+// Раньше было dirname(__DIR__) — получался родитель www, prolog не находился,
+// ранний лог писался в ../upload/tmp, а не в www/upload/tmp.
+$dir = __DIR__;
+while ($dir !== '/' && $dir !== '' && !is_file($dir . '/bitrix/modules/main/include/prolog_before.php'))
+{
+	$parent = dirname($dir);
+	if ($parent === $dir)
+	{
+		break;
+	}
+	$dir = $parent;
+}
+if (!is_file($dir . '/bitrix/modules/main/include/prolog_before.php'))
+{
+	fwrite(STDERR, 'Не найден Bitrix prolog относительно каталога ' . __DIR__ . "\n");
+	exit(1);
+}
+$_SERVER['DOCUMENT_ROOT'] = $dir;
 
 define('NO_KEEP_STATISTIC', true);
 define('NOT_CHECK_PERMISSIONS', true);
