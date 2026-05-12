@@ -37,25 +37,27 @@ catch (\Bitrix\Main\Security\Sign\BadSignatureException $e)
 	die();
 }
 
-if (is_array($params))
+if (!is_array($params))
 {
-	// AJAX sale.order.ajax вызывается с пути ajax.php, а не /personal/order/make/ — здесь подстраховываем
-	// кастомный чекаут, если в подписанных параметрах потерялся MF_CUSTOM_GUEST_FLOW.
-	if (($params['MF_ORDER_MAKE_SIGNATURE'] ?? 'N') === 'Y')
-	{
-		$params['MF_CUSTOM_GUEST_FLOW'] = 'Y';
-	}
-	elseif (
-		($params['MF_CUSTOM_GUEST_FLOW'] ?? 'N') !== 'Y'
-		&& ($params['ALLOW_AUTO_REGISTER'] ?? '') === 'N'
-		&& ($params['DELIVERY_NO_AJAX'] ?? '') === 'H'
-		&& !empty($params['PATH_TO_ORDER'])
-		&& is_string($params['PATH_TO_ORDER'])
-		&& str_contains(str_replace('\\', '/', $params['PATH_TO_ORDER']), 'personal/order/make')
-	)
-	{
-		$params['MF_CUSTOM_GUEST_FLOW'] = 'Y';
-	}
+	return;
+}
+
+// AJAX sale.order.ajax вызывается с пути ajax.php, а не /personal/order/make/ — здесь подстраховываем
+// кастомный чекаут, если в подписанных параметрах потерялся MF_CUSTOM_GUEST_FLOW.
+if (($params['MF_ORDER_MAKE_SIGNATURE'] ?? 'N') === 'Y')
+{
+	$params['MF_CUSTOM_GUEST_FLOW'] = 'Y';
+}
+elseif (
+	($params['MF_CUSTOM_GUEST_FLOW'] ?? 'N') !== 'Y'
+	&& ($params['ALLOW_AUTO_REGISTER'] ?? '') === 'N'
+	&& ($params['DELIVERY_NO_AJAX'] ?? '') === 'H'
+	&& !empty($params['PATH_TO_ORDER'])
+	&& is_string($params['PATH_TO_ORDER'])
+	&& str_contains(str_replace('\\', '/', $params['PATH_TO_ORDER']), 'personal/order/make')
+)
+{
+	$params['MF_CUSTOM_GUEST_FLOW'] = 'Y';
 }
 
 $action = $request->get($params['ACTION_VARIABLE']);
