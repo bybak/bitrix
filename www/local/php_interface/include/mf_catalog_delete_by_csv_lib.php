@@ -781,21 +781,83 @@ if (!function_exists('mf_cdc_spawn_cli_delete'))
 			return $out;
 		}
 
-		// Важно: exec() без оболочки не обрабатывает >>, 2>&1 и & — фон мог не стартовать, в логе только строка выше.
-		$inner = "nohup {$phpE} -f {$scrE} -- --apply --file={$fileE} --log-id={$logIdN} >> "
+		// Важно: exec() без оболочки не обрабатывает >>, 2>&1 &, поэтому только через sh -c.
+		// proc_open([sh,-c]) на части FPM надёжее; явный путь к nohup — у воркера часто урезан PATH.
+		$nohupBin = 'nohup';
+		foreach (['/usr/bin/nohup', '/bin/nohup'] as $nohupPath)
+		{
+			if (is_executable($nohupPath))
+			{
+				$nohupBin = $nohupPath;
+				break;
+			}
+		}
+		$nohupE = escapeshellarg($nohupBin);
+
+		$inner = "{$nohupE} {$phpE} -f {$scrE} -- --apply --file={$fileE} --log-id={$logIdN} >> "
 			. escapeshellarg($logFile) . " 2>&1 </dev/null &";
-		$cmd = '/bin/sh -c ' . escapeshellarg($inner);
-		$out['cmd'] = $cmd;
-		$execOut = [];
+
+		$sh = '/bin/sh';
+		if (!is_executable($sh))
+		{
+			$sh = is_executable('/usr/bin/sh') ? '/usr/bin/sh' : 'sh';
+		}
+
 		$ret = -1;
-		@exec($cmd . ' 2>&1', $execOut, $ret);
+		$method = 'none';
+		$execOut = [];
+		$null = '/dev/null';
+
+		if (is_executable($sh))
+		{
+			$proc = @proc_open(
+				[$sh, '-c', $inner],
+				[
+					0 => ['file', $null, 'r'],
+					1 => ['file', $null, 'w'],
+					2 => ['file', $null, 'w'],
+				],
+				$pipes,
+				null,
+				null,
+				['bypass_shell' => true]
+			);
+			if (is_resource($proc))
+			{
+				$method = 'proc_open';
+				$ret = proc_close($proc);
+			}
+		}
+
+		if ($ret !== 0)
+		{
+			$cmdLine = $sh . ' -c ' . escapeshellarg($inner);
+			$out['cmd'] = $cmdLine;
+			@exec($cmdLine . ' 2>&1', $execOut, $ret);
+			$method = 'exec';
+		}
+		else
+		{
+			$out['cmd'] = $sh . ' -c ' . escapeshellarg($inner);
+		}
+
+		$diagTail = $execOut !== [] ? (function_exists('mb_substr')
+			? (string)mb_substr(implode("\n", $execOut), 0, 400)
+			: substr(implode("\n", $execOut), 0, 400)) : '';
+		@file_put_contents(
+			$logFile,
+			'[' . date('Y-m-d H:i:s') . "] spawn: sh={$sh} nohup={$nohupBin} method={$method} exit={$ret}"
+				. ($diagTail !== '' ? (' sh_out=' . $diagTail) : '') . "\n",
+			FILE_APPEND | LOCK_EX
+		);
+
 		$out['ok'] = $ret === 0;
 		if (!$out['ok'])
 		{
 			$tail = $execOut !== [] ? implode("\n", array_slice($execOut, 0, 5)) : ('код ' . $ret);
 			@file_put_contents(
 				$logFile,
-				'[' . date('Y-m-d H:i:s') . "] Ошибка запуска через /bin/sh -c ({$tail})\n",
+				'[' . date('Y-m-d H:i:s') . "] Ошибка запуска фона ({$tail})\n",
 				FILE_APPEND | LOCK_EX
 			);
 		}

@@ -3,8 +3,8 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_before.php';
 
 $candidates = [
-	$_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_catalog_delete_by_csv_admin.php',
 	$_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_catalog_delete_by_csv_admin.php',
+	$_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_catalog_delete_by_csv_admin.php',
 ];
 $impl = null;
 foreach ($candidates as $path)
