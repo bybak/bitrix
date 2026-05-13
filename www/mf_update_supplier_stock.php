@@ -29,7 +29,7 @@
  *   --iblock-id=4
  *   --warehouse-code=UniqueCode
  *   --warehouse-title=Human name (optional; потом можно отредактировать в админке)
- *   --zero-stock-warehouse-code=Code (optional) — если указан: при остатке >0 в файле количество пишется только на --warehouse-code, привязка к zero-складу удаляется (если была); при остатке 0 — привязка к --warehouse-code удаляется (если была), на zero-складе выставляется количество 0 (строка создаётся/обновляется). sync-missing: «зависший» остаток на --warehouse-code — удаление привязки, на zero-складе — AMOUNT=0. Без ключа — как раньше только --warehouse-code.
+ *   --zero-stock-warehouse-code=Code (optional) — если указан: при остатке >0 в файле количество пишется только на --warehouse-code, привязка к zero-складу удаляется (если была); при остатке 0 — привязка к --warehouse-code удаляется (если была), на zero-складе выставляется количество 0 (строка создаётся/обновляется). sync-missing: «зависший» остаток на --warehouse-code — удаление привязки, на zero-складе — AMOUNT=0. При --price=Y и двух складах: по офферам (и при необходимости по родителю SKU) копирование в «активный» тип цены и удаление записи цены в противоположном типе — при остатке 0 в CSV остаётся только тип zero-склада, при остатке >0 — только тип --warehouse-code (чтобы на витрине не было двух цен). Без ключа — как раньше только --warehouse-code.
  *   --zero-stock-warehouse-title=Name (optional) — человекочитаемое имя склада для --zero-stock-warehouse-code при автосоздании
  *   --supplier=NameOrCode (deprecated)
  *   --file=/path/file.csv
@@ -834,6 +834,120 @@ function upsertPrice(int $productId, int $priceGroupId, float $price): void
 	}
 }
 
+/**
+ * Для пары складов (основной + zero-stock): если у товара нет положительной цены в типе zero-склада,
+ * копирует из типа цены --warehouse-code. Нужно при остатке 0 в CSV (склад «под заказ» должен иметь цену).
+ */
+function mf_supplier_ensure_zero_warehouse_price_from_main(int $productId, int $mainPriceGroupId, int $zeroPriceGroupId): void
+{
+	mf_supplier_ensure_warehouse_price_from_other_group(
+		$productId,
+		$zeroPriceGroupId,
+		$mainPriceGroupId
+	);
+}
+
+/**
+ * При остатке > 0 в CSV: если в типе цены --warehouse-code нет положительной цены,
+ * копирует из типа цены --zero-stock-warehouse-code (товар раньше висел «под заказ», цена была только там).
+ */
+function mf_supplier_ensure_main_warehouse_price_from_zero(int $productId, int $mainPriceGroupId, int $zeroPriceGroupId): void
+{
+	mf_supplier_ensure_warehouse_price_from_other_group(
+		$productId,
+		$mainPriceGroupId,
+		$zeroPriceGroupId
+	);
+}
+
+/**
+ * Если у $productId нет положительной цены в $targetGroupId — копирует из $sourceGroupId (Add/Update).
+ */
+function mf_supplier_ensure_warehouse_price_from_other_group(int $productId, int $targetGroupId, int $sourceGroupId): void
+{
+	if ($productId <= 0 || $targetGroupId <= 0 || $sourceGroupId <= 0 || $targetGroupId === $sourceGroupId)
+	{
+		return;
+	}
+	$rsT = CPrice::GetList(
+		[],
+		['PRODUCT_ID' => $productId, 'CATALOG_GROUP_ID' => $targetGroupId],
+		false,
+		false,
+		['ID', 'PRICE']
+	);
+	if ($t = $rsT->Fetch())
+	{
+		if ((float)$t['PRICE'] > 0)
+		{
+			return;
+		}
+	}
+	$rsS = CPrice::GetList(
+		[],
+		['PRODUCT_ID' => $productId, 'CATALOG_GROUP_ID' => $sourceGroupId],
+		false,
+		false,
+		['PRICE', 'CURRENCY']
+	);
+	if (!$s = $rsS->Fetch())
+	{
+		return;
+	}
+	$src = (float)$s['PRICE'];
+	if ($src <= 0)
+	{
+		return;
+	}
+	$cur = strtoupper(trim((string)($s['CURRENCY'] ?? '')));
+	if ($cur === '' || $cur === 'RUR')
+	{
+		$cur = 'RUB';
+	}
+	$rsT2 = CPrice::GetList(
+		[],
+		['PRODUCT_ID' => $productId, 'CATALOG_GROUP_ID' => $targetGroupId],
+		false,
+		false,
+		['ID']
+	);
+	if ($t2 = $rsT2->Fetch())
+	{
+		CPrice::Update((int)$t2['ID'], ['PRICE' => $src, 'CURRENCY' => $cur !== '' ? $cur : 'RUB']);
+	}
+	else
+	{
+		CPrice::Add([
+			'PRODUCT_ID' => $productId,
+			'CATALOG_GROUP_ID' => $targetGroupId,
+			'PRICE' => $src,
+			'CURRENCY' => $cur !== '' ? $cur : 'RUB',
+		]);
+	}
+}
+
+/**
+ * Удалить цену в типе $catalogGroupId (чтобы блок склада на сайте не показывался: нет остатка и нет цены).
+ */
+function mf_supplier_delete_price_for_group(int $productId, int $catalogGroupId): void
+{
+	if ($productId <= 0 || $catalogGroupId <= 0)
+	{
+		return;
+	}
+	$rs = CPrice::GetList(
+		[],
+		['PRODUCT_ID' => $productId, 'CATALOG_GROUP_ID' => $catalogGroupId],
+		false,
+		false,
+		['ID']
+	);
+	while ($p = $rs->Fetch())
+	{
+		CPrice::Delete((int)$p['ID']);
+	}
+}
+
 function upsertStoreAmount(int $productId, int $storeId, float $amount): void
 {
 	$rs = CCatalogStoreProduct::GetList(
@@ -877,6 +991,111 @@ function deleteStoreProductForProduct(int $productId, int $storeId): void
 			CCatalogStoreProduct::Delete($id);
 		}
 	}
+}
+
+/**
+ * Все PRODUCT_ID (элементы офферов), для которых нужно писать остатки по складам.
+ * Если в матчинг попал родитель с SKU (TYPE_SKU), обновляем каждый оффер — иначе «зависшие»
+ * остатки на других офферах (как у тебя был Outdoor + под заказ только на первом оффере).
+ *
+ * @return list<int>
+ */
+function mf_supplier_stock_expand_store_product_ids(int $catalogIdOrElementId): array
+{
+	$id = (int)$catalogIdOrElementId;
+	if ($id <= 0)
+	{
+		return [];
+	}
+	if (!class_exists(\Bitrix\Catalog\ProductTable::class))
+	{
+		return [$id];
+	}
+	$row = \Bitrix\Catalog\ProductTable::getRow([
+		'filter' => ['=ID' => $id],
+		'select' => ['TYPE'],
+	]);
+	if (!$row)
+	{
+		return [$id];
+	}
+	$type = (int)($row['TYPE'] ?? 0);
+	if ($type !== \Bitrix\Catalog\ProductTable::TYPE_SKU)
+	{
+		return [$id];
+	}
+	if (!class_exists(\CCatalogSKU::class))
+	{
+		return [$id];
+	}
+	Loader::includeModule('iblock');
+	$iblockId = (int)\CIBlockElement::GetIBlockByID($id);
+	if ($iblockId <= 0)
+	{
+		return [$id];
+	}
+	$list = \CCatalogSKU::getOffersList($id, $iblockId, [], [], [], [], ['ID' => 'ASC']);
+	$out = [];
+	if (!empty($list[$id]) && is_array($list[$id]))
+	{
+		foreach ($list[$id] as $offer)
+		{
+			$oid = (int)($offer['ID'] ?? 0);
+			if ($oid > 0)
+			{
+				$out[] = $oid;
+			}
+		}
+	}
+
+	return $out !== [] ? $out : [$id];
+}
+
+/**
+ * ID родительской SKU-карточки в каталоге (тот же ID элемента / b_catalog_product), если есть торговые предложения.
+ * Нужно счищать остатки на родителе: иногда строки складов висят на родителе, а импорт пишет только на офферы.
+ */
+function mf_supplier_stock_sku_parent_catalog_id_if_any(int $catalogId): int
+{
+	$catalogId = (int)$catalogId;
+	if ($catalogId <= 0 || !class_exists(\Bitrix\Catalog\ProductTable::class))
+	{
+		return 0;
+	}
+	$row = \Bitrix\Catalog\ProductTable::getRow([
+		'filter' => ['=ID' => $catalogId],
+		'select' => ['TYPE'],
+	]);
+	if (!$row)
+	{
+		return 0;
+	}
+	$type = (int)($row['TYPE'] ?? 0);
+	if ($type === \Bitrix\Catalog\ProductTable::TYPE_SKU)
+	{
+		return $catalogId;
+	}
+	if ($type !== \Bitrix\Catalog\ProductTable::TYPE_OFFER)
+	{
+		return 0;
+	}
+	if (!class_exists(\CCatalogSKU::class))
+	{
+		return 0;
+	}
+	Loader::includeModule('iblock');
+	$iblockId = (int)\CIBlockElement::GetIBlockByID($catalogId);
+	if ($iblockId <= 0)
+	{
+		return 0;
+	}
+	$parents = \CCatalogSKU::getProductList($catalogId, $iblockId);
+	if (empty($parents[$catalogId]['ID']))
+	{
+		return 0;
+	}
+
+	return (int)$parents[$catalogId]['ID'];
 }
 
 function sumAllStoresAmount(int $productId): float
@@ -1306,6 +1525,12 @@ function mf_fast_update_catalog_product_qty(\Bitrix\Main\DB\Connection $conn, ar
 
 try
 {
+	// Ускорение массового импорта: отложить пересчёт SKU/родителя на каждой операции склада (как в CSV-импорте каталога).
+	if (class_exists(\Bitrix\Catalog\Product\Sku::class))
+	{
+		\Bitrix\Catalog\Product\Sku::enableDeferredCalculation();
+	}
+
 	$scriptStartTs = microtime(true);
 	$runStartedAtSql = mf_sql_dt($scriptStartTs);
 
@@ -1463,6 +1688,11 @@ try
 	// IMPORTANT: in dry-run we must not create new price groups.
 	$storeToGroup = $usePrice ? getSupplierStoreToPriceGroupMap($apply) : [];
 	$priceGroupId = ($usePrice && $storeId > 0) ? (int)($storeToGroup[$storeId] ?? 0) : 0;
+	$zeroPriceGroupId = 0;
+	if ($usePrice && $zeroStockWarehouseCode !== '' && $zeroStoreId > 0)
+	{
+		$zeroPriceGroupId = (int)($storeToGroup[$zeroStoreId] ?? 0);
+	}
 	if ($usePrice && $priceGroupId <= 0)
 	{
 		if ($dry)
@@ -1477,6 +1707,10 @@ try
 	if ($usePrice && $priceGroupId > 0)
 	{
 		out("PRICE_GROUP_ID(for supplier): $priceGroupId");
+	}
+	if ($usePrice && $zeroPriceGroupId > 0)
+	{
+		out("PRICE_GROUP_ID(zero-stock warehouse): $zeroPriceGroupId");
 	}
 
 	$h = fopen($file, 'r');
@@ -1692,6 +1926,14 @@ try
 			{
 				out('  итог: товар не найден — остаток не пишем');
 			}
+			if ($productId > 0 && $productIdBeforeCluster > 0)
+			{
+				$__off = mf_supplier_stock_expand_store_product_ids($productIdBeforeCluster);
+				if (count($__off) > 1)
+				{
+					out('  склады: SKU с ' . count($__off) . ' офферами — остатки для PRODUCT_ID: ' . implode(', ', $__off));
+				}
+			}
 			out('=== END MATCH ===');
 		}
 		if (!$productId)
@@ -1724,7 +1966,30 @@ try
 			continue;
 		}
 
-		$seenProducts[$productId] = true;
+		$storeProductIds = $productIdBeforeCluster > 0
+			? mf_supplier_stock_expand_store_product_ids($productIdBeforeCluster)
+			: [];
+		if ($storeProductIds === [])
+		{
+			$storeProductIds = [(int)$productId];
+		}
+		$catalogIdForParent = $productIdBeforeCluster > 0
+			? (int)$productIdBeforeCluster
+			: (int)$productId;
+		$parentSkuCatalogId = mf_supplier_stock_sku_parent_catalog_id_if_any($catalogIdForParent);
+
+		foreach ($storeProductIds as $spMark)
+		{
+			$rpid = (int)$spMark;
+			if ($rpid > 0)
+			{
+				$seenProducts[$rpid] = true;
+			}
+		}
+		if ($parentSkuCatalogId > 0)
+		{
+			$seenProducts[$parentSkuCatalogId] = true;
+		}
 
 		if ($dry)
 		{
@@ -1734,24 +1999,61 @@ try
 
 		try
 		{
-			if ($zeroStockWarehouseCode !== '' && $zeroStoreId > 0)
+			foreach ($storeProductIds as $stoPid)
 			{
-				if ($qty > 1e-9)
+				$stoPid = (int)$stoPid;
+				if ($stoPid <= 0)
 				{
-					upsertStoreAmount($productId, $storeId, $qty);
-					deleteStoreProductForProduct($productId, $zeroStoreId);
+					continue;
+				}
+				if ($zeroStockWarehouseCode !== '' && $zeroStoreId > 0)
+				{
+					if ($qty > 1e-9)
+					{
+						upsertStoreAmount($stoPid, $storeId, $qty);
+						deleteStoreProductForProduct($stoPid, $zeroStoreId);
+					}
+					else
+					{
+						deleteStoreProductForProduct($stoPid, $storeId);
+						upsertStoreAmount($stoPid, $zeroStoreId, 0.0);
+					}
 				}
 				else
 				{
-					deleteStoreProductForProduct($productId, $storeId);
-					upsertStoreAmount($productId, $zeroStoreId, 0.0);
+					upsertStoreAmount($stoPid, $storeId, $qty);
+				}
+				$touchedProducts[$stoPid] = true;
+			}
+			// Остатки на родителе SKU при наличии ТП — ошибочны; импорт пишет на офферы.
+			if (
+				$parentSkuCatalogId > 0
+				&& !in_array($parentSkuCatalogId, $storeProductIds, true)
+			)
+			{
+				$pSku = (int)$parentSkuCatalogId;
+				if ($zeroStockWarehouseCode !== '' && $zeroStoreId > 0)
+				{
+					deleteStoreProductForProduct($pSku, $storeId);
+					if ($qty > 1e-9)
+					{
+						deleteStoreProductForProduct($pSku, $zeroStoreId);
+					}
+					else
+					{
+						upsertStoreAmount($pSku, $zeroStoreId, 0.0);
+					}
+				}
+				else
+				{
+					deleteStoreProductForProduct($pSku, $storeId);
+				}
+				$touchedProducts[$pSku] = true;
+				if ($usePrice && $recalcBase)
+				{
+					$recalcBaseProducts[$pSku] = true;
 				}
 			}
-			else
-			{
-				upsertStoreAmount($productId, $storeId, $qty);
-			}
-			$touchedProducts[$productId] = true;
 			if ($syncBrandFromDict && $brandDictReady && $brandRaw !== '' && $idxBrand !== null)
 			{
 				if (mf_supplier_stock_sync_element_brand_canonical($iblockId, (int)$productId, $brandRaw, $articleNorm))
@@ -1772,10 +2074,55 @@ try
 			{
 				upsertPrice($productId, $priceGroupId, $price);
 			}
+			if (
+				$usePrice
+				&& $zeroStockWarehouseCode !== ''
+				&& $zeroPriceGroupId > 0
+				&& $priceGroupId > 0
+				&& $zeroPriceGroupId !== $priceGroupId
+			)
+			{
+				$priceTargets = array_map('intval', $storeProductIds);
+				if (
+					$parentSkuCatalogId > 0
+					&& !in_array($parentSkuCatalogId, $priceTargets, true)
+				)
+				{
+					$priceTargets[] = (int)$parentSkuCatalogId;
+				}
+				foreach ($priceTargets as $zpPid)
+				{
+					if ($zpPid <= 0)
+					{
+						continue;
+					}
+					if ($qty > 1e-9)
+					{
+						mf_supplier_ensure_main_warehouse_price_from_zero($zpPid, $priceGroupId, $zeroPriceGroupId);
+						mf_supplier_delete_price_for_group($zpPid, $zeroPriceGroupId);
+					}
+					else
+					{
+						mf_supplier_ensure_zero_warehouse_price_from_main($zpPid, $priceGroupId, $zeroPriceGroupId);
+						mf_supplier_delete_price_for_group($zpPid, $priceGroupId);
+					}
+					if ($recalcBase)
+					{
+						$recalcBaseProducts[$zpPid] = true;
+					}
+				}
+			}
 			// Defer BASE recalculation until the end (much faster on large files).
 			if ($usePrice && $recalcBase)
 			{
-				$recalcBaseProducts[$productId] = true;
+				foreach ($storeProductIds as $rbp)
+				{
+					$rb = (int)$rbp;
+					if ($rb > 0)
+					{
+						$recalcBaseProducts[$rb] = true;
+					}
+				}
 			}
 			$updated++;
 		}
@@ -2005,6 +2352,11 @@ try
 }
 catch (Throwable $e)
 {
+	if (class_exists(\Bitrix\Catalog\Product\Sku::class))
+	{
+		\Bitrix\Catalog\Product\Sku::disableDeferredCalculation();
+	}
+
 	// Try to persist a failed run log (if logging was enabled and run already inserted).
 	if (isset($runLogEnabled, $runLogId) && $runLogEnabled && (int)$runLogId > 0)
 	{
@@ -2022,5 +2374,10 @@ catch (Throwable $e)
 	out("ОШИБКА: " . $e->getMessage());
 	fwrite(STDERR, $e->getTraceAsString() . PHP_EOL);
 	exit(1);
+}
+
+if (class_exists(\Bitrix\Catalog\Product\Sku::class))
+{
+	\Bitrix\Catalog\Product\Sku::disableDeferredCalculation();
 }
 
