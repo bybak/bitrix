@@ -24,4 +24,6 @@ exec docker exec -i "$CONTAINER" php /var/www/html/mf_update_supplier_stock.php 
   --encoding=utf-8 \
   --price=Y \
   --recalc-base=Y \
-  --sync-missing=Y
+  --sync-missing=Y \
+  --zero-stock-warehouse-code=OutdoorWorldPodZakaz \
+  --brand-dict=Y
