@@ -1290,6 +1290,7 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
 		XLSX — ZIP со сжатием, при тех же данных файл обычно меньше CSV; на очень больших каталогах надёжнее CSV (быстрее, меньше таймаутов).
 		По желанию ограничьте выгрузку <strong>брендом</strong> (список строится по заполненным MF_BRAND / MF_BRAND_NORM в каталоге).
+		Список брендов в селекте кэшируется в <strong>Redis</strong> (те же BITRIX_REDIS_* что у кэша Битрикс); обновление — кроном, скрипт <code>/mf_refresh_ce_brand_choices_cache.php</code> (см. <code>crontab/refresh_ce_brand_choices_cache_bitrix.sh</code>). Если ключа ещё нет, при открытии страницы выполняется тяжёлый SQL.
 	</p>
 
 	<table class="adm-detail-content-table edit-table" style="max-width:920px">

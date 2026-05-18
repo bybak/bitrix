@@ -5,7 +5,168 @@ declare(strict_types=1);
 /**
  * Общая логика списка брендов для фильтра выгрузки каталога и др. админок.
  * Не привязана к конкретной странице (без ADMIN_SECTION).
+ *
+ * Кэш Redis (опционально): ключи с префиксом mf:ce:brand_choices:v1:
+ * — чтение в mf_ce_load_brand_choices(), запись кроном / CLI mf_refresh_ce_brand_choices_cache.php.
+ * Отключить чтение из Redis: MF_CE_BRAND_CHOICES_REDIS=N.
+ * Хост/порт как у .settings.php: BITRIX_REDIS_HOST (по умолчанию redis), BITRIX_REDIS_PORT (6379).
  */
+
+if (!function_exists('mf_ce_brand_choices_redis_read_enabled'))
+{
+	function mf_ce_brand_choices_redis_read_enabled(): bool
+	{
+		$v = getenv('MF_CE_BRAND_CHOICES_REDIS');
+
+		return ($v === false || $v === '')
+			? true
+			: !in_array(strtoupper(trim((string)$v)), ['N', '0', 'NO', 'FALSE'], true);
+	}
+}
+
+if (!function_exists('mf_ce_brand_choices_cache_ttl_seconds'))
+{
+	function mf_ce_brand_choices_cache_ttl_seconds(): int
+	{
+		$v = getenv('MF_CE_BRAND_CHOICES_CACHE_TTL');
+		if ($v !== false && $v !== '' && ctype_digit((string)$v))
+		{
+			return max(60, (int)$v);
+		}
+
+		return 604800;
+	}
+}
+
+if (!function_exists('mf_ce_brand_choices_cache_key_suffix'))
+{
+	/**
+	 * @param list<string>|null $propertyCodes
+	 */
+	function mf_ce_brand_choices_cache_key_suffix(int $iblockId, bool $onlyActiveBrands, ?array $propertyCodes): string
+	{
+		if ($propertyCodes === null)
+		{
+			$tag = 'props_default';
+		}
+		else
+		{
+			$codes = array_values(array_filter(array_map(static fn($c) => trim((string)$c), $propertyCodes), static fn($c) => $c !== ''));
+			sort($codes, SORT_STRING);
+			$tag = 'props_' . md5(implode('|', $codes));
+		}
+
+		return 'iblock:' . (int)$iblockId . ':act:' . ($onlyActiveBrands ? '1' : '0') . ':' . $tag;
+	}
+}
+
+if (!function_exists('mf_ce_brand_choices_cache_redis_key'))
+{
+	/**
+	 * @param list<string>|null $propertyCodes
+	 */
+	function mf_ce_brand_choices_cache_redis_key(int $iblockId, bool $onlyActiveBrands, ?array $propertyCodes): string
+	{
+		return 'mf:ce:brand_choices:v1:' . mf_ce_brand_choices_cache_key_suffix($iblockId, $onlyActiveBrands, $propertyCodes);
+	}
+}
+
+if (!function_exists('mf_ce_brand_choices_redis_connect'))
+{
+	function mf_ce_brand_choices_redis_connect(): ?\Redis
+	{
+		if (!extension_loaded('redis') || !class_exists(\Redis::class))
+		{
+			return null;
+		}
+		$h = getenv('BITRIX_REDIS_HOST');
+		$h = ($h !== false && $h !== '') ? (string)$h : 'redis';
+		$p = getenv('BITRIX_REDIS_PORT');
+		$port = ($p !== false && $p !== '' && ctype_digit((string)$p)) ? (int)$p : 6379;
+
+		try
+		{
+			$r = new \Redis();
+			if (!$r->connect($h, $port, 1.5))
+			{
+				return null;
+			}
+
+			return $r;
+		}
+		catch (\Throwable $e)
+		{
+			return null;
+		}
+	}
+}
+
+if (!function_exists('mf_ce_brand_choices_cache_get'))
+{
+	/**
+	 * @param list<string>|null $propertyCodes
+	 * @return list<string>|null
+	 */
+	function mf_ce_brand_choices_cache_get(int $iblockId, bool $onlyActiveBrands, ?array $propertyCodes): ?array
+	{
+		if (!mf_ce_brand_choices_redis_read_enabled())
+		{
+			return null;
+		}
+		$r = mf_ce_brand_choices_redis_connect();
+		if (!$r)
+		{
+			return null;
+		}
+		$key = mf_ce_brand_choices_cache_redis_key($iblockId, $onlyActiveBrands, $propertyCodes);
+		$raw = $r->get($key);
+		if ($raw === false || $raw === '')
+		{
+			return null;
+		}
+		$j = json_decode((string)$raw, true);
+		if (!is_array($j))
+		{
+			return null;
+		}
+		$out = [];
+		foreach ($j as $item)
+		{
+			$s = trim((string)$item);
+			if ($s !== '')
+			{
+				$out[] = $s;
+			}
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_ce_brand_choices_cache_set'))
+{
+	/**
+	 * @param list<string> $brands
+	 * @param list<string>|null $propertyCodes
+	 */
+	function mf_ce_brand_choices_cache_set(int $iblockId, bool $onlyActiveBrands, ?array $propertyCodes, array $brands): bool
+	{
+		$r = mf_ce_brand_choices_redis_connect();
+		if (!$r)
+		{
+			return false;
+		}
+		$key = mf_ce_brand_choices_cache_redis_key($iblockId, $onlyActiveBrands, $propertyCodes);
+		$payload = json_encode(array_values($brands), JSON_UNESCAPED_UNICODE);
+		if ($payload === false)
+		{
+			return false;
+		}
+		$ttl = mf_ce_brand_choices_cache_ttl_seconds();
+
+		return $r->setex($key, $ttl, $payload);
+	}
+}
 
 if (!function_exists('mf_ce_brand_property_ids'))
 {
@@ -168,17 +329,15 @@ if (!function_exists('mf_ce_brands_only_on_non_exportable_elements'))
 	}
 }
 
-if (!function_exists('mf_ce_load_brand_choices'))
+if (!function_exists('mf_ce_load_brand_choices_from_db'))
 {
 	/**
-	 * Список непустых значений свойств бренда для выпадающего списка.
-	 * По умолчанию MF_BRAND + MF_BRAND_NORM (как фильтр выгрузки).
-	 * Если передан $propertyCodes (например ['MF_BRAND']) — меньше строк в b_iblock_element_property, быстрее на больших каталогах.
+	 * Список брендов напрямую из MySQL (тяжёлый запрос — только крон или fallback при пустом Redis).
 	 *
-	 * @param list<string>|null $propertyCodes коды свойств IBLOCK, null = MF_BRAND и MF_BRAND_NORM
+	 * @param list<string>|null $propertyCodes
 	 * @return list<string>
 	 */
-	function mf_ce_load_brand_choices(int $iblockId, bool $onlyActiveBrands = true, ?array $propertyCodes = null): array
+	function mf_ce_load_brand_choices_from_db(int $iblockId, bool $onlyActiveBrands = true, ?array $propertyCodes = null): array
 	{
 		global $DB;
 
@@ -223,10 +382,11 @@ if (!function_exists('mf_ce_load_brand_choices'))
 		$in = implode(',', $propIds);
 		$exEl = mf_ce_sql_and_exportable_element('e', $iblockId);
 		$act = mf_ce_sql_and_active_if($onlyActiveBrands, 'e');
+		// STRAIGHT_JOIN: иначе оптимизатор часто начинает с ~1M строк b_iblock_element (см. EXPLAIN ANALYZE на проде).
 		$sql = "
 		SELECT DISTINCT TRIM(p.VALUE) AS V
 		FROM b_iblock_element_property p
-		INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID AND e.IBLOCK_ID = {$iblockId}
+		STRAIGHT_JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID AND e.IBLOCK_ID = {$iblockId}
 		WHERE p.IBLOCK_PROPERTY_ID IN ({$in})
 			AND p.VALUE IS NOT NULL
 			AND TRIM(p.VALUE) <> ''
@@ -254,6 +414,46 @@ if (!function_exists('mf_ce_load_brand_choices'))
 		natcasesort($out);
 
 		return array_values($out);
+	}
+}
+
+if (!function_exists('mf_ce_refresh_brand_choices_cache'))
+{
+	/**
+	 * Пересчитать список из БД и записать в Redis (для крона).
+	 *
+	 * @param list<string>|null $propertyCodes
+	 */
+	function mf_ce_refresh_brand_choices_cache(int $iblockId, bool $onlyActiveBrands = true, ?array $propertyCodes = null): bool
+	{
+		$list = mf_ce_load_brand_choices_from_db($iblockId, $onlyActiveBrands, $propertyCodes);
+
+		return mf_ce_brand_choices_cache_set($iblockId, $onlyActiveBrands, $propertyCodes, $list);
+	}
+}
+
+if (!function_exists('mf_ce_load_brand_choices'))
+{
+	/**
+	 * Список непустых значений свойств бренда для выпадающего списка.
+	 * По умолчанию MF_BRAND + MF_BRAND_NORM (как фильтр выгрузки).
+	 * Если передан $propertyCodes (например ['MF_BRAND']) — меньше строк в b_iblock_element_property, быстрее на больших каталогах.
+	 *
+	 * При включённом Redis (не MF_CE_BRAND_CHOICES_REDIS=N) сначала читается кэш, обновляемый кроном.
+	 * Если ключа нет — запрос к БД (долго на больших каталогах).
+	 *
+	 * @param list<string>|null $propertyCodes коды свойств IBLOCK, null = MF_BRAND и MF_BRAND_NORM
+	 * @return list<string>
+	 */
+	function mf_ce_load_brand_choices(int $iblockId, bool $onlyActiveBrands = true, ?array $propertyCodes = null): array
+	{
+		$cached = mf_ce_brand_choices_cache_get($iblockId, $onlyActiveBrands, $propertyCodes);
+		if ($cached !== null)
+		{
+			return $cached;
+		}
+
+		return mf_ce_load_brand_choices_from_db($iblockId, $onlyActiveBrands, $propertyCodes);
 	}
 }
 
