@@ -41,6 +41,17 @@
   overflow: hidden;
   margin-bottom: 14px;
 }
+.mf-order #bx-soa-delivery,
+.mf-order #bx-soa-delivery .bx-soa-section-content{
+  overflow: visible;
+}
+.mf-order .mf-nominatim-wrap{
+  position: relative;
+  z-index: 10;
+}
+.mf-order #mf-nominatim-list{
+  z-index: 50;
+}
 .mf-order .bx-soa-section-title-container{
   padding: 14px 14px;
   border-bottom: 1px solid rgba(0,0,0,.06);

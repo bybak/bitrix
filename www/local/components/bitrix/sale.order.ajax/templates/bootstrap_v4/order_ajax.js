@@ -8409,6 +8409,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			try {
 				if (BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress && typeof BX.saleOrderAjax.__mfBuyerAddress.syncPickupFromSelectedStore === 'function')
 					BX.saleOrderAjax.__mfBuyerAddress.syncPickupFromSelectedStore();
+				if (BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress && typeof BX.saleOrderAjax.__mfBuyerAddress.sync === 'function')
+					BX.saleOrderAjax.__mfBuyerAddress.sync();
 			} catch (eMfPvzProps) {}
 
 			var props = this.orderBlockNode.querySelectorAll('.bx-soa-customer-field[data-property-id-row]'),
@@ -8449,6 +8451,19 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 									continue;
 							}
 						} catch (eMfLocSk) {}
+					}
+
+					if (String(arProperty.CODE || '').toUpperCase() === 'DELIVERY_ADDRESS')
+					{
+						try {
+							var mfbAddr = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+							if (mfbAddr && typeof mfbAddr.getPropValueByCode === 'function')
+							{
+								var addrVal = mfbAddr.getPropValueByCode('DELIVERY_ADDRESS');
+								if (addrVal && String(addrVal).trim() !== '')
+									continue;
+							}
+						} catch (eMfAddrSk) {}
 					}
 
 					data = this.getValidationData(arProperty, propContainer);

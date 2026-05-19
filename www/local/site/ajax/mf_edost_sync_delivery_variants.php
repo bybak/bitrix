@@ -55,56 +55,44 @@ try
 	$locationCode = trim((string)$req->getPost('location_code'));
 	$zip = preg_replace('~\\D+~', '', (string)$req->getPost('zip'));
 	$mfEdostToCity = trim((string)$req->getPost('mf_edost_to_city'));
+	$nomJsonRaw = trim((string)$req->getPost('mf_nominatim_json'));
 
-	if ($mfEdostToCity !== '')
+	$dest = \MF\Delivery\Edost::resolveDeliveryDestination($nomJsonRaw, $mfEdostToCity, $locationCode, $zip);
+	if ($dest['settlement'] === '' && $dest['region'] === '')
 	{
-		$toCity = $mfEdostToCity;
-	}
-	else
-	{
-		if ($locationCode === '')
+		try
 		{
-			try
+			if ($isLocal)
 			{
-				if ($isLocal)
-				{
-					@file_put_contents($logFile, date('c') . " empty_location zip={$zip}\n", FILE_APPEND);
-				}
+				@file_put_contents($logFile, date('c') . " cannot_resolve_to_city location_code={$locationCode} zip={$zip}\n", FILE_APPEND);
 			}
-			catch (\Throwable $e) {}
-			echo Json::encode(['ok' => false, 'error' => 'empty location_code']);
-			exit;
 		}
+		catch (\Throwable $e) {}
+		echo Json::encode(['ok' => false, 'error' => 'cannot resolve to_city']);
+		exit;
+	}
 
-		$toCity = \MF\Delivery\Edost::resolveCityNameRuByLocationCode($locationCode);
-		if ($toCity === '')
-		{
-			try
-			{
-				if ($isLocal)
-				{
-					@file_put_contents($logFile, date('c') . " cannot_resolve_to_city location_code={$locationCode} zip={$zip}\n", FILE_APPEND);
-				}
-			}
-			catch (\Throwable $e) {}
-			echo Json::encode(['ok' => false, 'error' => 'cannot resolve to_city']);
-			exit;
-		}
-	}
+	$toCity = $dest['settlement'] !== '' ? $dest['settlement'] : $dest['region'];
 
 	// Fetch offers once for destination; then split by company per base service.
-	$resp = \MF\Delivery\Edost::calculate($toCity, 1.0, 0.0, (string)$zip);
+	$resp = \MF\Delivery\Edost::calculateForDestination(
+		$dest['settlement'],
+		$dest['region'],
+		1.0,
+		0.0,
+		$dest['zip']
+	);
 	if (!is_array($resp) || !($resp['ok'] ?? false) || !isset($resp['offers']) || !is_array($resp['offers']))
 	{
 		try
 		{
 			if ($isLocal)
 			{
-				@file_put_contents($logFile, date('c') . " edost_error to_city={$toCity} location_code={$locationCode} zip={$zip} resp=" . json_encode($resp, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+				@file_put_contents($logFile, date('c') . " edost_error to_city={$toCity} location_code={$locationCode} zip={$zip} dest=" . json_encode($dest, JSON_UNESCAPED_UNICODE) . " resp=" . json_encode($resp, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
 			}
 		}
 		catch (\Throwable $e) {}
-		echo Json::encode(['ok' => false, 'error' => 'edost error', 'resp' => $resp]);
+		echo Json::encode(['ok' => false, 'error' => 'edost error', 'resp' => $resp, 'destination' => $dest]);
 		exit;
 	}
 	$offersAll = $resp['offers'];

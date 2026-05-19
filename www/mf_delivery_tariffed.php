@@ -221,6 +221,252 @@ final class Edost
 		return [0, 0];
 	}
 
+	public static function normalizeSettlementName(string $name): string
+	{
+		$name = trim($name);
+
+		return trim((string)preg_replace('~^г(?:ород)?\s+~iu', '', $name));
+	}
+
+	/**
+	 * Название региона в формате eDost (см. edost.ru/kln/code.html).
+	 * Пример: «Чукотский автономный округ» → «Чукотский АО».
+	 */
+	public static function normalizeRegionNameForEdost(string $raw): string
+	{
+		$s = trim(preg_replace('~\s+~u', ' ', $raw));
+		if ($s === '')
+		{
+			return '';
+		}
+
+		$s = preg_replace('~[—–−]~u', '-', $s);
+		$s = preg_replace('~\s*-\s*~u', ' - ', $s);
+
+		if (preg_match('~^(.+?)\s+автономный\s+округ(?:\s*-\s*(.+))?$~ui', $s, $m))
+		{
+			$base = trim((string)$m[1]);
+			$suffix = isset($m[2]) ? trim((string)$m[2]) : '';
+			$out = $base . ' АО';
+			if ($suffix !== '')
+			{
+				$out .= ' - ' . $suffix;
+			}
+
+			return $out;
+		}
+
+		if (preg_match('~^(.+?)\s+автономная\s+область$~ui', $s, $m))
+		{
+			return trim((string)$m[1]) . ' АО';
+		}
+
+		if (preg_match('~\sАО(\s*-\s*.+)?$~ui', $s))
+		{
+			return $s;
+		}
+
+		return $s;
+	}
+
+	/**
+	 * @return array{settlement: string, region: string, zip: string}
+	 */
+	public static function resolveDestinationFromNominatim(array $nom, string $zipFallback = ''): array
+	{
+		$out = [
+			'settlement' => '',
+			'region' => '',
+			'zip' => preg_replace('~\D+~', '', $zipFallback),
+		];
+		$addr = isset($nom['address']) && is_array($nom['address']) ? $nom['address'] : [];
+
+		foreach (['city', 'town', 'village', 'locality', 'hamlet', 'municipality'] as $key)
+		{
+			$cand = trim((string)($addr[$key] ?? ''));
+			if ($cand !== '' && preg_match('~\p{Cyrillic}~u', $cand))
+			{
+				$out['settlement'] = self::normalizeSettlementName($cand);
+				break;
+			}
+		}
+		if ($out['settlement'] === '')
+		{
+			foreach (['name'] as $key)
+			{
+				$cand = trim((string)($addr[$key] ?? ''));
+				if ($cand !== '' && preg_match('~\p{Cyrillic}~u', $cand))
+				{
+					$out['settlement'] = self::normalizeSettlementName($cand);
+					break;
+				}
+			}
+		}
+		if ($out['settlement'] === '')
+		{
+			$display = trim((string)($nom['display_name'] ?? ''));
+			if ($display !== '' && preg_match('~[\p{Cyrillic}][^,;]*~u', $display, $m))
+			{
+				$out['settlement'] = self::normalizeSettlementName(trim((string)$m[0]));
+			}
+		}
+
+		foreach (['state', 'region'] as $key)
+		{
+			$cand = trim((string)($addr[$key] ?? ''));
+			if ($cand === '' || !preg_match('~\p{Cyrillic}~u', $cand))
+			{
+				continue;
+			}
+			$norm = self::normalizeRegionNameForEdost($cand);
+			if ($norm !== '')
+			{
+				$out['region'] = $norm;
+				break;
+			}
+		}
+
+		$postcode = preg_replace('~\D+~', '', (string)($addr['postcode'] ?? ''));
+		if ($postcode !== '')
+		{
+			$out['zip'] = $postcode;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * @return array{settlement: string, region: string, zip: string}
+	 */
+	public static function resolveDeliveryDestination(string $nomJsonRaw, string $mfEdostToCity, string $locationCode, string $zipFallback = ''): array
+	{
+		$dest = [
+			'settlement' => self::normalizeSettlementName($mfEdostToCity),
+			'region' => '',
+			'zip' => preg_replace('~\D+~', '', $zipFallback),
+		];
+
+		if ($nomJsonRaw !== '')
+		{
+			$nom = json_decode($nomJsonRaw, true);
+			if (is_array($nom))
+			{
+				$fromNom = self::resolveDestinationFromNominatim($nom, $dest['zip']);
+				if ($fromNom['settlement'] !== '')
+				{
+					$dest['settlement'] = $fromNom['settlement'];
+				}
+				if ($fromNom['region'] !== '')
+				{
+					$dest['region'] = $fromNom['region'];
+				}
+				if ($fromNom['zip'] !== '')
+				{
+					$dest['zip'] = $fromNom['zip'];
+				}
+			}
+		}
+
+		if ($dest['settlement'] === '' && $locationCode !== '')
+		{
+			$dest['settlement'] = self::normalizeSettlementName(self::resolveCityNameRuByLocationCode($locationCode));
+		}
+
+		return $dest;
+	}
+
+	private static function responseHasOffers(array $resp): bool
+	{
+		if (!($resp['ok'] ?? false) || !isset($resp['offers']) || !is_array($resp['offers']))
+		{
+			return false;
+		}
+
+		foreach ($resp['offers'] as $offer)
+		{
+			if (is_array($offer) && trim((string)($offer['id'] ?? '')) !== '')
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Расчёт eDost: сначала по названию НП, при неудаче — по региону и индексу (малые НП РФ).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function calculateForDestination(
+		string $settlement,
+		string $region,
+		float $weightKg,
+		float $insuranceRub,
+		string $zipDigits
+	): array {
+		$settlement = self::normalizeSettlementName($settlement);
+		$region = self::normalizeRegionNameForEdost($region);
+		$zipDigits = preg_replace('~\D+~', '', $zipDigits);
+
+		$lastResp = ['ok' => false, 'error' => 'eDost: destination not resolved'];
+
+		if ($settlement !== '')
+		{
+			$lastResp = self::calculate($settlement, $weightKg, $insuranceRub, $zipDigits);
+			if (self::responseHasOffers($lastResp))
+			{
+				$lastResp['destination_mode'] = 'settlement';
+				$lastResp['to_city_used'] = $settlement;
+				$lastResp['settlement_requested'] = $settlement;
+
+				return $lastResp;
+			}
+
+			if ($zipDigits !== '')
+			{
+				$lastResp = self::calculate($settlement, $weightKg, $insuranceRub, '');
+				if (self::responseHasOffers($lastResp))
+				{
+					$lastResp['destination_mode'] = 'settlement';
+					$lastResp['to_city_used'] = $settlement;
+					$lastResp['settlement_requested'] = $settlement;
+
+					return $lastResp;
+				}
+			}
+		}
+
+		// eDost: для ~200k малых НП — расчёт по региону (to_city) и индексу.
+		if ($region !== '' && $zipDigits !== '')
+		{
+			$lastResp = self::calculate($region, $weightKg, $insuranceRub, $zipDigits);
+			if (self::responseHasOffers($lastResp))
+			{
+				$lastResp['destination_mode'] = 'region_zip';
+				$lastResp['to_city_used'] = $region;
+				$lastResp['settlement_requested'] = $settlement;
+
+				return $lastResp;
+			}
+		}
+
+		if ($region !== '')
+		{
+			$lastResp = self::calculate($region, $weightKg, $insuranceRub, $zipDigits);
+			if (self::responseHasOffers($lastResp))
+			{
+				$lastResp['destination_mode'] = 'region';
+				$lastResp['to_city_used'] = $region;
+				$lastResp['settlement_requested'] = $settlement;
+
+				return $lastResp;
+			}
+		}
+
+		return $lastResp;
+	}
+
 	public static function resolveCityNameRuByLocationCode(string $locationCode): string
 	{
 		$locationCode = trim($locationCode);

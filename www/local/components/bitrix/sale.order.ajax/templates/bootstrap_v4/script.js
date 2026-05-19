@@ -76,6 +76,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						var mfE = (typeof BX !== 'undefined' && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost) ? BX.saleOrderAjax.__mfEdost : null;
 						if (mfE && typeof mfE.ensureFields === 'function')
 							mfE.ensureFields();
+						if (mfE && typeof mfE.restoreLastOrderPreload === 'function')
+							mfE.restoreLastOrderPreload();
 						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.sync === 'function')
 							ctx.__mfBuyerAddress.sync();
 						if (mfE && typeof mfE.onEnterDelivery === 'function')
@@ -299,11 +301,28 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			};
 
 			mfEdost.getMfCheckout = function(){
+				var out = {};
 				try {
-					return (window.BX && BX.Sale && BX.Sale.OrderAjaxComponent && BX.Sale.OrderAjaxComponent.result
-						&& BX.Sale.OrderAjaxComponent.result.MF_CHECKOUT) ? BX.Sale.OrderAjaxComponent.result.MF_CHECKOUT : {};
+					if (window.BX && BX.Sale && BX.Sale.OrderAjaxComponent && BX.Sale.OrderAjaxComponent.result
+						&& BX.Sale.OrderAjaxComponent.result.MF_CHECKOUT)
+					{
+						out = BX.Sale.OrderAjaxComponent.result.MF_CHECKOUT;
+					}
 				} catch(e) {}
-				return {};
+				try {
+					if (typeof window !== 'undefined' && window.MF_CHECKOUT_BOOT)
+					{
+						var boot = window.MF_CHECKOUT_BOOT;
+						var bootKeys = ['FALLBACK_LOCATION_CODE', 'LAST_ORDER_EDOST', 'LAST_ORDER_NOMINATIM_JSON', 'LAST_ORDER_EDOST_TO_CITY'];
+						for (var bi = 0; bi < bootKeys.length; bi++)
+						{
+							var bk = bootKeys[bi];
+							if (!out[bk] && boot[bk])
+								out[bk] = boot[bk];
+						}
+					}
+				} catch(eBoot) {}
+				return out;
 			};
 
 			mfEdost.getFallbackLocationCode = function(){
@@ -435,7 +454,101 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					return true;
 				if (BX.type.isNotEmptyString(String(mfEdost.getEdostCity() || '')))
 					return true;
-				return BX.type.isNotEmptyString(mfEdost.peekNominatimJson());
+				if (BX.type.isNotEmptyString(mfEdost.peekNominatimJson()))
+					return true;
+				try {
+					var mc = mfEdost.getMfCheckout();
+					if (mc && mc.LAST_ORDER_NOMINATIM_JSON && String(mc.LAST_ORDER_NOMINATIM_JSON).trim() !== '')
+						return true;
+					if (mc && mc.LAST_ORDER_EDOST_TO_CITY && String(mc.LAST_ORDER_EDOST_TO_CITY).trim() !== '')
+						return true;
+				} catch(eMc) {}
+				return false;
+			};
+
+			mfEdost.pickOfferForPreload = function(offers){
+				if (!offers || !offers.length)
+					return null;
+				try {
+					var mc = mfEdost.getMfCheckout();
+					var wantId = mc && mc.LAST_ORDER_EDOST ? String(mc.LAST_ORDER_EDOST.ID || '') : '';
+					if (wantId)
+					{
+						for (var i = 0; i < offers.length; i++)
+						{
+							if (String(offers[i].id) === wantId)
+								return offers[i];
+						}
+					}
+				} catch(ePick) {}
+				return mfEdost.isAuthorized() ? offers[0] : null;
+			};
+
+			mfEdost.restoreLastOrderPreload = function(){
+				try {
+					if (mfEdost._lastOrderPreloadApplied)
+						return;
+					var mc = mfEdost.getMfCheckout();
+					if (!mc)
+						return;
+
+					var nom = String(mc.LAST_ORDER_NOMINATIM_JSON || '').trim();
+					var city = String(mc.LAST_ORDER_EDOST_TO_CITY || '').trim();
+					if (nom)
+					{
+						ctx.__mfNominatimJsonLast = nom;
+					}
+					if (city)
+					{
+						ctx.__mfEdostCityLast = city;
+					}
+					mfEdost.ensureFields();
+
+					var edost = mc.LAST_ORDER_EDOST;
+					if (edost && edost.ID)
+					{
+						mfEdost.setSelected({
+							id: String(edost.ID),
+							company: String(edost.COMPANY || ''),
+							name: String(edost.NAME || ''),
+							price: (edost.PRICE != null && edost.PRICE !== '') ? edost.PRICE : ''
+						});
+					}
+					try {
+						var locLine = '';
+						if (nom)
+						{
+							var parsedNom = JSON.parse(nom);
+							if (parsedNom && parsedNom.display_name)
+								locLine = String(parsedNom.display_name).trim();
+						}
+						if (!locLine && ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getPropValueByCode === 'function')
+							locLine = String(ctx.__mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT') || '').trim();
+						if (locLine)
+						{
+							ctx.__mfNominatimDisplayLine = locLine;
+							var wrapR = document.getElementById('mf-nominatim-wrap');
+							var inpR = wrapR ? wrapR.querySelector('input[type="text"]') : null;
+							if (inpR)
+								inpR.value = locLine;
+							if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getInputByCode === 'function')
+							{
+								var locInputR = ctx.__mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
+								if (locInputR && locInputR !== false)
+								{
+									locInputR.value = locLine;
+									locInputR.readOnly = true;
+									try {
+										if (typeof ctx.__mfBuyerAddress.syncOrderPropInputsByCode === 'function')
+											ctx.__mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', locLine);
+									} catch(eSyncLoc) {}
+								}
+							}
+						}
+					} catch(eNomLine) {}
+					mfEdost._lastOrderPreloadApplied = true;
+					mfEdost.deferApplyDeliverySummary();
+				} catch(eRestore) {}
 			};
 
 			mfEdost.ensureFields = function(){
@@ -1124,9 +1237,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						var formCached = BX('bx-soa-order-form');
 						var idElCached = formCached ? formCached.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 						var hasSelectedCached = !!(idElCached && BX.type.isNotEmptyString(String(idElCached.value || '')));
-						if (!hasSelectedCached && mfEdost.isAuthorized())
+						if (!hasSelectedCached)
 						{
-							mfEdost.setSelected(mfEdost.offers[0]);
+							var pickCached = mfEdost.pickOfferForPreload(mfEdost.offers);
+							if (pickCached)
+								mfEdost.setSelected(pickCached);
 						}
 					} catch(eCached) {}
 					return;
@@ -1178,9 +1293,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 								var form = BX('bx-soa-order-form');
 								var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 								var hasSelectedTariff = !!(idEl && BX.type.isNotEmptyString(String(idEl.value || '')));
-								if (!hasSelectedTariff && mfEdost.isAuthorized())
+								if (!hasSelectedTariff)
 								{
-									mfEdost.setSelected(resp.offers[0]);
+									var pickOffer = mfEdost.pickOfferForPreload(resp.offers);
+									if (pickOffer)
+										mfEdost.setSelected(pickOffer);
 								}
 							} catch(eAuto) {}
 				try {
@@ -1251,6 +1368,33 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 			} catch(e) {}
 			return null;
+		};
+		mfBuyerAddress.getPropValueByCode = function(code){
+			var prop = mfBuyerAddress.getPropByCode(code);
+			if (prop)
+			{
+				if (prop.VALUE != null && String(prop.VALUE).trim() !== '')
+					return String(prop.VALUE).trim();
+				if (prop.VALUE_FORMATTED != null && String(prop.VALUE_FORMATTED).trim() !== '')
+					return String(prop.VALUE_FORMATTED).trim();
+			}
+			try {
+				var inp = mfBuyerAddress.getInputByCode(code);
+				if (inp && inp !== false && String(inp.value || '').trim() !== '')
+					return String(inp.value).trim();
+				var p = mfBuyerAddress.getPropByCode(code);
+				if (p && p.ID)
+				{
+					var form = BX('bx-soa-order-form');
+					if (form)
+					{
+						var hid = form.querySelector('input[type="hidden"][name="ORDER_PROP_' + p.ID + '"]');
+						if (hid && String(hid.value || '').trim() !== '')
+							return String(hid.value).trim();
+					}
+				}
+			} catch(eVal) {}
+			return '';
 		};
 		mfBuyerAddress.getInputByCode = function(code){
 			var prop = mfBuyerAddress.getPropByCode(code);
@@ -1475,13 +1619,19 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var locationInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
 				var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
 				var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
-				var locationText = mfBuyerAddress.getLocationText();
+				var locationText = mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT');
+				if (!locationText)
+					locationText = mfBuyerAddress.getLocationText();
 
 				if (locationInput && locationInput !== false)
 				{
 					if (!ctx.__mfNominatimActive)
 					{
-						locationInput.value = locationText;
+						if (locationText)
+						{
+							locationInput.value = locationText;
+							mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', locationText);
+						}
 						locationInput.readOnly = true;
 						locationInput.setAttribute('readonly', 'readonly');
 						locationInput.style.backgroundColor = '#f8f9fa';
@@ -1490,6 +1640,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 				if (streetInput && streetInput !== false)
 				{
+					var streetVal = mfBuyerAddress.getPropValueByCode('DELIVERY_ADDRESS');
+					if (streetVal !== '')
+					{
+						streetInput.value = streetVal;
+						mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', streetVal);
+					}
 					streetInput.setAttribute('placeholder', 'Улица, дом, квартира');
 				}
 
@@ -1538,6 +1694,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							var pre = '';
 							if (locationInput && locationInput !== false && BX.type.isNotEmptyString(String(locationInput.value || '')))
 								pre = String(locationInput.value || '').trim();
+							if (!pre)
+								pre = String(mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT') || '').trim();
 							if (!pre)
 								pre = String(mfBuyerAddress.getLocationText() || '').trim();
 							if (pre)
@@ -1674,7 +1832,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			}
 			ctx.__mfNomAnchorRetries = 0;
 
-			var wrap = BX.create('DIV', {attrs: {id: 'mf-nominatim-wrap'}, style: {marginBottom: '14px', padding: '12px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e8e8e8', position: 'relative', zIndex: '1200'}});
+			var wrap = BX.create('DIV', {attrs: {id: 'mf-nominatim-wrap', className: 'mf-nominatim-wrap'}, style: {marginBottom: '14px', padding: '12px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e8e8e8', position: 'relative', zIndex: '10'}});
 			var lbl = BX.create('DIV', {text: 'Адрес доставки', style: {fontWeight: '600', marginBottom: '6px', fontSize: '14px'}});
 			var hint = BX.create('DIV', {
 				text: 'Начните вводить город, улицу или страну (Майами, Berlin, Санкт-Петербург…).',
@@ -1699,7 +1857,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					maxHeight: '240px',
 					overflowY: 'auto',
 					background: '#fff',
-					zIndex: '1300',
+					zIndex: '50',
 					boxShadow: '0 8px 24px rgba(0,0,0,.12)'
 				}
 			});
@@ -1722,7 +1880,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					st.appendChild(document.createTextNode(
 						'#bx-soa-properties .bx-soa-section-content{overflow:visible !important;}' +
 						'#bx-soa-region .bx-soa-section-content{overflow:visible !important;}' +
-						'#mf-nominatim-wrap{overflow:visible !important;}'
+						'#bx-soa-delivery .bx-soa-section-content{overflow:visible !important;}' +
+						'#mf-nominatim-wrap{overflow:visible !important;position:relative;z-index:10;}' +
+						'#mf-nominatim-list{z-index:50;}'
 					));
 					(document.head || document.documentElement).appendChild(st);
 				}
@@ -1913,9 +2073,24 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (!ctx.__mfNominatimActive && inp)
 				{
 					var preFill = '';
-					var lip0 = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
-					if (lip0 && lip0 !== false && BX.type.isNotEmptyString(String(lip0.value || '')))
-						preFill = String(lip0.value || '').trim();
+					try {
+						var mcPre = mfEdost.getMfCheckout();
+						var nomPre = mcPre && mcPre.LAST_ORDER_NOMINATIM_JSON ? String(mcPre.LAST_ORDER_NOMINATIM_JSON).trim() : '';
+						if (nomPre)
+						{
+							var parsedPre = JSON.parse(nomPre);
+							if (parsedPre && parsedPre.display_name)
+								preFill = String(parsedPre.display_name).trim();
+						}
+					} catch(eNomPre) {}
+					if (!preFill)
+					{
+						var lip0 = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
+						if (lip0 && lip0 !== false && BX.type.isNotEmptyString(String(lip0.value || '')))
+							preFill = String(lip0.value || '').trim();
+					}
+					if (!preFill)
+						preFill = String(mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT') || '').trim();
 					if (!preFill)
 						preFill = String(mfBuyerAddress.getLocationText() || '').trim();
 					if (preFill)
@@ -2181,6 +2356,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		} catch(eCc) {}
 
 		try {
+			mfEdost.restoreLastOrderPreload();
 			// Force empty location on first load only for guests.
 			// Authorized users should keep location restored from their selected profile.
 			var mfIsAuthorized = mfEdost.isAuthorized();
@@ -2246,7 +2422,15 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			if (!mfEdost.hasDestinationSignal())
 			{
 				try { mfEdost.clearManagerDeliveryFallback(); } catch(eMf0) {}
-				mfEdost.clearSelection();
+				var mcSkip = mfEdost.getMfCheckout();
+				if (!(mcSkip && mcSkip.LAST_ORDER_EDOST && mcSkip.LAST_ORDER_EDOST.ID))
+				{
+					mfEdost.clearSelection();
+				}
+			}
+			else
+			{
+				mfEdost.restoreLastOrderPreload();
 			}
 			mfEdost.updateGate(locInit);
 			mfEdost.applyDeliverySummary();

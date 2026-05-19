@@ -1386,6 +1386,7 @@ final class Payload
 				$vatRate = null;
 				try { $vatRate = (float)$item->getVatRate(); } catch (\Throwable $e) { $vatRate = null; }
 				$vatPercent = self::vatPercent($vatRate);
+				$itemWarehouse = self::basketItemWarehouseTitle($item);
 
 				$basketItems[] = [
 					'product' => [
@@ -1404,8 +1405,7 @@ final class Payload
 					'vat_rate' => (float)$vatRate,
 					'vat_percent' => $vatPercent,
 					'nds_percent' => $vatPercent, // alias for some 1C handlers
-					// Заполняется ниже из склада отгрузки (для комментария в 1С).
-					'warehouse_name' => null,
+					'warehouse_name' => $itemWarehouse !== '' ? $itemWarehouse : null,
 				];
 			}
 		}
@@ -1609,6 +1609,19 @@ final class Payload
 			catch (\Throwable $e)
 			{
 				// ignore
+			}
+		}
+
+		if (self::shouldReplaceDeliveryName($deliveryName))
+		{
+			$edostDelivery = self::parseEdostDeliveryFromOrder($order, $props);
+			if ($edostDelivery['name'] !== '')
+			{
+				$deliveryName = $edostDelivery['name'];
+				if ($edostDelivery['price'] > 0.0 && $deliveryPrice <= 0.0)
+				{
+					$deliveryPrice = $edostDelivery['price'];
+				}
 			}
 		}
 
@@ -2150,43 +2163,163 @@ final class Payload
 			{
 				return null;
 			}
+			$storeIds = [];
 			foreach ($basket->getBasketItems() as $item)
 			{
-				$pc = null;
-				try
+				$sid = self::basketItemStoreId($item);
+				if ($sid > 0)
 				{
-					$pc = $item->getPropertyCollection();
-				}
-				catch (\Throwable $e)
-				{
-					$pc = null;
-				}
-				if (!$pc)
-				{
-					continue;
-				}
-				foreach ($pc as $p)
-				{
-					$code = \trim((string)$p->getField('CODE'));
-					if ($code !== 'MF_STORE_ID')
-					{
-						continue;
-					}
-					$v = \trim((string)$p->getField('VALUE'));
-					$sid = (int)$v;
-					if ($sid > 0)
-					{
-						return self::buildStorePayloadFromId($sid, [$sid]);
-					}
+					$storeIds[$sid] = true;
 				}
 			}
+			if ($storeIds === [])
+			{
+				return null;
+			}
+			$ids = \array_keys($storeIds);
+			\sort($ids);
+
+			return self::buildStorePayloadFromId((int)$ids[0], $ids);
 		}
 		catch (\Throwable $e)
 		{
 			return null;
 		}
+	}
 
-		return null;
+	private static function basketItemProp($item, string $code): string
+	{
+		if (\function_exists('mf_basket_get_prop') && $item instanceof BasketItem)
+		{
+			$v = \mf_basket_get_prop($item, $code);
+
+			return $v !== null ? \trim((string)$v) : '';
+		}
+		try
+		{
+			$pc = $item->getPropertyCollection();
+			if (!$pc)
+			{
+				return '';
+			}
+			foreach ($pc as $p)
+			{
+				if (\trim((string)$p->getField('CODE')) !== $code)
+				{
+					continue;
+				}
+				$v = $p->getField('VALUE');
+				if (\is_array($v))
+				{
+					$v = \reset($v);
+				}
+
+				return \trim((string)$v);
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		return '';
+	}
+
+	private static function basketItemStoreId($item): int
+	{
+		return (int)self::basketItemProp($item, 'MF_STORE_ID');
+	}
+
+	private static function basketItemWarehouseTitle($item): string
+	{
+		$title = self::basketItemProp($item, 'MF_STORE_TITLE');
+		if ($title !== '')
+		{
+			return $title;
+		}
+		$sid = self::basketItemStoreId($item);
+		if ($sid <= 0)
+		{
+			return '';
+		}
+		$payload = self::buildStorePayloadFromId($sid, [$sid]);
+
+		return \trim((string)($payload['title'] ?? ''));
+	}
+
+	/**
+	 * Техническая служба Bitrix (eDost идёт отдельно в COMMENTS / checkout).
+	 */
+	private static function isTechnicalBitrixDeliveryName(string $name): bool
+	{
+		$n = \trim($name);
+		if ($n === '')
+		{
+			return false;
+		}
+		if (!\function_exists('mb_strtolower'))
+		{
+			$lc = \strtolower($n);
+
+			return \in_array($lc, ['стандартный', 'standard'], true);
+		}
+		$lc = \mb_strtolower($n, 'UTF-8');
+
+		return \in_array($lc, ['стандартный', 'standard'], true);
+	}
+
+	private static function shouldReplaceDeliveryName(string $name): bool
+	{
+		return $name === '' || self::isTrivialEmptyDeliveryName($name) || self::isTechnicalBitrixDeliveryName($name);
+	}
+
+	/**
+	 * @return array{name: string, price: float}
+	 */
+	private static function parseEdostDeliveryFromComments(string $comments): array
+	{
+		$out = ['name' => '', 'price' => 0.0];
+		$comments = \trim($comments);
+		if ($comments === '')
+		{
+			return $out;
+		}
+		if (\preg_match('~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*([0-9]+(?:[.,][0-9]+)?)\s*₽\s*\(tarif_id=([^)]+)\)~u', $comments, $m))
+		{
+			$company = \trim((string)$m[1]);
+			$tariff = \trim((string)$m[2]);
+			$out['price'] = (float)\str_replace(',', '.', (string)$m[3]);
+			$out['name'] = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * @param array<string, string> $props
+	 *
+	 * @return array{name: string, price: float}
+	 */
+	private static function parseEdostDeliveryFromOrder(Order $order, array $props): array
+	{
+		$company = self::firstNonEmptyPropValue($props, ['MF_EDOST_TARIF_COMPANY']);
+		$name = self::firstNonEmptyPropValue($props, ['MF_EDOST_TARIF_NAME']);
+		$priceRaw = self::firstNonEmptyPropValue($props, ['MF_EDOST_TARIF_PRICE']);
+		if ($company !== '' || $name !== '')
+		{
+			$label = $company !== '' ? ($company . ' — ' . $name) : $name;
+			$price = $priceRaw !== '' ? (float)\str_replace(',', '.', $priceRaw) : 0.0;
+
+			return ['name' => \trim($label), 'price' => $price];
+		}
+
+		try
+		{
+			return self::parseEdostDeliveryFromComments((string)$order->getField('COMMENTS'));
+		}
+		catch (\Throwable $e)
+		{
+			return ['name' => '', 'price' => 0.0];
+		}
 	}
 
 	/**
@@ -2212,6 +2345,8 @@ final class Payload
 			'без доставки.',
 			'no delivery',
 			'without delivery',
+			'стандартный',
+			'standard',
 		], true) || \mb_strpos($lc, 'без доставки', 0, 'UTF-8') === 0;
 	}
 
@@ -2700,7 +2835,15 @@ final class Payload
 			{
 				continue;
 			}
-			$basketItems[$k]['warehouse_name'] = $title;
+			$existing = \trim((string)($row['warehouse_name'] ?? ''));
+			if ($existing !== '')
+			{
+				continue;
+			}
+			if ($title !== '')
+			{
+				$basketItems[$k]['warehouse_name'] = $title;
+			}
 		}
 
 		return $basketItems;

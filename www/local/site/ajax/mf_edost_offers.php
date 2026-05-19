@@ -43,64 +43,12 @@ try
 	$mfEdostToCity = trim((string)$req->getPost('mf_edost_to_city'));
 	$nomJsonRaw = trim((string)$req->getPost('mf_nominatim_json'));
 
-	$toCity = '';
-	if ($nomJsonRaw !== '')
+	$dest = \MF\Delivery\Edost::resolveDeliveryDestination($nomJsonRaw, $mfEdostToCity, $locationCode, $zip);
+	if ($dest['settlement'] === '' && $dest['region'] === '')
 	{
-		$nom = json_decode($nomJsonRaw, true);
-		if (is_array($nom))
-		{
-			$nomAddr = isset($nom['address']) && is_array($nom['address']) ? $nom['address'] : [];
-			foreach (['city', 'name', 'town', 'village', 'locality'] as $nk)
-			{
-				$cand = trim((string)($nomAddr[$nk] ?? ''));
-				if ($cand !== '' && preg_match('~\p{Cyrillic}~u', $cand))
-				{
-					$toCity = $cand;
-					break;
-				}
-			}
-		}
+		echo Json::encode(['ok' => false, 'error' => 'cannot resolve to_city']);
+		exit;
 	}
-
-	if ($toCity === '' && $mfEdostToCity !== '')
-	{
-		$toCity = $mfEdostToCity;
-		if ($toCity !== '' && !preg_match('~\p{Cyrillic}~u', $toCity) && $nomJsonRaw !== '')
-		{
-			$nom = json_decode($nomJsonRaw, true);
-			if (is_array($nom))
-			{
-				$addr = isset($nom['address']) && is_array($nom['address']) ? $nom['address'] : [];
-				foreach (['name', 'city', 'town', 'village', 'locality'] as $nk)
-				{
-					$cand = trim((string)($addr[$nk] ?? ''));
-					if ($cand !== '' && preg_match('~\p{Cyrillic}~u', $cand))
-					{
-						$toCity = $cand;
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	if ($toCity === '')
-	{
-		if ($locationCode === '')
-		{
-			echo Json::encode(['ok' => false, 'error' => 'empty location_code']);
-			exit;
-		}
-
-		$toCity = \MF\Delivery\Edost::resolveCityNameRuByLocationCode($locationCode);
-		if ($toCity === '')
-		{
-			echo Json::encode(['ok' => false, 'error' => 'cannot resolve to_city']);
-			exit;
-		}
-	}
-
-	$toCity = trim((string)preg_replace('~^г(?:ород)?\s+~iu', '', $toCity));
 
 	$siteId = (string)Application::getInstance()->getContext()->getSite();
 	if ($siteId === '')
@@ -125,10 +73,21 @@ try
 	$weightKg = $weightGrams > 0 ? ($weightGrams / 1000.0) : 0.001;
 	$insurance = 0.0; // display only; doesn't affect order total
 
-	$resp = \MF\Delivery\Edost::calculate($toCity, $weightKg, $insurance, (string)$zip);
+	$resp = \MF\Delivery\Edost::calculateForDestination(
+		$dest['settlement'],
+		$dest['region'],
+		$weightKg,
+		$insurance,
+		$dest['zip']
+	);
 	if (!is_array($resp) || !($resp['ok'] ?? false) || !isset($resp['offers']) || !is_array($resp['offers']))
 	{
-		echo Json::encode(['ok' => false, 'error' => 'edost error', 'resp' => $resp]);
+		echo Json::encode([
+			'ok' => false,
+			'error' => 'edost error',
+			'resp' => $resp,
+			'destination' => $dest,
+		]);
 		exit;
 	}
 
@@ -156,8 +115,11 @@ try
 
 	echo Json::encode([
 		'ok' => true,
-		'to_city' => $toCity,
-		'zip' => $zip,
+		'to_city' => (string)($resp['to_city_used'] ?? $dest['settlement']),
+		'settlement' => $dest['settlement'],
+		'region' => $dest['region'],
+		'destination_mode' => (string)($resp['destination_mode'] ?? ''),
+		'zip' => $dest['zip'],
 		'weight_kg' => round($weightKg, 3),
 		'basket_sum' => round($sum, 2),
 		'offers' => $offers,
@@ -167,4 +129,3 @@ catch (\Throwable $e)
 {
 	echo Json::encode(['ok' => false, 'error' => 'exception', 'message' => $e->getMessage()]);
 }
-

@@ -2860,10 +2860,23 @@ if (!function_exists('mf_on_order_before_saved'))
 				{
 					if ($req->getPost('MF_NOMINATIM_JSON') !== null)
 					{
+						$nomVal = (string)$req->getPost('MF_NOMINATIM_JSON');
 						$p = mf_sale_order_prop_value_by_code($propCol, 'MF_NOMINATIM_JSON');
 						if ($p && method_exists($p, 'setValue'))
 						{
-							$p->setValue((string)$req->getPost('MF_NOMINATIM_JSON'));
+							$p->setValue($nomVal);
+						}
+						if ($nomVal !== '' && function_exists('mf_checkout_nominatim_display_line'))
+						{
+							$nomLine = mf_checkout_nominatim_display_line($nomVal);
+							if ($nomLine !== '')
+							{
+								$pLoc = mf_sale_order_prop_value_by_code($propCol, 'DELIVERY_LOCATION_TEXT');
+								if ($pLoc && method_exists($pLoc, 'setValue'))
+								{
+									$pLoc->setValue($nomLine);
+								}
+							}
 						}
 					}
 					if ($req->getPost('MF_EDOST_TO_CITY') !== null)
@@ -3052,4 +3065,20 @@ if (is_file($mfOrderNotifyInclude))
     {
         \Mf\OrderNotify\Bootstrap::init();
     }
+}
+
+// --- Письма покупателю: оформление заказа и смена статуса --------------------
+$mfOrderAccountDisplay = __DIR__ . '/include/mf_order_account_display.php';
+if (is_file($mfOrderAccountDisplay))
+{
+	require_once $mfOrderAccountDisplay;
+}
+$mfOrderMailInclude = __DIR__ . '/include/mf_order_mail.php';
+if (is_file($mfOrderMailInclude))
+{
+	require_once $mfOrderMailInclude;
+	if (class_exists('\\Mf\\OrderMail\\Bootstrap'))
+	{
+		\Mf\OrderMail\Bootstrap::init();
+	}
 }

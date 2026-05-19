@@ -12,6 +12,15 @@ if ($arParams["SET_TITLE"] == "Y")
 {
 	$APPLICATION->SetTitle(Loc::getMessage("SOA_ORDER_COMPLETE"));
 }
+
+$mfHidePaymentOnConfirm = false;
+$mfPersonTypeId = (int)($arResult['ORDER']['PERSON_TYPE_ID'] ?? 0);
+if ($mfPersonTypeId > 0 && function_exists('mf_checkout_person_type_map'))
+{
+	$mfPtMap = mf_checkout_person_type_map();
+	$mfJurPersonTypeId = (int)($mfPtMap['jur'] ?? 0);
+	$mfHidePaymentOnConfirm = ($mfJurPersonTypeId > 0 && $mfPersonTypeId === $mfJurPersonTypeId);
+}
 ?>
 
 <? if (!empty($arResult["ORDER"])): ?>
@@ -25,7 +34,7 @@ if ($arParams["SET_TITLE"] == "Y")
 				"#ORDER_DATE#" => $arResult["ORDER"]["DATE_INSERT"]->toUserTime()->format('d.m.Y H:i'),
 				"#ORDER_ID#" => htmlspecialcharsbx($mfOrderConfirmNum)
 			))?>
-			<? if (!empty($arResult['ORDER']["PAYMENT_ID"])): ?>
+			<? if (!$mfHidePaymentOnConfirm && !empty($arResult['ORDER']["PAYMENT_ID"])): ?>
 				<?=Loc::getMessage("SOA_PAYMENT_SUC", array(
 					"#PAYMENT_ID#" => htmlspecialcharsbx($arResult['PAYMENT'][$arResult['ORDER']["PAYMENT_ID"]]['ACCOUNT_NUMBER'])
 				))?>
@@ -42,7 +51,7 @@ if ($arParams["SET_TITLE"] == "Y")
 	<? endif; ?>
 
 	<?
-	if ($arResult["ORDER"]["IS_ALLOW_PAY"] === 'Y')
+	if (!$mfHidePaymentOnConfirm && $arResult["ORDER"]["IS_ALLOW_PAY"] === 'Y')
 	{
 		if (!empty($arResult["PAYMENT"]))
 		{
@@ -111,7 +120,7 @@ if ($arParams["SET_TITLE"] == "Y")
 			}
 		}
 	}
-	else
+	elseif (!$mfHidePaymentOnConfirm)
 	{
 		?>
 		<div class="alert alert-danger" role="alert"><?=$arParams['MESS_PAY_SYSTEM_PAYABLE_ERROR']?></div>

@@ -337,6 +337,21 @@ else
 	{
 		$mfCheckoutBoot['FALLBACK_LOCATION_CODE'] = (string)mf_checkout_resolve_fallback_location_code();
 	}
+	$preloadBoot = is_array($arResult['MF_CHECKOUT_LAST_ORDER_PRELOAD'] ?? null)
+		? $arResult['MF_CHECKOUT_LAST_ORDER_PRELOAD']
+		: [];
+	if (!empty($preloadBoot['MF_EDOST']) && is_array($preloadBoot['MF_EDOST']))
+	{
+		$mfCheckoutBoot['LAST_ORDER_EDOST'] = $preloadBoot['MF_EDOST'];
+	}
+	if (!empty($preloadBoot['MF_NOMINATIM_JSON']))
+	{
+		$mfCheckoutBoot['LAST_ORDER_NOMINATIM_JSON'] = (string)$preloadBoot['MF_NOMINATIM_JSON'];
+	}
+	if (!empty($preloadBoot['MF_EDOST_TO_CITY']))
+	{
+		$mfCheckoutBoot['LAST_ORDER_EDOST_TO_CITY'] = (string)$preloadBoot['MF_EDOST_TO_CITY'];
+	}
 	?>
 	<form action="<?=POST_FORM_ACTION_URI?>" method="POST" name="ORDER_FORM" class="bx-soa-wrapper mb-4<?=$themeClass?>" id="bx-soa-order-form" enctype="multipart/form-data">
 		<?php

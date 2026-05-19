@@ -1943,6 +1943,344 @@ if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 	}
 }
 
+if (!function_exists('mf_checkout_order_prop_value_meta'))
+{
+	/**
+	 * @return array{CODE: string, IS_LOCATION: bool}
+	 */
+	function mf_checkout_order_prop_value_meta($propValue): array
+	{
+		$code = '';
+		$isLocation = false;
+		if (!is_object($propValue))
+		{
+			return ['CODE' => '', 'IS_LOCATION' => false];
+		}
+
+		if (method_exists($propValue, 'getProperty'))
+		{
+			$propMeta = $propValue->getProperty();
+			if (is_array($propMeta))
+			{
+				$code = trim((string)($propMeta['CODE'] ?? ''));
+				$isLocation = ((string)($propMeta['IS_LOCATION'] ?? '') === 'Y');
+			}
+			elseif (is_object($propMeta) && method_exists($propMeta, 'getField'))
+			{
+				$code = trim((string)$propMeta->getField('CODE'));
+				$isLocation = ((string)$propMeta->getField('IS_LOCATION') === 'Y');
+			}
+		}
+		if ($code === '' && method_exists($propValue, 'getField'))
+		{
+			$code = trim((string)$propValue->getField('CODE'));
+		}
+
+		return ['CODE' => $code, 'IS_LOCATION' => $isLocation];
+	}
+}
+
+if (!function_exists('mf_checkout_nominatim_display_line'))
+{
+	function mf_checkout_nominatim_display_line(string $json): string
+	{
+		$json = trim($json);
+		if ($json === '')
+		{
+			return '';
+		}
+
+		$data = json_decode($json, true);
+		if (!is_array($data))
+		{
+			return '';
+		}
+
+		$line = trim((string)($data['display_name'] ?? ''));
+		if ($line !== '')
+		{
+			return $line;
+		}
+
+		$addr = is_array($data['address'] ?? null) ? $data['address'] : [];
+		foreach (['city', 'town', 'village', 'locality', 'name'] as $key)
+		{
+			$part = trim((string)($addr[$key] ?? ''));
+			if ($part !== '')
+			{
+				return $part;
+			}
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_checkout_collect_last_order_delivery_context'))
+{
+	/**
+	 * Адрес доставки, Nominatim и тариф eDost из последнего заказа (для preload авторизованного пользователя).
+	 *
+	 * @return array{
+	 *   ORDER_PROP: array<int, string>,
+	 *   MF_EDOST: ?array{ID: string, COMPANY: string, NAME: string, PRICE: string},
+	 *   MF_NOMINATIM_JSON: string,
+	 *   MF_EDOST_TO_CITY: string
+	 * }
+	 */
+	function mf_checkout_collect_last_order_delivery_context(\Bitrix\Sale\Order $order): array
+	{
+		$out = [
+			'ORDER_PROP' => [],
+			'MF_EDOST' => null,
+			'MF_NOMINATIM_JSON' => '',
+			'MF_EDOST_TO_CITY' => '',
+		];
+
+		try
+		{
+			$propCollection = $order->getPropertyCollection();
+			if (!$propCollection)
+			{
+				return $out;
+			}
+
+			$preferCodes = [
+				'DELIVERY_LOCATION_TEXT',
+				'DELIVERY_ADDRESS',
+				'DELIVERY_ZIP',
+				'MF_NOMINATIM_JSON',
+				'MF_EDOST_TO_CITY',
+				'ADDRESS',
+				'STREET',
+				'CITY',
+				'ZIP',
+			];
+			$deliveryLocationTextPropId = 0;
+
+			foreach ($propCollection as $propValue)
+			{
+				if (!is_object($propValue) || !method_exists($propValue, 'getPropertyId'))
+				{
+					continue;
+				}
+				$propId = (int)$propValue->getPropertyId();
+				if ($propId <= 0)
+				{
+					continue;
+				}
+				$meta = mf_checkout_order_prop_value_meta($propValue);
+				$code = $meta['CODE'];
+				$isLocation = $meta['IS_LOCATION'];
+
+				$val = $propValue->getValue();
+				if (is_array($val))
+				{
+					$val = implode(', ', array_map('strval', $val));
+				}
+				$val = trim((string)$val);
+				if ($val === '')
+				{
+					continue;
+				}
+
+				$codeUp = strtoupper($code);
+				if ($codeUp === 'DELIVERY_LOCATION_TEXT')
+				{
+					$deliveryLocationTextPropId = $propId;
+				}
+				if (
+					$isLocation
+					|| in_array($codeUp, $preferCodes, true)
+					|| str_starts_with($codeUp, 'DELIVERY_')
+					|| str_starts_with($codeUp, 'MF_')
+				)
+				{
+					$out['ORDER_PROP'][$propId] = $val;
+				}
+				if ($codeUp === 'MF_NOMINATIM_JSON')
+				{
+					$out['MF_NOMINATIM_JSON'] = $val;
+				}
+				if ($codeUp === 'MF_EDOST_TO_CITY')
+				{
+					$out['MF_EDOST_TO_CITY'] = $val;
+				}
+			}
+
+			if ($out['MF_NOMINATIM_JSON'] !== '' && $deliveryLocationTextPropId > 0)
+			{
+				$nomLine = mf_checkout_nominatim_display_line($out['MF_NOMINATIM_JSON']);
+				if ($nomLine !== '')
+				{
+					$out['ORDER_PROP'][$deliveryLocationTextPropId] = $nomLine;
+				}
+			}
+
+			$comments = (string)$order->getField('COMMENTS');
+			if ($comments !== '' && preg_match('~\(tarif_id=([^)]+)\)~', $comments, $m))
+			{
+				$tid = trim((string)$m[1]);
+				$company = '';
+				$name = '';
+				$price = '';
+				if (preg_match('~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*([0-9]+)\s*₽~u', $comments, $m2))
+				{
+					$company = trim((string)$m2[1]);
+					$name = trim((string)$m2[2]);
+					$price = trim((string)$m2[3]);
+				}
+				if ($tid !== '')
+				{
+					$out['MF_EDOST'] = [
+						'ID' => $tid,
+						'COMPANY' => $company,
+						'NAME' => $name,
+						'PRICE' => $price,
+					];
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_checkout_merge_delivery_context'))
+{
+	/**
+	 * Объединяет контекст доставки: свежий заказ + более ранние (Nominatim мог не сохраниться в последнем).
+	 *
+	 * @param array|null $primary
+	 * @param array      $fallback
+	 */
+	function mf_checkout_merge_delivery_context(?array $primary, array $fallback): array
+	{
+		if (!is_array($primary) || $primary === [])
+		{
+			return $fallback;
+		}
+
+		if ($primary['MF_NOMINATIM_JSON'] === '' && $fallback['MF_NOMINATIM_JSON'] !== '')
+		{
+			$primary['MF_NOMINATIM_JSON'] = $fallback['MF_NOMINATIM_JSON'];
+		}
+		if ($primary['MF_EDOST_TO_CITY'] === '' && $fallback['MF_EDOST_TO_CITY'] !== '')
+		{
+			$primary['MF_EDOST_TO_CITY'] = $fallback['MF_EDOST_TO_CITY'];
+		}
+		if (empty($primary['MF_EDOST']) && !empty($fallback['MF_EDOST']))
+		{
+			$primary['MF_EDOST'] = $fallback['MF_EDOST'];
+		}
+
+		if (!isset($primary['ORDER_PROP']) || !is_array($primary['ORDER_PROP']))
+		{
+			$primary['ORDER_PROP'] = [];
+		}
+		if (!empty($fallback['ORDER_PROP']) && is_array($fallback['ORDER_PROP']))
+		{
+			foreach ($fallback['ORDER_PROP'] as $propId => $val)
+			{
+				$propId = (int)$propId;
+				if ($propId <= 0)
+				{
+					continue;
+				}
+				$cur = trim((string)($primary['ORDER_PROP'][$propId] ?? ''));
+				$add = trim((string)$val);
+				if ($add === '')
+				{
+					continue;
+				}
+				if ($cur === '')
+				{
+					$primary['ORDER_PROP'][$propId] = $add;
+				}
+			}
+		}
+
+		if ($primary['MF_NOMINATIM_JSON'] !== '')
+		{
+			$nomLine = mf_checkout_nominatim_display_line($primary['MF_NOMINATIM_JSON']);
+			if ($nomLine !== '' && class_exists(\Bitrix\Main\Loader::class) && \Bitrix\Main\Loader::includeModule('sale'))
+			{
+				$locProp = \Bitrix\Sale\Internals\OrderPropsTable::getList([
+					'filter' => ['=CODE' => 'DELIVERY_LOCATION_TEXT'],
+					'select' => ['ID'],
+					'limit' => 1,
+				])->fetch();
+				if (!empty($locProp['ID']))
+				{
+					$primary['ORDER_PROP'][(int)$locProp['ID']] = $nomLine;
+				}
+			}
+		}
+
+		return $primary;
+	}
+}
+
+if (!function_exists('mf_checkout_collect_user_delivery_context'))
+{
+	/**
+	 * Контекст доставки из последних заказов пользователя (до 10), с подстановкой Nominatim из более ранних.
+	 */
+	function mf_checkout_collect_user_delivery_context(int $userId, string $siteId): array
+	{
+		$empty = [
+			'ORDER_PROP' => [],
+			'MF_EDOST' => null,
+			'MF_NOMINATIM_JSON' => '',
+			'MF_EDOST_TO_CITY' => '',
+		];
+		if ($userId <= 0 || $siteId === '' || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return $empty;
+		}
+
+		$registry = \Bitrix\Sale\Registry::getInstance(\Bitrix\Sale\Registry::REGISTRY_TYPE_ORDER);
+		$orderClassName = $registry->getOrderClassName();
+		$merged = null;
+
+		$res = $orderClassName::getList([
+			'filter' => [
+				'USER_ID' => $userId,
+				'LID' => $siteId,
+				'CANCELED' => 'N',
+			],
+			'select' => ['ID'],
+			'order' => ['ID' => 'DESC'],
+			'limit' => 10,
+		]);
+		while ($row = $res->fetch())
+		{
+			$orderId = (int)($row['ID'] ?? 0);
+			if ($orderId <= 0)
+			{
+				continue;
+			}
+			$loaded = $orderClassName::load($orderId);
+			if (!$loaded)
+			{
+				continue;
+			}
+			$ctx = mf_checkout_collect_last_order_delivery_context($loaded);
+			if ($merged === null)
+			{
+				$merged = $ctx;
+				continue;
+			}
+			$merged = mf_checkout_merge_delivery_context($merged, $ctx);
+		}
+
+		return is_array($merged) ? $merged : $empty;
+	}
+}
+
 if (!function_exists('mf_checkout_on_order_js_data'))
 {
 	function mf_checkout_on_order_js_data(array &$arResult, array &$arParams): void
@@ -2019,6 +2357,25 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 					'MANAGER_DELIVERY_POST' => $managerDeliveryPost ? 'Y' : 'N',
 				]
 			);
+
+			$preload = is_array($arResult['MF_CHECKOUT_LAST_ORDER_PRELOAD'] ?? null)
+				? $arResult['MF_CHECKOUT_LAST_ORDER_PRELOAD']
+				: [];
+			if (!empty($preload))
+			{
+				if (!empty($preload['MF_EDOST']) && is_array($preload['MF_EDOST']))
+				{
+					$arResult['JS_DATA']['MF_CHECKOUT']['LAST_ORDER_EDOST'] = $preload['MF_EDOST'];
+				}
+				if (!empty($preload['MF_NOMINATIM_JSON']))
+				{
+					$arResult['JS_DATA']['MF_CHECKOUT']['LAST_ORDER_NOMINATIM_JSON'] = (string)$preload['MF_NOMINATIM_JSON'];
+				}
+				if (!empty($preload['MF_EDOST_TO_CITY']))
+				{
+					$arResult['JS_DATA']['MF_CHECKOUT']['LAST_ORDER_EDOST_TO_CITY'] = (string)$preload['MF_EDOST_TO_CITY'];
+				}
+			}
 
 			if (
 				(int)($personTypes['jur'] ?? 0) > 0

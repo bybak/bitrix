@@ -745,6 +745,18 @@ class SaleOrderAjax extends \CBitrixComponent
 				if ($storeFields = Delivery\ExtraServices\Manager::getStoresFields($lastOrderData['DELIVERY_ID'], false))
 					unset($lastOrderData['DELIVERY_EXTRA_SERVICES'][$shipment->getDeliveryId()][$storeFields['ID']]);
 			}
+
+			if (function_exists('mf_checkout_collect_user_delivery_context'))
+			{
+				$lastOrderData['DELIVERY_CONTEXT'] = mf_checkout_collect_user_delivery_context(
+					(int)$order->getUserId(),
+					(string)$order->getSiteId()
+				);
+			}
+			elseif (function_exists('mf_checkout_collect_last_order_delivery_context'))
+			{
+				$lastOrderData['DELIVERY_CONTEXT'] = mf_checkout_collect_last_order_delivery_context($lastOrder);
+			}
 		}
 
 		return $lastOrderData;
@@ -784,6 +796,28 @@ class SaleOrderAjax extends \CBitrixComponent
 				{
 					$this->arUserResult['BUYER_STORE'] = $lastOrderData['BUYER_STORE'];
 					$showData['BUYER_STORE'] = $lastOrderData['BUYER_STORE'];
+				}
+
+				if (!empty($lastOrderData['DELIVERY_CONTEXT']) && is_array($lastOrderData['DELIVERY_CONTEXT']))
+				{
+					$ctx = $lastOrderData['DELIVERY_CONTEXT'];
+					if (!empty($ctx['ORDER_PROP']) && is_array($ctx['ORDER_PROP']))
+					{
+						$this->arUserResult['MF_LAST_ORDER_PROP'] = $ctx['ORDER_PROP'];
+					}
+					if (!empty($ctx['MF_EDOST']) && is_array($ctx['MF_EDOST']))
+					{
+						$this->arUserResult['MF_EDOST_PRELOAD'] = $ctx['MF_EDOST'];
+					}
+					if (!empty($ctx['MF_NOMINATIM_JSON']))
+					{
+						$this->arUserResult['MF_NOMINATIM_JSON_PRELOAD'] = (string)$ctx['MF_NOMINATIM_JSON'];
+					}
+					if (!empty($ctx['MF_EDOST_TO_CITY']))
+					{
+						$this->arUserResult['MF_EDOST_TO_CITY_PRELOAD'] = (string)$ctx['MF_EDOST_TO_CITY'];
+					}
+					$this->arResult['MF_CHECKOUT_LAST_ORDER_PRELOAD'] = $ctx;
 				}
 
 				$this->arUserResult['LAST_ORDER_DATA'] = $showData;
@@ -882,6 +916,13 @@ class SaleOrderAjax extends \CBitrixComponent
 		$shouldUseProfile = !$mfKeepEmptyState && ($firstLoad || $justAuthorized || $isPersonTypeChanged || $isProfileChanged);
 		$willUseProfile = $shouldUseProfile && $haveProfileId;
 
+		$lastOrderProps = (
+			$firstLoad
+			&& $USER->IsAuthorized()
+			&& !empty($this->arUserResult['MF_LAST_ORDER_PROP'])
+			&& is_array($this->arUserResult['MF_LAST_ORDER_PROP'])
+		) ? $this->arUserResult['MF_LAST_ORDER_PROP'] : [];
+
 		$profileProperties = [];
 
 		if ($haveProfileId)
@@ -898,11 +939,28 @@ class SaleOrderAjax extends \CBitrixComponent
 
 		foreach ($this->getFullPropertyList($order) as $property)
 		{
+			$propCode = strtoupper(trim((string)($property['CODE'] ?? '')));
+			$propId = (int)($property['ID'] ?? 0);
+			$preferLastOrder = $firstLoad
+				&& $propId > 0
+				&& isset($lastOrderProps[$propId])
+				&& trim((string)$lastOrderProps[$propId]) !== ''
+				&& (
+					str_starts_with($propCode, 'DELIVERY_')
+					|| str_starts_with($propCode, 'MF_')
+					|| in_array($propCode, ['ADDRESS', 'STREET', 'CITY', 'ZIP'], true)
+					|| ($property['IS_LOCATION'] ?? 'N') === 'Y'
+				);
+
 			if ($property['USER_PROPS'] === 'Y')
 			{
 				if ($isProfileChanged && !$haveProfileId)
 				{
 					$curVal = '';
+				}
+				elseif ($preferLastOrder)
+				{
+					$curVal = (string)$lastOrderProps[$propId];
 				}
 				elseif (
 					$willUseProfile
@@ -951,7 +1009,7 @@ class SaleOrderAjax extends \CBitrixComponent
 				}
 			}
 
-			if ($property['TYPE'] === 'LOCATION' && empty($curVal) && !empty($ipAddress))
+			if ($property['TYPE'] === 'LOCATION' && empty($curVal) && !empty($ipAddress) && !$preferLastOrder)
 			{
 				$locCode = GeoIp::getLocationCode($ipAddress);
 
