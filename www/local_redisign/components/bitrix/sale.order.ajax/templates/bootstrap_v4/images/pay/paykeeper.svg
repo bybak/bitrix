@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80" fill="none" aria-hidden="true">
-  <rect width="160" height="80" rx="18" fill="#F3F3F5"/>
-  <path d="M22 22h17l25 18-25 18H22l25-18-25-18z" fill="#8F8F96"/>
-  <path d="M51 22h17l25 18-25 18H51l25-18-25-18z" fill="#A5A5AB"/>
-  <text x="98" y="38" fill="#8F8F96" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" letter-spacing="-1">Pay</text>
-  <text x="98" y="58" fill="#8F8F96" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" letter-spacing="-1">Keeper</text>
-</svg>
