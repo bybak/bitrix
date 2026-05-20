@@ -14,8 +14,10 @@ if (!function_exists('mf_contact_map_render'))
 			$mapId = 'mf-contact-map';
 		}
 
-		$lat = 59.867086;
-		$lon = 30.382651;
+		// Запасные координаты: ул. Салова, 57 (если геокодер не ответит).
+		$lat = 59.886799;
+		$lon = 30.374732;
+		$address = 'Санкт-Петербург, ул. Салова, 57, корпус 1, литера Ч';
 		$balloon = 'Motor-Force, ул. Салова, 57к1, оф. 1Н';
 
 		$apiKey = '';
@@ -36,7 +38,8 @@ if (!function_exists('mf_contact_map_render'))
 <script>
 (function () {
 	var mapId = <?= json_encode($mapId, JSON_UNESCAPED_UNICODE) ?>;
-	var center = [<?= $lat ?>, <?= $lon ?>];
+	var fallbackCenter = [<?= $lat ?>, <?= $lon ?>];
+	var address = <?= json_encode($address, JSON_UNESCAPED_UNICODE) ?>;
 	var balloon = <?= json_encode($balloon, JSON_UNESCAPED_UNICODE) ?>;
 
 	function initMap() {
@@ -49,17 +52,28 @@ if (!function_exists('mf_contact_map_render'))
 				return;
 			}
 			el.dataset.mfMapReady = '1';
-			var map = new ymaps.Map(el, {
-				center: center,
-				zoom: 16,
-				controls: ['zoomControl', 'fullscreenControl']
+
+			function renderAt(coords) {
+				var map = new ymaps.Map(el, {
+					center: coords,
+					zoom: 17,
+					controls: ['zoomControl', 'fullscreenControl']
+				});
+				map.behaviors.disable('scrollZoom');
+				map.geoObjects.add(new ymaps.Placemark(coords, {
+					balloonContent: balloon
+				}, {
+					preset: 'islands#redDotIcon'
+				}));
+			}
+
+			ymaps.geocode(address, { results: 1 }).then(function (res) {
+				var first = res.geoObjects.get(0);
+				var coords = first ? first.geometry.getCoordinates() : fallbackCenter;
+				renderAt(coords);
+			}, function () {
+				renderAt(fallbackCenter);
 			});
-			map.behaviors.disable('scrollZoom');
-			map.geoObjects.add(new ymaps.Placemark(center, {
-				balloonContent: balloon
-			}, {
-				preset: 'islands#redDotIcon'
-			}));
 		});
 	}
 
