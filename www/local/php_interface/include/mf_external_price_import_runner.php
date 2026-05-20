@@ -167,6 +167,8 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		$brandSkipped = 0;
 		$totalDataRows = 0;
 		$matchedIds = [];
+		/** Только catalog/SKU id для sync/BASE (без дубля родителя — иначе ~2× работы и OOM). */
+		$matchedCatalogIds = [];
 		$examplesNotFound = [];
 
 		for ($li = 1, $n = count($lines); $li < $n; $li++)
@@ -312,7 +314,7 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				mf_ep_ensure_unit_if_zero_stock($catalogPid, $storeId);
 			}
 			$matchedIds[(int)$pid] = true;
-			$matchedIds[$catalogPid] = true;
+			$matchedCatalogIds[$catalogPid] = true;
 			$ok++;
 		}
 
@@ -357,10 +359,11 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				)
 				{
 					$fZ = $fAfterCsv + $portionZero * ($tzi / $nZeroTodo);
+					$nZeroAll = count($toZeroIds);
 					mf_external_price_import_job_progress_apply(
 						$jobIdProg,
 						(int)round($fZ * 100.0),
-						'Обнуление отсутствующих на складе'
+						'Обнуление отсутствующих на складе — ' . $tzi . ' из ' . $nZeroAll . ' товаров'
 					);
 				}
 				if ($tzi % 200 === 0 && function_exists('mf_epu_bootstrap_long_import'))
@@ -379,10 +382,26 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			mf_epu_bootstrap_long_import();
 		}
 
-		$syncIds = array_values(array_map('intval', array_keys($matchedIds)));
+		$syncIds = array_values(array_map('intval', array_keys($matchedCatalogIds)));
 		$syncTotal = count($syncIds);
 		$syncSpan = max(0.0, $fFinalStart - $fAfterZeroPhase);
 		$syncNoteBase = $recalcBase ? 'Остатки и пересчёт BASE в каталоге' : 'Синхронизация суммарного остатка в каталоге';
+		$syncNoteCnt = static function (int $done, int $total) use ($syncNoteBase): string {
+			if ($total <= 0)
+			{
+				return $syncNoteBase;
+			}
+
+			return $syncNoteBase . ' — ' . $done . ' из ' . $total . ' товаров';
+		};
+		if ($syncTotal > 0 && $jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply'))
+		{
+			mf_external_price_import_job_progress_apply(
+				$jobIdProg,
+				(int)round($fAfterZeroPhase * 100.0),
+				$syncNoteCnt(0, $syncTotal)
+			);
+		}
 		if ($syncTotal <= 0 && $jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply'))
 		{
 			mf_external_price_import_job_progress_apply($jobIdProg, (int)round($fFinalStart * 100.0), $syncNoteBase);
@@ -392,6 +411,17 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			if ($si > 0 && ($si % 200) === 0 && function_exists('mf_epu_bootstrap_long_import'))
 			{
 				mf_epu_bootstrap_long_import();
+			}
+			if ($si > 0 && ($si % 500) === 0)
+			{
+				if (function_exists('mf_supplier_store_to_price_group_reset'))
+				{
+					mf_supplier_store_to_price_group_reset();
+				}
+				if (function_exists('mf_ep_invalidate_catalog_price_group_cache'))
+				{
+					mf_ep_invalidate_catalog_price_group_cache();
+				}
 			}
 			$cpid = $syncIds[$si];
 			if ($cpid <= 0)
@@ -405,14 +435,14 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			}
 			if (
 				$jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply')
-				&& ($si % 25 === 0 || ($si + 1) === $syncTotal)
+				&& ($si % 10 === 0 || ($si + 1) === $syncTotal)
 			)
 			{
 				$fS = $fAfterZeroPhase + $syncSpan * (($si + 1) / max(1, $syncTotal));
 				mf_external_price_import_job_progress_apply(
 					$jobIdProg,
 					(int)round($fS * 100.0),
-					$syncNoteBase
+					$syncNoteCnt($si + 1, $syncTotal)
 				);
 			}
 		}
@@ -562,6 +592,11 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 					$failFields
 				));
 			}
+		}
+
+		if ($jobIdProg > 0 && function_exists('mf_external_price_import_job_diag_write'))
+		{
+			mf_external_price_import_job_diag_write('job#' . $jobIdProg . ' RUNNER_FAIL: ' . mb_substr($err, 0, 500));
 		}
 
 		return ['ok' => false, 'error' => $err];

@@ -144,7 +144,16 @@ if ((string)($_GET['mf_ep_job_poll'] ?? '') === '1')
 			? max(0, min(100, (int)$rowP['UF_PROGRESS_PCT']))
 			: null,
 		'progress_note' => trim((string)($rowP['UF_PROGRESS_NOTE'] ?? '')),
+		'progress_at' => trim((string)($rowP['UF_PROGRESS_AT'] ?? '')),
 	];
+	if ($stP === 'running' && !empty($rowP['UF_PROGRESS_AT']))
+	{
+		$ts = strtotime((string)$rowP['UF_PROGRESS_AT']);
+		if ($ts > 0 && (time() - $ts) > 600)
+		{
+			$outP['stale_hint'] = 'Прогресс не обновлялся более 10 минут — вероятно, процесс PHP был остановлен (таймаут FPM, OOM). См. mf_external_price_import.log и UF_ERROR_TEXT после пометки failed.';
+		}
+	}
 	if ($stP === 'done' && !empty($rowP['UF_RESULT_JSON']))
 	{
 		$decoded = json_decode((string)$rowP['UF_RESULT_JSON'], true);
@@ -299,6 +308,7 @@ function mf_epu_bootstrap_long_import(): void
 		@set_time_limit(0);
 	}
 	@ini_set('max_execution_time', '0');
+	@ini_set('memory_limit', '2048M');
 	if (function_exists('ignore_user_abort'))
 	{
 		@ignore_user_abort(true);
@@ -756,8 +766,14 @@ if ($mfEpShowJobPanel && $mfEpJobIdForJs > 0 && $mfEpJobTokenForJs !== '')
 						? d.progress_note.trim()
 						: '';
 					var baseMsg = note !== '' ? note : 'Обработка прайса…';
+					var syncPhase = /из\s+\d+\s+товаров/i.test(note);
+					if (d.stale_hint) {
+						baseMsg += '. ' + d.stale_hint;
+					} else if (d.progress_at) {
+						baseMsg += ' (обновлено ' + d.progress_at + ')';
+					}
 					if (st === 'pending' || st === 'running') {
-						setText(baseMsg + (tot ? (' — строк ' + done + ' / ' + tot) : ''));
+						setText(baseMsg + ((!syncPhase && tot) ? (' — строк ' + done + ' / ' + tot) : ''));
 						if (st === 'pending') startRun();
 						setTimeout(poll, 1200);
 						return;

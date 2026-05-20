@@ -327,7 +327,14 @@ function mf_ce_all_photo_urls(array $el, int $elementId): array
 		}
 		if (function_exists('mf_analogs_meta_images_for_product'))
 		{
-			$meta = mf_analogs_meta_images_for_product($elementId);
+			try
+			{
+				$meta = mf_analogs_meta_images_for_product($elementId);
+			}
+			catch (\Throwable $e)
+			{
+				$meta = [];
+			}
 			if (is_array($meta) && $meta !== [])
 			{
 				foreach ($meta as $u)
@@ -1221,14 +1228,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_export_
 	}
 	catch (Throwable $e)
 	{
+		while (ob_get_level() > 0)
+		{
+			ob_end_clean();
+		}
 		if (!headers_sent())
 		{
 			header('HTTP/1.1 500 Internal Server Error');
+			header('Content-Type: text/plain; charset=utf-8');
 		}
-		echo htmlspecialchars($e->getMessage(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-		require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
-
-		exit;
+		echo 'Ошибка выгрузки: ' . $e->getMessage();
+		exit(1);
 	}
 }
 

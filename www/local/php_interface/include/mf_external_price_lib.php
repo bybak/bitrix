@@ -2196,6 +2196,15 @@ if (!function_exists('mf_external_price_import_job_migrate_schema'))
 					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_RECALC_BASE CHAR(1) NOT NULL DEFAULT \'Y\' AFTER UF_PROGRESS_NOTE'
 				);
 			}
+			$r6 = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_job LIKE 'UF_PROGRESS_AT'"
+			)->fetch();
+			if (!$r6)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_PROGRESS_AT DATETIME NULL AFTER UF_PROGRESS_NOTE'
+				);
+			}
 		}
 		catch (\Throwable $e)
 		{
@@ -2302,6 +2311,33 @@ if (!function_exists('mf_external_price_import_job_get'))
 	}
 }
 
+if (!function_exists('mf_external_price_import_job_diag_write'))
+{
+	/** Построчный лог в DOCUMENT_ROOT/mf_external_price_import.log (падения воркера, фаталы). */
+	function mf_external_price_import_job_diag_write(string $line): void
+	{
+		$line = trim($line);
+		if ($line === '')
+		{
+			return;
+		}
+		$doc = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/\\');
+		if ($doc === '')
+		{
+			return;
+		}
+		$path = $doc . '/mf_external_price_import.log';
+		$msg = date('Y-m-d H:i:s') . ' ' . $line . "\n";
+		if (class_exists(\Bitrix\Main\Diag\Debug::class))
+		{
+			\Bitrix\Main\Diag\Debug::writeToFile($msg, '', 'mf_external_price_import.log');
+
+			return;
+		}
+		@file_put_contents($path, $msg, FILE_APPEND | LOCK_EX);
+	}
+}
+
 if (!function_exists('mf_external_price_import_job_progress_apply'))
 {
 	/**
@@ -2328,14 +2364,11 @@ if (!function_exists('mf_external_price_import_job_progress_apply'))
 			$cur = is_array($r) ? (int)($r['UF_PROGRESS_PCT'] ?? -1) : -1;
 			$newPct = $cur >= 0 ? max($cur, $pct) : $pct;
 
+			$sets = '`UF_PROGRESS_PCT`=' . $newPct . ', `UF_PROGRESS_AT`=NOW()';
 			if ($note !== null)
 			{
 				$n = mb_substr(trim((string)$note), 0, 500);
-				$sets = '`UF_PROGRESS_PCT`=' . $newPct . ', `UF_PROGRESS_NOTE`=' . mf_external_price_import_log_quote($conn, $n);
-			}
-			else
-			{
-				$sets = '`UF_PROGRESS_PCT`=' . $newPct;
+				$sets .= ', `UF_PROGRESS_NOTE`=' . mf_external_price_import_log_quote($conn, $n);
 			}
 
 			$conn->queryExecute(

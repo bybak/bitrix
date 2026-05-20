@@ -16,6 +16,35 @@ use Bitrix\Main\Loader;
  * (PRODUCT_ID -> ANALOG_ID): stock/price/images from supplier feeds, etc.
  */
 
+if (!function_exists('mf_analogs_ensure_hl_physical_table'))
+{
+	/**
+	 * HL-запись в b_hlblock есть, а физической таблицы в MySQL нет → 1146 при выгрузке каталога.
+	 */
+	function mf_analogs_ensure_hl_physical_table(array $hl, string $tableName): void
+	{
+		$tableName = trim($tableName);
+		if ($tableName === '' || !class_exists(Application::class))
+		{
+			return;
+		}
+		$conn = Application::getConnection();
+		if ($conn->isTableExists($tableName))
+		{
+			return;
+		}
+		if (!class_exists(\Bitrix\Highloadblock\HighloadBlockTable::class))
+		{
+			return;
+		}
+		$entity = \Bitrix\Highloadblock\HighloadBlockTable::compileEntity($hl);
+		if (method_exists($entity, 'createDbTable'))
+		{
+			$entity->createDbTable();
+		}
+	}
+}
+
 if (!function_exists('mf_analogs_ensure_hl'))
 {
 	/**
@@ -55,6 +84,8 @@ if (!function_exists('mf_analogs_ensure_hl'))
 		{
 			throw new \RuntimeException('HL block ID is empty.');
 		}
+
+		mf_analogs_ensure_hl_physical_table($hl, $tableName);
 
 		$entityId = 'HLBLOCK_' . $hlId;
 
@@ -132,6 +163,8 @@ if (!function_exists('mf_analogs_ensure_hl_meta'))
 		{
 			throw new \RuntimeException('HL block ID is empty.');
 		}
+
+		mf_analogs_ensure_hl_physical_table($hl, $tableName);
 
 		$entityId = 'HLBLOCK_' . $hlId;
 
@@ -769,17 +802,36 @@ if (!function_exists('mf_analogs_meta_images_for_product'))
 			return [];
 		}
 
-		$meta = mf_analogs_ensure_hl_meta();
+		try
+		{
+			$meta = mf_analogs_ensure_hl_meta();
+		}
+		catch (\Throwable $e)
+		{
+			return [];
+		}
+
 		$table = (string)$meta['TABLE'];
 		$conn = Application::getConnection();
+		if (!$conn->isTableExists($table))
+		{
+			return [];
+		}
 
-		$r = $conn->query("
-			SELECT `UF_IMAGES`
-			FROM `" . $table . "`
-			WHERE `UF_ANALOG_ID` = " . $productId . " AND `UF_IMAGES` IS NOT NULL AND `UF_IMAGES` <> ''
-			ORDER BY `UF_UPDATED_AT` DESC, `ID` DESC
-			LIMIT 1
-		")->fetch();
+		try
+		{
+			$r = $conn->query("
+				SELECT `UF_IMAGES`
+				FROM `" . $table . "`
+				WHERE `UF_ANALOG_ID` = " . $productId . " AND `UF_IMAGES` IS NOT NULL AND `UF_IMAGES` <> ''
+				ORDER BY `UF_UPDATED_AT` DESC, `ID` DESC
+				LIMIT 1
+			")->fetch();
+		}
+		catch (\Throwable $e)
+		{
+			return [];
+		}
 
 		$imagesCsv = is_array($r) ? (string)($r['UF_IMAGES'] ?? '') : '';
 		if ($imagesCsv === '')
