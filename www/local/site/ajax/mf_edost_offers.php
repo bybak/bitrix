@@ -71,14 +71,16 @@ try
 	}
 
 	$weightKg = $weightGrams > 0 ? ($weightGrams / 1000.0) : 0.001;
-	$insurance = 0.0; // display only; doesn't affect order total
+	$insurance = \MF\Delivery\Edost::insuranceRubForBasketSum($sum);
+	$dimensionsM = \MF\Delivery\Edost::parcelDimensionsMFromBasketItems($basket);
 
 	$resp = \MF\Delivery\Edost::calculateForDestination(
 		$dest['settlement'],
 		$dest['region'],
 		$weightKg,
 		$insurance,
-		$dest['zip']
+		$dest['zip'],
+		$dimensionsM
 	);
 	if (!is_array($resp) || !($resp['ok'] ?? false) || !isset($resp['offers']) || !is_array($resp['offers']))
 	{
@@ -121,6 +123,8 @@ try
 		'destination_mode' => (string)($resp['destination_mode'] ?? ''),
 		'zip' => $dest['zip'],
 		'weight_kg' => round($weightKg, 3),
+		'insurance_rub' => round($insurance, 2),
+		'dimensions_m' => $dimensionsM,
 		'basket_sum' => round($sum, 2),
 		'offers' => $offers,
 	]);

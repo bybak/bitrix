@@ -67,8 +67,11 @@ if ($mfPersonTypeId > 0 && function_exists('mf_checkout_person_type_map'))
 
 						if (empty($arPaySystem["ERROR"]))
 						{
+							$mfIsCard2Card = class_exists(\Mf\Card2Card\TemplateRenderer::class)
+								&& \Mf\Card2Card\TemplateRenderer::isCard2CardPaySystemId((int)($payment['PAY_SYSTEM_ID'] ?? 0));
 							?>
 
+							<? if (!$mfIsCard2Card): ?>
 							<div class="row mb-2">
 								<div class="col">
 									<h3 class="pay_name"><?=Loc::getMessage("SOA_PAY") ?></h3>
@@ -78,8 +81,9 @@ if ($mfPersonTypeId > 0 && function_exists('mf_checkout_person_type_map'))
 								<div class="col-auto"><strong><?=$arPaySystem["NAME"] ?></strong></div>
 								<div class="col"><?=CFile::ShowImage($arPaySystem["LOGOTIP"], 100, 100, "border=0\" style=\"width:100px\"", "", false) ?></div>
 							</div>
+							<? endif; ?>
 							<div class="row mb-2">
-								<div class="col">
+								<div class="col<?=$mfIsCard2Card ? ' mf-order-confirm-card2card' : ''?>">
 									<? if ($arPaySystem["ACTION_FILE"] <> '' && $arPaySystem["NEW_WINDOW"] == "Y" && $arPaySystem["IS_CASH"] != "Y"): ?>
 									<?
 										$orderAccountNumber = urlencode(urlencode($arResult["ORDER"]["ACCOUNT_NUMBER"]));

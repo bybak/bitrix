@@ -165,7 +165,7 @@ if (!function_exists('mf_checkout_props_version'))
 {
 	function mf_checkout_props_version(): string
 	{
-		return '2026-04-06-03';
+		return '2026-05-19-02';
 	}
 }
 
@@ -990,7 +990,8 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 				'PERSON_TYPE_ID' => $jurPersonTypeId,
 				'NAME' => 'КПП',
 				'TYPE' => 'STRING',
-				'REQUIRED' => 'Y',
+				'REQUIRED' => 'N',
+				'DESCRIPTION' => '',
 				'SORT' => 230,
 				'USER_PROPS' => 'Y',
 				'PROPS_GROUP_ID' => 3,
@@ -1004,7 +1005,8 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 				'PERSON_TYPE_ID' => $jurPersonTypeId,
 				'NAME' => 'ОГРН / ОГРНИП',
 				'TYPE' => 'STRING',
-				'REQUIRED' => 'Y',
+				'REQUIRED' => 'N',
+				'DESCRIPTION' => '',
 				'SORT' => 235,
 				'USER_PROPS' => 'Y',
 				'PROPS_GROUP_ID' => 3,
@@ -1062,7 +1064,8 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 				'PERSON_TYPE_ID' => $jurPersonTypeId,
 				'NAME' => 'Банковские реквизиты',
 				'TYPE' => 'STRING',
-				'REQUIRED' => 'Y',
+				'REQUIRED' => 'N',
+				'DESCRIPTION' => '',
 				'SORT' => 265,
 				'USER_PROPS' => 'Y',
 				'PROPS_GROUP_ID' => 3,
@@ -1084,7 +1087,7 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 				],
 				false,
 				false,
-				['ID', 'CODE', 'REQUIRED', 'PROPS_GROUP_ID', 'SORT', 'TYPE', 'NAME', 'SETTINGS']
+				['ID', 'CODE', 'REQUIRED', 'PROPS_GROUP_ID', 'SORT', 'TYPE', 'NAME', 'SETTINGS', 'DESCRIPTION']
 			)->Fetch();
 
 			if (is_array($current) && (int)($current['ID'] ?? 0) > 0)
@@ -1097,6 +1100,15 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 					if ($currentValue !== $targetValue)
 					{
 						$updateFields[$fieldName] = $fields[$fieldName];
+					}
+				}
+				if (array_key_exists('DESCRIPTION', $fields))
+				{
+					$currentDescription = $current['DESCRIPTION'] ?? null;
+					$targetDescription = (string)($fields['DESCRIPTION'] ?? '');
+					if ($currentDescription === null || (string)$currentDescription !== $targetDescription)
+					{
+						$updateFields['DESCRIPTION'] = $targetDescription;
 					}
 				}
 				foreach (['IS_EMAIL', 'IS_PHONE', 'IS_PAYER'] as $fieldName)

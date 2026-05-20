@@ -3056,17 +3056,6 @@ if (is_file($mfC2CInclude))
     }
 }
 
-// --- Новый заказ: полное описание на e-mail -----------------------------------
-$mfOrderNotifyInclude = __DIR__ . '/include/mf_order_notify.php';
-if (is_file($mfOrderNotifyInclude))
-{
-    require_once $mfOrderNotifyInclude;
-    if (class_exists('\\Mf\\OrderNotify\\Bootstrap'))
-    {
-        \Mf\OrderNotify\Bootstrap::init();
-    }
-}
-
 // --- Письма покупателю: оформление заказа и смена статуса --------------------
 $mfOrderAccountDisplay = __DIR__ . '/include/mf_order_account_display.php';
 if (is_file($mfOrderAccountDisplay))
@@ -3081,6 +3070,17 @@ if (is_file($mfOrderMailInclude))
 	{
 		\Mf\OrderMail\Bootstrap::init();
 	}
+}
+
+// --- Новый заказ: полное описание на e-mail -----------------------------------
+$mfOrderNotifyInclude = __DIR__ . '/include/mf_order_notify.php';
+if (is_file($mfOrderNotifyInclude))
+{
+    require_once $mfOrderNotifyInclude;
+    if (class_exists('\\Mf\\OrderNotify\\Bootstrap'))
+    {
+        \Mf\OrderNotify\Bootstrap::init();
+    }
 }
 
 $mfContactMapInclude = __DIR__ . '/include/mf_contact_map.php';

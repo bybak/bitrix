@@ -80,11 +80,191 @@ final class Edost
 		return max(0.0, (float)Option::get('mf.edost', 'strah', '0'));
 	}
 
+	/** Коды тарифов Почты России в eDost (см. edost.ru/kln/help.html#DeliveryCode). */
+	public const RUSSIAN_POST_TARIFF_IDS = ['1', '2', '3', '68', '69', '70', '71', '72', '73', '74', '61', '62'];
+
 	/**
+	 * Человекочитаемые названия тарифов Почты России (если API вернул пустое name).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function russianPostTariffLabels(): array
+	{
+		return [
+			'1' => 'отправление 1-го класса',
+			'2' => 'наземная посылка (обычная)',
+			'3' => 'EMS',
+			'68' => 'бандероль',
+			'69' => 'мелкий пакет (наземная)',
+			'70' => 'мелкий пакет (авиа)',
+			'71' => 'мелкий пакет заказной (наземная)',
+			'72' => 'мелкий пакет заказной (авиа)',
+			'73' => 'посылка (наземная)',
+			'74' => 'посылка (авиа)',
+			'61' => 'посылка онлайн',
+			'62' => 'курьер онлайн',
+		];
+	}
+
+	/**
+	 * Страховка для расчёта: по умолчанию сумма корзины (для тарифов «со страховкой» в eDost).
+	 */
+	public static function insuranceRubForBasketSum(float $basketSumRub): float
+	{
+		$mode = strtolower(trim((string)(getenv('MF_EDOST_STRAH_MODE') ?: 'basket')));
+		if (in_array($mode, ['0', 'off', 'none', 'false', 'no'], true))
+		{
+			return self::defaultInsuranceRub();
+		}
+		if ($mode === 'fixed')
+		{
+			return self::defaultInsuranceRub();
+		}
+
+		return max(0.0, $basketSumRub);
+	}
+
+	/**
+	 * Габариты посылки в метрах для ln/wd/hg (eDost API).
+	 *
+	 * @return array{ln: float, wd: float, hg: float}|null
+	 */
+	public static function defaultParcelDimensionsM(): ?array
+	{
+		$lCm = (float)(getenv('MF_EDOST_PARCEL_L_CM') ?: 30);
+		$wCm = (float)(getenv('MF_EDOST_PARCEL_W_CM') ?: 20);
+		$hCm = (float)(getenv('MF_EDOST_PARCEL_H_CM') ?: 10);
+		if ($lCm <= 0 || $wCm <= 0 || $hCm <= 0)
+		{
+			return null;
+		}
+
+		return [
+			'ln' => round($lCm / 100, 3),
+			'wd' => round($wCm / 100, 3),
+			'hg' => round($hCm / 100, 3),
+		];
+	}
+
+	/**
+	 * @param iterable<mixed> $basketItems
+	 *
+	 * @return array{ln: float, wd: float, hg: float}|null
+	 */
+	public static function parcelDimensionsMFromBasketItems(iterable $basketItems): ?array
+	{
+		$maxL = 0.0;
+		$maxW = 0.0;
+		$sumH = 0.0;
+		$has = false;
+
+		foreach ($basketItems as $item)
+		{
+			if (!is_object($item) || !method_exists($item, 'getField'))
+			{
+				continue;
+			}
+			$raw = $item->getField('DIMENSIONS');
+			$dim = is_string($raw) ? @unserialize($raw, ['allowed_classes' => false]) : $raw;
+			if (!is_array($dim))
+			{
+				continue;
+			}
+			$l = (float)($dim['LENGTH'] ?? $dim['length'] ?? 0);
+			$w = (float)($dim['WIDTH'] ?? $dim['width'] ?? 0);
+			$h = (float)($dim['HEIGHT'] ?? $dim['height'] ?? 0);
+			if ($l <= 0 && $w <= 0 && $h <= 0)
+			{
+				continue;
+			}
+			$has = true;
+			$qty = method_exists($item, 'getQuantity') ? max(1.0, (float)$item->getQuantity()) : 1.0;
+			$maxL = max($maxL, $l);
+			$maxW = max($maxW, $w);
+			$sumH += max(0.0, $h) * $qty;
+		}
+
+		if (!$has)
+		{
+			return self::defaultParcelDimensionsM();
+		}
+
+		// Bitrix DIMENSIONS — миллиметры.
+		return [
+			'ln' => round(max(1.0, $maxL) / 1000, 3),
+			'wd' => round(max(1.0, $maxW) / 1000, 3),
+			'hg' => round(max(1.0, $sumH) / 1000, 3),
+		];
+	}
+
+	/**
+	 * @param array<int, array<string, mixed>> $offers
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function normalizeOfferLabels(array $offers): array
+	{
+		$labels = self::russianPostTariffLabels();
+		foreach ($offers as $i => $offer)
+		{
+			if (!is_array($offer))
+			{
+				continue;
+			}
+			$id = trim((string)($offer['id'] ?? ''));
+			$name = trim((string)($offer['name'] ?? ''));
+			if ($name === '' && isset($labels[$id]))
+			{
+				$offers[$i]['name'] = $labels[$id];
+			}
+		}
+
+		return $offers;
+	}
+
+	/**
+	 * @param array<int, array<string, mixed>> ...$lists
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function mergeOffers(array ...$lists): array
+	{
+		$byId = [];
+		foreach ($lists as $list)
+		{
+			foreach ($list as $offer)
+			{
+				if (!is_array($offer))
+				{
+					continue;
+				}
+				$id = trim((string)($offer['id'] ?? ''));
+				if ($id === '')
+				{
+					continue;
+				}
+				if (!isset($byId[$id]))
+				{
+					$byId[$id] = $offer;
+				}
+			}
+		}
+
+		return array_values($byId);
+	}
+
+	/**
+	 * @param array{ln?:float,wd?:float,hg?:float}|null $dimensionsM
+	 *
 	 * @return array{ok:bool, stat?:int, warning?:int, error?:string, offers?:array<int, array{id:string,price:float,days_from:int,days_to:int,company:string,name:string,strah:int}>}
 	 */
-	public static function calculate(string $toCityRuUtf8, float $weightKg, float $insuranceRub, string $zipDigits = ''): array
-	{
+	public static function calculate(
+		string $toCityRuUtf8,
+		float $weightKg,
+		float $insuranceRub,
+		string $zipDigits = '',
+		?array $dimensionsM = null
+	): array {
 		$toCityRuUtf8 = trim($toCityRuUtf8);
 		$zipDigits = preg_replace('~\\D+~', '', $zipDigits);
 		$weightKg = max(0.001, $weightKg);
@@ -116,6 +296,17 @@ final class Edost
 		if ($zipDigits !== '')
 		{
 			$post['zip'] = $zipDigits;
+		}
+		if (is_array($dimensionsM))
+		{
+			foreach (['ln' => 'ln', 'wd' => 'wd', 'hg' => 'hg'] as $key => $param)
+			{
+				$val = (float)($dimensionsM[$key] ?? 0);
+				if ($val > 0)
+				{
+					$post[$param] = (string)round($val, 3);
+				}
+			}
 		}
 
 		$payload = http_build_query($post, '', '&');
@@ -171,6 +362,7 @@ final class Edost
 				'strah' => $strah,
 			];
 		}
+		$offers = self::normalizeOfferLabels($offers);
 
 		return [
 			'ok' => true,
@@ -394,7 +586,7 @@ final class Edost
 	}
 
 	/**
-	 * Расчёт eDost: сначала по названию НП, при неудаче — по региону и индексу (малые НП РФ).
+	 * @param array{ln?:float,wd?:float,hg?:float}|null $dimensionsM
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -403,65 +595,69 @@ final class Edost
 		string $region,
 		float $weightKg,
 		float $insuranceRub,
-		string $zipDigits
+		string $zipDigits,
+		?array $dimensionsM = null
 	): array {
 		$settlement = self::normalizeSettlementName($settlement);
 		$region = self::normalizeRegionNameForEdost($region);
 		$zipDigits = preg_replace('~\D+~', '', $zipDigits);
 
 		$lastResp = ['ok' => false, 'error' => 'eDost: destination not resolved'];
+		$mergedOffers = [];
+		$modes = [];
+		$toCityUsed = '';
 
+		$attempts = [];
 		if ($settlement !== '')
 		{
-			$lastResp = self::calculate($settlement, $weightKg, $insuranceRub, $zipDigits);
-			if (self::responseHasOffers($lastResp))
-			{
-				$lastResp['destination_mode'] = 'settlement';
-				$lastResp['to_city_used'] = $settlement;
-				$lastResp['settlement_requested'] = $settlement;
-
-				return $lastResp;
-			}
-
+			$attempts[] = ['mode' => 'settlement_zip', 'city' => $settlement, 'zip' => $zipDigits];
 			if ($zipDigits !== '')
 			{
-				$lastResp = self::calculate($settlement, $weightKg, $insuranceRub, '');
-				if (self::responseHasOffers($lastResp))
-				{
-					$lastResp['destination_mode'] = 'settlement';
-					$lastResp['to_city_used'] = $settlement;
-					$lastResp['settlement_requested'] = $settlement;
-
-					return $lastResp;
-				}
+				$attempts[] = ['mode' => 'settlement', 'city' => $settlement, 'zip' => ''];
 			}
 		}
-
-		// eDost: для ~200k малых НП — расчёт по региону (to_city) и индексу.
 		if ($region !== '' && $zipDigits !== '')
 		{
-			$lastResp = self::calculate($region, $weightKg, $insuranceRub, $zipDigits);
-			if (self::responseHasOffers($lastResp))
-			{
-				$lastResp['destination_mode'] = 'region_zip';
-				$lastResp['to_city_used'] = $region;
-				$lastResp['settlement_requested'] = $settlement;
-
-				return $lastResp;
-			}
+			$attempts[] = ['mode' => 'region_zip', 'city' => $region, 'zip' => $zipDigits];
 		}
-
 		if ($region !== '')
 		{
-			$lastResp = self::calculate($region, $weightKg, $insuranceRub, $zipDigits);
-			if (self::responseHasOffers($lastResp))
-			{
-				$lastResp['destination_mode'] = 'region';
-				$lastResp['to_city_used'] = $region;
-				$lastResp['settlement_requested'] = $settlement;
+			$attempts[] = ['mode' => 'region', 'city' => $region, 'zip' => $zipDigits];
+		}
 
-				return $lastResp;
+		foreach ($attempts as $attempt)
+		{
+			$resp = self::calculate(
+				(string)$attempt['city'],
+				$weightKg,
+				$insuranceRub,
+				(string)$attempt['zip'],
+				$dimensionsM
+			);
+			$lastResp = $resp;
+			if (!self::responseHasOffers($resp))
+			{
+				continue;
 			}
+			$modes[] = (string)$attempt['mode'];
+			if ($toCityUsed === '')
+			{
+				$toCityUsed = (string)$attempt['city'];
+			}
+			$mergedOffers = self::mergeOffers($mergedOffers, (array)$resp['offers']);
+		}
+
+		if ($mergedOffers !== [])
+		{
+			return [
+				'ok' => true,
+				'stat' => (int)($lastResp['stat'] ?? 1),
+				'warning' => (int)($lastResp['warning'] ?? 0),
+				'offers' => self::normalizeOfferLabels($mergedOffers),
+				'destination_mode' => implode('+', $modes),
+				'to_city_used' => $toCityUsed,
+				'settlement_requested' => $settlement,
+			];
 		}
 
 		return $lastResp;

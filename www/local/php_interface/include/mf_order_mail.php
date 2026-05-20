@@ -6,6 +6,7 @@ namespace Mf\OrderMail;
 use Bitrix\Main\Loader;
 use Bitrix\Sale\BasketItemBase;
 use Bitrix\Sale\Order;
+use Bitrix\Sale\Payment;
 use Bitrix\Sale\Shipment;
 
 final class Bootstrap
@@ -126,29 +127,78 @@ final class Renderer
 
 	public static function renderNewOrder(Order $order): string
 	{
+		return self::renderOrderMail($order, false);
+	}
+
+	public static function renderAdminNewOrder(Order $order): string
+	{
+		return self::renderOrderMail($order, true);
+	}
+
+	private static function renderOrderMail(Order $order, bool $forAdmin): string
+	{
 		$display = self::orderDisplayNumber($order);
 		$siteUrl = self::siteUrl($order);
 		$siteLink = '<a href="' . self::esc($siteUrl) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">'
 			. self::esc(self::SITE_HOST) . '</a>';
+		$dateInsert = '';
+		$dateObj = $order->getDateInsert();
+		if ($dateObj instanceof \Bitrix\Main\Type\DateTime)
+		{
+			$dateInsert = $dateObj->format('d.m.Y H:i:s');
+		}
 
 		$html = [];
 		$html[] = self::wrapOpen();
-		$html[] = self::block(
-			'<div style="text-align:center;margin:0 0 18px 0;">'
-			. '<div style="font-size:28px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
-			. 'Заказ: №' . self::esc($display)
-			. '</div>'
-			. '<div style="font-size:14px;color:#333;">Вы сделали заказ на сайте ' . $siteLink . '</div>'
-			. '</div>'
-		);
+		$adminUrl = rtrim($siteUrl, '/') . '/bitrix/admin/sale_order_view.php?ID=' . (int)$order->getId() . '&lang=ru';
+
+		if ($forAdmin)
+		{
+			$subtitle = 'Поступил новый заказ на сайте ' . $siteLink;
+			if ($dateInsert !== '')
+			{
+				$subtitle .= '<br>Дата: ' . self::esc($dateInsert);
+			}
+			$subtitle .= '<br><a href="' . self::esc($adminUrl) . '" style="color:' . self::COLOR_LINK . ';">Открыть заказ в админке</a>';
+
+			$html[] = self::block(
+				'<div style="text-align:center;margin:0 0 18px 0;">'
+				. '<div style="font-size:28px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
+				. 'Новый заказ: №' . self::esc($display)
+				. '</div>'
+				. '<div style="font-size:14px;color:#333;line-height:1.5;">' . $subtitle . '</div>'
+				. '</div>'
+			);
+		}
+		else
+		{
+			$html[] = self::block(
+				'<div style="text-align:center;margin:0 0 18px 0;">'
+				. '<div style="font-size:28px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
+				. 'Заказ: №' . self::esc($display)
+				. '</div>'
+				. '<div style="font-size:14px;color:#333;">Вы сделали заказ на сайте ' . $siteLink . '</div>'
+				. '</div>'
+			);
+		}
 
 		$html[] = self::sectionTitle('Информация о заказе');
 		$html[] = self::basketTable($order);
 
-		$html[] = self::sectionTitle('Ваши данные');
+		$html[] = self::sectionTitle($forAdmin ? 'Данные покупателя' : 'Ваши данные');
 		$html[] = self::customerTable($order);
 
-		$html[] = self::footerBlock();
+		if ($forAdmin)
+		{
+			$html[] = self::sectionTitle('Служебная информация');
+			$html[] = self::adminMetaTable($order);
+			$html[] = self::adminFooterBlock($adminUrl);
+		}
+		else
+		{
+			$html[] = self::footerBlock();
+		}
+
 		$html[] = self::wrapClose();
 
 		return implode("\n", $html);
@@ -365,6 +415,97 @@ final class Renderer
 		);
 	}
 
+	private static function adminMetaTable(Order $order): string
+	{
+		$uid = (int)$order->getUserId();
+		$profileEmail = '';
+		$profileLogin = '';
+		$profileName = '';
+		if ($uid > 0 && class_exists(\CUser::class))
+		{
+			$u = \CUser::GetByID($uid)->Fetch();
+			if (is_array($u))
+			{
+				$profileEmail = trim((string)($u['EMAIL'] ?? ''));
+				$profileLogin = trim((string)($u['LOGIN'] ?? ''));
+				$profileName = trim((string)($u['NAME'] ?? '') . ' ' . (string)($u['LAST_NAME'] ?? ''));
+			}
+		}
+
+		$rows = [
+			['ID заказа', (string)(int)$order->getId()],
+			['Статус', trim((string)$order->getField('STATUS_ID'))],
+			['Отменён', (string)$order->getField('CANCELED') === 'Y' ? 'да' : 'нет'],
+			['Оплачен', $order->isPaid() ? 'да' : 'нет'],
+			['User ID', $uid > 0 ? (string)$uid : '—'],
+			['E-mail (профиль)', $profileEmail],
+			['ФИО (профиль)', $profileName],
+			['Логин', $profileLogin],
+			['Способ оплаты', self::paySystemLabel($order)],
+		];
+
+		return self::keyValueTable($rows);
+	}
+
+	/** @param list<array{0: string, 1: string}> $rows */
+	private static function keyValueTable(array $rows): string
+	{
+		$body = '';
+		foreach ($rows as [$label, $value])
+		{
+			$value = trim((string)$value);
+			if ($value === '' || $value === '—')
+			{
+				continue;
+			}
+			$valueHtml = self::esc($value);
+			if ($label === 'E-mail (профиль)')
+			{
+				$valueHtml = '<a href="mailto:' . self::esc($value) . '" style="color:' . self::COLOR_LINK . ';">' . self::esc($value) . '</a>';
+			}
+			$body .= '<tr>'
+				. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';width:45%;color:#555;vertical-align:top;">'
+				. self::esc($label)
+				. '</td>'
+				. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">'
+				. $valueHtml
+				. '</td></tr>';
+		}
+
+		if ($body === '')
+		{
+			$body = '<tr><td colspan="2" style="padding:10px;color:#666;">Нет данных</td></tr>';
+		}
+
+		return self::block(
+			'<table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;">'
+			. $body
+			. '</table>'
+		);
+	}
+
+	private static function adminFooterBlock(string $adminOrderUrl): string
+	{
+		$parts = [
+			'<div style="text-align:center;font-weight:bold;font-size:16px;margin:0 0 10px 0;">'
+			. '<a href="' . self::esc($adminOrderUrl) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">Открыть заказ в админке</a>'
+			. '</div>',
+			'<div style="text-align:center;font-weight:bold;margin:0 0 6px 0;">Часы работы:</div>',
+			'<div style="text-align:center;line-height:1.5;margin:0 0 14px 0;">'
+			. 'Пн-Чт с 10:00 до 18:00;<br>'
+			. 'Пт с 10:00 до 17:00;<br>'
+			. 'Сб-Вс - Выходной.'
+			. '</div>',
+			'<div style="text-align:center;line-height:1.5;font-size:13px;color:#444;">'
+			. 'С 29 декабря по 8 января отправки производится не будут.<br>'
+			. 'Отправки возобновятся 9-го января.<br>'
+			. 'В этот период заказы обрабатываются только на почту.'
+			. '</div>',
+		];
+
+		return self::block(implode("\n", $parts));
+	}
+
 	private static function footerBlock(bool $withProcessingNote = true): string
 	{
 		$parts = [
@@ -507,6 +648,28 @@ final class Renderer
 		$lower = mb_strtolower($name);
 
 		return in_array($lower, ['стандартный', 'без доставки', 'no delivery'], true);
+	}
+
+	private static function paySystemLabel(Order $order): string
+	{
+		foreach ($order->getPaymentCollection() as $payment)
+		{
+			if (!$payment instanceof Payment)
+			{
+				continue;
+			}
+			$ps = $payment->getPaySystem();
+			if ($ps)
+			{
+				$name = trim((string)$ps->getField('NAME'));
+				if ($name !== '')
+				{
+					return $name;
+				}
+			}
+		}
+
+		return '';
 	}
 
 	private static function parseEdostFromComments(string $comments): string

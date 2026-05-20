@@ -79,8 +79,9 @@ try
 		$dest['settlement'],
 		$dest['region'],
 		1.0,
-		0.0,
-		$dest['zip']
+		\MF\Delivery\Edost::insuranceRubForBasketSum(1000.0),
+		$dest['zip'],
+		\MF\Delivery\Edost::defaultParcelDimensionsM()
 	);
 	if (!is_array($resp) || !($resp['ok'] ?? false) || !isset($resp['offers']) || !is_array($resp['offers']))
 	{

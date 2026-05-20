@@ -279,6 +279,200 @@ final class Installer
 	}
 }
 
+final class TemplateRenderer
+{
+	public static function isCard2CardPaySystemId(int $paySystemActionId): bool
+	{
+		return $paySystemActionId > 0 && in_array($paySystemActionId, Config::paySystemActionIds(), true);
+	}
+
+	public static function renderForOrder(Order $order, ?\Bitrix\Sale\Payment $payment = null): string
+	{
+		$siteId = trim((string)$order->getSiteId());
+		if ($siteId === '')
+		{
+			$siteId = defined('SITE_ID') ? (string)SITE_ID : 's1';
+		}
+
+		$html = self::render(self::buildFields($order, $payment), $siteId);
+
+		return self::adaptForOrderPage($html);
+	}
+
+	/**
+	 * Убирает из HTML фразы, уместные только в письме (страница завершения заказа / оплаты).
+	 */
+	private static function adaptForOrderPage(string $html): string
+	{
+		if ($html === '')
+		{
+			return '';
+		}
+
+		$html = preg_replace('~<p\b[^>]*>\s*Здравствуйте!\s*</p>~iu', '', $html) ?? $html;
+		$html = preg_replace('~<p\b[^>]*>\s*Если у вас возникли вопросы[^<]*</p>~iu', '', $html) ?? $html;
+		$html = preg_replace('~(?:\s*<hr\b[^>]*>\s*)+$~iu', '', $html) ?? $html;
+
+		return trim($html);
+	}
+
+	/**
+	 * @return array<string, string>
+	 */
+	public static function buildFields(Order $order, ?\Bitrix\Sale\Payment $payment = null): array
+	{
+		$orderId = (int)$order->getId();
+		$paymentSystemId = 0;
+		$paymentSystemName = '';
+		$paymentSum = (float)$order->getPrice();
+
+		if ($payment instanceof \Bitrix\Sale\Payment)
+		{
+			$paymentSystemId = (int)$payment->getPaymentSystemId();
+			$paymentSystemName = trim((string)$payment->getPaymentSystemName());
+			$paymentSum = (float)$payment->getSum();
+		}
+		else
+		{
+			$pc = $order->getPaymentCollection();
+			if ($pc)
+			{
+				foreach ($pc as $p)
+				{
+					if (!$p instanceof \Bitrix\Sale\Payment)
+					{
+						continue;
+					}
+					$psid = (int)$p->getPaymentSystemId();
+					if ($psid > 0)
+					{
+						$payment = $p;
+						$paymentSystemId = $psid;
+						$paymentSystemName = trim((string)$p->getPaymentSystemName());
+						$paymentSum = (float)$p->getSum();
+						break;
+					}
+				}
+			}
+		}
+
+		unset($paymentSystemId);
+
+		$orderNumber = trim((string)$order->getField('ACCOUNT_NUMBER'));
+		if ($orderNumber === '')
+		{
+			$orderNumber = (string)$orderId;
+		}
+		if (function_exists('mf_order_account_number_for_display'))
+		{
+			$display = mf_order_account_number_for_display((int)$order->getUserId(), (string)$order->getField('ACCOUNT_NUMBER'));
+			if ($display !== '')
+			{
+				$orderNumber = $display;
+			}
+		}
+
+		$emailFrom = Config::emailFrom();
+		if ($emailFrom === '')
+		{
+			$emailFrom = trim((string)Option::get('main', 'email_from', ''));
+		}
+
+		$emailTo = '';
+		$props = $order->getPropertyCollection();
+		if ($props && method_exists($props, 'getUserEmail'))
+		{
+			$ep = $props->getUserEmail();
+			if ($ep)
+			{
+				$emailTo = trim((string)$ep->getValue());
+			}
+		}
+
+		$orderDate = '';
+		$dateInsert = $order->getDateInsert();
+		if ($dateInsert instanceof \Bitrix\Main\Type\DateTime)
+		{
+			$orderDate = $dateInsert->format('d.m.Y H:i:s');
+		}
+		elseif ($dateInsert !== null)
+		{
+			$orderDate = (string)$dateInsert;
+		}
+
+		return [
+			'EMAIL_TO' => $emailTo,
+			'EMAIL_FROM' => $emailFrom,
+			'BCC' => Config::bcc(),
+			'ORDER_ID' => (string)$orderId,
+			'ORDER_NUMBER' => $orderNumber,
+			'ORDER_DATE' => $orderDate,
+			'PAY_SYSTEM_NAME' => ($paymentSystemName !== '' ? $paymentSystemName : 'С карты на карту'),
+			'PAYMENT_SUM' => number_format($paymentSum, 2, '.', ' ') . ' RUB',
+		];
+	}
+
+	/**
+	 * @param array<string, string> $fields
+	 */
+	public static function render(array $fields, string $siteId = ''): string
+	{
+		Installer::ensureMailEventTemplates();
+
+		if ($siteId === '')
+		{
+			$siteId = defined('SITE_ID') ? (string)SITE_ID : 's1';
+		}
+
+		$message = self::loadMessageTemplate($siteId);
+		if ($message === '')
+		{
+			return '';
+		}
+
+		if (!class_exists(\CEvent::class))
+		{
+			return '';
+		}
+
+		return (string)\CEvent::ReplaceTemplate($message, $fields, false);
+	}
+
+	private static function loadMessageTemplate(string $siteId): string
+	{
+		if (!class_exists(\CEventMessage::class))
+		{
+			return '';
+		}
+
+		$filter = [
+			'EVENT_NAME' => Installer::EVENT_NAME,
+			'ACTIVE' => 'Y',
+		];
+		if ($siteId !== '')
+		{
+			$filter['SITE_ID'] = $siteId;
+		}
+
+		$rs = \CEventMessage::GetList('id', 'asc', $filter);
+		while ($row = $rs->Fetch())
+		{
+			$message = trim((string)($row['MESSAGE'] ?? ''));
+			if ($message !== '')
+			{
+				return $message;
+			}
+		}
+
+		if ($siteId !== '')
+		{
+			return self::loadMessageTemplate('');
+		}
+
+		return '';
+	}
+}
+
 final class Bootstrap
 {
 	private static bool $inited = false;
@@ -377,22 +571,21 @@ final class Sender
 
 		$payment = null;
 		$paymentSystemId = 0;
-		$paymentSystemName = '';
-		$paymentSum = (float)$order->getPrice();
 
 		$pc = $order->getPaymentCollection();
 		if ($pc)
 		{
 			foreach ($pc as $p)
 			{
-				/** @var \Bitrix\Sale\Payment $p */
+				if (!$p instanceof \Bitrix\Sale\Payment)
+				{
+					continue;
+				}
 				$psid = (int)$p->getPaymentSystemId();
 				if ($psid > 0)
 				{
 					$payment = $p;
 					$paymentSystemId = $psid;
-					$paymentSystemName = (string)$p->getPaymentSystemName();
-					$paymentSum = (float)$p->getSum();
 					break;
 				}
 			}
@@ -425,20 +618,6 @@ final class Sender
 			return;
 		}
 
-		$emailFrom = Config::emailFrom();
-		if ($emailFrom === '')
-		{
-			// Bitrix will fallback to default "E-mail администратора" if template has empty EMAIL_FROM,
-			// but we pass a safe placeholder anyway.
-			$emailFrom = (string)Option::get('main', 'email_from', '');
-		}
-
-		$orderNumber = (string)$order->getField('ACCOUNT_NUMBER');
-		if ($orderNumber === '')
-		{
-			$orderNumber = (string)$orderId;
-		}
-
 		$siteId = (string)$order->getSiteId();
 		if ($siteId === '')
 		{
@@ -452,17 +631,9 @@ final class Sender
 			$payload = [
 				'EVENT_NAME' => Installer::EVENT_NAME,
 				'LID' => $siteId,
-				'C_FIELDS' => [
-					'EMAIL_TO' => $emailTo,
-					'EMAIL_FROM' => $emailFrom,
-					'BCC' => Config::bcc(),
-					'ORDER_ID' => (string)$orderId,
-					'ORDER_NUMBER' => $orderNumber,
-					'ORDER_DATE' => (string)$order->getDateInsert(),
-					'PAY_SYSTEM_NAME' => ($paymentSystemName !== '' ? $paymentSystemName : 'С карты на карту'),
-					'PAYMENT_SUM' => number_format($paymentSum, 2, '.', ' ') . ' RUB',
-				],
+				'C_FIELDS' => TemplateRenderer::buildFields($order, $payment),
 			];
+			$payload['C_FIELDS']['EMAIL_TO'] = $emailTo;
 
 			// Important:
 			// In many Bitrix setups emails are queued into b_event and require cron/agents to actually send.

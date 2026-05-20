@@ -70,34 +70,16 @@ try
 		$errors[] = 'Укажите корректный e-mail.';
 	}
 
-	$rawTo = trim((string)getenv('MF_C2C_BCC'));
-	$toDedup = [];
-	if ($rawTo !== '')
+	$toPrimary = function_exists('mf_mail_admin_inbox')
+		? mf_mail_admin_inbox()
+		: trim((string)getenv('MF_ORDER_NOTIFY_EMAIL'));
+	if ($toPrimary === '' || !filter_var($toPrimary, FILTER_VALIDATE_EMAIL))
 	{
-		foreach (preg_split('~[;,]+~', $rawTo) ?: [] as $chunk)
-		{
-			$chunk = trim((string)$chunk);
-			if ($chunk === '')
-			{
-				continue;
-			}
-			if (!filter_var($chunk, FILTER_VALIDATE_EMAIL))
-			{
-				$errors[] = 'Некорректный e-mail в MF_C2C_BCC: ' . $chunk;
-				continue;
-			}
-			$toDedup[mb_strtolower($chunk)] = $chunk;
-		}
+		$toPrimary = 'andrey@motor-force.ru';
 	}
-	$toList = array_values($toDedup);
-	$toPrimary = $toList[0] ?? '';
-	if ($rawTo === '')
+	if (!filter_var($toPrimary, FILTER_VALIDATE_EMAIL))
 	{
 		$errors[] = 'Не настроен адрес получателя.';
-	}
-	elseif ($toPrimary === '')
-	{
-		$errors[] = 'В MF_C2C_BCC нет ни одного корректного адреса.';
 	}
 
 	if (!empty($errors))
@@ -142,11 +124,6 @@ try
 	if (filter_var($email, FILTER_VALIDATE_EMAIL))
 	{
 		$header['Reply-To'] = $email;
-	}
-	$bccRest = array_slice($toList, 1);
-	if ($bccRest !== [])
-	{
-		$header['Bcc'] = implode(', ', $bccRest);
 	}
 
 	$subject = 'Запрос цены: ' . $productName;

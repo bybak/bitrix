@@ -2283,12 +2283,32 @@ final class Payload
 		{
 			return $out;
 		}
-		if (\preg_match('~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*([0-9]+(?:[.,][0-9]+)?)\s*₽\s*\(tarif_id=([^)]+)\)~u', $comments, $m))
+
+		// Формат из mf_on_order_before_saved: «… — 430 ₽ (tarif_id=123)» или «… — оплата при получении (tarif_id=custom)».
+		if (\preg_match(
+			'~^Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*(?:([0-9]+(?:[.,][0-9]+)?)\s*₽|оплата при получении)\s*\(tarif_id=([^)]+)\)~mu',
+			$comments,
+			$m
+		))
 		{
 			$company = \trim((string)$m[1]);
 			$tariff = \trim((string)$m[2]);
-			$out['price'] = (float)\str_replace(',', '.', (string)$m[3]);
-			$out['name'] = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
+			$priceRaw = \trim((string)($m[3] ?? ''));
+			$tarifId = \trim((string)($m[4] ?? ''));
+
+			if ($priceRaw !== '')
+			{
+				$out['price'] = (float)\str_replace(',', '.', $priceRaw);
+			}
+
+			if ($tarifId === 'custom' || $company === 'Свой вариант')
+			{
+				$out['name'] = $tariff !== '' ? $tariff : 'Свой вариант';
+			}
+			else
+			{
+				$out['name'] = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
+			}
 		}
 
 		return $out;

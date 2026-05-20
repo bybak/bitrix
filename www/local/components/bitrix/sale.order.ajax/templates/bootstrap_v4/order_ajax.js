@@ -44,6 +44,18 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 	BX.Sale.OrderAjaxComponent = {
 
+		getPropertyPlaceholder: function(description)
+		{
+			if (description === undefined || description === null)
+			{
+				return '';
+			}
+
+			var text = String(description);
+
+			return text === 'null' ? '' : text;
+		},
+
 		initializePrimaryFields: function()
 		{
 			this.BXFormPosting = false;
@@ -3123,7 +3135,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 								BX.create('SPAN', {
 									props: {className: 'mf-checkout-choice__item-desc'},
 									text: String(personType.ID) === '2'
-										? 'Для юрлица обязательны реквизиты и доступна только оплата по счету.'
+										? 'Оформление заказа для юридического лица. Оплата — только по счёту.'
 										: 'Стандартное оформление заказа для физического лица.'
 								})
 							]
@@ -5418,7 +5430,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					props: {
 						id: 'altProperty',
 						type: 'text',
-						placeholder: altProperty.DESCRIPTION,
+						placeholder: this.getPropertyPlaceholder(altProperty.DESCRIPTION),
 						autocomplete: 'city',
 						className: 'form-control bx-soa-customer-input bx-ios-fix',
 						name: 'ORDER_PROP_' + altProperty.ID,
@@ -5570,7 +5582,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					props: {
 						id: 'zipProperty',
 						type: 'text',
-						placeholder: zipProperty.DESCRIPTION,
+						placeholder: this.getPropertyPlaceholder(zipProperty.DESCRIPTION),
 						autocomplete: 'zip',
 						className: 'form-control bx-soa-customer-input bx-ios-fix',
 						name: 'ORDER_PROP_' + zipProperty.ID,
@@ -8170,7 +8182,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			inputs = propContainer.querySelectorAll('input[type=text]');
 			for (i = 0; i < inputs.length; i++)
 			{
-				inputs[i].placeholder = settings.DESCRIPTION;
+				inputs[i].placeholder = this.getPropertyPlaceholder(settings.DESCRIPTION);
 				BX.addClass(inputs[i], 'form-control bx-soa-customer-input bx-ios-fix');
 			}
 
@@ -8181,7 +8193,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			inputs = propContainer.querySelectorAll('textarea');
 			for (i = 0; i < inputs.length; i++)
 			{
-				inputs[i].placeholder = settings.DESCRIPTION;
+				inputs[i].placeholder = this.getPropertyPlaceholder(settings.DESCRIPTION);
 				BX.addClass(inputs[i], 'form-control bx-ios-fix');
 			}
 
@@ -8261,7 +8273,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					del && BX.remove(del);
 					if (textInputs.length)
 					{
-						textInputs[textInputs.length - 1].placeholder = settings.DESCRIPTION;
+						textInputs[textInputs.length - 1].placeholder = this.getPropertyPlaceholder(settings.DESCRIPTION);
 						BX.addClass(textInputs[textInputs.length - 1], 'form-control bx-soa-customer-input bx-ios-fix');
 						if (settings.TYPE == 'DATE')
 							this.alterDateProperty(settings, textInputs[textInputs.length - 1]);
@@ -8272,7 +8284,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 					if (textAreas.length)
 					{
-						textAreas[textAreas.length - 1].placeholder = settings.DESCRIPTION;
+						textAreas[textAreas.length - 1].placeholder = this.getPropertyPlaceholder(settings.DESCRIPTION);
 						BX.addClass(textAreas[textAreas.length - 1], 'form-control bx-ios-fix');
 					}
 
