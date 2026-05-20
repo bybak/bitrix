@@ -1281,7 +1281,7 @@ if (!function_exists('mf_ep_display_price_for_store'))
 		}
 		else
 		{
-			$computed = round((float)$computed, 1);
+			$computed = (float)ceil((float)$computed);
 		}
 
 		return $computed > 0 ? $computed : null;

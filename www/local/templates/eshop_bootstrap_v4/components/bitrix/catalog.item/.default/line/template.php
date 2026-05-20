@@ -65,7 +65,7 @@ if (function_exists('mf_catalog_storefront_price_when_in_stock'))
 	$p = mf_catalog_storefront_price_when_in_stock((int)($actualItem['ID'] ?? 0));
 	if ($p !== null && (float)$p > 0)
 	{
-		$mfDynPrice = (float)$p;
+		$mfDynPrice = function_exists('mf_round_price') ? mf_round_price((float)$p) : (float)ceil((float)$p);
 	}
 }
 
@@ -288,22 +288,28 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 			<?php endif; ?>
 			<span class="mf-pline__cur product-item-price-current" id="<?=$itemIds['PRICE']?>">
 				<?php
-				if ($canBuy && $mfDynPrice !== null)
+				$mfLinePriceHtml = 'Запросить цену';
+				if ($canBuy)
 				{
-					echo function_exists('mf_format_display_price_rub')
-						? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub((float)$mfDynPrice)))
-						: ('От ' . htmlspecialcharsbx(number_format(function_exists('mf_round_price') ? mf_round_price((float)$mfDynPrice) : (float)ceil((float)$mfDynPrice), 0, '.', ' ')) . ' &#8381;');
+					$mfLineAmount = null;
+					if ($mfDynPrice !== null && $mfDynPrice > 0)
+					{
+						$mfLineAmount = (float)$mfDynPrice;
+					}
+					elseif (function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price['RATIO_PRICE']))
+					{
+						$mfLineAmount = function_exists('mf_round_price')
+							? mf_round_price((float)$price['RATIO_PRICE'])
+							: (float)ceil((float)$price['RATIO_PRICE']);
+					}
+					if ($mfLineAmount !== null && $mfLineAmount > 0)
+					{
+						$mfLinePriceHtml = function_exists('mf_format_display_price_rub')
+							? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub($mfLineAmount)))
+							: ('От ' . htmlspecialcharsbx(number_format($mfLineAmount, 0, '.', ' ')) . ' &#8381;');
+					}
 				}
-				elseif ($canBuy && function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price))
-				{
-					echo function_exists('mf_format_display_price_rub') && isset($price['RATIO_PRICE'])
-						? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub((float)$price['RATIO_PRICE'])))
-						: ('От ' . $price['PRINT_RATIO_PRICE']);
-				}
-				else
-				{
-					echo 'Запросить цену';
-				}
+				echo $mfLinePriceHtml;
 				?>
 			</span>
 		</div>

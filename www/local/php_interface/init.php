@@ -1939,7 +1939,7 @@ if (!function_exists('mf_min_price_from_available_stores'))
 			}
 		}
 
-		$cache[$cacheKey] = [$min, $minStoreId];
+		$cache[$cacheKey] = [$min !== null ? (function_exists('mf_round_price') ? mf_round_price((float)$min) : (float)ceil((float)$min)) : null, $minStoreId];
 		return $cache[$cacheKey];
 	}
 }
@@ -2002,7 +2002,7 @@ if (!function_exists('mf_catalog_storefront_price_when_in_stock'))
 			return null;
 		}
 
-		return (float)$min;
+		return function_exists('mf_round_price') ? mf_round_price((float)$min) : (float)ceil((float)$min);
 	}
 }
 
@@ -2057,6 +2057,14 @@ if (!function_exists('mf_catalog_listing_display_price'))
 			{
 				$best = $p;
 			}
+		}
+		if ($best !== null && function_exists('mf_round_price'))
+		{
+			$best = mf_round_price((float)$best);
+		}
+		elseif ($best !== null)
+		{
+			$best = (float)ceil((float)$best);
 		}
 		$cache[$cacheKey] = $best;
 
