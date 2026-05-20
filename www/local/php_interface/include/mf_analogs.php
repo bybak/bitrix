@@ -565,11 +565,21 @@ if (!function_exists('mf_analogs_sort_ids_stock_priority'))
 		{
 			return [];
 		}
+
+		$stockMap = [];
+		if (count($ids) > 1 && function_exists('mf_catalog_batch_products_have_stock'))
+		{
+			$stockMap = mf_catalog_batch_products_have_stock($ids);
+		}
+
 		$in = [];
 		$out = [];
 		foreach ($ids as $id)
 		{
-			if (mf_analogs_has_positive_catalog_stock($id))
+			$has = array_key_exists($id, $stockMap)
+				? (bool)$stockMap[$id]
+				: mf_analogs_has_positive_catalog_stock($id);
+			if ($has)
 			{
 				$in[] = $id;
 			}
@@ -632,6 +642,159 @@ if (!function_exists('mf_analogs_ids_for_product'))
 		}
 
 		return $ids;
+	}
+}
+
+if (!function_exists('mf_analogs_related_ids_for_products'))
+{
+	/**
+	 * Пакетная загрузка связанных аналогов для нескольких товаров (для страницы поиска).
+	 *
+	 * @param int[] $productIds
+	 * @return array<int, int[]> productId => analogIds
+	 */
+	function mf_analogs_related_ids_for_products(array $productIds, int $limitPerProduct = 12): array
+	{
+		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+		$limitPerProduct = max(1, min(24, (int)$limitPerProduct));
+		$result = [];
+		foreach ($productIds as $pid)
+		{
+			$result[$pid] = [];
+		}
+		if ($productIds === [])
+		{
+			return $result;
+		}
+
+		$direct = [];
+		foreach ($productIds as $pid)
+		{
+			$direct[$pid] = [];
+		}
+
+		try
+		{
+			$hl = mf_analogs_ensure_hl();
+			$table = (string)$hl['TABLE'];
+			$conn = Application::getConnection();
+			$in = implode(',', $productIds);
+			$res = $conn->query("
+				SELECT `UF_P1_ID`, `UF_P2_ID`
+				FROM `" . $table . "`
+				WHERE `UF_P1_ID` IN (" . $in . ") OR `UF_P2_ID` IN (" . $in . ")
+			");
+			while ($r = $res->fetch())
+			{
+				$p1 = (int)($r['UF_P1_ID'] ?? 0);
+				$p2 = (int)($r['UF_P2_ID'] ?? 0);
+				if (isset($direct[$p1]) && $p2 > 0 && $p2 !== $p1)
+				{
+					$direct[$p1][$p2] = true;
+				}
+				if (isset($direct[$p2]) && $p1 > 0 && $p1 !== $p2)
+				{
+					$direct[$p2][$p1] = true;
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// fallback ниже
+		}
+
+		$related = [];
+		foreach ($productIds as $pid)
+		{
+			$related[$pid] = $direct[$pid] ?? [];
+		}
+
+		try
+		{
+			$meta = mf_analogs_ensure_hl_meta();
+			$metaTable = (string)$meta['TABLE'];
+			$conn = Application::getConnection();
+			$in = implode(',', $productIds);
+
+			$originalIds = [];
+			$origRes = $conn->query("
+				SELECT DISTINCT `UF_PRODUCT_ID`, `UF_ANALOG_ID`
+				FROM `" . $metaTable . "`
+				WHERE `UF_ANALOG_ID` IN (" . $in . ")
+				LIMIT 500
+			");
+			while ($r = $origRes->fetch())
+			{
+				$oid = (int)($r['UF_PRODUCT_ID'] ?? 0);
+				$aid = (int)($r['UF_ANALOG_ID'] ?? 0);
+				if ($oid > 0 && $aid > 0 && isset($related[$aid]))
+				{
+					$related[$aid][$oid] = true;
+					$originalIds[$oid] = true;
+				}
+			}
+
+			if ($originalIds !== [])
+			{
+				$inOrig = implode(',', array_map('intval', array_keys($originalIds)));
+				$sibRes = $conn->query("
+					SELECT `UF_PRODUCT_ID`, `UF_ANALOG_ID`
+					FROM `" . $metaTable . "`
+					WHERE `UF_PRODUCT_ID` IN (" . $inOrig . ")
+					LIMIT 1000
+				");
+				while ($r = $sibRes->fetch())
+				{
+					$oid = (int)($r['UF_PRODUCT_ID'] ?? 0);
+					$sib = (int)($r['UF_ANALOG_ID'] ?? 0);
+					if ($oid <= 0 || $sib <= 0)
+					{
+						continue;
+					}
+					foreach ($productIds as $pid)
+					{
+						if (isset($related[$pid][$oid]))
+						{
+							if ($sib !== $pid)
+							{
+								$related[$pid][$sib] = true;
+							}
+						}
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		$allCandidateIds = [];
+		foreach ($productIds as $pid)
+		{
+			$ids = array_map('intval', array_keys($related[$pid] ?? []));
+			$ids = array_values(array_filter($ids, static fn($x) => $x > 0 && $x !== $pid));
+			if (function_exists('mf_analogs_sort_ids_stock_priority') && $ids !== [])
+			{
+				$ids = mf_analogs_sort_ids_stock_priority($ids);
+			}
+			if (count($ids) > $limitPerProduct)
+			{
+				$ids = array_slice($ids, 0, $limitPerProduct);
+			}
+			$result[$pid] = $ids;
+			foreach ($ids as $id)
+			{
+				$allCandidateIds[$id] = true;
+			}
+		}
+
+		if ($allCandidateIds !== [] && function_exists('mf_catalog_warm_products'))
+		{
+			mf_catalog_warm_products(array_merge($productIds, array_keys($allCandidateIds)));
+		}
+
+		return $result;
 	}
 }
 

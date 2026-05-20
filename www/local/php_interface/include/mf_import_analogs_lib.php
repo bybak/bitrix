@@ -29,6 +29,114 @@ function mf_analogs_norm_article(string $s): string
 	return $s;
 }
 
+if (!function_exists('mf_search_query_article_is_plausible'))
+{
+	/**
+	 * Похоже ли нормализованное значение на артикул (а не «10», «мм», бренд без цифр).
+	 */
+	function mf_search_query_article_is_plausible(string $norm): bool
+	{
+		$norm = trim($norm);
+		if ($norm === '')
+		{
+			return false;
+		}
+		if (preg_match('~^\d{5,}$~', $norm))
+		{
+			return true;
+		}
+		$len = strlen($norm);
+		if ($len >= 4 && preg_match('~[0-9]~', $norm) && preg_match('~[A-Z]~', $norm))
+		{
+			return true;
+		}
+		if ($len >= 5 && preg_match('~[0-9]~', $norm))
+		{
+			return true;
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_search_query_article_candidates'))
+{
+	/**
+	 * Кандидаты артикула из поискового запроса: целиком, по словам, длинные цифровые фрагменты.
+	 * «шайба 10 мм BRP 506150000» → …, 506150000.
+	 *
+	 * @return string[]
+	 */
+	function mf_search_query_article_candidates(string $query): array
+	{
+		$query = trim($query);
+		if ($query === '')
+		{
+			return [];
+		}
+
+		$out = [];
+		$seen = [];
+		$push = static function (string $piece) use (&$out, &$seen): void {
+			$piece = trim($piece);
+			if ($piece === '' || isset($seen[$piece]))
+			{
+				return;
+			}
+			$seen[$piece] = true;
+			$out[] = $piece;
+		};
+		$pushNormPair = static function (string $piece) use ($push): void {
+			$piece = trim($piece);
+			if ($piece === '')
+			{
+				return;
+			}
+			$norm = mf_analogs_norm_article($piece);
+			if (!mf_search_query_article_is_plausible($norm))
+			{
+				return;
+			}
+			$push($piece);
+			if ($norm !== $piece)
+			{
+				$push($norm);
+			}
+		};
+
+		if (!preg_match('~\s~u', $query))
+		{
+			$pushNormPair($query);
+
+			return $out;
+		}
+
+		$parts = preg_split('~[\s,;+/|()\\[\\]{}]+~u', $query) ?: [];
+		foreach ($parts as $part)
+		{
+			$pushNormPair((string)$part);
+		}
+
+		if (preg_match_all('~\d{5,}~', $query, $digitMatches))
+		{
+			foreach ($digitMatches[0] as $digits)
+			{
+				$pushNormPair((string)$digits);
+			}
+		}
+
+		if (preg_match_all('~[\dA-Za-z][\dA-Za-z\-_./]{2,}[\dA-Za-z]~', $query, $runMatches))
+		{
+			foreach ($runMatches[0] as $run)
+			{
+				$pushNormPair((string)$run);
+			}
+		}
+
+		return $out;
+	}
+}
+
 function mf_analogs_norm_brand(string $s): string
 {
 	$s = mb_strtoupper(trim((string)$s));

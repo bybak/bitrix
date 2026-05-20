@@ -1571,6 +1571,249 @@ if (!function_exists('mf_catalog_product_cluster_ids'))
 	}
 }
 
+if (!function_exists('mf_catalog_product_store_amounts'))
+{
+	/**
+	 * Остатки по складам для товара (сумма по кластеру SKU). Использует прогрев MF_CATALOG_WARM.
+	 *
+	 * @return array<int, float> storeId => amount
+	 */
+	function mf_catalog_product_store_amounts(int $productId): array
+	{
+		static $local = [];
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return [];
+		}
+		if (isset($local[$productId]))
+		{
+			return $local[$productId];
+		}
+		if (!empty($GLOBALS['MF_CATALOG_WARM']['store_amounts'][$productId])
+			&& is_array($GLOBALS['MF_CATALOG_WARM']['store_amounts'][$productId]))
+		{
+			return $local[$productId] = $GLOBALS['MF_CATALOG_WARM']['store_amounts'][$productId];
+		}
+
+		$byStore = [];
+		if (!class_exists(\CCatalogStoreProduct::class))
+		{
+			return $local[$productId] = $byStore;
+		}
+		try
+		{
+			\Bitrix\Main\Loader::includeModule('catalog');
+		}
+		catch (\Throwable $e)
+		{
+			return $local[$productId] = $byStore;
+		}
+
+		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
+		{
+			$cid = (int)$cid;
+			if ($cid <= 0)
+			{
+				continue;
+			}
+			$rs = \CCatalogStoreProduct::GetList(
+				[],
+				['PRODUCT_ID' => $cid],
+				false,
+				false,
+				['STORE_ID', 'AMOUNT']
+			);
+			while ($r = $rs->Fetch())
+			{
+				$sid = (int)($r['STORE_ID'] ?? 0);
+				if ($sid <= 0)
+				{
+					continue;
+				}
+				$byStore[$sid] = ($byStore[$sid] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
+			}
+		}
+
+		return $local[$productId] = $byStore;
+	}
+}
+
+if (!function_exists('mf_catalog_warm_price_maps'))
+{
+	/**
+	 * Пакетная загрузка цен каталога в MF_CATALOG_WARM['price_maps'].
+	 *
+	 * @param int[] $productIds
+	 */
+	function mf_catalog_warm_price_maps(array $productIds): void
+	{
+		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+		if ($productIds === [])
+		{
+			return;
+		}
+
+		$maps = [];
+		if (class_exists(\Bitrix\Catalog\PriceTable::class))
+		{
+			$rs = \Bitrix\Catalog\PriceTable::getList([
+				'filter' => ['@PRODUCT_ID' => $productIds],
+				'select' => ['PRODUCT_ID', 'CATALOG_GROUP_ID', 'PRICE', 'CURRENCY'],
+			]);
+			while ($p = $rs->fetch())
+			{
+				$pid = (int)($p['PRODUCT_ID'] ?? 0);
+				$gid = (int)($p['CATALOG_GROUP_ID'] ?? 0);
+				if ($pid <= 0 || $gid <= 0)
+				{
+					continue;
+				}
+				if (!isset($maps[$pid]))
+				{
+					$maps[$pid] = ['prices' => [], 'currencies' => []];
+				}
+				$maps[$pid]['prices'][$gid] = (float)($p['PRICE'] ?? 0);
+				$c = trim((string)($p['CURRENCY'] ?? ''));
+				$maps[$pid]['currencies'][$gid] = $c !== '' ? $c : 'RUB';
+			}
+		}
+
+		if ($maps === [])
+		{
+			return;
+		}
+		if (!isset($GLOBALS['MF_CATALOG_WARM']) || !is_array($GLOBALS['MF_CATALOG_WARM']))
+		{
+			$GLOBALS['MF_CATALOG_WARM'] = [];
+		}
+		$existing = $GLOBALS['MF_CATALOG_WARM']['price_maps'] ?? [];
+		if (!is_array($existing))
+		{
+			$existing = [];
+		}
+		$GLOBALS['MF_CATALOG_WARM']['price_maps'] = array_replace($existing, $maps);
+	}
+}
+
+if (!function_exists('mf_catalog_warm_products'))
+{
+	/**
+	 * Пакетный прогрев остатков и цен для списка товаров (страница поиска, списки).
+	 *
+	 * @param int[] $productIds
+	 */
+	function mf_catalog_warm_products(array $productIds): void
+	{
+		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+		if ($productIds === [])
+		{
+			return;
+		}
+
+		$clusterToProducts = [];
+		foreach ($productIds as $pid)
+		{
+			foreach (mf_catalog_product_cluster_ids($pid) as $cid)
+			{
+				$cid = (int)$cid;
+				if ($cid <= 0)
+				{
+					continue;
+				}
+				$clusterToProducts[$cid][$pid] = true;
+			}
+		}
+
+		$amountsByProduct = [];
+		foreach ($productIds as $pid)
+		{
+			$amountsByProduct[$pid] = [];
+		}
+
+		$clusterIds = array_keys($clusterToProducts);
+		if ($clusterIds !== [] && class_exists(\CCatalogStoreProduct::class))
+		{
+			try
+			{
+				\Bitrix\Main\Loader::includeModule('catalog');
+			}
+			catch (\Throwable $e)
+			{
+				$clusterIds = [];
+			}
+		}
+		if ($clusterIds !== [])
+		{
+			$rs = \CCatalogStoreProduct::GetList(
+				['STORE_ID' => 'ASC'],
+				['PRODUCT_ID' => $clusterIds],
+				false,
+				false,
+				['PRODUCT_ID', 'STORE_ID', 'AMOUNT']
+			);
+			while ($r = $rs->Fetch())
+			{
+				$cid = (int)($r['PRODUCT_ID'] ?? 0);
+				$sid = (int)($r['STORE_ID'] ?? 0);
+				if ($cid <= 0 || $sid <= 0)
+				{
+					continue;
+				}
+				$amt = (float)($r['AMOUNT'] ?? 0);
+				foreach (array_keys($clusterToProducts[$cid] ?? []) as $pid)
+				{
+					$amountsByProduct[$pid][$sid] = ($amountsByProduct[$pid][$sid] ?? 0.0) + $amt;
+				}
+			}
+		}
+
+		if (!isset($GLOBALS['MF_CATALOG_WARM']) || !is_array($GLOBALS['MF_CATALOG_WARM']))
+		{
+			$GLOBALS['MF_CATALOG_WARM'] = [];
+		}
+		$existingAmounts = $GLOBALS['MF_CATALOG_WARM']['store_amounts'] ?? [];
+		if (!is_array($existingAmounts))
+		{
+			$existingAmounts = [];
+		}
+		$GLOBALS['MF_CATALOG_WARM']['store_amounts'] = array_replace($existingAmounts, $amountsByProduct);
+
+		if (function_exists('mf_catalog_warm_price_maps'))
+		{
+			mf_catalog_warm_price_maps($clusterIds);
+		}
+	}
+}
+
+if (!function_exists('mf_catalog_batch_products_have_stock'))
+{
+	/**
+	 * @param int[] $productIds
+	 * @return array<int, bool>
+	 */
+	function mf_catalog_batch_products_have_stock(array $productIds): array
+	{
+		$out = [];
+		foreach ($productIds as $pid)
+		{
+			$pid = (int)$pid;
+			if ($pid <= 0)
+			{
+				continue;
+			}
+			$sum = 0.0;
+			foreach (mf_catalog_product_store_amounts($pid) as $amt)
+			{
+				$sum += (float)$amt;
+			}
+			$out[$pid] = $sum > 1e-9;
+		}
+
+		return $out;
+	}
+}
+
 if (!function_exists('mf_product_distinct_store_ids_clustered'))
 {
 	/**
@@ -1718,6 +1961,13 @@ if (!function_exists('mf_product_prices_catalog_maps'))
 		if ($productId <= 0)
 		{
 			return ['prices' => [], 'currencies' => []];
+		}
+		if (!empty($GLOBALS['MF_CATALOG_WARM']['price_maps'][$productId])
+			&& is_array($GLOBALS['MF_CATALOG_WARM']['price_maps'][$productId]))
+		{
+			$cache[$productId] = $GLOBALS['MF_CATALOG_WARM']['price_maps'][$productId];
+
+			return $cache[$productId];
 		}
 		if (isset($cache[$productId]))
 		{
@@ -1901,20 +2151,9 @@ if (!function_exists('mf_min_price_from_available_stores'))
 		$min = null;
 		$minStoreId = 0;
 
-		$byStore = [];
-		foreach (mf_catalog_product_cluster_ids($productId) as $cid)
-		{
-			$rs = \CCatalogStoreProduct::GetList([], ['PRODUCT_ID' => (int)$cid, '>AMOUNT' => 0], false, false, ['STORE_ID', 'AMOUNT']);
-			while ($r = $rs->Fetch())
-			{
-				$sid = (int)($r['STORE_ID'] ?? 0);
-				if ($sid <= 0)
-				{
-					continue;
-				}
-				$byStore[$sid] = ($byStore[$sid] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
-			}
-		}
+		$byStore = function_exists('mf_catalog_product_store_amounts')
+			? mf_catalog_product_store_amounts($productId)
+			: [];
 
 		foreach ($byStore as $storeId => $amt)
 		{
@@ -2695,21 +2934,21 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 	 * Бренд и артикул из карточки товара (инфоблок), если в позиции корзины/заказа они не продублированы в b_sale_basket_props.
 	 * Учитывает связку торговое предложение → товар (SKU).
 	 *
-	 * @return array{brand: string, article: string}
+	 * @return array{brand: string, article: string, name: string}
 	 */
 	function mf_catalog_brand_article_by_product_id(int $productId): array
 	{
 		static $cache = [];
 		if ($productId <= 0)
 		{
-			return ['brand' => '', 'article' => ''];
+			return ['brand' => '', 'article' => '', 'name' => ''];
 		}
 		if (array_key_exists($productId, $cache))
 		{
 			return $cache[$productId];
 		}
 
-		$empty = ['brand' => '', 'article' => ''];
+		$empty = ['brand' => '', 'article' => '', 'name' => ''];
 		if (!class_exists(\CIBlockElement::class) || !\Bitrix\Main\Loader::includeModule('iblock'))
 		{
 			$cache[$productId] = $empty;
@@ -2720,6 +2959,7 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 		$select = [
 			'ID',
 			'IBLOCK_ID',
+			'NAME',
 			'PROPERTY_CML2_ARTICLE',
 			'PROPERTY_MF_BRAND',
 			'PROPERTY_MF_BRAND_NORM',
@@ -2742,8 +2982,9 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			{
 				$brand = trim((string)($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
 			}
+			$name = trim((string)($row['NAME'] ?? ''));
 
-			return ['brand' => $brand, 'article' => $article];
+			return ['brand' => $brand, 'article' => $article, 'name' => $name];
 		};
 
 		$load = static function (int $id) use ($select): ?array {
@@ -2773,6 +3014,7 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 
 		$brand = '';
 		$article = '';
+		$name = '';
 		foreach ($ids as $id)
 		{
 			$row = $load($id);
@@ -2789,12 +3031,47 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			{
 				$brand = $p['brand'];
 			}
+			if ($name === '' && $p['name'] !== '')
+			{
+				$name = $p['name'];
+			}
 		}
 
-		$out = ['brand' => $brand, 'article' => $article];
+		$out = ['brand' => $brand, 'article' => $article, 'name' => $name];
 		$cache[$productId] = $out;
 
 		return $out;
+	}
+}
+
+if (!function_exists('mf_basket_item_display_name'))
+{
+	/**
+	 * Наименование позиции заказа/корзины: из строки заказа, иначе из карточки товара каталога.
+	 */
+	function mf_basket_item_display_name(array $item): string
+	{
+		foreach (['NAME~', 'NAME'] as $key)
+		{
+			$name = trim(html_entity_decode(strip_tags((string)($item[$key] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+			if ($name !== '')
+			{
+				return $name;
+			}
+		}
+
+		$productId = (int)($item['PRODUCT_ID'] ?? 0);
+		if ($productId > 0 && function_exists('mf_catalog_brand_article_by_product_id'))
+		{
+			$meta = mf_catalog_brand_article_by_product_id($productId);
+			$name = trim((string)($meta['name'] ?? ''));
+			if ($name !== '')
+			{
+				return $name;
+			}
+		}
+
+		return '';
 	}
 }
 

@@ -89,29 +89,34 @@ if (!function_exists('mf_product_search_card_stores'))
 		$clusterIds = function_exists('mf_catalog_product_cluster_ids')
 			? mf_catalog_product_cluster_ids($productId)
 			: [$productId];
-		$byStore = [];
-		foreach ($clusterIds as $cid)
+		$byStore = function_exists('mf_catalog_product_store_amounts')
+			? mf_catalog_product_store_amounts($productId)
+			: [];
+		if ($byStore === [])
 		{
-			$cid = (int)$cid;
-			if ($cid <= 0)
+			foreach ($clusterIds as $cid)
 			{
-				continue;
-			}
-			$rs = \CCatalogStoreProduct::GetList(
-				['STORE_ID' => 'ASC'],
-				['PRODUCT_ID' => $cid],
-				false,
-				false,
-				['STORE_ID', 'AMOUNT']
-			);
-			while ($r = $rs->Fetch())
-			{
-				$storeId = (int)($r['STORE_ID'] ?? 0);
-				if ($storeId <= 0)
+				$cid = (int)$cid;
+				if ($cid <= 0)
 				{
 					continue;
 				}
-				$byStore[$storeId] = ($byStore[$storeId] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
+				$rs = \CCatalogStoreProduct::GetList(
+					['STORE_ID' => 'ASC'],
+					['PRODUCT_ID' => $cid],
+					false,
+					false,
+					['STORE_ID', 'AMOUNT']
+				);
+				while ($r = $rs->Fetch())
+				{
+					$storeId = (int)($r['STORE_ID'] ?? 0);
+					if ($storeId <= 0)
+					{
+						continue;
+					}
+					$byStore[$storeId] = ($byStore[$storeId] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
+				}
 			}
 		}
 
@@ -266,6 +271,24 @@ if (!function_exists('mf_product_search_card_stores'))
 		}
 
 		return $out;
+	}
+}
+
+if (!function_exists('mf_product_search_card_warm_cache'))
+{
+	/**
+	 * Прогрев данных каталога для списка карточек (поиск, аналоги).
+	 *
+	 * @param int[] $productIds
+	 */
+	function mf_product_search_card_warm_cache(array $productIds): void
+	{
+		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+		if ($productIds === [] || !function_exists('mf_catalog_warm_products'))
+		{
+			return;
+		}
+		mf_catalog_warm_products($productIds);
 	}
 }
 

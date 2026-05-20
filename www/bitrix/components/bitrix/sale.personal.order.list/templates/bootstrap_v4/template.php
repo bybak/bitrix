@@ -213,6 +213,16 @@ $mfBasketStoreId = static function(array $item) use ($mfBasketPropByCodes): int
 	return (int)trim((string)$raw);
 };
 
+$mfBasketProductName = static function(array $item): string
+{
+	if (function_exists('mf_basket_item_display_name'))
+	{
+		return mf_basket_item_display_name($item);
+	}
+
+	return trim(html_entity_decode(strip_tags((string)($item['NAME~'] ?? $item['NAME'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+};
+
 /** Полная строка выбранной eDost-доставки из комментария к заказу (до tarif_id). */
 $mfParseEdostFromComments = static function(string $comments): ?array
 {
@@ -567,6 +577,7 @@ else
 										$basketStore = $mfBasketStoreTitle($basketItem);
 										$basketTerm = $mfBasketStoreTerm($basketItem);
 										$basketStoreId = $mfBasketStoreId($basketItem);
+										$basketName = $mfBasketProductName($basketItem);
 										?>
 										<tr>
 											<td><?=htmlspecialcharsbx($basketBrand)?></td>
@@ -574,7 +585,7 @@ else
 												<div class="mf-order-item-article"><?=htmlspecialcharsbx($basketArticle !== '' ? $basketArticle : '—')?></div>
 											</td>
 											<td>
-												<div class="mf-order-item-name"><?=htmlspecialcharsbx((string)($basketItem['NAME'] ?? ''))?></div>
+												<div class="mf-order-item-name"><?=htmlspecialcharsbx($basketName !== '' ? $basketName : '—')?></div>
 											</td>
 											<td><?=htmlspecialcharsbx($basketStore)?></td>
 											<td><?=htmlspecialcharsbx($basketTerm)?></td>

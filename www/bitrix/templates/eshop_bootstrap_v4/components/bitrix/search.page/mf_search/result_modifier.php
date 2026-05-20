@@ -1,10 +1,7 @@
 <?php
 /**
- * Поиск каталога: сначала строгое совпадение по артикулу (CML2_ARTICLE / MF_ARTICLE_NORM),
- * затем все остальные результаты полнотекстового поиска (порядок внутри групп сохраняем).
- *
- * Полнотекстовый поиск режет запрос и не гарантирует приоритет артикула; дубликаты из обеих
- * групп снимаем — карточка с точным артикулом всегда выше прочих совпадений по названию.
+ * Поиск каталога: совпадение по артикулу (целиком или фрагментом запроса), затем полнотекст.
+ * «506150000» и «шайба 10 мм BRP 506150000» находят одни и те же позиции по артикулу.
  */
 if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true)
 {
@@ -23,19 +20,53 @@ if ($query === '' || !class_exists('CIBlockElement') || !\Bitrix\Main\Loader::in
 }
 
 $mfCatalogIblockId = 4;
-$lib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/bitrix/php_interface/include/mf_import_analogs_lib.php';
+$lib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_import_analogs_lib.php';
 if (is_file($lib))
 {
 	require_once $lib;
 }
-$articleNorm = function_exists('mf_analogs_norm_article') ? mf_analogs_norm_article($query) : '';
 
-$or = [
-	['=PROPERTY_CML2_ARTICLE' => $query],
-];
-if ($articleNorm !== '')
+$articleCandidates = function_exists('mf_search_query_article_candidates')
+	? mf_search_query_article_candidates($query)
+	: [$query];
+
+if ($articleCandidates === [])
 {
-	$or[] = ['=PROPERTY_MF_ARTICLE_NORM' => $articleNorm];
+	$articleCandidates = [$query];
+}
+
+$or = [];
+$seenOr = [];
+foreach ($articleCandidates as $candidate)
+{
+	$candidate = trim((string)$candidate);
+	if ($candidate === '')
+	{
+		continue;
+	}
+	$key = 'a:' . $candidate;
+	if (isset($seenOr[$key]))
+	{
+		continue;
+	}
+	$seenOr[$key] = true;
+	$or[] = ['=PROPERTY_CML2_ARTICLE' => $candidate];
+
+	$articleNorm = function_exists('mf_analogs_norm_article') ? mf_analogs_norm_article($candidate) : '';
+	if ($articleNorm !== '')
+	{
+		$keyN = 'n:' . $articleNorm;
+		if (!isset($seenOr[$keyN]))
+		{
+			$seenOr[$keyN] = true;
+			$or[] = ['=PROPERTY_MF_ARTICLE_NORM' => $articleNorm];
+		}
+	}
+}
+
+if ($or === [])
+{
+	return;
 }
 
 $filterExact = [

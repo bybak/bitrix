@@ -49,7 +49,7 @@ $mfRegisterWithBackUrl = SITE_DIR . 'login/?register=yes&backurl=' . $mfRequestP
 // Motor-Force search cards helpers (catalog-only).
 $mfCatalogIblockId = 4;
 $mfPlaceholder = (function_exists('mf_mf_placeholder_img_url') ? mf_mf_placeholder_img_url() : '/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg');
-$mfProductSearchCardLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/bitrix/php_interface/include/mf_product_search_card.php';
+$mfProductSearchCardLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_product_search_card.php';
 if (is_file($mfProductSearchCardLib))
 {
 	require_once $mfProductSearchCardLib;
@@ -329,6 +329,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 				$mfAnalogRowsById = [];
 				$mfProductRowsById = [];
 				$mfProductIds = [];
+				$mfSearchAnalogLimit = 8;
 				foreach ($arResult['SEARCH'] as $it)
 				{
 					if ((string)($it['MODULE_ID'] ?? '') !== 'iblock') continue;
@@ -367,19 +368,70 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						}
 					}
 
-					$analogsLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/bitrix/php_interface/include/mf_analogs.php';
+					if (function_exists('mf_product_search_card_warm_cache'))
+					{
+						mf_product_search_card_warm_cache($mfProductIds);
+					}
+
+					$analogsLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_analogs.php';
 					if (is_file($analogsLib))
 					{
 						require_once $analogsLib;
 					}
-					if ((function_exists('mf_analogs_related_ids_for_product') || function_exists('mf_analogs_ids_for_product')) && class_exists('CIBlockElement'))
+					if (function_exists('mf_analogs_related_ids_for_products') && class_exists('CIBlockElement'))
+					{
+						$mfAnalogsByProductId = mf_analogs_related_ids_for_products($mfProductIds, $mfSearchAnalogLimit);
+						$allAnalogIds = [];
+						foreach ($mfAnalogsByProductId as $ids)
+						{
+							foreach ((array)$ids as $aid)
+							{
+								$allAnalogIds[(int)$aid] = true;
+							}
+						}
+						$allAnalogIds = array_keys($allAnalogIds);
+						if (!empty($allAnalogIds))
+						{
+							$rsA = \CIBlockElement::GetList(
+								['NAME' => 'ASC', 'ID' => 'ASC'],
+								[
+									'IBLOCK_ID' => 4,
+									'ID' => $allAnalogIds,
+									'ACTIVE' => 'Y',
+								],
+								false,
+								false,
+								[
+									'ID',
+									'NAME',
+									'CODE',
+									'PREVIEW_TEXT',
+									'DETAIL_TEXT',
+									'PROPERTY_CML2_ARTICLE',
+									'PROPERTY_MF_BRAND',
+									'PROPERTY_MF_BRAND_NORM',
+									'PROPERTY_OEM',
+									'PROPERTY_MF_EXT_IMAGES',
+								]
+							);
+							while ($r = $rsA->Fetch())
+							{
+								$aid = (int)($r['ID'] ?? 0);
+								if ($aid > 0)
+								{
+									$mfAnalogRowsById[$aid] = $r;
+								}
+							}
+						}
+					}
+					elseif ((function_exists('mf_analogs_related_ids_for_product') || function_exists('mf_analogs_ids_for_product')) && class_exists('CIBlockElement'))
 					{
 						$allAnalogIds = [];
 						foreach ($mfProductIds as $pid)
 						{
 							$ids = function_exists('mf_analogs_related_ids_for_product')
-								? mf_analogs_related_ids_for_product((int)$pid, 12)
-								: mf_analogs_ids_for_product((int)$pid, 12);
+								? mf_analogs_related_ids_for_product((int)$pid, $mfSearchAnalogLimit)
+								: mf_analogs_ids_for_product((int)$pid, $mfSearchAnalogLimit);
 							if (!empty($ids))
 							{
 								$mfAnalogsByProductId[(int)$pid] = $ids;
@@ -393,6 +445,10 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						$allAnalogIds = array_keys($allAnalogIds);
 						if (!empty($allAnalogIds))
 						{
+							if (function_exists('mf_product_search_card_warm_cache'))
+							{
+								mf_product_search_card_warm_cache(array_merge($mfProductIds, $allAnalogIds));
+							}
 							$rsA = \CIBlockElement::GetList(
 								['NAME' => 'ASC', 'ID' => 'ASC'],
 								[
@@ -455,21 +511,10 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						{
 							$iblockId = (int)($arItem['PARAM2'] ?? 0);
 							$itemId = (int)($arItem['ITEM_ID'] ?? 0);
-							if ($iblockId === 4 && $itemId > 0 && class_exists('CIBlockElement'))
+							if ($iblockId === 4 && $itemId > 0)
 							{
-								static $mfCodeCache = [];
-								if (!isset($mfCodeCache[$itemId]))
-								{
-									$row = \CIBlockElement::GetList(
-										[],
-										['IBLOCK_ID' => $iblockId, 'ID' => $itemId],
-										false,
-										['nTopCount' => 1],
-										['ID', 'CODE']
-									)->Fetch();
-									$mfCodeCache[$itemId] = $row ? trim((string)($row['CODE'] ?? '')) : '';
-								}
-								$code = (string)$mfCodeCache[$itemId];
+								$prefRow = $mfProductRowsById[$itemId] ?? null;
+								$code = is_array($prefRow) ? trim((string)($prefRow['CODE'] ?? '')) : '';
 								if ($code !== '')
 								{
 									$href = '/products/' . rawurlencode($code) . '/';
@@ -983,8 +1028,14 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 						}
 					}
 
-					// Initial sync after page render.
-					try { setTimeout(mfSyncBasketState, 0); } catch (e0) {}
+					// Initial sync after page render (не блокирует отрисовку).
+					try {
+						if (window.requestIdleCallback) {
+							requestIdleCallback(mfSyncBasketState, {timeout: 2500});
+						} else {
+							setTimeout(mfSyncBasketState, 400);
+						}
+					} catch (e0) {}
 					document.addEventListener('click', function(e){
 						var requestBtn = e && e.target && e.target.closest ? e.target.closest('.js-mf-request-price') : null;
 						if (requestBtn)
