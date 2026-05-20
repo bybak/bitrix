@@ -644,6 +644,20 @@
 }
 .mf-search__empty strong{ color: #000; }
 
+.mf-search-analogs-status{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(240,165,0,.08);
+  border: 1px solid rgba(240,165,0,.22);
+  color: rgba(0,0,0,.78);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 @media (max-width: 575.98px){
   .mf-search__panel{
     padding: 12px;

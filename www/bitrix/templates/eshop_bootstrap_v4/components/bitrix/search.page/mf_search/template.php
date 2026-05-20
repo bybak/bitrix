@@ -54,209 +54,11 @@ if (is_file($mfProductSearchCardLib))
 {
 	require_once $mfProductSearchCardLib;
 }
-
-$mfMoney = static function (?float $price): string {
-	return function_exists('mf_product_search_card_money') ? mf_product_search_card_money($price) : '';
-};
-
-$mfSearchMinPricePrint = static function (int $productId): string {
-	return function_exists('mf_product_search_card_min_price_print') ? mf_product_search_card_min_price_print($productId) : '';
-};
-
-$mfStoresForProduct = static function (int $productId): array {
-	return function_exists('mf_product_search_card_stores') ? mf_product_search_card_stores($productId) : [];
-};
-
-$mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard, $mfPlaceholder, $mfStoresForProduct, $mfSearchMinPricePrint, $mfCatalogIblockId) {
-	$id = (int)($data['id'] ?? 0);
-	$url = (string)($data['url'] ?? '');
-	$titleHtml = (string)($data['title_html'] ?? '');
-	$code = trim((string)($data['code'] ?? ''));
-	$brand = trim((string)($data['brand'] ?? ''));
-	$article = trim((string)($data['article'] ?? ''));
-	$isAnalog = !empty($data['is_analog']);
-	$analogs = (is_array($data['analogs'] ?? null) ? (array)$data['analogs'] : []);
-
-	$img = $mfPlaceholder;
-	$prefetchRow = (isset($data['prefetch_row']) && is_array($data['prefetch_row'])) ? $data['prefetch_row'] : null;
-	if (function_exists('mf_mf_product_card_preview_src'))
-	{
-		$u = (string)mf_mf_product_card_preview_src($id, $code, $prefetchRow, $mfCatalogIblockId);
-		if ($u !== '')
-		{
-			$img = $u;
-		}
-	}
-	elseif ($code !== '' && function_exists('mf_mf_product_img_url'))
-	{
-		$u = (string)mf_mf_product_img_url($code, 1);
-		if ($u !== '') $img = $u;
-	}
-
-	$priceFrom = $mfSearchMinPricePrint($id);
-	$stores = $mfStoresForProduct($id);
-	$wrapTag = $isAnalog ? 'div' : 'article';
-	$titlePlain = trim(html_entity_decode(strip_tags($titleHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-	if ($titlePlain === '')
-	{
-		$titlePlain = 'Товар #' . $id;
-	}
-	?>
-	<<?=$wrapTag?> class="mf-search-card<?=($isAnalog ? ' mf-search-card--analog' : ' mf-search-card--root')?>">
-		<div class="mf-search-card__top">
-			<a class="mf-search-card__img" href="<?=htmlspecialcharsbx($url)?>">
-				<img src="<?=htmlspecialcharsbx($img)?>" alt="" loading="lazy" />
-			</a>
-			<div class="mf-search-card__main">
-				<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
-				<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
-					<div class="mf-product-meta__item">
-						<span class="mf-product-meta__label">От</span>
-						<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : 'Запросить цену' ?></span>
-					</div>
-					<div class="mf-product-meta__item">
-						<span class="mf-product-meta__label">Бренд</span>
-						<span class="mf-product-meta__value"><?= $brand !== '' ? htmlspecialcharsbx($brand) : '—' ?></span>
-					</div>
-					<div class="mf-product-meta__item">
-						<span class="mf-product-meta__label">Артикул</span>
-						<span class="mf-product-meta__value"><?= $article !== '' ? htmlspecialcharsbx($article) : '—' ?></span>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<div class="mf-search-card__avail">
-			<?php if (!empty($stores)): ?>
-				<table class="mf-search-stock-table">
-					<thead>
-						<tr>
-							<th>Склад</th>
-							<th>Срок доставки</th>
-							<th class="mf-search-stock-table__spb text-center">Доставка</th>
-							<th class="mf-ta-r">Наличие</th>
-							<th class="mf-ta-r">Цена</th>
-							<th class="mf-ta-r">Кол-во</th>
-							<th class="mf-ta-r"></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ($stores as $s): ?>
-							<?php
-							$mfExternal = !empty($s['external_warehouse']);
-							$mfAmtRounded = round((float)$s['amount'], 3);
-							$mfPendingDisp = trim((string)($s['pending_supplier_display'] ?? ''));
-							$mfStockCell = '';
-							if ($mfExternal)
-							{
-								$mfStockCell = ((float)$s['amount'] > 1e-9)
-									? htmlspecialcharsbx((string)$mfAmtRounded)
-									: 'Под заказ';
-							}
-							elseif ($mfPendingDisp !== '')
-							{
-								$mfStockCell = htmlspecialcharsbx($mfPendingDisp);
-							}
-							else
-							{
-								$mfStockCell = htmlspecialcharsbx((string)$mfAmtRounded);
-							}
-							$mfMaxQtyRounded = $mfExternal
-								? (((float)$s['amount'] > 1e-9) ? $mfAmtRounded : 0.0)
-								: (isset($s['pending_supplier_qty'])
-									? round((float)$s['pending_supplier_qty'], 3)
-									: $mfAmtRounded);
-							?>
-							<tr>
-								<td><?=htmlspecialcharsbx((string)$s['title'])?></td>
-								<td class="mf-search-stock-table__delivery"><?=htmlspecialcharsbx((string)($s['delivery_term'] ?? '—'))?></td>
-								<td class="mf-search-stock-table__spb text-center"><?php
-									$mfSpbSid = (int)($s['store_id'] ?? 0);
-									if ($mfSpbSid > 0 && function_exists('mf_store_delivery_spb_icon_html')) {
-										echo mf_store_delivery_spb_icon_html($mfSpbSid, $id);
-									} else {
-										echo '—';
-									}
-								?></td>
-								<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
-								<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
-								<td class="mf-ta-r">
-									<?php
-									$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
-									$mfRequestPrice = $mfNoPrice;
-									?>
-									<?php if (!$mfNoPrice): ?>
-										<div class="mf-search-stock__actions">
-											<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
-												<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
-												<input
-													type="number"
-													class="mf-search-qty__input js-mf-qty-input"
-													value="1"
-													min="1"
-													step="1"
-													inputmode="numeric"
-													aria-label="Количество"
-												>
-												<button type="button" class="mf-search-qty__btn js-mf-qty-plus" aria-label="Увеличить количество">+</button>
-											</div>
-										</div>
-									<?php else: ?>
-										<span class="mf-search-stock__order-only">—</span>
-									<?php endif; ?>
-								</td>
-								<td class="mf-ta-r">
-									<?php if ($mfRequestPrice): ?>
-										<button
-											type="button"
-											class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
-											data-product-id="<?=$id?>"
-											data-product-name="<?=htmlspecialcharsbx($titlePlain)?>"
-											data-product-url="<?=htmlspecialcharsbx($url)?>"
-										>Запросить цену</button>
-									<?php else: ?>
-										<button
-											type="button"
-											class="btn btn-sm btn-warning mf-search-stock__btn js-mf-add-store"
-											data-product-id="<?=$id?>"
-											data-store-id="<?= (int)$s['store_id'] ?>"
-											data-qty="1"
-										>В корзину</button>
-									<?php endif; ?>
-								</td>
-							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-				<?php else: ?>
-					<div class="mf-search-card__no-stock-row">
-						<div class="mf-search-card__no-stock">Нет данных по складам</div>
-						<button
-							type="button"
-							class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
-							data-product-id="<?=$id?>"
-							data-product-name="<?=htmlspecialcharsbx($titlePlain)?>"
-							data-product-url="<?=htmlspecialcharsbx($url)?>"
-						>Запросить цену</button>
-					</div>
-				<?php endif; ?>
-		</div>
-
-		<?php if (!$isAnalog && !empty($analogs)): ?>
-			<div class="mf-search-card__catalog-note">Также Вы можете заказать данный товар или его аналог в каталогах</div>
-			<div class="mf-search-card__analogs">
-				<div class="mf-search-card__analogs-title">Аналоги</div>
-				<div class="mf-search-analogs">
-					<?php foreach ($analogs as $a): ?>
-						<?php $mfRenderProductCard($a); ?>
-					<?php endforeach; ?>
-				</div>
-			</div>
-		<?php endif; ?>
-
-	</<?=$wrapTag?>>
-	<?php
-};
+$mfSearchRenderLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_search_render.php';
+if (is_file($mfSearchRenderLib))
+{
+	require_once $mfSearchRenderLib;
+}
 ?>
 
 <div class="mf-search">
@@ -323,13 +125,8 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					$total = (int)$arResult['NAV_RESULT']->NavRecordCount;
 				}
 
-				// Preload analogs for catalog items (IBLOCK_ID=4) so they show in search results
-				// even if analog items themselves don't match the query.
-				$mfAnalogsByProductId = [];
-				$mfAnalogRowsById = [];
 				$mfProductRowsById = [];
 				$mfProductIds = [];
-				$mfSearchAnalogLimit = 8;
 				foreach ($arResult['SEARCH'] as $it)
 				{
 					if ((string)($it['MODULE_ID'] ?? '') !== 'iblock') continue;
@@ -340,7 +137,6 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 				$mfProductIds = array_keys($mfProductIds);
 				if (!empty($mfProductIds))
 				{
-					// Prefetch base product rows for descriptions/codes.
 					if (class_exists('CIBlockElement'))
 					{
 						$rsP = \CIBlockElement::GetList(
@@ -371,115 +167,6 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 					if (function_exists('mf_product_search_card_warm_cache'))
 					{
 						mf_product_search_card_warm_cache($mfProductIds);
-					}
-
-					$analogsLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_analogs.php';
-					if (is_file($analogsLib))
-					{
-						require_once $analogsLib;
-					}
-					if (function_exists('mf_analogs_related_ids_for_products') && class_exists('CIBlockElement'))
-					{
-						$mfAnalogsByProductId = mf_analogs_related_ids_for_products($mfProductIds, $mfSearchAnalogLimit);
-						$allAnalogIds = [];
-						foreach ($mfAnalogsByProductId as $ids)
-						{
-							foreach ((array)$ids as $aid)
-							{
-								$allAnalogIds[(int)$aid] = true;
-							}
-						}
-						$allAnalogIds = array_keys($allAnalogIds);
-						if (!empty($allAnalogIds))
-						{
-							$rsA = \CIBlockElement::GetList(
-								['NAME' => 'ASC', 'ID' => 'ASC'],
-								[
-									'IBLOCK_ID' => 4,
-									'ID' => $allAnalogIds,
-									'ACTIVE' => 'Y',
-								],
-								false,
-								false,
-								[
-									'ID',
-									'NAME',
-									'CODE',
-									'PREVIEW_TEXT',
-									'DETAIL_TEXT',
-									'PROPERTY_CML2_ARTICLE',
-									'PROPERTY_MF_BRAND',
-									'PROPERTY_MF_BRAND_NORM',
-									'PROPERTY_OEM',
-									'PROPERTY_MF_EXT_IMAGES',
-								]
-							);
-							while ($r = $rsA->Fetch())
-							{
-								$aid = (int)($r['ID'] ?? 0);
-								if ($aid > 0)
-								{
-									$mfAnalogRowsById[$aid] = $r;
-								}
-							}
-						}
-					}
-					elseif ((function_exists('mf_analogs_related_ids_for_product') || function_exists('mf_analogs_ids_for_product')) && class_exists('CIBlockElement'))
-					{
-						$allAnalogIds = [];
-						foreach ($mfProductIds as $pid)
-						{
-							$ids = function_exists('mf_analogs_related_ids_for_product')
-								? mf_analogs_related_ids_for_product((int)$pid, $mfSearchAnalogLimit)
-								: mf_analogs_ids_for_product((int)$pid, $mfSearchAnalogLimit);
-							if (!empty($ids))
-							{
-								$mfAnalogsByProductId[(int)$pid] = $ids;
-								foreach ($ids as $aid)
-								{
-									$allAnalogIds[(int)$aid] = true;
-								}
-							}
-						}
-
-						$allAnalogIds = array_keys($allAnalogIds);
-						if (!empty($allAnalogIds))
-						{
-							if (function_exists('mf_product_search_card_warm_cache'))
-							{
-								mf_product_search_card_warm_cache(array_merge($mfProductIds, $allAnalogIds));
-							}
-							$rsA = \CIBlockElement::GetList(
-								['NAME' => 'ASC', 'ID' => 'ASC'],
-								[
-									'IBLOCK_ID' => 4,
-									'ID' => $allAnalogIds,
-									'ACTIVE' => 'Y',
-								],
-								false,
-								false,
-								[
-									'ID',
-									'NAME',
-									'CODE',
-									'PREVIEW_TEXT',
-									'DETAIL_TEXT',
-									'PROPERTY_CML2_ARTICLE',
-									'PROPERTY_MF_BRAND',
-									'PROPERTY_MF_BRAND_NORM',
-									'PROPERTY_OEM',
-									'PROPERTY_MF_EXT_IMAGES',
-								]
-							);
-							while ($r = $rsA->Fetch())
-							{
-								$aid = (int)($r['ID'] ?? 0);
-								if ($aid > 0)
-								{
-									$mfAnalogRowsById[$aid] = $r;
-								}
-							}
-						}
 					}
 				}
 				?>
@@ -563,35 +250,6 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							}
 						}
 
-						// Prepare analog cards to render inside the main card.
-						$mfAnalogs = ($mfItemId > 0 && isset($mfAnalogsByProductId[$mfItemId])) ? (array)$mfAnalogsByProductId[$mfItemId] : [];
-						$analogsData = [];
-						if (!empty($mfAnalogs))
-						{
-							foreach ($mfAnalogs as $aid)
-							{
-								$rA = $mfAnalogRowsById[(int)$aid] ?? null;
-								if (!is_array($rA)) continue;
-								$aid2 = (int)($rA['ID'] ?? 0);
-								if ($aid2 <= 0) continue;
-								$codeA = trim((string)($rA['CODE'] ?? ''));
-								$urlA = ($codeA !== '' ? '/products/' . rawurlencode($codeA) . '/' : '');
-								if ($urlA === '') continue;
-								$nameA = (string)($rA['NAME'] ?? ('ID ' . $aid2));
-								$analogsData[] = [
-									'id' => $aid2,
-									'url' => $urlA,
-									'code' => $codeA,
-									'prefetch_row' => $rA,
-									'title_html' => htmlspecialcharsbx($nameA),
-									'brand' => trim((string)($rA['PROPERTY_MF_BRAND_VALUE'] ?? ($rA['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
-									'article' => trim((string)($rA['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
-									'oem' => trim((string)($rA['PROPERTY_OEM_VALUE'] ?? '')),
-									'is_analog' => true,
-								];
-							}
-						}
-
 						// Название из индекса устаревает после правок в каталоге — как у аналогов, берём NAME из префетча.
 						$mfTitleHtml = (string)($arItem['TITLE_FORMATED'] ?? htmlspecialcharsbx((string)($arItem['TITLE'] ?? '')));
 						if (is_array($mfRow))
@@ -603,18 +261,21 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							}
 						}
 
-						$mfRenderProductCard([
-							'id' => $mfItemId,
-							'url' => $href,
-							'code' => $mfCode,
-							'prefetch_row' => is_array($mfRow) ? $mfRow : null,
-							'title_html' => $mfTitleHtml,
-							'brand' => $mfBrand,
-							'article' => $mfArticle,
-							'oem' => $mfOem,
-							'is_analog' => false,
-							'analogs' => $analogsData,
-						]);
+						if (function_exists('mf_search_render_product_card'))
+						{
+							mf_search_render_product_card([
+								'id' => $mfItemId,
+								'url' => $href,
+								'code' => $mfCode,
+								'prefetch_row' => is_array($mfRow) ? $mfRow : null,
+								'title_html' => $mfTitleHtml,
+								'brand' => $mfBrand,
+								'article' => $mfArticle,
+								'oem' => $mfOem,
+								'is_analog' => false,
+								'lazy_analogs' => true,
+							]);
+						}
 						?>
 					<?php endforeach; ?>
 				</div>
@@ -909,6 +570,7 @@ $mfRenderProductCard = static function (array $data) use (&$mfRenderProductCard,
 							catch (e3) {}
 						}
 					}
+					window.__mfSearchSyncBasket = mfSyncBasketState;
 					function mfRequestPriceMessage(text, isError)
 					{
 						if (!requestPriceMessage) return;

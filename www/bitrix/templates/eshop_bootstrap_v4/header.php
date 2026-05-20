@@ -1,12 +1,4 @@
 <?if(!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED!==true)die();
-// Единственный актуальный header — в /local/templates/… Если на сервере открывается этот файл из /bitrix/templates/,
-// без шима правки «оформление заказа» (mf-order.css, sale.order.ajax style.css) никогда не применятся.
-$__mfSiteHeader = $_SERVER['DOCUMENT_ROOT'].'/local/templates/'.SITE_TEMPLATE_ID.'/header.php';
-if (is_file($__mfSiteHeader))
-{
-	require $__mfSiteHeader;
-	return;
-}
 IncludeTemplateLangFile($_SERVER["DOCUMENT_ROOT"]."/bitrix/templates/".SITE_TEMPLATE_ID."/header.php");
 CJSCore::Init(array("fx"));
 
@@ -36,7 +28,13 @@ $isProducts = (strpos($curPage, SITE_DIR."products/") === 0);
 $isSearch = (strpos($curPage, SITE_DIR."search/") === 0);
 $cartPathPrefix = SITE_DIR . "personal/cart/";
 $isCart = ($curPage === rtrim($cartPathPrefix, "/") || strpos($curPage, $cartPathPrefix) === 0);
-$isOrderMake = (strpos($curPage, SITE_DIR."personal/order/make/") === 0);
+$orderMakePrefix = rtrim((string)SITE_DIR, '/') . '/personal/order/make';
+$curDir = $APPLICATION->GetCurDir();
+$isOrderMake = (
+	strpos($curPage, $orderMakePrefix) === 0
+	|| stripos($curPage, 'personal/order/make') !== false
+	|| stripos($curDir, 'personal/order/make') !== false
+);
 $isPersonal = (strpos($curPage, SITE_DIR."personal/") === 0);
 $isAuth = (strpos($curPage, SITE_DIR."auth/") === 0);
 $isLogin = (strpos($curPage, SITE_DIR."login/") === 0);
@@ -45,6 +43,7 @@ $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-header.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-footer.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-text-page.css");
 $APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-header.js");
+$APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-search.js");
 
 // Cache-bust custom static assets (browser caches them aggressively).
 $mfAssetVer = function (string $rel) {
@@ -157,6 +156,9 @@ if (function_exists('mf_seo_apply_for_current_page'))
 	{
 		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-order.css");
 		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
+		// Стили карточек MF-чекаута (.mf-checkout-meta / .mf-checkout-choice) — всегда с канонического пути компонента.
+		$soaCss = '/local/components/bitrix/sale.order.ajax/templates/bootstrap_v4/style.css';
+		echo '<link rel="stylesheet" href="' . htmlspecialcharsbx($mfAssetVer($soaCss)) . '" />' . "\n";
 	}
 	if ($isPayment)
 	{

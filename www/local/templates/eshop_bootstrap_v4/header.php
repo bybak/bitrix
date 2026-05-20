@@ -43,6 +43,7 @@ $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-header.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-footer.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-text-page.css");
 $APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-header.js");
+$APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-search.js");
 
 // Cache-bust custom static assets (browser caches them aggressively).
 $mfAssetVer = function (string $rel) {
