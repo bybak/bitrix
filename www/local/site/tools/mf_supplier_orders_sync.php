@@ -21,8 +21,9 @@
  *   --progress-every-order=N — сообщать каждый N-й заказ (по умолчанию 1). 0 = только этапы fetch/filter/purge/done и строки по --progress-every-line
  *   --progress-every-line=N — каждые N обработанных строк (0 = выкл.)
  *
- * Запуск из контейнера (DOCUMENT_ROOT = корень сайта):
+ * Запуск из контейнера (DOCUMENT_ROOT = корень сайта, /var/www/html):
  *   php /var/www/html/tools/mf_supplier_orders_sync.php
+ *   php /var/www/html/local/site/tools/mf_supplier_orders_sync.php
  *   php /var/www/html/tools/mf_supplier_orders_sync.php --dry-run
  *   php /var/www/html/tools/mf_supplier_orders_sync.php --no-fill-base-price
  *   php /var/www/html/tools/mf_supplier_orders_sync.php --url=https://host/unf/hs/orders/supplier_order_get/
@@ -32,7 +33,8 @@
  */
 declare(strict_types=1);
 
-$_SERVER['DOCUMENT_ROOT'] = dirname(__DIR__);
+// …/local/site/tools/ → три уровня вверх до корня сайта (document root).
+$_SERVER['DOCUMENT_ROOT'] = dirname(__DIR__, 3);
 define('NO_KEEP_STATISTIC', true);
 define('NOT_CHECK_PERMISSIONS', true);
 define('BX_NO_ACCELERATOR_RESET', true);
@@ -44,10 +46,14 @@ use Bitrix\Main\Loader;
 
 Loader::includeModule('iblock');
 
-$lib = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_supplier_orders_lib.php';
+$lib = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_supplier_orders_lib.php';
 if (!is_file($lib))
 {
-	fwrite(STDERR, "Не найден: {$lib}\n");
+	$lib = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_supplier_orders_lib.php';
+}
+if (!is_file($lib))
+{
+	fwrite(STDERR, "Не найден mf_supplier_orders_lib.php в local/ или bitrix/php_interface/include/\n");
 	exit(1);
 }
 require_once $lib;
