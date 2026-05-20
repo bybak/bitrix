@@ -17,7 +17,7 @@ $error = trim((string)($params['ERROR'] ?? ''));
 <div class="mf-pay mf-pay-paykeeper">
 	<h3>Оплата PayKeeper</h3>
 
-	<p>Сумма к оплате: <strong><?=SaleFormatCurrency($payment->getSum(), $payment->getField('CURRENCY'))?></strong></p>
+	<p>Сумма к оплате: <strong><?=function_exists('mf_sale_format_currency') ? mf_sale_format_currency($payment->getSum(), $payment->getField('CURRENCY')) : SaleFormatCurrency($payment->getSum(), $payment->getField('CURRENCY'))?></strong></p>
 
 	<?php if ($error !== ''): ?>
 		<div class="alert alert-danger">

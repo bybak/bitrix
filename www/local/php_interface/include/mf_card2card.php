@@ -400,6 +400,9 @@ final class TemplateRenderer
 			$orderDate = (string)$dateInsert;
 		}
 
+		$paymentSumRounded = function_exists('mf_round_price') ? mf_round_price($paymentSum) : (float)ceil($paymentSum);
+		$paymentSumDecimals = ((int)round(abs($paymentSumRounded) * 10) % 10 === 0) ? 0 : 1;
+
 		return [
 			'EMAIL_TO' => $emailTo,
 			'EMAIL_FROM' => $emailFrom,
@@ -408,7 +411,7 @@ final class TemplateRenderer
 			'ORDER_NUMBER' => $orderNumber,
 			'ORDER_DATE' => $orderDate,
 			'PAY_SYSTEM_NAME' => ($paymentSystemName !== '' ? $paymentSystemName : 'С карты на карту'),
-			'PAYMENT_SUM' => number_format($paymentSum, 2, '.', ' ') . ' RUB',
+			'PAYMENT_SUM' => number_format($paymentSumRounded, $paymentSumDecimals, '.', ' ') . ' RUB',
 		];
 	}
 

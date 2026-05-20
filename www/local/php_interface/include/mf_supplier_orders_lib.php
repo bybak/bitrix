@@ -573,7 +573,7 @@ if (!function_exists('mf_supplier_orders_try_set_internal_store_raw_price_from_1
 			return false;
 		}
 		$cur = mf_supplier_orders_base_price_currency();
-		$price = round($unitPrice, 2);
+		$price = function_exists('mf_round_price') ? mf_round_price($unitPrice) : (float)ceil($unitPrice);
 		if ($price <= 0.0)
 		{
 			return false;

@@ -123,9 +123,9 @@ try
 		'destination_mode' => (string)($resp['destination_mode'] ?? ''),
 		'zip' => $dest['zip'],
 		'weight_kg' => round($weightKg, 3),
-		'insurance_rub' => round($insurance, 2),
+		'insurance_rub' => function_exists('mf_round_price') ? mf_round_price($insurance) : (float)ceil($insurance),
 		'dimensions_m' => $dimensionsM,
-		'basket_sum' => round($sum, 2),
+		'basket_sum' => function_exists('mf_round_price') ? mf_round_price($sum) : (float)ceil($sum),
 		'offers' => $offers,
 	]);
 }

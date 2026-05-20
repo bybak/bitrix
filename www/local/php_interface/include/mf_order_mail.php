@@ -756,8 +756,9 @@ final class Renderer
 	private static function moneyPlain(float $value, string $currency): string
 	{
 		unset($currency);
+		$rounded = function_exists('mf_round_price') ? mf_round_price($value) : (float)ceil($value);
 
-		return number_format($value, 2, ',', ' ');
+		return number_format($rounded, 0, ',', ' ');
 	}
 
 	private static function qtyLabel(float $qty): string

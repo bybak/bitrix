@@ -3000,7 +3000,7 @@ class SaleOrderAjax extends \CBitrixComponent
 				$arBasketItem["VAT_VALUE"] = $basketItem->getVat();
 			}
 			$arBasketItem["QUANTITY"] = $basketItem->getQuantity();
-			$arBasketItem["PRICE_FORMATED"] = SaleFormatCurrency($basketItem->getPrice(), $this->order->getCurrency());
+			$arBasketItem["PRICE_FORMATED"] = mf_sale_format_currency($basketItem->getPrice(), $this->order->getCurrency());
 			$arBasketItem["WEIGHT_FORMATED"] = roundEx(doubleval($basketItem->getWeight() / $arResult["WEIGHT_KOEF"]), SALE_WEIGHT_PRECISION)." ".$arResult["WEIGHT_UNIT"];
 			$arBasketItem["DISCOUNT_PRICE"] = $basketItem->getDiscountPrice();
 
@@ -3016,7 +3016,7 @@ class SaleOrderAjax extends \CBitrixComponent
 			}
 			$arBasketItem["DISCOUNT_PRICE_PERCENT_FORMATED"] = $arBasketItem['DISCOUNT_PRICE_PERCENT'].'%';
 
-			$arBasketItem["BASE_PRICE_FORMATED"] = SaleFormatCurrency($basketItem->getBasePrice(), $this->order->getCurrency());
+			$arBasketItem["BASE_PRICE_FORMATED"] = mf_sale_format_currency($basketItem->getBasePrice(), $this->order->getCurrency());
 
 			$arDim = $basketItem->getField('DIMENSIONS');
 
@@ -3053,19 +3053,19 @@ class SaleOrderAjax extends \CBitrixComponent
 
 			$this->arElementId[] = $arBasketItem["PRODUCT_ID"];
 			$arBasketItem["SUM_NUM"] = $basketItem->getPrice() * $basketItem->getQuantity();
-			$arBasketItem["SUM"] = SaleFormatCurrency(
+			$arBasketItem["SUM"] = mf_sale_format_currency(
 				$arBasketItem["SUM_NUM"],
 				$this->order->getCurrency()
 			);
 
 			$arBasketItem["SUM_BASE"] = $basketItem->getBasePrice() * $basketItem->getQuantity();
-			$arBasketItem["SUM_BASE_FORMATED"] = SaleFormatCurrency(
+			$arBasketItem["SUM_BASE_FORMATED"] = mf_sale_format_currency(
 				$arBasketItem["SUM_BASE"],
 				$this->order->getCurrency()
 			);
 
 			$arBasketItem["SUM_DISCOUNT_DIFF"] = $arBasketItem["SUM_BASE"] - $arBasketItem["SUM_NUM"];
-			$arBasketItem["SUM_DISCOUNT_DIFF_FORMATED"] = SaleFormatCurrency(
+			$arBasketItem["SUM_DISCOUNT_DIFF_FORMATED"] = mf_sale_format_currency(
 				$arBasketItem["SUM_DISCOUNT_DIFF"],
 				$this->order->getCurrency()
 			);
@@ -3483,9 +3483,9 @@ class SaleOrderAjax extends \CBitrixComponent
 		$innerPayment = $this->getInnerPayment($this->order);
 		if (!empty($innerPayment) && $innerPayment->getSum() > 0)
 		{
-			$arResult['PAYED_FROM_ACCOUNT_FORMATED'] = SaleFormatCurrency($innerPayment->getSum(), $this->order->getCurrency());
+			$arResult['PAYED_FROM_ACCOUNT_FORMATED'] = mf_sale_format_currency($innerPayment->getSum(), $this->order->getCurrency());
 			$arResult['ORDER_TOTAL_LEFT_TO_PAY'] = $this->order->getPrice() - $innerPayment->getSum();
-			$arResult['ORDER_TOTAL_LEFT_TO_PAY_FORMATED'] = SaleFormatCurrency($this->order->getPrice() - $innerPayment->getSum(), $this->order->getCurrency());
+			$arResult['ORDER_TOTAL_LEFT_TO_PAY_FORMATED'] = mf_sale_format_currency($this->order->getPrice() - $innerPayment->getSum(), $this->order->getCurrency());
 		}
 
 		$paySystemList = $this->arParams['DELIVERY_TO_PAYSYSTEM'] === 'p2d' ? $this->arActivePaySystems : $this->arPaySystemServiceAll;
@@ -3550,12 +3550,12 @@ class SaleOrderAjax extends \CBitrixComponent
 					if ($service !== null)
 					{
 						$paySystem['PRICE'] = $service->getPaymentPrice($extPayment);
-						$paySystem['PRICE_FORMATTED'] = SaleFormatCurrency($paySystem['PRICE'], $this->order->getCurrency());
+						$paySystem['PRICE_FORMATTED'] = mf_sale_format_currency($paySystem['PRICE'], $this->order->getCurrency());
 
 						if ($paymentId == $paySystem['ID'])
 						{
 							$arResult['PAY_SYSTEM_PRICE'] = $extPayment->getField('PRICE_COD');
-							$arResult['PAY_SYSTEM_PRICE_FORMATTED'] = SaleFormatCurrency($arResult['PAY_SYSTEM_PRICE'], $this->order->getCurrency());
+							$arResult['PAY_SYSTEM_PRICE_FORMATTED'] = mf_sale_format_currency($arResult['PAY_SYSTEM_PRICE'], $this->order->getCurrency());
 						}
 					}
 				}
@@ -3637,7 +3637,7 @@ class SaleOrderAjax extends \CBitrixComponent
 		if ($arResult["VAT_SUM"] === null)
 			$arResult["VAT_SUM"] = 0;
 
-		$arResult["VAT_SUM_FORMATED"] = SaleFormatCurrency($arResult["VAT_SUM"], $this->order->getCurrency());
+		$arResult["VAT_SUM_FORMATED"] = mf_sale_format_currency($arResult["VAT_SUM"], $this->order->getCurrency());
 
 		$taxes = $this->order->getTax();
 		$taxes->refreshData();
@@ -3657,7 +3657,7 @@ class SaleOrderAjax extends \CBitrixComponent
 				foreach ($arResult['TAX_LIST'] as &$tax)
 				{
 					if ($tax['VALUE_MONEY'])
-						$tax['VALUE_MONEY_FORMATED'] = SaleFormatCurrency($tax['VALUE_MONEY'], $this->order->getCurrency());
+						$tax['VALUE_MONEY_FORMATED'] = mf_sale_format_currency($tax['VALUE_MONEY'], $this->order->getCurrency());
 				}
 			}
 		}
@@ -3689,27 +3689,33 @@ class SaleOrderAjax extends \CBitrixComponent
 		$arResult['BASKET_POSITIONS'] = $basket->count();
 
 		$arResult['ORDER_PRICE'] = $basket->getPrice();
-		$arResult['ORDER_PRICE_FORMATED'] = SaleFormatCurrency($arResult['ORDER_PRICE'], $this->order->getCurrency());
+		$arResult['ORDER_PRICE_FORMATED'] = mf_sale_format_currency($arResult['ORDER_PRICE'], $this->order->getCurrency());
 
 		$arResult['ORDER_WEIGHT'] = $basket->getWeight();
 		$arResult['ORDER_WEIGHT_FORMATED'] = roundEx(floatval($arResult['ORDER_WEIGHT'] / $arResult['WEIGHT_KOEF']), SALE_WEIGHT_PRECISION).' '.$arResult['WEIGHT_UNIT'];
 
 		$arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] = $basket->getBasePrice();
-		$arResult['PRICE_WITHOUT_DISCOUNT'] = SaleFormatCurrency($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'], $this->order->getCurrency());
+		$arResult['PRICE_WITHOUT_DISCOUNT'] = mf_sale_format_currency($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'], $this->order->getCurrency());
 
 		$arResult['BASKET_PRICE_DISCOUNT_DIFF_VALUE'] = $basket->getBasePrice() - $basket->getPrice();
-		$arResult['BASKET_PRICE_DISCOUNT_DIFF'] = SaleFormatCurrency($arResult['BASKET_PRICE_DISCOUNT_DIFF_VALUE'], $this->order->getCurrency());
+		$arResult['BASKET_PRICE_DISCOUNT_DIFF'] = mf_sale_format_currency($arResult['BASKET_PRICE_DISCOUNT_DIFF_VALUE'], $this->order->getCurrency());
 
-		$arResult['DISCOUNT_PRICE'] = Sale\PriceMaths::roundPrecision(
-			$this->order->getDiscountPrice() + ($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] - $arResult['ORDER_PRICE'])
-		);
-		$arResult['DISCOUNT_PRICE_FORMATED'] = SaleFormatCurrency($arResult['DISCOUNT_PRICE'], $this->order->getCurrency());
+		$arResult['DISCOUNT_PRICE'] = function_exists('mf_round_price')
+			? mf_round_price((float)($this->order->getDiscountPrice() + ($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] - $arResult['ORDER_PRICE'])))
+			: Sale\PriceMaths::roundPrecision(
+				$this->order->getDiscountPrice() + ($arResult['PRICE_WITHOUT_DISCOUNT_VALUE'] - $arResult['ORDER_PRICE'])
+			);
+		$arResult['DISCOUNT_PRICE_FORMATED'] = mf_sale_format_currency($arResult['DISCOUNT_PRICE'], $this->order->getCurrency());
 
-		$arResult['DELIVERY_PRICE'] = Sale\PriceMaths::roundPrecision($this->order->getDeliveryPrice());
-		$arResult['DELIVERY_PRICE_FORMATED'] = SaleFormatCurrency($arResult['DELIVERY_PRICE'], $this->order->getCurrency());
+		$arResult['DELIVERY_PRICE'] = function_exists('mf_round_price')
+			? mf_round_price((float)$this->order->getDeliveryPrice())
+			: Sale\PriceMaths::roundPrecision($this->order->getDeliveryPrice());
+		$arResult['DELIVERY_PRICE_FORMATED'] = mf_sale_format_currency($arResult['DELIVERY_PRICE'], $this->order->getCurrency());
 
-		$arResult['ORDER_TOTAL_PRICE'] = Sale\PriceMaths::roundPrecision($this->order->getPrice());
-		$arResult['ORDER_TOTAL_PRICE_FORMATED'] = SaleFormatCurrency($arResult['ORDER_TOTAL_PRICE'], $this->order->getCurrency());
+		$arResult['ORDER_TOTAL_PRICE'] = function_exists('mf_round_price')
+			? mf_round_price((float)$this->order->getPrice())
+			: Sale\PriceMaths::roundPrecision($this->order->getPrice());
+		$arResult['ORDER_TOTAL_PRICE_FORMATED'] = mf_sale_format_currency($arResult['ORDER_TOTAL_PRICE'], $this->order->getCurrency());
 	}
 
 	/**
@@ -4412,7 +4418,7 @@ class SaleOrderAjax extends \CBitrixComponent
 		if ($sumToSpend > 0)
 		{
 			$arResult['PAY_FROM_ACCOUNT'] = 'Y';
-			$arResult['CURRENT_BUDGET_FORMATED'] = SaleFormatCurrency($arResult['USER_ACCOUNT']['CURRENT_BUDGET'], $order->getCurrency());
+			$arResult['CURRENT_BUDGET_FORMATED'] = mf_sale_format_currency($arResult['USER_ACCOUNT']['CURRENT_BUDGET'], $order->getCurrency());
 		}
 		else
 		{
@@ -4887,14 +4893,18 @@ class SaleOrderAjax extends \CBitrixComponent
 				{
 					if ($calcResult->isSuccess())
 					{
-						$arDelivery['PRICE'] = Sale\PriceMaths::roundPrecision($calcResult->getPrice());
-						$arDelivery['PRICE_FORMATED'] = SaleFormatCurrency($arDelivery['PRICE'], $calcOrder->getCurrency());
+						$arDelivery['PRICE'] = function_exists('mf_round_price')
+							? mf_round_price((float)$calcResult->getPrice())
+							: Sale\PriceMaths::roundPrecision($calcResult->getPrice());
+						$arDelivery['PRICE_FORMATED'] = mf_sale_format_currency($arDelivery['PRICE'], $calcOrder->getCurrency());
 
-						$currentCalcDeliveryPrice = Sale\PriceMaths::roundPrecision($calcOrder->getDeliveryPrice());
+						$currentCalcDeliveryPrice = function_exists('mf_round_price')
+							? mf_round_price((float)$calcOrder->getDeliveryPrice())
+							: Sale\PriceMaths::roundPrecision($calcOrder->getDeliveryPrice());
 						if ($currentCalcDeliveryPrice >= 0 && $arDelivery['PRICE'] != $currentCalcDeliveryPrice)
 						{
 							$arDelivery['DELIVERY_DISCOUNT_PRICE'] = $currentCalcDeliveryPrice;
-							$arDelivery['DELIVERY_DISCOUNT_PRICE_FORMATED'] = SaleFormatCurrency($arDelivery['DELIVERY_DISCOUNT_PRICE'], $calcOrder->getCurrency());
+							$arDelivery['DELIVERY_DISCOUNT_PRICE_FORMATED'] = mf_sale_format_currency($arDelivery['DELIVERY_DISCOUNT_PRICE'], $calcOrder->getCurrency());
 						}
 
 						if ($calcResult->getPeriodDescription() <> '')
@@ -5485,7 +5495,7 @@ class SaleOrderAjax extends \CBitrixComponent
 						$arr['name'] = $extraService->getName();
 						$arr['value'] = $extraService->getValue();
 						$arr['price'] = $extraService->getPriceShipment($this->getCurrentShipment($this->order));
-						$arr['priceFormatted'] = SaleFormatCurrency($extraService->getPriceShipment($this->getCurrentShipment($this->order)), $this->order->getCurrency());
+						$arr['priceFormatted'] = mf_sale_format_currency($extraService->getPriceShipment($this->getCurrentShipment($this->order)), $this->order->getCurrency());
 						$arr['description'] = $extraService->getDescription();
 						$arr['canUserEditValue'] = $extraService->canUserEditValue();
 						$arr['editControl'] = $extraService->getEditControl('DELIVERY_EXTRA_SERVICES['.$delivery['ID'].']['.$extraServiceId.']');

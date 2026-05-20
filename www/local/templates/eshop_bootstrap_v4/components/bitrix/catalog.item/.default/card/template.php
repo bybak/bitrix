@@ -322,11 +322,9 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 					<?php
 					if ($canBuy && $mfDynPrice !== null)
 					{
-						$mfDp = round((float)$mfDynPrice, 1);
-						$mfDd = ((int)round(abs($mfDp) * 10) % 10 === 0) ? 0 : 1;
 						echo function_exists('mf_format_display_price_rub')
 							? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub((float)$mfDynPrice)))
-							: ('От ' . htmlspecialcharsbx(number_format($mfDp, $mfDd, '.', ' ')) . ' &#8381;');
+							: ('От ' . htmlspecialcharsbx(number_format(function_exists('mf_round_price') ? mf_round_price((float)$mfDynPrice) : (float)ceil((float)$mfDynPrice), 0, '.', ' ')) . ' &#8381;');
 					}
 					elseif ($canBuy && function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price))
 					{

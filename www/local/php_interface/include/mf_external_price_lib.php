@@ -978,7 +978,7 @@ if (!function_exists('mf_ep_bitrix_convert_to_rub'))
 		$c = mb_strtoupper(trim($currencyCode));
 		if ($c === 'RUB' || $c === 'RUR' || $c === '')
 		{
-			return round($amount, 2);
+			return function_exists('mf_round_price') ? mf_round_price($amount) : (float)ceil($amount);
 		}
 
 		if (!Loader::includeModule('currency') || !class_exists(\CCurrencyRates::class))
@@ -1017,7 +1017,7 @@ if (!function_exists('mf_ep_bitrix_convert_to_rub'))
 			return null;
 		}
 
-		return round((float)$r, 2);
+		return function_exists('mf_round_price') ? mf_round_price((float)$r) : (float)ceil((float)$r);
 	}
 }
 
@@ -1054,7 +1054,7 @@ if (!function_exists('mf_ep_convert_to_rub'))
 		$c = mb_strtoupper(trim($currencyCode));
 		if ($c === 'RUB' || $c === 'RUR' || $c === '')
 		{
-			return round($amount, 2);
+			return function_exists('mf_round_price') ? mf_round_price($amount) : (float)ceil($amount);
 		}
 
 		if (abs($amount) < 1e-12)
@@ -1072,7 +1072,7 @@ if (!function_exists('mf_ep_convert_to_rub'))
 		{
 			$rates = mf_ep_get_cbr_rates_cached(false);
 
-			return round($amount * (float)$rates[$c], 2);
+			return function_exists('mf_round_price') ? mf_round_price($amount * (float)$rates[$c]) : (float)ceil($amount * (float)$rates[$c]);
 		}
 
 		throw new RuntimeException(
@@ -1244,7 +1244,7 @@ if (!function_exists('mf_ep_weight_surcharge_rub'))
 
 		$calc = $kg * (float)$w['rub_per_kg'];
 
-		return round($calc, 2);
+		return function_exists('mf_round_price') ? mf_round_price($calc) : (float)ceil($calc);
 	}
 }
 
@@ -1273,7 +1273,15 @@ if (!function_exists('mf_ep_display_price_for_store'))
 		}
 		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
 		{
-			$computed = round((float)$computed * 0.9, 2);
+			$computed = (float)$computed * 0.9;
+		}
+		if (function_exists('mf_round_price'))
+		{
+			$computed = mf_round_price((float)$computed);
+		}
+		else
+		{
+			$computed = round((float)$computed, 1);
 		}
 
 		return $computed > 0 ? $computed : null;

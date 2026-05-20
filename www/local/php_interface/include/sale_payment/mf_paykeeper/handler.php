@@ -126,20 +126,24 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 
 				$price = (float)$bi->getPrice();
 				if ($price < 0) $price = 0.0;
+				if (function_exists('mf_round_price'))
+				{
+					$price = mf_round_price($price);
+				}
 
 				$name = trim((string)$bi->getField('NAME'));
 				if ($name === '') $name = 'Товар';
 
-				$sum = round($price * $qty, 2);
+				$sum = function_exists('mf_round_price') ? mf_round_price($price * $qty) : (float)ceil($price * $qty);
 				$vatRate = $bi->getField('VAT_RATE');
 				$vat = $this->vatCodeFromRate($vatRate);
 				if ($vat === '') $vat = $defaultVat;
 
 				$cart[] = [
 					'name' => $name,
-					'price' => round($price, 2),
+					'price' => $price,
 					'quantity' => ($qty == (int)$qty ? (int)$qty : $qty),
-					'sum' => rtrim(rtrim(number_format($sum, 2, '.', ''), '0'), '.'),
+					'sum' => (string)(int)$sum,
 					'tax' => $vat,
 					'item_type' => 'goods',
 					'payment_type' => $defaultPaymentType,
@@ -153,12 +157,12 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 		$delivery = (float)$order->getDeliveryPrice();
 		if ($delivery > 0)
 		{
-			$delivery = round($delivery, 2);
+			$delivery = function_exists('mf_round_price') ? mf_round_price($delivery) : (float)ceil($delivery);
 			$cart[] = [
 				'name' => 'Доставка',
 				'price' => $delivery,
 				'quantity' => 1,
-				'sum' => rtrim(rtrim(number_format($delivery, 2, '.', ''), '0'), '.'),
+				'sum' => (string)(int)$delivery,
 				'tax' => $defaultVat,
 				'item_type' => 'service',
 				'payment_type' => $defaultPaymentType,
@@ -167,18 +171,18 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 			$total += $delivery;
 		}
 
-		$paySum = round((float)$payment->getSum(), 2);
-		$diff = round($paySum - $total, 2);
-		if (abs($diff) >= 0.01 && !empty($cart))
+		$paySum = function_exists('mf_round_price') ? mf_round_price((float)$payment->getSum()) : (float)ceil((float)$payment->getSum());
+		$diff = $paySum - $total;
+		if (abs($diff) >= 1 && !empty($cart))
 		{
 			// Fix minor rounding differences by adjusting the last line.
 			$lastIdx = count($cart) - 1;
 			$lastSum = (float)str_replace(',', '.', (string)($cart[$lastIdx]['sum'] ?? '0'));
-			$lastSum = round($lastSum + $diff, 2);
+			$lastSum = function_exists('mf_round_price') ? mf_round_price($lastSum + $diff) : (float)ceil($lastSum + $diff);
 			$q = (float)($cart[$lastIdx]['quantity'] ?? 1);
 			if ($q <= 0) $q = 1;
-			$cart[$lastIdx]['sum'] = rtrim(rtrim(number_format($lastSum, 2, '.', ''), '0'), '.');
-			$cart[$lastIdx]['price'] = round($lastSum / $q, 2);
+			$cart[$lastIdx]['sum'] = (string)(int)$lastSum;
+			$cart[$lastIdx]['price'] = function_exists('mf_round_price') ? mf_round_price($lastSum / $q) : (float)ceil($lastSum / $q);
 			$total += $diff;
 		}
 

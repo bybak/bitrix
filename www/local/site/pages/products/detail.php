@@ -205,15 +205,14 @@ if ($elementId > 0 && function_exists('mf_catalog_storefront_price_when_in_stock
 	$minP = mf_catalog_storefront_price_when_in_stock($elementId);
 	if ($minP !== null && (float)$minP > 0)
 	{
-		$minP = round((float)$minP, 1);
+		$minP = function_exists('mf_round_price') ? mf_round_price((float)$minP) : (float)ceil((float)$minP);
 		$mfMinPriceValue = $minP;
-		$mfMinDec = ((int)round(abs($minP) * 10) % 10 === 0) ? 0 : 1;
 		$mfMinPriceText = function_exists('mf_format_display_price_rub')
 			? htmlspecialcharsbx(mf_format_display_price_rub($minP))
-			: (htmlspecialcharsbx(number_format($minP, $mfMinDec, '.', ' ')) . ' &#8381;');
+			: (htmlspecialcharsbx(number_format($minP, 0, '.', ' ')) . ' &#8381;');
 		$minPPrint = function_exists('mf_format_display_price_rub')
 			? mf_format_display_price_rub($minP)
-			: (number_format($minP, $mfMinDec, '.', ' ') . ' &#8381;');
+			: (number_format($minP, 0, '.', ' ') . ' &#8381;');
 		?>
 		<script>
 		(function(){
@@ -441,11 +440,9 @@ if ($elementId > 0)
 							<td class="text-right">
 								<?php if ($storePrice !== null): ?>
 									<?php
-									$mfSp = round((float)$storePrice, 1);
-									$mfSd = ((int)round(abs($mfSp) * 10) % 10 === 0) ? 0 : 1;
 									echo function_exists('mf_format_display_price_rub')
 										? htmlspecialcharsbx(mf_format_display_price_rub((float)$storePrice))
-										: (htmlspecialcharsbx(number_format($mfSp, $mfSd, '.', ' ')) . ' &#8381;');
+										: (htmlspecialcharsbx(number_format(function_exists('mf_round_price') ? mf_round_price((float)$storePrice) : (float)ceil((float)$storePrice), 0, '.', ' ')) . ' &#8381;');
 									?>
 								<?php else: ?>
 									—

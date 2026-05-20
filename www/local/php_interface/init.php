@@ -1343,13 +1343,29 @@ if (!function_exists('mf_store_markup_pct'))
 	}
 }
 
+if (!function_exists('mf_round_price'))
+{
+	/**
+	 * Округление денежных сумм до целого рубля вверх (13830.47 → 13831).
+	 */
+	function mf_round_price(float $amount): float
+	{
+		if (!is_finite($amount) || $amount <= 0)
+		{
+			return 0.0;
+		}
+
+		return (float)ceil($amount);
+	}
+}
+
 if (!function_exists('mf_apply_markup'))
 {
 	function mf_apply_markup(float $rawPrice, float $pct): float
 	{
 		if ($rawPrice <= 0) return 0.0;
-		if ($pct == 0.0) return round($rawPrice, 2);
-		return round($rawPrice * (1.0 + ($pct / 100.0)), 2);
+		if ($pct == 0.0) return mf_round_price($rawPrice);
+		return mf_round_price($rawPrice * (1.0 + ($pct / 100.0)));
 	}
 }
 
@@ -2131,16 +2147,84 @@ if (!function_exists('mf_catalog_use_bitrix_base_price_fallback'))
 if (!function_exists('mf_format_display_price_rub'))
 {
 	/**
-	 * Витринное отображение цены в RUB: округление до десятых; целые суммы без «.0».
+	 * Витринное отображение цены в RUB: целые рубли без копеек.
 	 */
 	function mf_format_display_price_rub(float $amount): string
 	{
-		$rounded = round($amount, 1);
-		$decimals = ((int)round(abs($rounded) * 10) % 10 === 0) ? 0 : 1;
+		$rounded = mf_round_price($amount);
 
-		return number_format($rounded, $decimals, '.', ' ') . ' ₽';
+		return number_format($rounded, 0, '.', ' ') . ' ₽';
 	}
 }
+
+if (!function_exists('mf_sale_format_currency'))
+{
+	/**
+	 * Форматирование суммы с округлением до целого рубля (обёртка над SaleFormatCurrency).
+	 */
+	function mf_sale_format_currency($price, $currency = 'RUB', $onlyValue = false)
+	{
+		$price = mf_round_price((float)$price);
+		$currency = (string)$currency;
+		if ($currency === 'RUB' && !$onlyValue && function_exists('mf_format_display_price_rub'))
+		{
+			return mf_format_display_price_rub($price);
+		}
+		if (function_exists('SaleFormatCurrency'))
+		{
+			return SaleFormatCurrency($price, $currency, $onlyValue === true);
+		}
+
+		return mf_format_display_price_rub($price);
+	}
+}
+
+if (!function_exists('mf_ensure_rub_price_decimals'))
+{
+	/**
+	 * В Bitrix SaleFormatCurrency / PriceMaths::roundByFormatCurrency берут DECIMALS из справочника валют.
+	 */
+	function mf_ensure_rub_price_decimals(): void
+	{
+		static $doneVersion = '';
+		$wantVersion = '2026-05-19-whole';
+		if ($doneVersion === $wantVersion)
+		{
+			return;
+		}
+		$doneVersion = $wantVersion;
+
+		if (!class_exists(\CCurrencyLang::class))
+		{
+			return;
+		}
+
+		try
+		{
+			$rs = \CCurrencyLang::GetList('lang', 'asc', 'RUB');
+			while ($row = $rs->Fetch())
+			{
+				if ((int)($row['DECIMALS'] ?? 2) === 0)
+				{
+					continue;
+				}
+				$cur = (string)($row['CURRENCY'] ?? 'RUB');
+				$lid = (string)($row['LID'] ?? '');
+				if ($cur === '' || $lid === '')
+				{
+					continue;
+				}
+				\CCurrencyLang::Update($cur, $lid, ['DECIMALS' => 0]);
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+	}
+}
+
+mf_ensure_rub_price_decimals();
 
 if (!function_exists('mf_catalog_patch_bitrix_min_price_display'))
 {
@@ -2162,9 +2246,9 @@ if (!function_exists('mf_catalog_patch_bitrix_min_price_display'))
 		{
 			$cur = 'RUB';
 		}
-		$minPrice['VALUE'] = $displayValue;
-		$minPrice['DISCOUNT_VALUE'] = $displayValue;
-		$rnd = round($displayValue, 1);
+		$minPrice['VALUE'] = mf_round_price($displayValue);
+		$minPrice['DISCOUNT_VALUE'] = mf_round_price($displayValue);
+		$rnd = mf_round_price($displayValue);
 		if ($cur === 'RUB')
 		{
 			$fmt = mf_format_display_price_rub($rnd);
@@ -2421,10 +2505,11 @@ if (!function_exists('mf_wholesale_optimal_price_result'))
 			[$min, $minStoreId] = mf_min_price_from_available_stores($productId);
 			if ($min !== null && $min > 0)
 			{
+				$min = mf_round_price((float)$min);
 				// Retail dynamic base price = min computed among available stores.
-				$arResult['RESULT_PRICE']['BASE_PRICE'] = (float)$min;
-				$arResult['RESULT_PRICE']['DISCOUNT_PRICE'] = (float)$min;
-				$arResult['DISCOUNT_PRICE'] = (float)$min;
+				$arResult['RESULT_PRICE']['BASE_PRICE'] = $min;
+				$arResult['RESULT_PRICE']['DISCOUNT_PRICE'] = $min;
+				$arResult['DISCOUNT_PRICE'] = $min;
 				$arResult['RESULT_PRICE']['DISCOUNT'] = 0.0;
 				$arResult['RESULT_PRICE']['PERCENT'] = 0;
 
@@ -2441,7 +2526,7 @@ if (!function_exists('mf_wholesale_optimal_price_result'))
 			$cur = (float)($rp['DISCOUNT_PRICE'] ?? 0);
 			if ($cur > 0)
 			{
-				$new = round($cur * 0.9, 2);
+				$new = mf_round_price($cur * 0.9);
 				if ($new > 0 && $new < $cur)
 				{
 					$rp['DISCOUNT_PRICE'] = $new;
@@ -2745,6 +2830,7 @@ if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 		{
 			return;
 		}
+		$computed = mf_round_price((float)$computed);
 
 		// Ensure store props are set for order visibility.
 		$s = mf_store_row($storeId);

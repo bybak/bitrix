@@ -1620,9 +1620,9 @@ if (!function_exists('mf_checkout_virtual_delivery_stub_for_js'))
 				$name = 'Доставка';
 			}
 
-			$zeroFormatted = function_exists('SaleFormatCurrency')
-				? SaleFormatCurrency(0.0, $currency)
-				: '0';
+			$zeroFormatted = function_exists('mf_sale_format_currency')
+				? mf_sale_format_currency(0.0, $currency)
+				: (function_exists('SaleFormatCurrency') ? SaleFormatCurrency(0.0, $currency) : '0');
 
 			return [
 				'ID' => (int)$row['ID'],

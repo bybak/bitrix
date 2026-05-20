@@ -223,8 +223,8 @@ function mf_miss_get_store_markup_pct(int $storeId): float
 function mf_miss_apply_markup(float $rawPrice, float $pct): float
 {
 	if ($rawPrice <= 0) return 0.0;
-	if ($pct == 0.0) return round($rawPrice, 2);
-	return round($rawPrice * (1.0 + ($pct / 100.0)), 2);
+	if ($pct == 0.0) return function_exists('mf_round_price') ? mf_round_price($rawPrice) : (float)ceil($rawPrice);
+	return function_exists('mf_round_price') ? mf_round_price($rawPrice * (1.0 + ($pct / 100.0))) : (float)ceil($rawPrice * (1.0 + ($pct / 100.0)));
 }
 
 function mf_miss_get_or_create_price_group_id(string $storeXmlId, string $titleFallback): int
