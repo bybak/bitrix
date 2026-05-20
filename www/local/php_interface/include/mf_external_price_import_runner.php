@@ -41,7 +41,9 @@ function mf_epu_import_log_mark_failed(int $importLogId, float $t0, string $err)
  *   importStartedAt: string,
  *   importT0: float,
  *   feedCode: string,
- *   importLogId?: int
+ *   importLogId?: int,
+ *   importJobId?: int,
+ *   recalcBase?: bool
  * } $ctx
  * @param callable|null $onProgress function(int $rowsDone, int $rowsTotal): void
  * @return array{ok: bool, stats?: array, error?: string}
@@ -81,6 +83,14 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 
 		return ['ok' => false, 'error' => 'В задании не указан код прайса (перезагрузите файл с заполненным полем «Код прайса»).'];
 	}
+
+	$jobIdProg = (int)($ctx['importJobId'] ?? 0);
+	$recalcBase = !isset($ctx['recalcBase']) ? true : !empty($ctx['recalcBase']);
+	$portionCsv = 0.50;
+	$portionZero = $zeroMissing ? 0.15 : 0.00;
+	$fAfterCsv = $portionCsv;
+	$fAfterZeroPhase = $fAfterCsv + $portionZero;
+	$fFinalStart = 0.97;
 
 	$importLogWritten = false;
 	$header = null;
@@ -144,6 +154,10 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		{
 			$onProgress(0, max(1, $rowsTotal));
 		}
+		if ($jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply'))
+		{
+			mf_external_price_import_job_progress_apply($jobIdProg, 0, 'Разбор строк прайса');
+		}
 
 		$ok = 0;
 		$notFound = 0;
@@ -175,6 +189,22 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			))
 			{
 				$onProgress($totalDataRows, max(1, $rowsTotal));
+			}
+			if ($jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply') && (
+				$totalDataRows === 1
+				|| $totalDataRows === $rowsTotal
+				|| ($totalDataRows % 10) === 0
+			))
+			{
+				$csvShare = ($rowsTotal > 0)
+					? min(1.0, ($totalDataRows / $rowsTotal))
+					: 1.0;
+				$fOverall = $portionCsv * $csvShare;
+				mf_external_price_import_job_progress_apply(
+					$jobIdProg,
+					(int)round($fOverall * 100.0),
+					'Разбор строк прайса'
+				);
 			}
 
 			$cells = mf_epu_parse_csv_line($line, $delim);
@@ -286,6 +316,12 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			$ok++;
 		}
 
+		if ($jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply'))
+		{
+			mf_external_price_import_job_progress_apply($jobIdProg, (int)round($fAfterCsv * 100.0),
+				$zeroMissing ? 'Обнуление отсутствующих на складе' : 'Подготовка к синхронизации каталога');
+		}
+
 		$zeroed = 0;
 		if ($zeroMissing)
 		{
@@ -294,24 +330,47 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				mf_epu_bootstrap_long_import();
 			}
 			$candidates = mf_ep_collect_candidates_for_store($storeId, $priceGroupId);
-			$zi = 0;
-			foreach ($candidates as $cpid)
+			$toZeroIds = [];
+			foreach ($candidates as $zp)
 			{
-				if (isset($matchedIds[$cpid]))
+				if (isset($matchedIds[(int)$zp]))
 				{
 					continue;
 				}
-				mf_ep_zero_product_on_store((int)$cpid, $storeId, $priceGroupId);
+				$toZeroIds[] = (int)$zp;
+			}
+			$nZeroTodo = max(1, count($toZeroIds));
+			$tzi = 0;
+			foreach ($toZeroIds as $cpid)
+			{
+				mf_ep_zero_product_on_store($cpid, $storeId, $priceGroupId);
 				if (function_exists('mf_esf_untouch_price_product'))
 				{
-					mf_esf_untouch_price_product($storeId, $feedCodeNorm, (int)$cpid);
+					mf_esf_untouch_price_product($storeId, $feedCodeNorm, $cpid);
 				}
 				$zeroed++;
-				$zi++;
-				if ($zi % 200 === 0 && function_exists('mf_epu_bootstrap_long_import'))
+				$tzi++;
+				if (
+					$jobIdProg > 0
+					&& function_exists('mf_external_price_import_job_progress_apply')
+					&& ($tzi % 50 === 0 || $tzi === $nZeroTodo)
+				)
+				{
+					$fZ = $fAfterCsv + $portionZero * ($tzi / $nZeroTodo);
+					mf_external_price_import_job_progress_apply(
+						$jobIdProg,
+						(int)round($fZ * 100.0),
+						'Обнуление отсутствующих на складе'
+					);
+				}
+				if ($tzi % 200 === 0 && function_exists('mf_epu_bootstrap_long_import'))
 				{
 					mf_epu_bootstrap_long_import();
 				}
+			}
+			if ($jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply') && $toZeroIds === [])
+			{
+				mf_external_price_import_job_progress_apply($jobIdProg, (int)round($fAfterZeroPhase * 100.0), 'Обнуление отсутствующих на складе');
 			}
 		}
 
@@ -322,6 +381,12 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 
 		$syncIds = array_values(array_map('intval', array_keys($matchedIds)));
 		$syncTotal = count($syncIds);
+		$syncSpan = max(0.0, $fFinalStart - $fAfterZeroPhase);
+		$syncNoteBase = $recalcBase ? 'Остатки и пересчёт BASE в каталоге' : 'Синхронизация суммарного остатка в каталоге';
+		if ($syncTotal <= 0 && $jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply'))
+		{
+			mf_external_price_import_job_progress_apply($jobIdProg, (int)round($fFinalStart * 100.0), $syncNoteBase);
+		}
 		for ($si = 0; $si < $syncTotal; $si++)
 		{
 			if ($si > 0 && ($si % 200) === 0 && function_exists('mf_epu_bootstrap_long_import'))
@@ -334,7 +399,27 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 				continue;
 			}
 			mf_ep_sync_catalog_qty_from_stores($cpid);
-			mf_ep_recalc_base_one($cpid);
+			if ($recalcBase && function_exists('mf_ep_recalc_base_one'))
+			{
+				mf_ep_recalc_base_one($cpid);
+			}
+			if (
+				$jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply')
+				&& ($si % 25 === 0 || ($si + 1) === $syncTotal)
+			)
+			{
+				$fS = $fAfterZeroPhase + $syncSpan * (($si + 1) / max(1, $syncTotal));
+				mf_external_price_import_job_progress_apply(
+					$jobIdProg,
+					(int)round($fS * 100.0),
+					$syncNoteBase
+				);
+			}
+		}
+
+		if ($jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply'))
+		{
+			mf_external_price_import_job_progress_apply($jobIdProg, 98, 'Регистрация прайса и настройки склада');
 		}
 
 		if (function_exists('mf_esf_register_store_feed'))
@@ -361,6 +446,7 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 			'bad' => $bad,
 			'brand_skipped' => $brandSkipped,
 			'zeroed' => $zeroed,
+			'recalc_base' => $recalcBase,
 			'price_write_fail' => $priceWriteFail,
 			'store' => (string)($st['TITLE'] ?? ''),
 			'xml' => $xmlId,
@@ -419,10 +505,14 @@ function mf_epu_run_external_price_import(string $absCsvPath, int $iblockId, arr
 		{
 			$onProgress(max(1, $rowsTotal), max(1, $rowsTotal));
 		}
+		if ($jobIdProg > 0 && function_exists('mf_external_price_import_job_progress_apply'))
+		{
+			mf_external_price_import_job_progress_apply($jobIdProg, 100, 'Готово');
+		}
 
 		return ['ok' => true, 'stats' => $stats];
 	}
-	catch (Throwable $e)
+	catch (\Throwable $e)
 	{
 		$err = $e->getMessage();
 		$importFinishedAt = date('Y-m-d H:i:s');

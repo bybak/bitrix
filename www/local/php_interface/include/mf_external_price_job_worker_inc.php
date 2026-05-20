@@ -335,6 +335,8 @@ function mf_epu_external_price_job_run_or_die(int $runJobId, bool $requireSessid
 			'importT0' => $importT0W,
 			'feedCode' => (string)($jobR['UF_FEED_CODE'] ?? ''),
 			'importLogId' => (int)($jobR['UF_IMPORT_LOG_ID'] ?? 0),
+			'importJobId' => $runJobId,
+			'recalcBase' => (string)($jobR['UF_RECALC_BASE'] ?? 'Y') !== 'N',
 		];
 		$onPr = static function (int $done, int $total) use ($runJobId): void {
 			if (!function_exists('mf_external_price_import_job_update'))

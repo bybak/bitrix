@@ -140,6 +140,10 @@ if ((string)($_GET['mf_ep_job_poll'] ?? '') === '1')
 		'status' => $stP,
 		'rows_done' => (int)($rowP['UF_ROWS_DONE'] ?? 0),
 		'rows_total' => (int)($rowP['UF_ROWS_TOTAL'] ?? 0),
+		'progress_pct' => array_key_exists('UF_PROGRESS_PCT', $rowP) && $rowP['UF_PROGRESS_PCT'] !== null && $rowP['UF_PROGRESS_PCT'] !== ''
+			? max(0, min(100, (int)$rowP['UF_PROGRESS_PCT']))
+			: null,
+		'progress_note' => trim((string)($rowP['UF_PROGRESS_NOTE'] ?? '')),
 	];
 	if ($stP === 'done' && !empty($rowP['UF_RESULT_JSON']))
 	{
@@ -404,6 +408,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 		$currency = mb_strtoupper(trim((string)($_POST['currency'] ?? 'RUB')));
 		$zeroMissing = isset($_POST['zero_missing']) && $_POST['zero_missing'] === 'Y';
 		$weightUse = isset($_POST['weight_use']) && $_POST['weight_use'] === 'Y';
+		$recalcBase = isset($_POST['recalc_base']) && $_POST['recalc_base'] === 'Y';
 		/** В валюте прайса (см. «Валюта цен в файле»); на склад — число и код валюты, в ₽ пересчитывается при заказе. */
 		$weightTariffInput = (float)str_replace(',', '.', (string)($_POST['weight_rub_kg'] ?? '0'));
 
@@ -531,6 +536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_external_price_
 									'UF_ZERO_MISSING' => $zeroMissing ? 'Y' : 'N',
 									'UF_WEIGHT_USE' => $weightUse ? 'Y' : 'N',
 									'UF_WEIGHT_RUB_KG' => ($weightUse && $weightTariffInput > 0) ? $weightTariffInput : 0.0,
+									'UF_RECALC_BASE' => $recalcBase ? 'Y' : 'N',
 									'UF_ROWS_TOTAL' => 0,
 									'UF_ROWS_DONE' => 0,
 								]);
@@ -647,6 +653,7 @@ $formStoreId = $wfRepost ? (int)($_POST['store_id'] ?? 0) : 0;
 $wfFeedCodeRepost = $wfRepost ? trim((string)($_POST['feed_code'] ?? '')) : '';
 $wfUseChecked = $wfRepost && (string)($_POST['weight_use'] ?? '') === 'Y';
 $wfRubKgStr = $wfRepost ? (string)($_POST['weight_rub_kg'] ?? '0') : '0';
+$wfRecalcBaseChecked = !$wfRepost || (isset($_POST['recalc_base']) && $_POST['recalc_base'] === 'Y');
 $wfCurrency = $wfRepost
 	? mf_epu_normalize_import_currency((string)($_POST['currency'] ?? ''), $mfEpCurrencyCodes)
 	: mf_epu_normalize_import_currency(
@@ -701,7 +708,7 @@ if ($mfEpShowJobPanel && $mfEpJobIdForJs > 0 && $mfEpJobTokenForJs !== '')
 		<div style="height:10px;background:#e8e8e8;border-radius:4px;margin:10px 0;overflow:hidden">
 			<div id="mf_ep_job_bar" style="height:100%;width:0;background:#1d54a8;transition:width .2s"></div>
 		</div>
-		<p style="margin:0 0 8px 0;font-size:12px;color:#666">Страница опрашивает сервер примерно раз в <strong>1,2&nbsp;с</strong>; числа в БД обновляются примерно на <strong>1-й</strong> строке и далее каждые <strong>10</strong> строк (пока идёт чтение большого файла счётчики могут не меняться).</p>
+		<p style="margin:0 0 8px 0;font-size:12px;color:#666">Полоска отражает <strong>весь</strong> этап (CSV, затем пост-обработка). Число строк ниже может достигнуть конца файла долго до фактической готовности. Опрос — примерно раз в <strong>1,2&nbsp;с</strong>.</p>
 		<a href="<?= mf_epu_escape($mfEpNewUploadUrl) ?>">Новая загрузка (без ожидания)</a>
 	</div>
 	<script>
@@ -738,9 +745,19 @@ if ($mfEpShowJobPanel && $mfEpJobIdForJs > 0 && $mfEpJobTokenForJs !== '')
 					var st = d.status || '';
 					var done = parseInt(d.rows_done, 10) || 0;
 					var tot = parseInt(d.rows_total, 10) || 0;
-					if (tot > 0) setBar(100 * done / tot);
+					var ppRaw = d.progress_pct;
+					var pctDb = ppRaw !== undefined && ppRaw !== null ? parseInt(ppRaw, 10) : NaN;
+					var pct = !isFinite(pctDb) ? NaN : Math.max(0, Math.min(100, pctDb));
+					if (!isFinite(pct) && tot > 0) {
+						pct = Math.round(100 * done / tot);
+					}
+					setBar(isFinite(pct) ? pct : (st === 'done' ? 100 : 0));
+					var note = (typeof d.progress_note === 'string' && d.progress_note.trim() !== '')
+						? d.progress_note.trim()
+						: '';
+					var baseMsg = note !== '' ? note : 'Обработка прайса…';
 					if (st === 'pending' || st === 'running') {
-						setText('Идёт обработка прайса' + (tot ? (' — ' + done + ' / ' + tot + ' строк') : '…'));
+						setText(baseMsg + (tot ? (' — строк ' + done + ' / ' + tot) : ''));
 						if (st === 'pending') startRun();
 						setTimeout(poll, 1200);
 						return;
@@ -886,6 +903,13 @@ BRP;420256455;OIL FILTER;11,04</pre>
 			<td>Обнулять цену и остаток на складе</td>
 			<td>
 				<label><input type="checkbox" name="zero_missing" value="Y" /> для товаров, которых нет в загруженном файле (остальные склады не трогаем)</label>
+			</td>
+		</tr>
+		<tr>
+			<td>Пересчёт BASE в каталоге</td>
+			<td>
+				<label><input type="checkbox" name="recalc_base" id="mf_ep_recalc_base" value="Y"<?= $wfRecalcBaseChecked ? ' checked' : '' ?> />
+					пересчитать розничную цену типа BASE по правилам наценок («сырые» цены из файла сохраняются в любом случае)<br /><span style="color:#555;font-size:12px">Снимите галочку, если нужно только обновить закуп RAW и суммарные остатки по складам, не трогая BASE до отдельного пересчёта.</span></label>
 			</td>
 		</tr>
 		<tr>

@@ -2169,6 +2169,33 @@ if (!function_exists('mf_external_price_import_job_migrate_schema'))
 					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_IMPORT_LOG_ID BIGINT UNSIGNED NULL AFTER UF_FINISHED_AT'
 				);
 			}
+			$r3 = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_job LIKE 'UF_PROGRESS_PCT'"
+			)->fetch();
+			if (!$r3)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_PROGRESS_PCT TINYINT UNSIGNED NULL AFTER UF_ROWS_DONE'
+				);
+			}
+			$r4 = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_job LIKE 'UF_PROGRESS_NOTE'"
+			)->fetch();
+			if (!$r4)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_PROGRESS_NOTE VARCHAR(512) NULL AFTER UF_PROGRESS_PCT'
+				);
+			}
+			$r5 = $conn->query(
+				"SHOW COLUMNS FROM mf_external_price_import_job LIKE 'UF_RECALC_BASE'"
+			)->fetch();
+			if (!$r5)
+			{
+				$conn->queryExecute(
+					'ALTER TABLE mf_external_price_import_job ADD COLUMN UF_RECALC_BASE CHAR(1) NOT NULL DEFAULT \'Y\' AFTER UF_PROGRESS_NOTE'
+				);
+			}
 		}
 		catch (\Throwable $e)
 		{
@@ -2271,6 +2298,55 @@ if (!function_exists('mf_external_price_import_job_get'))
 		catch (\Throwable $e)
 		{
 			return null;
+		}
+	}
+}
+
+if (!function_exists('mf_external_price_import_job_progress_apply'))
+{
+	/**
+	 * Полоса импорта 0–100 только растёт; подпись этапа (проще, чем прыгающее rows_done/rows_total).
+	 */
+	function mf_external_price_import_job_progress_apply(int $jobId, int $pct, ?string $note = null): bool
+	{
+		$jobId = (int)$jobId;
+		if ($jobId <= 0 || !function_exists('mf_external_price_import_job_conn'))
+		{
+			return false;
+		}
+		$conn = mf_external_price_import_job_conn();
+		if (!$conn || !function_exists('mf_external_price_import_log_quote'))
+		{
+			return false;
+		}
+		$pct = max(0, min(100, $pct));
+		try
+		{
+			$r = $conn->query(
+				'SELECT UF_PROGRESS_PCT FROM mf_external_price_import_job WHERE ID=' . $jobId . ' LIMIT 1'
+			)->fetch();
+			$cur = is_array($r) ? (int)($r['UF_PROGRESS_PCT'] ?? -1) : -1;
+			$newPct = $cur >= 0 ? max($cur, $pct) : $pct;
+
+			if ($note !== null)
+			{
+				$n = mb_substr(trim((string)$note), 0, 500);
+				$sets = '`UF_PROGRESS_PCT`=' . $newPct . ', `UF_PROGRESS_NOTE`=' . mf_external_price_import_log_quote($conn, $n);
+			}
+			else
+			{
+				$sets = '`UF_PROGRESS_PCT`=' . $newPct;
+			}
+
+			$conn->queryExecute(
+				'UPDATE mf_external_price_import_job SET ' . $sets . ' WHERE ID=' . $jobId
+			);
+
+			return true;
+		}
+		catch (\Throwable $e)
+		{
+			return false;
 		}
 	}
 }
