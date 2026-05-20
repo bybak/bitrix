@@ -3082,3 +3082,9 @@ if (is_file($mfOrderMailInclude))
 		\Mf\OrderMail\Bootstrap::init();
 	}
 }
+
+$mfContactMapInclude = __DIR__ . '/include/mf_contact_map.php';
+if (is_file($mfContactMapInclude))
+{
+	require_once $mfContactMapInclude;
+}

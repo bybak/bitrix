@@ -593,10 +593,7 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 								<div class="small-12 medium-8 large-4 column"></div>
 							</div>
 							<div class="contact-address__map">
-								<iframe src="https://motor-force.ru/contacts/showmap/863360/1/ru_RU"
-										id="ymap-1" style="width:100%;height:100%;"
-										marginheight="0" marginwidth="0" frameborder="0" data-host="nethouse.ru"
-										data-lang="ru_RU"></iframe>
+								<?php mf_contact_map_render('mf-contact-map-main'); ?>
 							</div>
 						</div>
 						<div class="row">
