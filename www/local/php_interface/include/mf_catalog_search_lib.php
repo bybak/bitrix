@@ -50,24 +50,72 @@ if (!function_exists('mf_catalog_search_row_to_item'))
 	}
 }
 
-if (!function_exists('mf_catalog_search_fetch_by_filter'))
+if (!function_exists('mf_catalog_search_base_filter'))
+{
+	function mf_catalog_search_base_filter(): array
+	{
+		return [
+			'IBLOCK_ID' => mf_catalog_search_iblock_id(),
+			'ACTIVE' => 'Y',
+			'CHECK_PERMISSIONS' => 'Y',
+			'MIN_PERMISSION' => 'R',
+		];
+	}
+}
+
+if (!function_exists('mf_catalog_search_fetch_ids_by_filter'))
 {
 	/**
-	 * @return array<int, array> id => iblock row
+	 * @return int[]
 	 */
-	function mf_catalog_search_fetch_by_filter(array $filter, int $limit = 200): array
+	function mf_catalog_search_fetch_ids_by_filter(array $filter, int $limit = 200): array
 	{
 		if (!class_exists('CIBlockElement') || $limit <= 0)
 		{
 			return [];
 		}
 
-		$out = [];
+		$ids = [];
 		$rs = \CIBlockElement::GetList(
-			['NAME' => 'ASC', 'ID' => 'ASC'],
+			['ID' => 'ASC'],
 			$filter,
 			false,
 			['nTopCount' => $limit],
+			['ID']
+		);
+		while ($row = $rs->Fetch())
+		{
+			$id = (int)($row['ID'] ?? 0);
+			if ($id > 0)
+			{
+				$ids[] = $id;
+			}
+		}
+
+		return $ids;
+	}
+}
+
+if (!function_exists('mf_catalog_search_fetch_rows_by_ids'))
+{
+	/**
+	 * @param int[] $ids
+	 * @return array<int, array>
+	 */
+	function mf_catalog_search_fetch_rows_by_ids(array $ids): array
+	{
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+		if (empty($ids) || !class_exists('CIBlockElement'))
+		{
+			return [];
+		}
+
+		$rows = [];
+		$rs = \CIBlockElement::GetList(
+			['ID' => 'ASC'],
+			array_merge(mf_catalog_search_base_filter(), ['ID' => $ids]),
+			false,
+			false,
 			mf_catalog_search_select()
 		);
 		while ($row = $rs->Fetch())
@@ -75,11 +123,34 @@ if (!function_exists('mf_catalog_search_fetch_by_filter'))
 			$id = (int)($row['ID'] ?? 0);
 			if ($id > 0)
 			{
-				$out[$id] = $row;
+				$rows[$id] = $row;
 			}
 		}
 
-		return $out;
+		$ordered = [];
+		foreach ($ids as $id)
+		{
+			if (isset($rows[$id]))
+			{
+				$ordered[$id] = $rows[$id];
+			}
+		}
+
+		return $ordered;
+	}
+}
+
+if (!function_exists('mf_catalog_search_is_article_only_query'))
+{
+	function mf_catalog_search_is_article_only_query(string $query): bool
+	{
+		$query = trim($query);
+		if ($query === '' || preg_match('~\s~u', $query))
+		{
+			return false;
+		}
+
+		return (bool)preg_match('~^[\dA-Za-z][\dA-Za-z\-_./]*$~', $query);
 	}
 }
 
@@ -87,7 +158,7 @@ if (!function_exists('mf_catalog_search_ids_by_articles'))
 {
 	/**
 	 * @param string[] $candidates
-	 * @return array<int, array>
+	 * @return int[]
 	 */
 	function mf_catalog_search_ids_by_articles(array $candidates): array
 	{
@@ -97,49 +168,88 @@ if (!function_exists('mf_catalog_search_ids_by_articles'))
 			return [];
 		}
 
-		$or = [];
 		$seen = [];
+		$ids = [];
+		$pushIds = static function (array $found) use (&$ids, &$seen): void {
+			foreach ($found as $id)
+			{
+				$id = (int)$id;
+				if ($id > 0 && !isset($seen[$id]))
+				{
+					$seen[$id] = true;
+					$ids[] = $id;
+				}
+			}
+		};
+
 		foreach ($candidates as $candidate)
 		{
 			$candidate = trim($candidate);
-			if ($candidate === '' || isset($seen[$candidate]))
+			if ($candidate === '')
 			{
 				continue;
 			}
-			$seen[$candidate] = true;
-			$or[] = ['=PROPERTY_CML2_ARTICLE' => $candidate];
 
+			$or = [
+				['=PROPERTY_CML2_ARTICLE' => $candidate],
+			];
 			if (function_exists('mf_analogs_norm_article'))
 			{
 				$norm = mf_analogs_norm_article($candidate);
-				if ($norm !== '' && $norm !== $candidate && !isset($seen[$norm]))
+				if ($norm !== '' && $norm !== $candidate)
 				{
-					$seen[$norm] = true;
 					$or[] = ['=PROPERTY_MF_ARTICLE_NORM' => $norm];
 				}
 			}
-		}
-		if (empty($or))
-		{
-			return [];
+
+			$pushIds(mf_catalog_search_fetch_ids_by_filter(array_merge(
+				mf_catalog_search_base_filter(),
+				[count($or) === 1 ? $or[0] : array_merge(['LOGIC' => 'OR'], $or)]
+			), 40));
+
+			if (count($ids) >= 120)
+			{
+				break;
+			}
 		}
 
-		return mf_catalog_search_fetch_by_filter([
-			'IBLOCK_ID' => mf_catalog_search_iblock_id(),
-			'ACTIVE' => 'Y',
-			'CHECK_PERMISSIONS' => 'Y',
-			'MIN_PERMISSION' => 'R',
-			array_merge(['LOGIC' => 'OR'], $or),
-		], 120);
+		return $ids;
+	}
+}
+
+if (!function_exists('mf_catalog_search_text_words'))
+{
+	/**
+	 * @return string[]
+	 */
+	function mf_catalog_search_text_words(string $query): array
+	{
+		$words = preg_split('~[\s,;+/|()\\[\\]{}]+~u', trim($query)) ?: [];
+		$out = [];
+		$seen = [];
+		foreach ($words as $word)
+		{
+			$word = trim((string)$word);
+			if ($word === '' || mb_strlen($word) < 2 || isset($seen[mb_strtolower($word)]))
+			{
+				continue;
+			}
+			$seen[mb_strtolower($word)] = true;
+			$out[] = $word;
+		}
+
+		return $out;
 	}
 }
 
 if (!function_exists('mf_catalog_search_ids_by_text'))
 {
 	/**
-	 * @return array<int, array>
+	 * Только по NAME — без LIKE по свойствам (они не индексируются и сканируют весь каталог).
+	 *
+	 * @return int[]
 	 */
-	function mf_catalog_search_ids_by_text(string $query, int $limit = 300): array
+	function mf_catalog_search_ids_by_text(string $query, int $limit = 100): array
 	{
 		$query = trim($query);
 		if ($query === '' || mb_strlen($query) < 2)
@@ -147,47 +257,44 @@ if (!function_exists('mf_catalog_search_ids_by_text'))
 			return [];
 		}
 
-		$words = preg_split('~[\s,;+/|()\\[\\]{}]+~u', $query) ?: [];
-		$words = array_values(array_filter(array_map(static function ($w) {
-			$w = trim((string)$w);
-			return mb_strlen($w) >= 2 ? $w : '';
-		}, $words)));
-
-		$or = [
-			['%NAME' => $query],
-			['%PROPERTY_CML2_ARTICLE' => $query],
-			['%PROPERTY_MF_BRAND' => $query],
-			['%PROPERTY_MF_BRAND_NORM' => $query],
-			['%PROPERTY_OEM' => $query],
-		];
-		foreach ($words as $word)
+		$words = mf_catalog_search_text_words($query);
+		if (empty($words))
 		{
-			$or[] = ['%NAME' => $word];
-			$or[] = ['%PROPERTY_CML2_ARTICLE' => $word];
-			$or[] = ['%PROPERTY_MF_BRAND' => $word];
+			return [];
 		}
 
-		return mf_catalog_search_fetch_by_filter([
-			'IBLOCK_ID' => mf_catalog_search_iblock_id(),
-			'ACTIVE' => 'Y',
-			'CHECK_PERMISSIONS' => 'Y',
-			'MIN_PERMISSION' => 'R',
-			array_merge(['LOGIC' => 'OR'], $or),
-		], $limit);
+		if (count($words) === 1)
+		{
+			return mf_catalog_search_fetch_ids_by_filter(array_merge(
+				mf_catalog_search_base_filter(),
+				['%NAME' => $words[0]]
+			), $limit);
+		}
+
+		$nameFilter = ['LOGIC' => 'AND'];
+		foreach ($words as $word)
+		{
+			$nameFilter[] = ['%NAME' => $word];
+		}
+
+		return mf_catalog_search_fetch_ids_by_filter(array_merge(
+			mf_catalog_search_base_filter(),
+			[$nameFilter]
+		), $limit);
 	}
 }
 
 if (!function_exists('mf_catalog_search_collect_ids'))
 {
 	/**
-	 * @return array{rows: array<int, array>, total: int}
+	 * @return array{ids: int[], total: int}
 	 */
 	function mf_catalog_search_collect_ids(string $query): array
 	{
 		$query = trim($query);
 		if ($query === '')
 		{
-			return ['rows' => [], 'total' => 0];
+			return ['ids' => [], 'total' => 0];
 		}
 
 		static $runtime = [];
@@ -197,17 +304,21 @@ if (!function_exists('mf_catalog_search_collect_ids'))
 			return $runtime[$key];
 		}
 
+		$cache = null;
 		if (class_exists(\Bitrix\Main\Data\Cache::class))
 		{
 			$cache = \Bitrix\Main\Data\Cache::createInstance();
-			$cacheId = 'ids_v1_' . $key;
+			$cacheId = 'ids_v2_' . $key;
 			$cacheDir = '/mf/catalog_search';
 			if ($cache->initCache(900, $cacheId, $cacheDir))
 			{
 				$vars = $cache->getVars();
-				if (is_array($vars) && isset($vars['rows'], $vars['total']))
+				if (is_array($vars) && isset($vars['ids'], $vars['total']))
 				{
-					return $runtime[$key] = $vars;
+					return $runtime[$key] = [
+						'ids' => array_values(array_map('intval', (array)$vars['ids'])),
+						'total' => (int)$vars['total'],
+					];
 				}
 			}
 		}
@@ -218,33 +329,39 @@ if (!function_exists('mf_catalog_search_collect_ids'))
 			require_once $lib;
 		}
 
-		$articleRows = [];
+		$articleIds = [];
 		if (function_exists('mf_search_query_article_candidates'))
 		{
-			$articleRows = mf_catalog_search_ids_by_articles(mf_search_query_article_candidates($query));
+			$articleIds = mf_catalog_search_ids_by_articles(mf_search_query_article_candidates($query));
 		}
 
-		$textRows = mf_catalog_search_ids_by_text($query, 300);
-
-		$merged = [];
-		foreach ($articleRows as $id => $row)
+		$ids = $articleIds;
+		$seen = [];
+		foreach ($ids as $id)
 		{
-			$merged[(int)$id] = $row;
+			$seen[(int)$id] = true;
 		}
-		foreach ($textRows as $id => $row)
+
+		$skipText = !empty($articleIds) || mf_catalog_search_is_article_only_query($query);
+		if (!$skipText)
 		{
-			if (!isset($merged[(int)$id]))
+			foreach (mf_catalog_search_ids_by_text($query, 100) as $id)
 			{
-				$merged[(int)$id] = $row;
+				$id = (int)$id;
+				if ($id > 0 && !isset($seen[$id]))
+				{
+					$seen[$id] = true;
+					$ids[] = $id;
+				}
 			}
 		}
 
 		$result = [
-			'rows' => $merged,
-			'total' => count($merged),
+			'ids' => $ids,
+			'total' => count($ids),
 		];
 
-		if (isset($cache) && $cache->startDataCache())
+		if ($cache instanceof \Bitrix\Main\Data\Cache && $cache->startDataCache())
 		{
 			$cache->endDataCache($result);
 		}
@@ -324,13 +441,13 @@ if (!function_exists('mf_catalog_search_page'))
 		}
 
 		$collected = mf_catalog_search_collect_ids($query);
-		$allRows = (array)($collected['rows'] ?? []);
-		$total = (int)($collected['total'] ?? count($allRows));
+		$allIds = (array)($collected['ids'] ?? []);
+		$total = (int)($collected['total'] ?? count($allIds));
 		$offset = ($page - 1) * $pageSize;
-		$slice = array_slice(array_values($allRows), $offset, $pageSize, true);
+		$pageIds = array_slice($allIds, $offset, $pageSize);
 
 		$items = [];
-		foreach ($slice as $row)
+		foreach (mf_catalog_search_fetch_rows_by_ids($pageIds) as $row)
 		{
 			if (!is_array($row))
 			{
