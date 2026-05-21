@@ -674,6 +674,7 @@ if (!function_exists('mf_admin_menu_catalog_export'))
 			'more_url' => [
 				'mf_catalog_export.php',
 				'mf_catalog_delete_by_csv.php',
+				'mf_catalog_uniq_duplicates.php',
 			],
 		];
 		$aModuleMenu[] = [
@@ -689,6 +690,20 @@ if (!function_exists('mf_admin_menu_catalog_export'))
 			'more_url' => [
 				'mf_catalog_delete_by_csv.php',
 				'mf_catalog_delete_by_csv.php?mode=history',
+			],
+		];
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_catalog_uniq_duplicates',
+			'sort' => 20547,
+			'text' => 'Дубликаты (артикул + бренд)',
+			'title' => 'Одинаковый MF_UNIQ_KEY: отметка товаров на удаление',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_catalog_uniq_duplicates',
+			'url' => 'mf_catalog_uniq_duplicates.php?lang=' . urlencode($lang),
+			'more_url' => [
+				'mf_catalog_uniq_duplicates.php',
 			],
 		];
 		$aModuleMenu[] = [

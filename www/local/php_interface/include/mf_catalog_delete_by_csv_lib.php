@@ -470,19 +470,31 @@ if (!function_exists('mf_cdc_delete_one_catalog_element'))
 			return ['ok' => false, 'message' => 'Некорректный ID'];
 		}
 
-		$el = \CIBlockElement::GetList(
-			[],
-			['ID' => $elementId, 'CHECK_PERMISSIONS' => 'N'],
-			false,
-			false,
-			['ID', 'IBLOCK_ID', 'NAME']
-		)->Fetch();
-		if (!is_array($el))
+		$row = null;
+		$conn = mf_cdc_log_conn();
+		if ($conn)
 		{
-			return ['ok' => false, 'message' => 'Элемент не найден'];
+			$row = $conn->query(
+				'SELECT `ID`, `IBLOCK_ID`, `NAME` FROM b_iblock_element WHERE `ID`=' . $elementId . ' LIMIT 1'
+			)->fetch();
+		}
+		if (!is_array($row) || (int)($row['ID'] ?? 0) <= 0)
+		{
+			$el = \CIBlockElement::GetList(
+				[],
+				['ID' => $elementId, 'CHECK_PERMISSIONS' => 'N'],
+				false,
+				false,
+				['ID', 'IBLOCK_ID', 'NAME']
+			)->Fetch();
+			$row = is_array($el) ? $el : null;
+		}
+		if (!is_array($row) || (int)($row['ID'] ?? 0) <= 0)
+		{
+			return ['ok' => false, 'message' => 'Элемент не найден', 'orphan' => true];
 		}
 
-		$ibEl = (int)($el['IBLOCK_ID'] ?? 0);
+		$ibEl = (int)($row['IBLOCK_ID'] ?? 0);
 		if (!in_array($ibEl, $allowedIblocks, true))
 		{
 			return ['ok' => false, 'message' => 'IBLOCK_ID ' . $ibEl . ' не каталог (ожид. ' . implode(', ', $allowedIblocks) . ')'];
