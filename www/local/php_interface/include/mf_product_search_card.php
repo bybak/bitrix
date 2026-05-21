@@ -18,7 +18,7 @@ if (!function_exists('mf_product_search_card_money'))
 			return mf_format_display_price_rub($p);
 		}
 
-		$r = function_exists('mf_round_price') ? mf_round_price($p) : (float)ceil($p);
+		$r = function_exists('mf_round_price') ? mf_round_price($p) : (float)(ceil($p / 10.0) * 10.0);
 
 		return number_format($r, 0, '.', ' ') . ' ₽';
 	}
@@ -53,7 +53,7 @@ if (!function_exists('mf_product_search_card_min_price_print'))
 		{
 			return mf_format_display_price_rub($mp);
 		}
-		$r = function_exists('mf_round_price') ? mf_round_price($mp) : (float)ceil($mp);
+		$r = function_exists('mf_round_price') ? mf_round_price($mp) : (float)(ceil($mp / 10.0) * 10.0);
 
 		return number_format($r, 0, '.', ' ') . ' ₽';
 	}

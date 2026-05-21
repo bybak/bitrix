@@ -1346,7 +1346,7 @@ if (!function_exists('mf_store_markup_pct'))
 if (!function_exists('mf_round_price'))
 {
 	/**
-	 * Округление денежных сумм до целого рубля вверх (13830.47 → 13831).
+	 * Округление денежных сумм до десятков рублей вверх (15094 → 15100, 18488 → 18490).
 	 */
 	function mf_round_price(float $amount): float
 	{
@@ -1355,7 +1355,7 @@ if (!function_exists('mf_round_price'))
 			return 0.0;
 		}
 
-		return (float)ceil($amount);
+		return (float)(ceil($amount / 10.0) * 10.0);
 	}
 }
 
@@ -2145,9 +2145,6 @@ if (!function_exists('mf_min_price_from_available_stores'))
 
 		if (!class_exists(\CCatalogStoreProduct::class)) return [null, 0];
 
-		$storeToGroup = mf_supplier_store_to_price_group();
-		if (empty($storeToGroup)) return [null, 0];
-
 		$min = null;
 		$minStoreId = 0;
 
@@ -2158,10 +2155,6 @@ if (!function_exists('mf_min_price_from_available_stores'))
 		foreach ($byStore as $storeId => $amt)
 		{
 			if ($storeId <= 0 || $amt <= 0)
-			{
-				continue;
-			}
-			if (!isset($storeToGroup[$storeId]))
 			{
 				continue;
 			}
@@ -2178,7 +2171,7 @@ if (!function_exists('mf_min_price_from_available_stores'))
 			}
 		}
 
-		$cache[$cacheKey] = [$min !== null ? (function_exists('mf_round_price') ? mf_round_price((float)$min) : (float)ceil((float)$min)) : null, $minStoreId];
+		$cache[$cacheKey] = [$min !== null ? (function_exists('mf_round_price') ? mf_round_price((float)$min) : (float)(ceil((float)$min / 10.0) * 10.0)) : null, $minStoreId];
 		return $cache[$cacheKey];
 	}
 }
@@ -2226,11 +2219,45 @@ if (!function_exists('mf_catalog_product_has_positive_stock'))
 if (!function_exists('mf_catalog_storefront_price_when_in_stock'))
 {
 	/**
-	 * Минимальная витринная цена по складам с остатком (как mf_min_price_from_available_stores).
+	 * Минимальная витринная цена по складам с остатком (как в таблице на карточке/в поиске).
 	 * Если нигде нет остатка — null (не показываем «От …»; в списке — «Запросить цену»).
 	 */
 	function mf_catalog_storefront_price_when_in_stock(int $productId): ?float
 	{
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return null;
+		}
+
+		if (function_exists('mf_product_search_card_stores'))
+		{
+			$min = null;
+			foreach (mf_product_search_card_stores($productId) as $row)
+			{
+				if ((float)($row['amount'] ?? 0) <= 1e-9)
+				{
+					continue;
+				}
+				$p = $row['price'] ?? null;
+				if ($p === null || (float)$p <= 0)
+				{
+					continue;
+				}
+				$p = (float)$p;
+				if ($min === null || $p < $min)
+				{
+					$min = $p;
+				}
+			}
+			if ($min !== null && $min > 0)
+			{
+				return function_exists('mf_round_price') ? mf_round_price($min) : (float)(ceil($min / 10.0) * 10.0);
+			}
+
+			return null;
+		}
+
 		if (!function_exists('mf_min_price_from_available_stores'))
 		{
 			return null;
@@ -2241,7 +2268,7 @@ if (!function_exists('mf_catalog_storefront_price_when_in_stock'))
 			return null;
 		}
 
-		return function_exists('mf_round_price') ? mf_round_price((float)$min) : (float)ceil((float)$min);
+		return function_exists('mf_round_price') ? mf_round_price((float)$min) : (float)(ceil((float)$min / 10.0) * 10.0);
 	}
 }
 
@@ -2263,6 +2290,30 @@ if (!function_exists('mf_catalog_listing_display_price'))
 		if (array_key_exists($cacheKey, $cache))
 		{
 			return $cache[$cacheKey];
+		}
+
+		if (function_exists('mf_product_search_card_stores'))
+		{
+			$best = null;
+			foreach (mf_product_search_card_stores($productId) as $row)
+			{
+				$p = $row['price'] ?? null;
+				if ($p === null || (float)$p <= 0)
+				{
+					continue;
+				}
+				$p = (float)$p;
+				if ($best === null || $p < $best)
+				{
+					$best = $p;
+				}
+			}
+			if ($best !== null && $best > 0)
+			{
+				$cache[$cacheKey] = function_exists('mf_round_price') ? mf_round_price($best) : (float)(ceil($best / 10.0) * 10.0);
+
+				return $cache[$cacheKey];
+			}
 		}
 
 		if (!function_exists('mf_supplier_store_to_price_group') || !function_exists('mf_ep_display_price_for_store'))
@@ -2394,7 +2445,7 @@ if (!function_exists('mf_catalog_use_bitrix_base_price_fallback'))
 if (!function_exists('mf_format_display_price_rub'))
 {
 	/**
-	 * Витринное отображение цены в RUB: целые рубли без копеек.
+	 * Витринное отображение цены в RUB: округление до десятков рублей вверх.
 	 */
 	function mf_format_display_price_rub(float $amount): string
 	{
@@ -2407,7 +2458,7 @@ if (!function_exists('mf_format_display_price_rub'))
 if (!function_exists('mf_sale_format_currency'))
 {
 	/**
-	 * Форматирование суммы с округлением до целого рубля (обёртка над SaleFormatCurrency).
+	 * Форматирование суммы с округлением до десятков рублей (обёртка над SaleFormatCurrency).
 	 */
 	function mf_sale_format_currency($price, $currency = 'RUB', $onlyValue = false)
 	{
