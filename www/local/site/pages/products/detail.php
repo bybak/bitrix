@@ -271,6 +271,7 @@ if ($elementId > 0)
 	$storeAmounts = [];
 	$stores = [];
 	$mfOrderedStoreIds = [];
+	$mfDetailSupplierPending = null;
 
 	if (CModule::IncludeModule('catalog'))
 	{
@@ -309,6 +310,29 @@ if ($elementId > 0)
 				if ($raw !== null && $raw > 0)
 				{
 					$storeAmounts[$extSid] = 0.0;
+				}
+			}
+		}
+
+		// Как mf_product_search_card_stores: внутренний склад с остатком 0/null, но ожидаемое поступление из 1С.
+		if (function_exists('mf_supplier_orders_internal_store_id')
+			&& function_exists('mf_supplier_orders_cluster_amount_on_store')
+			&& function_exists('mf_supplier_orders_pending_arrival_for_product'))
+		{
+			$mfIntSidPending = mf_supplier_orders_internal_store_id();
+			if ($mfIntSidPending > 0
+				&& mf_supplier_orders_cluster_amount_on_store($elementId, $mfIntSidPending) <= 1e-9)
+			{
+				$mfPenDetail = mf_supplier_orders_pending_arrival_for_product($elementId);
+				if (is_array($mfPenDetail)
+					&& (float)($mfPenDetail['qty'] ?? 0) > 1e-9
+					&& trim((string)($mfPenDetail['label'] ?? '')) !== '')
+				{
+					$mfDetailSupplierPending = $mfPenDetail;
+					if (!array_key_exists($mfIntSidPending, $storeAmounts))
+					{
+						$storeAmounts[$mfIntSidPending] = 0.0;
+					}
 				}
 			}
 		}
@@ -376,16 +400,33 @@ if ($elementId > 0)
 				return $a <=> $b;
 			});
 
-			$mfOrderedStoreIds = array_values(array_filter($mfOrderedStoreIds, static function ($sid) use ($storeAmounts) {
-				$sid = (int)$sid;
-				$amt = (float)($storeAmounts[$sid] ?? 0);
-				if ($amt > 1e-9)
-				{
-					return true;
-				}
+			$mfIntSidKeep = function_exists('mf_supplier_orders_internal_store_id')
+				? mf_supplier_orders_internal_store_id()
+				: 0;
+			$mfOrderedStoreIds = array_values(array_filter(
+				$mfOrderedStoreIds,
+				static function ($sid) use ($storeAmounts, $mfIntSidKeep, $mfDetailSupplierPending) {
+					$sid = (int)$sid;
+					$amt = (float)($storeAmounts[$sid] ?? 0);
+					if ($amt > 1e-9)
+					{
+						return true;
+					}
+					if (function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($sid))
+					{
+						return true;
+					}
+					if ($mfIntSidKeep > 0
+						&& $sid === $mfIntSidKeep
+						&& is_array($mfDetailSupplierPending)
+						&& (float)($mfDetailSupplierPending['qty'] ?? 0) > 1e-9)
+					{
+						return true;
+					}
 
-				return function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($sid);
-			}));
+					return false;
+				}
+			));
 		}
 	}
 
@@ -457,10 +498,10 @@ if ($elementId > 0)
 								$mfPendingTxt = '';
 								$mfPendingQty = 0.0;
 								$mfIsExtRow = function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse((int)$sid);
-								if ($mfIsInternalSku && $amt <= 1e-9 && function_exists('mf_supplier_orders_pending_arrival_for_product'))
+								if ($mfIsInternalSku && $amt <= 1e-9 && is_array($mfDetailSupplierPending))
 								{
-									$mfPr = mf_supplier_orders_pending_arrival_for_product($elementId);
-									if (is_array($mfPr) && trim((string)($mfPr['label'] ?? '')) !== '')
+									$mfPr = $mfDetailSupplierPending;
+									if (trim((string)($mfPr['label'] ?? '')) !== '')
 									{
 										$mfPendingTxt = (string)$mfPr['label'];
 										$mfPendingQty = (float)($mfPr['qty'] ?? 0);
