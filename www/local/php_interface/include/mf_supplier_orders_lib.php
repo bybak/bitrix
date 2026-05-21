@@ -403,6 +403,23 @@ if (!function_exists('mf_supplier_orders_parse_line_unit_price'))
 	}
 }
 
+if (!function_exists('mf_supplier_orders_line_qty_from_api'))
+{
+	/**
+	 * Количество для mf_supplier_order_line.QTY: из JSON 1С поле quantity_ordered (заказано в строке).
+	 */
+	function mf_supplier_orders_line_qty_from_api(array $line): float
+	{
+		$qty = isset($line['quantity_ordered']) ? (float)$line['quantity_ordered'] : 0.0;
+		if (!is_finite($qty) || $qty < 0)
+		{
+			return 0.0;
+		}
+
+		return $qty;
+	}
+}
+
 if (!function_exists('mf_supplier_orders_fill_base_price_enabled'))
 {
 	function mf_supplier_orders_fill_base_price_enabled(): bool
@@ -974,11 +991,7 @@ if (!function_exists('mf_supplier_orders_sync'))
 					$nomName = trim((string)($nom['name'] ?? ''));
 					$article = trim((string)($nom['article'] ?? ''));
 					$brand = trim((string)($nom['brand'] ?? ''));
-					$qty = isset($ln['quantity']) ? (float)$ln['quantity'] : 0.0;
-					if (!is_finite($qty))
-					{
-						$qty = 0.0;
-					}
+					$qty = mf_supplier_orders_line_qty_from_api($ln);
 					$qtyLiteral = sprintf('%.6F', $qty);
 					$unit = trim((string)($ln['unit'] ?? ''));
 					$expected = is_array($ln['expected'] ?? null) ? $ln['expected'] : [];
@@ -1252,7 +1265,7 @@ if (!function_exists('mf_supplier_orders_pending_arrival_for_product'))
 	/**
 	 * Данные по активным заказам поставщику: MATCH_STATUS = matched, только строки «ещё не поступили»:
 	 * — RECEIPT_DATE >= сегодня, либо дата поступления пуста и дата документа заказа не старше N дней (см. mf_supplier_orders_null_receipt_max_order_age_days).
-	 * Количество — сумма QTY по всем таким строкам (по всем актуальным заказам).
+	 * Количество — сумма QTY (из quantity_ordered при синке) по всем таким строкам.
 	 *
 	 * @return array{qty: float, receipt_date: ?string, days_until: ?int, label: string}|null
 	 */

@@ -194,6 +194,9 @@ if ($productId <= 0)
 
 $echoKv('PRODUCT_ID', $productId);
 
+$linesMatchedN = 0;
+$sumQtySite = 0.0;
+
 $cluster = function_exists('mf_catalog_product_cluster_ids')
 	? mf_catalog_product_cluster_ids($productId)
 	: [$productId];
@@ -320,9 +323,17 @@ if ($tablesOk)
 					OR (l.`RECEIPT_DATE` IS NULL AND o.`DOC_DATE` >= DATE_SUB(CURDATE(), INTERVAL " . (int)$maxAge . ' DAY))
 				  )'
 			)->fetch();
-			$echoKv('lines_total', is_array($cntAll) ? ($cntAll['C'] ?? 0) : 0);
-			$echoKv('lines_matched', is_array($cntMatched) ? ($cntMatched['C'] ?? 0) : 0);
-			$echoKv('sum_qty_site_filter', is_array($sumRowEarly) ? ($sumRowEarly['SQ'] ?? 0) : 0);
+			$linesTotalN = (int)(is_array($cntAll) ? ($cntAll['C'] ?? 0) : 0);
+			$linesMatchedN = (int)(is_array($cntMatched) ? ($cntMatched['C'] ?? 0) : 0);
+			$sumQtySite = (float)(is_array($sumRowEarly) ? ($sumRowEarly['SQ'] ?? 0) : 0);
+			$echoKv('lines_total', $linesTotalN);
+			$echoKv('lines_matched', $linesMatchedN);
+			$echoKv('sum_qty_site_filter', $sumQtySite);
+			if ($linesMatchedN > 0 && $sumQtySite <= 1e-9)
+			{
+				echo "  NOTE: есть matched-строки с датой поступления, но QTY=0 — витрина скрывает «ожидаем поступление» (см. строки ниже).\n";
+				echo "  Проверьте в 1С поле quantity_ordered для заказа (в Bitrix пишется в QTY).\n";
+			}
 			$ordCnt = $conn->query(
 				'SELECT COUNT(*) AS `C` FROM ' . $helper->quote('mf_supplier_order')
 			)->fetch();
@@ -330,7 +341,12 @@ if ($tablesOk)
 				'SELECT MAX(`SYNCED_AT`) AS `LAST` FROM ' . $helper->quote('mf_supplier_order')
 			)->fetch();
 			$echoKv('orders_in_db', is_array($ordCnt) ? ($ordCnt['C'] ?? 0) : 0);
-			$echoKv('last_synced_at', is_array($syncRow) ? ($syncRow['LAST'] ?? '') : '');
+			$lastSync = is_array($syncRow) ? ($syncRow['LAST'] ?? '') : '';
+			if ($lastSync instanceof \Bitrix\Main\Type\DateTime)
+			{
+				$lastSync = $lastSync->format('Y-m-d H:i:s');
+			}
+			$echoKv('last_synced_at', $lastSync);
 		}
 		catch (\Throwable $e)
 		{
@@ -407,8 +423,16 @@ if ($clusterAmt !== null && (float)$clusterAmt > 1e-9)
 }
 if ($pending === null)
 {
-	$reasons[] = 'pending_arrival_for_product вернул null — на этой БД нет актуальных matched-строк (см. SQL counts; на проде часто не гоняли sync)';
-	$reasons[] = 'решение: php tools/mf_supplier_orders_sync.php на проде (и проверить API 1С / STATE_KEY)';
+	if (isset($linesMatchedN, $sumQtySite) && $linesMatchedN > 0 && $sumQtySite <= 1e-9)
+	{
+		$reasons[] = 'строка заказа есть (matched, дата OK), но SUM(QTY)=0 — в 1С quantity_ordered=0; витрина корректно молчит';
+		$reasons[] = 'решение: в 1С проверить «к поступлению» по заказу НФНФ-000306 / арт. 506152509, затем повторный sync';
+	}
+	else
+	{
+		$reasons[] = 'pending_arrival_for_product вернул null — нет matched-строк с qty>0 и актуальной датой';
+		$reasons[] = 'решение: php tools/mf_supplier_orders_sync.php (и API 1С / STATE_KEY)';
+	}
 }
 else
 {
