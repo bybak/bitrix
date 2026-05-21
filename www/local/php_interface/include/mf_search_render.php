@@ -65,9 +65,9 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 							<td class="mf-ta-r">
 								<?php
 								$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
-								$mfRequestPrice = $mfNoPrice;
+								$mfCanAddStore = !$mfNoPrice;
 								?>
-								<?php if (!$mfNoPrice): ?>
+								<?php if ($mfCanAddStore): ?>
 									<div class="mf-search-stock__actions">
 										<div class="mf-search-qty" data-max-qty="<?=htmlspecialcharsbx((string)$mfMaxQtyRounded)?>">
 											<button type="button" class="mf-search-qty__btn js-mf-qty-minus" aria-label="Уменьшить количество">-</button>
@@ -88,15 +88,7 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 								<?php endif; ?>
 							</td>
 							<td class="mf-ta-r">
-								<?php if ($mfRequestPrice): ?>
-									<button
-										type="button"
-										class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
-										data-product-id="<?=$id?>"
-										data-product-name="<?=htmlspecialcharsbx($titlePlain)?>"
-										data-product-url="<?=htmlspecialcharsbx($url)?>"
-									>Запросить цену</button>
-								<?php else: ?>
+								<?php if ($mfCanAddStore): ?>
 									<button
 										type="button"
 										class="btn btn-sm btn-warning mf-search-stock__btn js-mf-add-store"
@@ -104,6 +96,8 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 										data-store-id="<?= (int)$s['store_id'] ?>"
 										data-qty="1"
 									>В корзину</button>
+								<?php else: ?>
+									<span class="mf-search-stock__order-only">—</span>
 								<?php endif; ?>
 							</td>
 						</tr>

@@ -528,8 +528,6 @@ if ($elementId > 0)
 								<?php
 								$mfRowExternal = $mfIsExtRow;
 								$mfNoPriceRow = ($storePrice === null || (float)$storePrice <= 0);
-								// Без цены — «Запросить цену» и для внешнего склада (раньше внешний без цены вёл в «В корзину»).
-								$mfRequestPriceRow = $mfNoPriceRow;
 								$mfShowCartBtn = !$mfNoPriceRow && ($mfRowExternal || (float)$amt > 1e-9);
 								$mfMaxQtyDetail = 0.0;
 								if ($mfRowExternal)
@@ -544,7 +542,7 @@ if ($elementId > 0)
 								{
 									$mfMaxQtyDetail = round($amt, 3);
 								}
-								if ($mfRequestPriceRow): ?>
+								if ($mfNoPriceRow): ?>
 									<span class="text-muted">—</span>
 								<?php elseif ($mfRowExternal || !$mfNoPriceRow): ?>
 									<div class="mf-search-qty mf-search-qty--detail" data-max-qty="<?= htmlspecialcharsbx((string)$mfMaxQtyDetail) ?>">
@@ -565,25 +563,15 @@ if ($elementId > 0)
 								<?php endif; ?>
 							</td>
 							<td class="text-right">
-								<?php
-								if ($mfRequestPriceRow): ?>
-									<button
-										type="button"
-										class="btn btn-sm btn-warning js-mf-request-price-global"
-										data-product-id="<?= (int)$elementId ?>"
-										data-product-name="<?=htmlspecialcharsbx($mfDetNameForReq)?>"
-										data-product-url="<?=htmlspecialcharsbx($mfDetProductUrl)?>"
-										data-user-name="<?=htmlspecialcharsbx($mfDetReqN)?>"
-										data-user-email="<?=htmlspecialcharsbx($mfDetReqE)?>"
-										data-user-locked="<?=$mfDetReqLocked ? '1' : '0'?>"
-									>Запросить цену</button>
-								<?php elseif ($mfShowCartBtn): ?>
+								<?php if ($mfShowCartBtn): ?>
 									<button
 										type="button"
 										class="btn btn-sm btn-warning js-mf-add-store"
 										data-product-id="<?= (int)$elementId ?>"
 										data-store-id="<?= (int)$sid ?>"
 									>В корзину</button>
+								<?php else: ?>
+									<span class="text-muted">—</span>
 								<?php endif; ?>
 							</td>
 						</tr>
