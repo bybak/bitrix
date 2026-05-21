@@ -11,7 +11,7 @@ if (is_file($__mfCvRm))
 }
 unset($__mfCvRm);
 
-if (empty($arResult['ITEMS']) || !function_exists('mf_catalog_storefront_price_when_in_stock'))
+if (empty($arResult['ITEMS']) || !function_exists('mf_catalog_listing_display_price'))
 {
 	return;
 }
@@ -26,7 +26,7 @@ foreach ($arResult['ITEMS'] as &$arItem)
 	{
 		continue;
 	}
-	$dp = mf_catalog_storefront_price_when_in_stock($pid);
+	$dp = mf_catalog_listing_display_price($pid);
 	if ($dp !== null && $dp > 0 && !empty($arItem['MIN_PRICE']) && is_array($arItem['MIN_PRICE']) && function_exists('mf_catalog_patch_bitrix_min_price_display'))
 	{
 		mf_catalog_patch_bitrix_min_price_display($arItem['MIN_PRICE'], (float)$dp);

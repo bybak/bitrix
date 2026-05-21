@@ -2275,8 +2275,8 @@ if (!function_exists('mf_catalog_storefront_price_when_in_stock'))
 if (!function_exists('mf_catalog_listing_display_price'))
 {
 	/**
-	 * Цена для витрины (списки, блоки, «От» на карточке): минимум по всем складам из
-	 * mf_supplier_store_to_price_group с валидной ценой (mf_ep_display_price_for_store), независимо от остатка.
+	 * Цена для витрины («От» на карточке, в поиске, в списках): минимум по всем строкам
+	 * таблицы складов с валидной ценой, независимо от остатка (в т.ч. внешние «Под заказ»).
 	 */
 	function mf_catalog_listing_display_price(int $productId): ?float
 	{

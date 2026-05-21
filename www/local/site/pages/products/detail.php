@@ -199,10 +199,10 @@ $APPLICATION->IncludeComponent(
     false
 );
 
-// Replace the component price with storefront price: only among warehouses with stock (no «От» if nowhere in stock).
-if ($elementId > 0 && function_exists('mf_catalog_storefront_price_when_in_stock'))
+// Replace the component price with storefront min price (all warehouse rows, including «Под заказ»).
+if ($elementId > 0 && function_exists('mf_catalog_listing_display_price'))
 {
-	$minP = mf_catalog_storefront_price_when_in_stock($elementId);
+	$minP = mf_catalog_listing_display_price($elementId);
 	if ($minP !== null && (float)$minP > 0)
 	{
 		$minP = function_exists('mf_round_price') ? mf_round_price((float)$minP) : (float)ceil((float)$minP);

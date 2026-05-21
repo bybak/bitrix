@@ -58,11 +58,11 @@ if ($mfReqIsAuthorized)
 $mfReqProductName = trim(html_entity_decode(strip_tags((string)($item['NAME'] ?? $productTitle ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 $mfReqProductUrl = (string)($item['DETAIL_PAGE_URL'] ?? '');
 
-// Витринная цена: только склады с остатком (без «От», если нет в наличии).
+// Витринная цена «От»: минимум по всем складам (в т.ч. «Под заказ»).
 $mfDynPrice = null;
-if (function_exists('mf_catalog_storefront_price_when_in_stock'))
+if (function_exists('mf_catalog_listing_display_price'))
 {
-	$p = mf_catalog_storefront_price_when_in_stock((int)($actualItem['ID'] ?? 0));
+	$p = mf_catalog_listing_display_price((int)($actualItem['ID'] ?? 0));
 	if ($p !== null && (float)$p > 0)
 	{
 		$mfDynPrice = function_exists('mf_round_price') ? mf_round_price((float)$p) : (float)ceil((float)$p);

@@ -26,7 +26,7 @@ if (!function_exists('mf_product_search_card_money'))
 
 if (!function_exists('mf_product_search_card_min_price_print'))
 {
-	/** Минимальная цена для подписи «От …»: сначала по складам с остатком, иначе минимум по витринным ценам складов (в т.ч. внешние под заказ). */
+	/** Минимальная цена для подписи «От …»: минимум по всем строкам таблицы складов (в т.ч. «Под заказ»). */
 	function mf_product_search_card_min_price_print(int $productId): string
 	{
 		$productId = (int)$productId;
@@ -34,15 +34,9 @@ if (!function_exists('mf_product_search_card_min_price_print'))
 		{
 			return '';
 		}
-		$minP = null;
-		if (function_exists('mf_catalog_storefront_price_when_in_stock'))
-		{
-			$minP = mf_catalog_storefront_price_when_in_stock($productId);
-		}
-		if (($minP === null || (float)$minP <= 0) && function_exists('mf_catalog_listing_display_price'))
-		{
-			$minP = mf_catalog_listing_display_price($productId);
-		}
+		$minP = function_exists('mf_catalog_listing_display_price')
+			? mf_catalog_listing_display_price($productId)
+			: null;
 		if ($minP === null || (float)$minP <= 0)
 		{
 			return '';

@@ -11,7 +11,7 @@ if (is_file($__mfCsRm))
 }
 unset($__mfCsRm);
 
-if (empty($arResult['ITEMS']) || !function_exists('mf_catalog_storefront_price_when_in_stock'))
+if (empty($arResult['ITEMS']) || !function_exists('mf_catalog_listing_display_price'))
 {
 	return;
 }
@@ -24,7 +24,7 @@ foreach ($arResult['ITEMS'] as &$arItem)
 		continue;
 	}
 
-	$dp = mf_catalog_storefront_price_when_in_stock($pid);
+	$dp = mf_catalog_listing_display_price($pid);
 	if ($dp === null || $dp <= 0)
 	{
 		continue;
