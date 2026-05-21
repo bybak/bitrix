@@ -3463,6 +3463,11 @@ if (is_file($mfExtPriceLib))
 		mf_ep_ensure_store_weight_ufs();
 	}
 }
+$mfEpClearJobLib = __DIR__ . '/include/mf_ep_clear_warehouse_job.php';
+if (is_file($mfEpClearJobLib))
+{
+	require_once $mfEpClearJobLib;
+}
 
 // --- UNF: заказы поставщику (sync из API; таблицы mf_supplier_order*) -------
 $mfSupplierOrdersLib = __DIR__ . '/include/mf_supplier_orders_lib.php';

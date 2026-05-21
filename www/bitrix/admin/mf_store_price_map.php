@@ -2,14 +2,26 @@
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_before.php';
 
-$impl = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_store_price_map_admin.php';
-if (is_file($impl))
+$candidates = [
+	$_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_store_price_map_admin.php',
+	$_SERVER['DOCUMENT_ROOT'] . '/bitrix/php_interface/include/mf_store_price_map_admin.php',
+];
+$impl = null;
+foreach ($candidates as $path)
+{
+	if (is_file($path))
+	{
+		$impl = $path;
+		break;
+	}
+}
+if ($impl !== null)
 {
 	require $impl;
 }
 else
 {
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
-	echo '<div style="padding:12px">Не найден: <code>' . htmlspecialchars($impl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</code></div>';
+	echo '<div style="padding:12px">Файл не найден: mf_store_price_map_admin.php</div>';
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
 }
