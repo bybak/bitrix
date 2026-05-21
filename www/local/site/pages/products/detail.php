@@ -199,51 +199,7 @@ $APPLICATION->IncludeComponent(
     false
 );
 
-// Replace the component price with storefront min price (all warehouse rows, including «Под заказ»).
-if ($elementId > 0 && function_exists('mf_catalog_listing_display_price'))
-{
-	$minP = mf_catalog_listing_display_price($elementId);
-	if ($minP !== null && (float)$minP > 0)
-	{
-		$minP = function_exists('mf_round_price') ? mf_round_price((float)$minP) : (float)ceil((float)$minP);
-		$mfMinPriceValue = $minP;
-		$mfMinPriceText = function_exists('mf_format_display_price_rub')
-			? htmlspecialcharsbx(mf_format_display_price_rub($minP))
-			: (htmlspecialcharsbx(number_format($minP, 0, '.', ' ')) . ' &#8381;');
-		$minPPrint = function_exists('mf_format_display_price_rub')
-			? mf_format_display_price_rub($minP)
-			: (number_format($minP, 0, '.', ' ') . ' &#8381;');
-		?>
-		<script>
-		(function(){
-			var price = "<?=CUtil::JSEscape($minPPrint)?>";
-			var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
-			if (el) el.innerHTML = price;
-			var meta = document.querySelector("meta[itemprop='price']");
-			if (meta) meta.setAttribute("content", "<?=CUtil::JSEscape((string)$minP)?>");
-		})();
-		</script>
-		<?php
-	}
-	else
-	{
-		$hasStock = function_exists('mf_catalog_product_has_positive_stock') && mf_catalog_product_has_positive_stock($elementId);
-		$onSupplierMap = function_exists('mf_catalog_use_bitrix_base_price_fallback') && !mf_catalog_use_bitrix_base_price_fallback();
-		if (!$hasStock || $onSupplierMap)
-		{
-			?>
-			<script>
-			(function(){
-				var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
-				if (el) el.innerHTML = "Запросить цену";
-				var meta = document.querySelector("meta[itemprop='price']");
-				if (meta) meta.setAttribute("content", "");
-			})();
-			</script>
-			<?php
-		}
-	}
-}
+$mfMinPriceScriptHtml = '';
 
 $mfStockTabHtml = '';
 $mfAnalogsTabHtml = '';
@@ -427,6 +383,54 @@ if ($elementId > 0)
 					return false;
 				}
 			));
+		}
+	}
+
+	if ($elementId > 0 && !empty($mfOrderedStoreIds) && function_exists('mf_catalog_min_price_for_store_ids'))
+	{
+		$minP = mf_catalog_min_price_for_store_ids($elementId, $mfOrderedStoreIds);
+		if ($minP !== null && (float)$minP > 0)
+		{
+			$mfMinPriceValue = (float)$minP;
+			$mfMinPriceText = function_exists('mf_format_display_price_rub')
+				? htmlspecialcharsbx(mf_format_display_price_rub($mfMinPriceValue))
+				: (htmlspecialcharsbx(number_format($mfMinPriceValue, 0, '.', ' ')) . ' &#8381;');
+			$minPPrint = function_exists('mf_format_display_price_rub')
+				? mf_format_display_price_rub($mfMinPriceValue)
+				: (number_format($mfMinPriceValue, 0, '.', ' ') . ' &#8381;');
+			ob_start();
+			?>
+			<script>
+			(function(){
+				var price = "<?=CUtil::JSEscape($minPPrint)?>";
+				var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
+				if (el) el.innerHTML = price;
+				var meta = document.querySelector("meta[itemprop='price']");
+				if (meta) meta.setAttribute("content", "<?=CUtil::JSEscape((string)$mfMinPriceValue)?>");
+			})();
+			</script>
+			<?php
+			$mfMinPriceScriptHtml = (string)ob_get_clean();
+		}
+	}
+	elseif ($elementId > 0)
+	{
+		$hasStock = function_exists('mf_catalog_product_has_positive_stock') && mf_catalog_product_has_positive_stock($elementId);
+		$onSupplierMap = function_exists('mf_catalog_use_bitrix_base_price_fallback') && !mf_catalog_use_bitrix_base_price_fallback();
+		if (!$hasStock || $onSupplierMap)
+		{
+			ob_start();
+			?>
+			<script>
+			(function(){
+				var el = document.querySelector(".product-item-detail-price-current[data-entity='panel-price'], .product-item-detail-price-current");
+				if (el) el.innerHTML = "Запросить цену";
+				var meta = document.querySelector("meta[itemprop='price']");
+				if (meta) meta.setAttribute("content", "");
+			})();
+			</script>
+			<?php
+			$mfMinPriceScriptHtml = (string)ob_get_clean();
 		}
 	}
 
@@ -723,6 +727,9 @@ if ($elementId > 0)
 }
 
 ?>
+<?php if ($mfMinPriceScriptHtml !== ''): ?>
+	<?=$mfMinPriceScriptHtml?>
+<?php endif; ?>
 	<div id="mf-detail-shell" class="mf-detail-shell" hidden>
 		<?php if ($mfMinPriceText !== ''): ?>
 			<div class="mf-detail-shell__min-price">От <span><?=$mfMinPriceText?></span></div>

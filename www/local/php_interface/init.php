@@ -34,6 +34,13 @@ if (is_file($_mfMailTransport))
 }
 unset($_mfMailTransport);
 
+$_mfProductSearchCard = __DIR__ . '/include/mf_product_search_card.php';
+if (is_file($_mfProductSearchCard))
+{
+	require_once $_mfProductSearchCard;
+}
+unset($_mfProductSearchCard);
+
 // Global config for external Motor-Force image host.
 // We intentionally generate URLs deterministically (no downloads into Bitrix).
 if (!defined('MF_MOTOR_FORCE_IMG_HOST'))
@@ -2272,6 +2279,47 @@ if (!function_exists('mf_catalog_storefront_price_when_in_stock'))
 	}
 }
 
+if (!function_exists('mf_catalog_min_price_for_store_ids'))
+{
+	/**
+	 * Минимальная витринная цена по списку складов (только те, что показаны в таблице).
+	 */
+	function mf_catalog_min_price_for_store_ids(int $productId, array $storeIds): ?float
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || empty($storeIds) || !function_exists('mf_ep_display_price_for_store'))
+		{
+			return null;
+		}
+
+		$min = null;
+		foreach ($storeIds as $sid)
+		{
+			$sid = (int)$sid;
+			if ($sid <= 0)
+			{
+				continue;
+			}
+			$p = mf_ep_display_price_for_store($productId, $sid, 1.0);
+			if ($p === null || (float)$p <= 0)
+			{
+				continue;
+			}
+			$p = (float)$p;
+			if ($min === null || $p < $min)
+			{
+				$min = $p;
+			}
+		}
+		if ($min === null)
+		{
+			return null;
+		}
+
+		return function_exists('mf_round_price') ? mf_round_price($min) : (float)(ceil($min / 10.0) * 10.0);
+	}
+}
+
 if (!function_exists('mf_catalog_listing_display_price'))
 {
 	/**
@@ -2294,71 +2342,30 @@ if (!function_exists('mf_catalog_listing_display_price'))
 
 		if (function_exists('mf_product_search_card_stores'))
 		{
-			$best = null;
+			$storeIds = [];
 			foreach (mf_product_search_card_stores($productId) as $row)
 			{
-				$p = $row['price'] ?? null;
-				if ($p === null || (float)$p <= 0)
+				$sid = (int)($row['store_id'] ?? 0);
+				if ($sid > 0)
 				{
-					continue;
-				}
-				$p = (float)$p;
-				if ($best === null || $p < $best)
-				{
-					$best = $p;
+					$storeIds[] = $sid;
 				}
 			}
-			if ($best !== null && $best > 0)
+			if (!empty($storeIds) && function_exists('mf_catalog_min_price_for_store_ids'))
 			{
-				$cache[$cacheKey] = function_exists('mf_round_price') ? mf_round_price($best) : (float)(ceil($best / 10.0) * 10.0);
+				$best = mf_catalog_min_price_for_store_ids($productId, $storeIds);
+				if ($best !== null && $best > 0)
+				{
+					$cache[$cacheKey] = $best;
 
-				return $cache[$cacheKey];
+					return $cache[$cacheKey];
+				}
 			}
 		}
 
-		if (!function_exists('mf_supplier_store_to_price_group') || !function_exists('mf_ep_display_price_for_store'))
-		{
-			$cache[$cacheKey] = null;
+		$cache[$cacheKey] = null;
 
-			return null;
-		}
-		$map = mf_supplier_store_to_price_group();
-		if (empty($map))
-		{
-			$cache[$cacheKey] = null;
-
-			return null;
-		}
-
-		$best = null;
-		foreach (array_keys($map) as $sid)
-		{
-			$sid = (int)$sid;
-			if ($sid <= 0)
-			{
-				continue;
-			}
-			$p = mf_ep_display_price_for_store($productId, $sid, 1.0);
-			if ($p === null || $p <= 0)
-			{
-				continue;
-			}
-			if ($best === null || $p < $best)
-			{
-				$best = $p;
-			}
-		}
-		if ($best !== null && function_exists('mf_round_price'))
-		{
-			$best = mf_round_price((float)$best);
-		}
-		elseif ($best !== null)
-		{
-			$best = (float)ceil((float)$best);
-		}
-		$cache[$cacheKey] = $best;
-
-		return $best;
+		return null;
 	}
 }
 
