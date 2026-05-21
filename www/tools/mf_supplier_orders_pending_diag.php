@@ -143,7 +143,7 @@ if ($productId <= 0 && $article !== '' && $tablesOk)
 	{
 		$artSql = $helper->forSql(mb_substr($article, 0, 250));
 		$rs = $conn->query(
-			'SELECT l.`ID`, l.`ORDER_ID`, l.`ARTICLE`, l.`BRAND`, l.`PRODUCT_ID`, l.`MATCH_STATUS`, l.`QTY`, l.`RECEIPT_DATE`, o.`DOC_DATE`, o.`DOC_NO`
+			'SELECT l.`ID`, l.`ORDER_ID`, l.`ARTICLE`, l.`BRAND`, l.`PRODUCT_ID`, l.`MATCH_STATUS`, l.`QTY`, l.`RECEIPT_DATE`, o.`DOC_DATE`, o.`DOC_NUMBER`
 			FROM ' . $helper->quote('mf_supplier_order_line') . ' l
 			INNER JOIN ' . $helper->quote('mf_supplier_order') . ' o ON o.`ID` = l.`ORDER_ID`
 			WHERE l.`ARTICLE` = \'' . $artSql . '\'
@@ -161,7 +161,7 @@ if ($productId <= 0 && $article !== '' && $tablesOk)
 				"  line#%s order#%s doc=%s product_id=%s match=%s qty=%s receipt=%s doc_date=%s\n",
 				(string)($row['ID'] ?? ''),
 				(string)($row['ORDER_ID'] ?? ''),
-				(string)($row['DOC_NO'] ?? ''),
+				(string)($row['DOC_NUMBER'] ?? ''),
 				(string)($row['PRODUCT_ID'] ?? ''),
 				(string)($row['MATCH_STATUS'] ?? ''),
 				(string)($row['QTY'] ?? ''),
@@ -282,7 +282,6 @@ else
 
 if ($tablesOk)
 {
-	$echoSection('SQL: lines for PRODUCT_ID cluster (matched + pending filter as on site)');
 	$ids = [];
 	foreach ($cluster as $cid)
 	{
@@ -298,10 +297,51 @@ if ($tablesOk)
 		$maxAge = function_exists('mf_supplier_orders_null_receipt_max_order_age_days')
 			? mf_supplier_orders_null_receipt_max_order_age_days()
 			: 365;
+
+		$echoSection('SQL counts (PRODUCT_ID cluster)');
+		try
+		{
+			$cntAll = $conn->query(
+				'SELECT COUNT(*) AS `C` FROM ' . $helper->quote('mf_supplier_order_line') . '
+				WHERE `PRODUCT_ID` IN (' . $inSql . ')'
+			)->fetch();
+			$cntMatched = $conn->query(
+				"SELECT COUNT(*) AS `C` FROM " . $helper->quote('mf_supplier_order_line') . "
+				WHERE `PRODUCT_ID` IN (" . $inSql . ") AND `MATCH_STATUS` = 'matched'"
+			)->fetch();
+			$sumRowEarly = $conn->query(
+				'SELECT COALESCE(SUM(l.`QTY`), 0) AS `SQ`
+				FROM ' . $helper->quote('mf_supplier_order_line') . ' l
+				INNER JOIN ' . $helper->quote('mf_supplier_order') . ' o ON o.`ID` = l.`ORDER_ID`
+				WHERE l.`PRODUCT_ID` IN (' . $inSql . ")
+				  AND l.`MATCH_STATUS` = 'matched'
+				  AND (
+					(l.`RECEIPT_DATE` IS NOT NULL AND l.`RECEIPT_DATE` >= CURDATE())
+					OR (l.`RECEIPT_DATE` IS NULL AND o.`DOC_DATE` >= DATE_SUB(CURDATE(), INTERVAL " . (int)$maxAge . ' DAY))
+				  )'
+			)->fetch();
+			$echoKv('lines_total', is_array($cntAll) ? ($cntAll['C'] ?? 0) : 0);
+			$echoKv('lines_matched', is_array($cntMatched) ? ($cntMatched['C'] ?? 0) : 0);
+			$echoKv('sum_qty_site_filter', is_array($sumRowEarly) ? ($sumRowEarly['SQ'] ?? 0) : 0);
+			$ordCnt = $conn->query(
+				'SELECT COUNT(*) AS `C` FROM ' . $helper->quote('mf_supplier_order')
+			)->fetch();
+			$syncRow = $conn->query(
+				'SELECT MAX(`SYNCED_AT`) AS `LAST` FROM ' . $helper->quote('mf_supplier_order')
+			)->fetch();
+			$echoKv('orders_in_db', is_array($ordCnt) ? ($ordCnt['C'] ?? 0) : 0);
+			$echoKv('last_synced_at', is_array($syncRow) ? ($syncRow['LAST'] ?? '') : '');
+		}
+		catch (\Throwable $e)
+		{
+			$echoKv('counts error', $e->getMessage());
+		}
+
+		$echoSection('SQL: lines for PRODUCT_ID cluster (site filter marked)');
 		try
 		{
 			$rs = $conn->query(
-				'SELECT l.`ID`, l.`ORDER_ID`, l.`PRODUCT_ID`, l.`MATCH_STATUS`, l.`QTY`, l.`RECEIPT_DATE`, o.`DOC_DATE`, o.`DOC_NO`,
+				'SELECT l.`ID`, l.`ORDER_ID`, l.`PRODUCT_ID`, l.`MATCH_STATUS`, l.`QTY`, l.`RECEIPT_DATE`, o.`DOC_DATE`, o.`DOC_NUMBER`,
 					CASE
 						WHEN l.`RECEIPT_DATE` IS NOT NULL AND l.`RECEIPT_DATE` >= CURDATE() THEN \'receipt_ok\'
 						WHEN l.`RECEIPT_DATE` IS NULL AND o.`DOC_DATE` >= DATE_SUB(CURDATE(), INTERVAL ' . (int)$maxAge . ' DAY) THEN \'null_receipt_ok\'
@@ -328,7 +368,7 @@ if ($tablesOk)
 					(string)($row['RECEIPT_DATE'] ?? 'NULL'),
 					(string)($row['DOC_DATE'] ?? ''),
 					(string)($row['SITE_FILTER'] ?? ''),
-					(string)($row['DOC_NO'] ?? '')
+					(string)($row['DOC_NUMBER'] ?? '')
 				);
 			}
 			$sumRow = $conn->query(
@@ -367,7 +407,8 @@ if ($clusterAmt !== null && (float)$clusterAmt > 1e-9)
 }
 if ($pending === null)
 {
-	$reasons[] = 'pending_arrival_for_product вернул null (нет matched строк / даты в прошлом / qty=0)';
+	$reasons[] = 'pending_arrival_for_product вернул null — на этой БД нет актуальных matched-строк (см. SQL counts; на проде часто не гоняли sync)';
+	$reasons[] = 'решение: php tools/mf_supplier_orders_sync.php на проде (и проверить API 1С / STATE_KEY)';
 }
 else
 {
