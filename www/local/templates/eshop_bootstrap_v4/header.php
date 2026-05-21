@@ -42,8 +42,6 @@ $isLogin = (strpos($curPage, SITE_DIR."login/") === 0);
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-header.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-footer.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-text-page.css");
-$APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-header.js");
-$APPLICATION->AddHeadScript(SITE_TEMPLATE_PATH."/mf-search.js");
 
 // Cache-bust custom static assets (browser caches them aggressively).
 $mfAssetVer = function (string $rel) {
@@ -54,6 +52,9 @@ $mfAssetVer = function (string $rel) {
 	}
 	return $rel;
 };
+
+$APPLICATION->AddHeadScript($mfAssetVer(SITE_TEMPLATE_PATH."/mf-header.js"));
+$APPLICATION->AddHeadString('<script src="' . htmlspecialcharsbx($mfAssetVer(SITE_TEMPLATE_PATH . '/mf-search.js')) . '" defer></script>', true);
 
 if ($isHome)
 {

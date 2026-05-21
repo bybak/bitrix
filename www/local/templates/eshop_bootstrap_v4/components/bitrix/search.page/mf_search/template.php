@@ -148,8 +148,6 @@ if (is_file($mfSearchRenderLib))
 								'ID',
 								'NAME',
 								'CODE',
-								'PREVIEW_TEXT',
-								'DETAIL_TEXT',
 								'PROPERTY_CML2_ARTICLE',
 								'PROPERTY_MF_BRAND',
 								'PROPERTY_MF_BRAND_NORM',
@@ -164,10 +162,6 @@ if (is_file($mfSearchRenderLib))
 						}
 					}
 
-					if (function_exists('mf_product_search_card_warm_cache'))
-					{
-						mf_product_search_card_warm_cache($mfProductIds);
-					}
 				}
 				?>
 				<div class="mf-search__summary">
@@ -273,6 +267,7 @@ if (is_file($mfSearchRenderLib))
 								'article' => $mfArticle,
 								'oem' => $mfOem,
 								'is_analog' => false,
+								'lazy_stores' => true,
 								'lazy_analogs' => true,
 							]);
 						}
