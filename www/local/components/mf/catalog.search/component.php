@@ -33,13 +33,22 @@ $arResult['SEARCH'] = [];
 $arResult['NAV_STRING'] = '';
 $arResult['NAV_RESULT'] = (object)['NavRecordCount' => 0];
 $arResult['DROPDOWN'] = [];
+$arResult['MF_SEARCH_ENGINE'] = 'catalog-v3-sql';
+$arResult['MF_SEARCH_MS'] = 0.0;
 
 if ($queryRaw !== '' && function_exists('mf_catalog_search_page'))
 {
-	$search = mf_catalog_search_page($queryRaw, $page, $pageSize, $iblockId);
-	$arResult['SEARCH'] = (array)($search['items'] ?? []);
-	$arResult['NAV_STRING'] = (string)($search['nav_string'] ?? '');
-	$arResult['NAV_RESULT'] = (object)['NavRecordCount' => (int)($search['total'] ?? 0)];
+	$cacheKey = [$queryRaw, $page, $pageSize, $iblockId];
+	if ($this->StartResultCache(900, $cacheKey, '/mf/catalog_search_component'))
+	{
+		$search = mf_catalog_search_page($queryRaw, $page, $pageSize, $iblockId);
+		$arResult['SEARCH'] = (array)($search['items'] ?? []);
+		$arResult['NAV_STRING'] = (string)($search['nav_string'] ?? '');
+		$arResult['NAV_RESULT'] = (object)['NavRecordCount' => (int)($search['total'] ?? 0)];
+		$arResult['MF_SEARCH_ENGINE'] = (string)($search['engine'] ?? 'catalog-v3-sql');
+		$arResult['MF_SEARCH_MS'] = (float)($search['ms'] ?? 0.0);
+		$this->EndResultCache();
+	}
 }
 
 $this->IncludeComponentTemplate();

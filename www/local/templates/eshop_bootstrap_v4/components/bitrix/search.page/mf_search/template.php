@@ -61,6 +61,7 @@ if (is_file($mfSearchRenderLib))
 }
 ?>
 
+<!-- mf-search-engine: <?=htmlspecialcharsbx((string)($arResult['MF_SEARCH_ENGINE'] ?? 'unknown'))?>; query-ms: <?=htmlspecialcharsbx((string)($arResult['MF_SEARCH_MS'] ?? '0'))?> -->
 <div class="mf-search">
 	<div class="mf-search__panel">
 		<div class="mf-search__top">
