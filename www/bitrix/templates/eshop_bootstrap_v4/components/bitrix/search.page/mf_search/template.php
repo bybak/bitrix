@@ -132,7 +132,13 @@ if (is_file($mfSearchRenderLib))
 					if ((string)($it['MODULE_ID'] ?? '') !== 'iblock') continue;
 					if ((int)($it['PARAM2'] ?? 0) !== 4) continue;
 					$id = (int)($it['ITEM_ID'] ?? 0);
-					if ($id > 0) $mfProductIds[$id] = true;
+					if ($id <= 0) continue;
+					if (!empty($it['_prefetch']) && is_array($it['_prefetch']))
+					{
+						$mfProductRowsById[$id] = $it['_prefetch'];
+						continue;
+					}
+					$mfProductIds[$id] = true;
 				}
 				$mfProductIds = array_keys($mfProductIds);
 				if (!empty($mfProductIds))
