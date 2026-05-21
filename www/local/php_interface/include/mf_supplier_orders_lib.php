@@ -6,6 +6,7 @@ declare(strict_types=1);
  * Заказы поставщику из UNF HTTP API (supplier_order_get): локальное зеркало в MySQL.
  * Храним только заказы в статусе «в работе»; при исчезновении из выборки — удаляем из БД (без истории).
  * price.unit_price при отсутствии закупа в типе цены склада MOTOR_FORCE_INTERNAL — через mf_ep_set_raw_price_for_catalog_cluster.
+ * Если валюта договора/заказа не RUB — unit_price пересчитывается в ₽ (mf_ep_convert_to_rub), если 1С ещё не прислала converted/RUB.
  */
 
 use Bitrix\Main\Application;
@@ -400,6 +401,133 @@ if (!function_exists('mf_supplier_orders_parse_line_unit_price'))
 		}
 
 		return round($v, 4);
+	}
+}
+
+if (!function_exists('mf_supplier_orders_order_currency_code'))
+{
+	/**
+	 * Код валюты заказа из JSON 1С (currency.code). Пусто / RUR → RUB.
+	 */
+	function mf_supplier_orders_order_currency_code(array $order): string
+	{
+		$cur = is_array($order['currency'] ?? null) ? $order['currency'] : [];
+		$export = strtoupper(trim((string)($cur['export_code'] ?? $cur['target_code'] ?? '')));
+		if ($export !== '' && $export !== 'RUR')
+		{
+			return $export;
+		}
+		if ($export === 'RUR')
+		{
+			return 'RUB';
+		}
+		$code = strtoupper(trim((string)($cur['code'] ?? '')));
+		if ($code === '' || $code === 'RUR')
+		{
+			return 'RUB';
+		}
+
+		return $code;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_line_already_rub'))
+{
+	/**
+	 * 1С уже пересчитала price.unit_price в ₽ (converted / price.currency=RUB).
+	 */
+	function mf_supplier_orders_line_already_rub(array $line): bool
+	{
+		$pb = is_array($line['price'] ?? null) ? $line['price'] : [];
+		if (!empty($pb['converted']))
+		{
+			return true;
+		}
+		$lineCur = strtoupper(trim((string)($pb['currency'] ?? '')));
+
+		return $lineCur === 'RUB' || $lineCur === 'RUR';
+	}
+}
+
+if (!function_exists('mf_supplier_orders_line_source_currency'))
+{
+	/**
+	 * Валюта цены строки: price.currency или валюта заказа.
+	 */
+	function mf_supplier_orders_line_source_currency(array $line, string $orderCurrencyCode = 'RUB'): string
+	{
+		$pb = is_array($line['price'] ?? null) ? $line['price'] : [];
+		$lineCur = strtoupper(trim((string)($pb['currency'] ?? '')));
+		if ($lineCur !== '')
+		{
+			return $lineCur === 'RUR' ? 'RUB' : $lineCur;
+		}
+		$orderCur = strtoupper(trim($orderCurrencyCode));
+		if ($orderCur === '' || $orderCur === 'RUR')
+		{
+			return 'RUB';
+		}
+
+		return $orderCur;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_line_unit_price_rub'))
+{
+	/**
+	 * Цена единицы в рублях: price.unit_price с пересчётом по курсу Bitrix, если валюта ≠ RUB.
+	 */
+	function mf_supplier_orders_line_unit_price_rub(array $line, string $orderCurrencyCode = 'RUB'): ?float
+	{
+		$raw = mf_supplier_orders_parse_line_unit_price($line);
+		if ($raw === null)
+		{
+			return null;
+		}
+
+		if (mf_supplier_orders_line_already_rub($line))
+		{
+			return round($raw, 4);
+		}
+
+		$srcCur = mf_supplier_orders_line_source_currency($line, $orderCurrencyCode);
+		if ($srcCur === 'RUB')
+		{
+			return round($raw, 4);
+		}
+
+		if (!function_exists('mf_ep_convert_to_rub'))
+		{
+			$lib = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_external_price_lib.php';
+			if (is_file($lib))
+			{
+				require_once $lib;
+			}
+		}
+		if (!function_exists('mf_ep_convert_to_rub'))
+		{
+			mf_supplier_orders_log('mf_ep_convert_to_rub missing, skip foreign price', [
+				'currency' => $srcCur,
+				'unit_price' => $raw,
+			]);
+
+			return null;
+		}
+
+		try
+		{
+			return round(mf_ep_convert_to_rub($raw, $srcCur), 4);
+		}
+		catch (\Throwable $e)
+		{
+			mf_supplier_orders_log('currency convert failed', [
+				'currency' => $srcCur,
+				'unit_price' => $raw,
+				'e' => $e->getMessage(),
+			]);
+
+			return null;
+		}
 	}
 }
 
@@ -839,6 +967,7 @@ if (!function_exists('mf_supplier_orders_sync'))
 					continue;
 				}
 				$docDtOrd = mf_supplier_orders_parse_datetime(trim((string)($ord['date'] ?? '')));
+				$orderCur = mf_supplier_orders_order_currency_code($ord);
 				foreach ($linesArr as $ln)
 				{
 					if (!is_array($ln))
@@ -861,7 +990,7 @@ if (!function_exists('mf_supplier_orders_sync'))
 					{
 						$matched++;
 					}
-					$unitDry = mf_supplier_orders_parse_line_unit_price($ln);
+					$unitDry = mf_supplier_orders_line_unit_price_rub($ln, $orderCur);
 					$pidDry = isset($m['product_id']) ? (int)$m['product_id'] : 0;
 					if ($pidDry > 0 && mf_supplier_orders_try_set_internal_store_raw_price_from_1c($pidDry, $unitDry, true))
 					{
@@ -928,6 +1057,7 @@ if (!function_exists('mf_supplier_orders_sync'))
 
 				$docDt = mf_supplier_orders_parse_datetime($dateIso);
 				$docSql = $docDt !== null ? $helper->convertToDbDateTime($docDt) : 'NULL';
+				$orderCur = mf_supplier_orders_order_currency_code($ord);
 
 				$conn->queryExecute(
 					"INSERT INTO " . $helper->quote('mf_supplier_order') . "
@@ -1003,7 +1133,7 @@ if (!function_exists('mf_supplier_orders_sync'))
 						continue;
 					}
 
-					$unitPrice = mf_supplier_orders_parse_line_unit_price($ln);
+					$unitPrice = mf_supplier_orders_line_unit_price_rub($ln, $orderCur);
 					$uPriceSql = $unitPrice !== null ? sprintf('%.4F', $unitPrice) : 'NULL';
 
 					$match = mf_supplier_orders_match_product_id($iblockId, $article, $brand);

@@ -57,13 +57,6 @@ $aMenuLinks = Array(
 		""
 	),
 	Array(
-		"Прокат техники",
-		"/prokat/",
-		Array(),
-		Array(),
-		""
-	),
-	Array(
 		"ДОКУМЕНТЫ",
 		"/documents/",
 		Array(),

@@ -3,6 +3,11 @@
   function qs(sel, root) { return (root || document).querySelector(sel); }
   function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
+  var feedbackModals = {
+    write: 'mf-write-us-modal',
+    callback: 'mf-callback-modal'
+  };
+
   function syncHeaderHeight() {
     var header = qs('.mf-header');
     if (!header) return;
@@ -41,6 +46,108 @@
     if (btn) btn.setAttribute('aria-expanded', 'false');
   }
 
+  function getOpenFeedbackModal() {
+    return qs('.mf-header-modal:not([hidden])');
+  }
+
+  function setFeedbackMessage(modal, text, isError) {
+    if (!modal) return;
+    var msg = qs('.mf-header-modal__message', modal);
+    if (!msg) return;
+    msg.textContent = String(text || '');
+    msg.className = 'mf-header-modal__message' + (isError ? ' is-error' : ' is-success');
+    msg.hidden = !text;
+  }
+
+  function openFeedback(type) {
+    var id = feedbackModals[type];
+    if (!id) return;
+    var modal = document.getElementById(id);
+    if (!modal) return;
+    closeMenu();
+    qsa('.mf-header-modal').forEach(function (m) { m.hidden = true; });
+    setFeedbackMessage(modal, '', false);
+    modal.hidden = false;
+    document.documentElement.classList.add('mf-header-modal-open');
+    document.body.classList.add('mf-header-modal-open');
+    setTimeout(function () {
+      var input = qs('input, textarea', modal);
+      if (input) {
+        try { input.focus(); } catch (e0) {}
+      }
+    }, 0);
+  }
+
+  function closeFeedback() {
+    qsa('.mf-header-modal').forEach(function (m) { m.hidden = true; });
+    document.documentElement.classList.remove('mf-header-modal-open');
+    document.body.classList.remove('mf-header-modal-open');
+  }
+
+  function submitFeedbackForm(form) {
+    if (!form) return;
+    var modal = form.closest('.mf-header-modal');
+    var submitBtn = form.querySelector('button[type="submit"]');
+    var oldText = submitBtn ? submitBtn.textContent : '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Отправляем…';
+    }
+    setFeedbackMessage(modal, '', false);
+
+    var done = function (resp) {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = oldText;
+      }
+      if (!resp || !resp.ok) {
+        setFeedbackMessage(modal, (resp && resp.error) ? resp.error : 'Не удалось отправить сообщение.', true);
+        return;
+      }
+      setFeedbackMessage(modal, 'Сообщение отправлено. Мы свяжемся с вами.', false);
+      form.reset();
+      setTimeout(function () {
+        closeFeedback();
+      }, 1200);
+    };
+
+    var payload = {};
+    try {
+      var fd = new FormData(form);
+      fd.forEach(function (value, key) { payload[key] = value; });
+    } catch (eFd) {
+      done({ ok: false, error: 'Не удалось отправить сообщение.' });
+      return;
+    }
+
+    if (window.BX && BX.ajax) {
+      BX.ajax({
+        url: '/ajax/mf_header_feedback.php',
+        method: 'POST',
+        dataType: 'json',
+        data: payload,
+        onsuccess: done,
+        onfailure: function () {
+          done({ ok: false, error: 'Не удалось отправить сообщение.' });
+        }
+      });
+      return;
+    }
+
+    if (window.fetch) {
+      var body = new FormData(form);
+      fetch('/ajax/mf_header_feedback.php', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: body
+      }).then(function (r) { return r.json(); })
+        .then(done)
+        .catch(function () {
+          done({ ok: false, error: 'Не удалось отправить сообщение.' });
+        });
+    }
+  }
+
   document.addEventListener('click', function (e) {
     var up = e.target.closest && e.target.closest('.js-scroll-up');
     if (up) {
@@ -58,10 +165,36 @@
 
     var overlay = e.target.closest && e.target.closest('[data-mf="menu-overlay"]');
     if (overlay) { e.preventDefault(); closeMenu(); return; }
+
+    var feedbackOpen = e.target.closest && e.target.closest('[data-mf="open-feedback"]');
+    if (feedbackOpen) {
+      e.preventDefault();
+      openFeedback(feedbackOpen.getAttribute('data-mf-feedback') || 'write');
+      return;
+    }
+
+    var feedbackClose = e.target.closest && e.target.closest('[data-mf="close-feedback"]');
+    if (feedbackClose) {
+      e.preventDefault();
+      closeFeedback();
+    }
   });
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeMenu();
+    if (e.key === 'Escape') {
+      if (getOpenFeedbackModal()) {
+        closeFeedback();
+        return;
+      }
+      closeMenu();
+    }
+  });
+
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form || !form.hasAttribute || !form.hasAttribute('data-mf-feedback-form')) return;
+    e.preventDefault();
+    submitFeedbackForm(form);
   });
 
   // Close menu after click on a menu link (mobile UX)
@@ -72,7 +205,6 @@
     if (href && href !== '#') closeMenu();
   });
 
-  // Ensure ARIA initial state
   document.addEventListener('DOMContentLoaded', function () {
     closeMenu();
     syncHeaderHeight();
@@ -86,4 +218,3 @@
   window.addEventListener('load', syncHeaderHeight);
   window.addEventListener('resize', syncHeaderHeight);
 })();
-

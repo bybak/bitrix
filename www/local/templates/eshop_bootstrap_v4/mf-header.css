@@ -736,3 +736,86 @@ html.mf-search-loading-active .mf-search-loading{
   to { transform: rotate(360deg); }
 }
 
+.mf-header-modal{
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+}
+.mf-header-modal__backdrop{
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+}
+.mf-header-modal__dialog{
+  position: relative;
+  width: min(520px, calc(100vw - 32px));
+  margin: 8vh auto 0;
+  background: #fff;
+  color: #111;
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.22);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+.mf-header-modal__close{
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  color: #666;
+  cursor: pointer;
+}
+.mf-header-modal__title{
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.mf-header-modal__subtitle{
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+.mf-header-modal__optional{
+  font-weight: 400;
+  color: #888;
+}
+.mf-header-modal__message{
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+.mf-header-modal__message.is-success{
+  background: #edf9ef;
+  color: #1f6b33;
+}
+.mf-header-modal__message.is-error{
+  background: #fff0f0;
+  color: #b42318;
+  white-space: pre-line;
+}
+.mf-header-modal__form .form-group{
+  margin-bottom: 14px;
+}
+.mf-header-modal__form label{
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mf-header-modal__actions{
+  margin-top: 8px;
+}
+.mf-header-modal__submit{
+  min-width: 160px;
+}
+.mf-header-modal-open{
+  overflow: hidden;
+}
+

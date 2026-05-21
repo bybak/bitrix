@@ -39,6 +39,29 @@ $isPersonal = (strpos($curPage, SITE_DIR."personal/") === 0);
 $isAuth = (strpos($curPage, SITE_DIR."auth/") === 0);
 $isLogin = (strpos($curPage, SITE_DIR."login/") === 0);
 
+global $USER;
+$mfFeedbackUserName = '';
+$mfFeedbackUserEmail = '';
+$mfFeedbackUserPhone = '';
+$mfFeedbackIsAuthorized = is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized();
+if ($mfFeedbackIsAuthorized)
+{
+	$mfFeedbackUserName = trim((string)$USER->GetFirstName() . ' ' . (string)$USER->GetLastName());
+	if ($mfFeedbackUserName === '')
+	{
+		$mfFeedbackUserName = trim((string)$USER->GetLogin());
+	}
+	$mfFeedbackUserEmail = trim((string)$USER->GetEmail());
+	if (class_exists('CUser'))
+	{
+		$mfFeedbackUserRow = \CUser::GetByID((int)$USER->GetID())->Fetch();
+		if (is_array($mfFeedbackUserRow))
+		{
+			$mfFeedbackUserPhone = trim((string)($mfFeedbackUserRow['PERSONAL_PHONE'] ?? ($mfFeedbackUserRow['PERSONAL_MOBILE'] ?? '')));
+		}
+	}
+}
+
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-header.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-footer.css");
 $APPLICATION->SetAdditionalCSS(SITE_TEMPLATE_PATH."/mf-text-page.css");
@@ -220,8 +243,8 @@ if (function_exists('mf_seo_apply_for_current_page'))
 						<a data-mf="tel" href="tel:+79218837340">8 921 883-73-40</a>
 					</div>
 					<div class="mf-top-links">
-						<a class="mf-top-link" href="/contacts/">Напишите нам</a>
-						<a class="mf-top-link" href="/contacts/">Обратный звонок</a>
+						<a class="mf-top-link" href="#" data-mf="open-feedback" data-mf-feedback="write">Напишите нам</a>
+						<a class="mf-top-link" href="#" data-mf="open-feedback" data-mf-feedback="callback">Обратный звонок</a>
 					</div>
 				</div>
 			</div>
@@ -353,7 +376,7 @@ if (function_exists('mf_seo_apply_for_current_page'))
 										</div>
 
 										<div class="feedback inline-column top-contacts__form">
-											<a href="/contacts/" class="top-contacts__link feedback-btn -inline-group" data-type="0">
+											<a href="#" class="top-contacts__link feedback-btn -inline-group" data-mf="open-feedback" data-mf-feedback="write">
 												<div class="top-contacts__icon top-contacts__icon_form">
 													<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16"><defs/><path fill="currentColor" fill-rule="evenodd" d="M2 2h12a2 2 0 012 2v8a2 2 0 01-2 2H2a2 2 0 01-2-2V4c0-1.1.9-2 2-2zm0 5v5h12V6.9L8 10 2 7zm0-2l6 3 6-3V4H2v1z" clip-rule="evenodd"/></svg>
 												</div>
@@ -362,7 +385,7 @@ if (function_exists('mf_seo_apply_for_current_page'))
 										</div>
 
 										<div class="feedback inline-column top-contacts__form">
-											<a href="/contacts/" class="top-contacts__link feedback-btn -inline-group" data-type="1">
+											<a href="#" class="top-contacts__link feedback-btn -inline-group" data-mf="open-feedback" data-mf-feedback="callback">
 												<div class="top-contacts__icon top-contacts__icon_form">
 													<svg id="callback_icon" width="50" height="50" data-name="callback icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 15"><title>callback_icon</title><path fill="currentColor" d="M17.88,1.5a10.32,10.32,0,0,0-1-1A1.45,1.45,0,0,0,16,0a2,2,0,0,0-1,.48,7.38,7.38,0,0,0-1.22,1.14A5.06,5.06,0,0,0,12.91,3,0.89,0.89,0,0,0,13,4a4.35,4.35,0,0,0,1.38,1A1,1,0,0,1,15,6a2.35,2.35,0,0,1-.62,1.5Q13.75,8.25,13,9t-1.5,1.38A2.35,2.35,0,0,1,10,11a1,1,0,0,1-1-.63A4.35,4.35,0,0,0,8,9a0.89,0.89,0,0,0-1-.09,5.06,5.06,0,0,0-1.33.84A7.37,7.37,0,0,0,4.48,11,2,2,0,0,0,4,12a1.45,1.45,0,0,0,.47.89,10.36,10.36,0,0,0,1,1Q6.06,14.34,7,15a6,6,0,0,0,1.82-.35,16.1,16.1,0,0,0,2.2-.92,19.94,19.94,0,0,0,2.19-1.28A12,12,0,0,0,15,11a12.05,12.05,0,0,0,1.45-1.79A20,12,0,0,0,17.73,7a16,16,0,0,0,.92-2.2A6,6,0,0,0,19,3Q18.34,2.06,17.88,1.5ZM6,6L9,3,6,0V2H1V4H6V6Z\" transform=\"translate(-1)\"/></svg>
 												</div>
@@ -413,6 +436,66 @@ if (function_exists('mf_seo_apply_for_current_page'))
 				);?>
 			</div>
 		</aside>
+
+		<div class="mf-header-modal" id="mf-write-us-modal" hidden>
+			<div class="mf-header-modal__backdrop" data-mf="close-feedback"></div>
+			<div class="mf-header-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="mf-write-us-title">
+				<button type="button" class="mf-header-modal__close" data-mf="close-feedback" aria-label="Закрыть">×</button>
+				<div class="mf-header-modal__title" id="mf-write-us-title">Напишите нам</div>
+				<div class="mf-header-modal__subtitle">Ответим на ваш e-mail в рабочее время.</div>
+				<div class="mf-header-modal__message" id="mf-write-us-message" hidden></div>
+				<form class="mf-header-modal__form" id="mf-write-us-form" data-mf-feedback-form="write_us">
+					<input type="hidden" name="sessid" value="<?=htmlspecialcharsbx(bitrix_sessid())?>">
+					<input type="hidden" name="form_type" value="write_us">
+					<input type="hidden" name="page_url" value="<?=htmlspecialcharsbx((string)$APPLICATION->GetCurPageParam('', ['login', 'logout', 'register', 'forgot_password', 'change_password', 'clear_cache']))?>">
+					<div class="form-group">
+						<label for="mf-write-us-name">Имя</label>
+						<input id="mf-write-us-name" type="text" class="form-control" name="name" value="<?=htmlspecialcharsbx($mfFeedbackUserName)?>" required>
+					</div>
+					<div class="form-group">
+						<label for="mf-write-us-email">E-mail</label>
+						<input id="mf-write-us-email" type="email" class="form-control" name="email" value="<?=htmlspecialcharsbx($mfFeedbackUserEmail)?>" required>
+					</div>
+					<div class="form-group">
+						<label for="mf-write-us-message-field">Сообщение</label>
+						<textarea id="mf-write-us-message-field" class="form-control" name="message" rows="5" required></textarea>
+					</div>
+					<div class="mf-header-modal__actions">
+						<button type="submit" class="btn btn-warning mf-header-modal__submit">Отправить</button>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div class="mf-header-modal" id="mf-callback-modal" hidden>
+			<div class="mf-header-modal__backdrop" data-mf="close-feedback"></div>
+			<div class="mf-header-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="mf-callback-title">
+				<button type="button" class="mf-header-modal__close" data-mf="close-feedback" aria-label="Закрыть">×</button>
+				<div class="mf-header-modal__title" id="mf-callback-title">Обратный звонок</div>
+				<div class="mf-header-modal__subtitle">Оставьте телефон — мы перезвоним.</div>
+				<div class="mf-header-modal__message" id="mf-callback-message" hidden></div>
+				<form class="mf-header-modal__form" id="mf-callback-form" data-mf-feedback-form="callback">
+					<input type="hidden" name="sessid" value="<?=htmlspecialcharsbx(bitrix_sessid())?>">
+					<input type="hidden" name="form_type" value="callback">
+					<input type="hidden" name="page_url" value="<?=htmlspecialcharsbx((string)$APPLICATION->GetCurPageParam('', ['login', 'logout', 'register', 'forgot_password', 'change_password', 'clear_cache']))?>">
+					<div class="form-group">
+						<label for="mf-callback-name">Имя</label>
+						<input id="mf-callback-name" type="text" class="form-control" name="name" value="<?=htmlspecialcharsbx($mfFeedbackUserName)?>" required>
+					</div>
+					<div class="form-group">
+						<label for="mf-callback-phone">Телефон</label>
+						<input id="mf-callback-phone" type="tel" class="form-control" name="phone" value="<?=htmlspecialcharsbx($mfFeedbackUserPhone)?>" inputmode="tel" autocomplete="tel" required>
+					</div>
+					<div class="form-group">
+						<label for="mf-callback-comment">Комментарий <span class="mf-header-modal__optional">(необязательно)</span></label>
+						<textarea id="mf-callback-comment" class="form-control" name="message" rows="3" placeholder="Удобное время для звонка"></textarea>
+					</div>
+					<div class="mf-header-modal__actions">
+						<button type="submit" class="btn btn-warning mf-header-modal__submit">Заказать звонок</button>
+					</div>
+				</form>
+			</div>
+		</div>
 	</header>
 
 	<div class="workarea">

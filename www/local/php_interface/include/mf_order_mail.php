@@ -273,17 +273,21 @@ final class Renderer
 				$itemsTotal += $lineTotal;
 
 				$productId = (int)$item->getProductId();
-				$name = trim((string)$item->getField('NAME'));
+				$name = self::basketItemDisplayName($item, $productId);
+				$brand = self::basketItemBrand($item, $productId);
+				$storeTitle = self::basketItemStoreTitle($item);
 				$article = self::basketItemArticle($item, $productId);
 
-				$nameHtml = self::esc($name);
+				$nameHtml = self::esc($name !== '' ? $name : '—');
 				if ($article !== '')
 				{
 					$nameHtml .= '<br><span style="font-size:12px;color:#666;">Артикул: ' . self::esc($article) . '</span>';
 				}
 
 				$rows .= '<tr>'
+					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . self::esc($storeTitle !== '' ? $storeTitle : '—') . '</td>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;color:' . self::COLOR_LINK . ';">' . $nameHtml . '</td>'
+					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . self::esc($brand !== '' ? $brand : '—') . '</td>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';text-align:center;white-space:nowrap;">' . self::esc(self::qtyLabel($qty)) . '</td>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';text-align:right;white-space:nowrap;">' . self::esc(self::moneyPlain($price, $currency)) . '</td>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';text-align:right;white-space:nowrap;">' . self::esc(self::moneyPlain($lineTotal, $currency)) . '</td>'
@@ -293,7 +297,7 @@ final class Renderer
 
 		if ($rows === '')
 		{
-			$rows = '<tr><td colspan="4" style="padding:10px;text-align:center;color:#666;">Нет позиций</td></tr>';
+			$rows = '<tr><td colspan="6" style="padding:10px;text-align:center;color:#666;">Нет позиций</td></tr>';
 		}
 
 		$orderTotal = (float)$order->getPrice();
@@ -302,19 +306,21 @@ final class Renderer
 		return self::block(
 			'<table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;">'
 			. '<tr style="background:' . self::COLOR_HEAD_BG . ';font-weight:bold;">'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Товар</td>'
+			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Склад</td>'
+			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Наименование</td>'
+			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Бренд</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:center;width:90px;">Количество</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:right;width:100px;">Цена</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:right;width:110px;">Стоимость</td>'
 			. '</tr>'
 			. $rows
 			. '<tr>'
-			. '<td colspan="3" style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">Итого:</td>'
+			. '<td colspan="5" style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">Итого:</td>'
 			. '<td style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">'
 			. self::esc(self::moneyPlain($itemsTotal, $currency)) . ' руб.'
 			. '</td></tr>'
 			. '<tr style="background:' . self::COLOR_TOTAL_BG . ';">'
-			. '<td colspan="3" style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">Всего к оплате:</td>'
+			. '<td colspan="5" style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">Всего к оплате:</td>'
 			. '<td style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">'
 			. self::esc(self::moneyPlain($payTotal, $currency)) . ' руб.'
 			. '</td></tr>'
@@ -496,11 +502,6 @@ final class Renderer
 			. 'Пт с 10:00 до 17:00;<br>'
 			. 'Сб-Вс - Выходной.'
 			. '</div>',
-			'<div style="text-align:center;line-height:1.5;font-size:13px;color:#444;">'
-			. 'С 29 декабря по 8 января отправки производится не будут.<br>'
-			. 'Отправки возобновятся 9-го января.<br>'
-			. 'В этот период заказы обрабатываются только на почту.'
-			. '</div>',
 		];
 
 		return self::block(implode("\n", $parts));
@@ -520,11 +521,6 @@ final class Renderer
 			. 'Пн-Чт с 10:00 до 18:00;<br>'
 			. 'Пт с 10:00 до 17:00;<br>'
 			. 'Сб-Вс - Выходной.'
-			. '</div>';
-		$parts[] = '<div style="text-align:center;line-height:1.5;font-size:13px;color:#444;">'
-			. 'С 29 декабря по 8 января отправки производится не будут.<br>'
-			. 'Отправки возобновятся 9-го января.<br>'
-			. 'В этот период заказы обрабатываются только на почту.'
 			. '</div>';
 
 		return self::block(implode("\n", $parts));
@@ -687,6 +683,93 @@ final class Renderer
 			$label = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
 
 			return $label . ' — ' . $price . ' ₽';
+		}
+
+		return '';
+	}
+
+	private static function basketItemProp(BasketItemBase $item, string $code): string
+	{
+		$code = trim($code);
+		if ($code === '')
+		{
+			return '';
+		}
+		$props = $item->getPropertyCollection();
+		foreach ($props as $p)
+		{
+			if (strcasecmp(trim((string)$p->getField('CODE')), $code) !== 0)
+			{
+				continue;
+			}
+			$v = trim((string)$p->getField('VALUE'));
+			if ($v !== '')
+			{
+				return $v;
+			}
+		}
+
+		return '';
+	}
+
+	private static function basketItemStoreTitle(BasketItemBase $item): string
+	{
+		$title = self::basketItemProp($item, 'MF_STORE_TITLE');
+		if ($title !== '')
+		{
+			return $title;
+		}
+
+		$storeId = (int)self::basketItemProp($item, 'MF_STORE_ID');
+		if ($storeId > 0 && function_exists('mf_store_row'))
+		{
+			$row = mf_store_row($storeId);
+			if (is_array($row))
+			{
+				$title = trim((string)($row['TITLE'] ?? ''));
+				if ($title !== '')
+				{
+					return $title;
+				}
+			}
+		}
+
+		return '';
+	}
+
+	private static function basketItemDisplayName(BasketItemBase $item, int $productId): string
+	{
+		if (function_exists('mf_basket_item_display_name'))
+		{
+			$name = mf_basket_item_display_name([
+				'NAME' => (string)$item->getField('NAME'),
+				'PRODUCT_ID' => $productId,
+			]);
+			if ($name !== '')
+			{
+				return $name;
+			}
+		}
+
+		return trim((string)$item->getField('NAME'));
+	}
+
+	private static function basketItemBrand(BasketItemBase $item, int $productId): string
+	{
+		foreach (['MF_BRAND', 'BRAND', 'CML2_MANUFACTURER', 'MF_BRAND_NORM'] as $code)
+		{
+			$value = self::basketItemProp($item, $code);
+			if ($value !== '')
+			{
+				return $value;
+			}
+		}
+
+		if ($productId > 0 && function_exists('mf_catalog_brand_article_by_product_id'))
+		{
+			$meta = mf_catalog_brand_article_by_product_id($productId);
+
+			return trim((string)($meta['brand'] ?? ''));
 		}
 
 		return '';
