@@ -348,6 +348,7 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 					<td>Бренд</td>
 					<td>Активен</td>
 					<td>Редирект</td>
+					<td>Остатки</td>
 					<td>Создан</td>
 					<td></td>
 				</tr>
@@ -401,6 +402,15 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 						<td><?= is_array($d) && (string)$d['brand'] !== '' ? mf_cud_h((string)$d['brand']) : '—' ?></td>
 						<td><?= is_array($d) && (string)$d['active'] !== '' ? mf_cud_h((string)$d['active']) : '—' ?></td>
 						<td><?= (is_array($d) && !empty($d['is_redirect'])) ? 'Y' : '—' ?></td>
+						<td style="font-size:11px;max-width:220px;">
+							<?php
+							$stock = is_array($d) && is_array($d['stock'] ?? null) ? $d['stock'] : null;
+							$stockLabel = is_array($stock) ? (string)($stock['label'] ?? '—') : '—';
+							$stockTitle = is_array($stock) ? (string)($stock['title_attr'] ?? '') : '';
+							$stockColor = is_array($stock) && !empty($stock['has_any']) ? '#1a6b2f' : '#666';
+							?>
+							<span style="color:<?= mf_cud_h($stockColor) ?>;"<?= $stockTitle !== '' ? ' title="' . mf_cud_h($stockTitle) . '"' : '' ?>><?= mf_cud_h($stockLabel) ?></span>
+						</td>
 						<td style="font-size:11px;"><?= is_array($d) && (string)$d['date_create'] !== '' ? mf_cud_h((string)$d['date_create']) : '—' ?></td>
 						<td>
 							<?php

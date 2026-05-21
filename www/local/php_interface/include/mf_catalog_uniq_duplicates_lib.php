@@ -517,7 +517,183 @@ if (!function_exists('mf_cud_fetch_elements_detail'))
 			];
 		}
 
+		mf_cud_attach_stock_summaries($out);
+
 		return $out;
+	}
+}
+
+if (!function_exists('mf_cud_format_stock_amount'))
+{
+	function mf_cud_format_stock_amount(float $amount): string
+	{
+		if (abs($amount - round($amount)) < 0.0001)
+		{
+			return (string)(int)round($amount);
+		}
+
+		return rtrim(rtrim(sprintf('%.3f', $amount), '0'), '.');
+	}
+}
+
+if (!function_exists('mf_cud_stock_summary_for_product'))
+{
+	/**
+	 * Остатки по складам (кластер товар + SKU), как на витрине.
+	 *
+	 * @return array{has_any: bool, total: float, positive_count: int, lines: list<array{store_id: int, title: string, amount: float}>, label: string, title_attr: string}
+	 */
+	function mf_cud_stock_summary_for_product(int $productId): array
+	{
+		$empty = [
+			'has_any' => false,
+			'total' => 0.0,
+			'positive_count' => 0,
+			'lines' => [],
+			'label' => 'нет записей',
+			'title_attr' => '',
+		];
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			$empty['label'] = '—';
+
+			return $empty;
+		}
+
+		$byStore = function_exists('mf_catalog_product_store_amounts')
+			? mf_catalog_product_store_amounts($productId)
+			: [];
+		if ($byStore === [])
+		{
+			return $empty;
+		}
+
+		$lines = [];
+		$total = 0.0;
+		foreach ($byStore as $storeId => $amount)
+		{
+			$storeId = (int)$storeId;
+			$amount = (float)$amount;
+			$total += $amount;
+			if ($amount <= 0)
+			{
+				continue;
+			}
+			$title = '';
+			if (function_exists('mf_store_row'))
+			{
+				$s = mf_store_row($storeId);
+				$title = is_array($s) ? trim((string)($s['TITLE'] ?? '')) : '';
+			}
+			if ($title === '')
+			{
+				$title = 'склад #' . $storeId;
+			}
+			$lines[] = [
+				'store_id' => $storeId,
+				'title' => $title,
+				'amount' => $amount,
+			];
+		}
+
+		usort($lines, static fn (array $a, array $b): int => ($b['amount'] <=> $a['amount']));
+
+		$positiveCount = count($lines);
+		if ($positiveCount === 0)
+		{
+			return [
+				'has_any' => false,
+				'total' => 0.0,
+				'positive_count' => 0,
+				'lines' => [],
+				'label' => '0',
+				'title_attr' => 'Есть строки складов, везде количество 0',
+			];
+		}
+
+		$titleLines = [];
+		foreach ($lines as $ln)
+		{
+			$titleLines[] = $ln['title'] . ': ' . mf_cud_format_stock_amount((float)$ln['amount']);
+		}
+
+		$shortParts = [];
+		foreach (array_slice($lines, 0, 3) as $ln)
+		{
+			$shortParts[] = $ln['title'] . ' ' . mf_cud_format_stock_amount((float)$ln['amount']);
+		}
+		$label = 'Σ ' . mf_cud_format_stock_amount($total);
+		if ($positiveCount > 0)
+		{
+			$label .= ' (' . implode('; ', $shortParts);
+			if ($positiveCount > 3)
+			{
+				$label .= '; …+' . ($positiveCount - 3);
+			}
+			$label .= ')';
+		}
+
+		return [
+			'has_any' => true,
+			'total' => $total,
+			'positive_count' => $positiveCount,
+			'lines' => $lines,
+			'label' => $label,
+			'title_attr' => implode("\n", $titleLines),
+		];
+	}
+}
+
+if (!function_exists('mf_cud_attach_stock_summaries'))
+{
+	/**
+	 * @param array<int, array<string, mixed>> $details
+	 */
+	function mf_cud_attach_stock_summaries(array &$details): void
+	{
+		if ($details === [])
+		{
+			return;
+		}
+
+		$stockIds = [];
+		foreach ($details as $id => $row)
+		{
+			$id = (int)$id;
+			if ($id <= 0 || (string)($row['status'] ?? '') === 'missing')
+			{
+				continue;
+			}
+			$stockIds[] = $id;
+		}
+
+		if ($stockIds !== [] && function_exists('mf_catalog_warm_products'))
+		{
+			mf_catalog_warm_products($stockIds);
+		}
+
+		foreach ($details as $id => $row)
+		{
+			$id = (int)$id;
+			if ($id <= 0)
+			{
+				continue;
+			}
+			if ((string)($row['status'] ?? '') === 'missing')
+			{
+				$details[$id]['stock'] = [
+					'has_any' => false,
+					'total' => 0.0,
+					'positive_count' => 0,
+					'lines' => [],
+					'label' => '—',
+					'title_attr' => '',
+				];
+				continue;
+			}
+			$details[$id]['stock'] = mf_cud_stock_summary_for_product($id);
+		}
 	}
 }
 
