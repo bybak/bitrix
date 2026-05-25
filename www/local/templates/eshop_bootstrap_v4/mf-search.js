@@ -201,6 +201,29 @@
     qsa('[data-mf-analogs-pending-for="' + pid + '"]').forEach(function (n) { n.remove(); });
   }
 
+  function mfEscAttr(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;');
+  }
+
+  function mfBuildNoStockAvailHtml(host, pid, message) {
+    var card = host && host.closest ? host.closest('.mf-search-card--root, .mf-search-card') : null;
+    var name = card ? (card.getAttribute('data-product-name') || '') : '';
+    var url = card ? (card.getAttribute('data-product-url') || '') : '';
+    return ''
+      + '<div class="mf-search-card__no-stock-row">'
+      + '<div class="mf-search-card__no-stock">' + mfEscAttr(message || 'Нет данных по складам') + '</div>'
+      + '<button type="button"'
+      + ' class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"'
+      + ' data-product-id="' + mfEscAttr(pid) + '"'
+      + ' data-product-name="' + mfEscAttr(name) + '"'
+      + ' data-product-url="' + mfEscAttr(url) + '"'
+      + '>Запросить цену</button>'
+      + '</div>';
+  }
+
   function mfLoadSearchStores() {
     var hosts = qsa('[data-mf-stores-for]');
     if (!hosts.length) return Promise.resolve();
@@ -236,7 +259,7 @@
         } else {
           availHost.classList.remove('mf-search-card__avail--lazy');
           availHost.removeAttribute('aria-busy');
-          availHost.innerHTML = '<div class="mf-search-card__no-stock">Нет данных по складам</div>';
+          availHost.innerHTML = mfBuildNoStockAvailHtml(host, pid, 'Нет данных по складам');
           mfUpdatePriceFrom(pid, 'Запросить цену');
         }
       });
@@ -245,7 +268,7 @@
         var pid = host.getAttribute('data-mf-stores-for') || '';
         var availHost = host.querySelector('.mf-search-card__avail--lazy') || host.querySelector('.mf-search-card__avail');
         if (availHost) {
-          availHost.innerHTML = '<div class="mf-search-card__no-stock">Не удалось загрузить склады</div>';
+          availHost.innerHTML = mfBuildNoStockAvailHtml(host, pid, 'Не удалось загрузить склады');
           availHost.classList.remove('mf-search-card__avail--lazy');
           availHost.removeAttribute('aria-busy');
         }

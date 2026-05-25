@@ -3,6 +3,25 @@
  * HTML-карточка товара в результатах поиска (mf_search).
  */
 
+if (!function_exists('mf_search_render_request_price_button'))
+{
+	function mf_search_render_request_price_button(int $id, string $titlePlain, string $url): string
+	{
+		if ($id <= 0)
+		{
+			return '';
+		}
+
+		return '<button'
+			. ' type="button"'
+			. ' class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"'
+			. ' data-product-id="' . $id . '"'
+			. ' data-product-name="' . htmlspecialcharsbx($titlePlain) . '"'
+			. ' data-product-url="' . htmlspecialcharsbx($url) . '"'
+			. '>Запросить цену</button>';
+	}
+}
+
 if (!function_exists('mf_search_render_card_avail_inner'))
 {
 	function mf_search_render_card_avail_inner(int $id, string $titlePlain, string $url, array $stores): void
@@ -118,13 +137,7 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 			<?php if (empty($stores)): ?>
 			<div class="mf-search-card__no-stock">Нет данных по складам</div>
 			<?php endif; ?>
-			<button
-				type="button"
-				class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
-				data-product-id="<?=$id?>"
-				data-product-name="<?=htmlspecialcharsbx($titlePlain)?>"
-				data-product-url="<?=htmlspecialcharsbx($url)?>"
-			>Запросить цену</button>
+			<?=mf_search_render_request_price_button($id, $titlePlain, $url)?>
 		</div>
 		<?php
 		}

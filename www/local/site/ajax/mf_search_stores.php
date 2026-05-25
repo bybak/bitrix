@@ -46,6 +46,11 @@ try
 	{
 		require_once $renderLib;
 	}
+	$cardLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_product_search_card.php';
+	if (is_file($cardLib))
+	{
+		require_once $cardLib;
+	}
 
 	$blocks = [];
 	if (!empty($productIds) && function_exists('mf_search_stores_payload_for_products'))

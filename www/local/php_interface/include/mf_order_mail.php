@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Mf\OrderMail;
 
+use Bitrix\Main\Config\Option;
 use Bitrix\Main\Loader;
 use Bitrix\Sale\BasketItemBase;
 use Bitrix\Sale\Order;
@@ -12,6 +13,7 @@ use Bitrix\Sale\Shipment;
 final class Bootstrap
 {
 	private static bool $inited = false;
+	private const MAIL_TEMPLATES_VERSION = '2';
 
 	public static function init(): void
 	{
@@ -26,9 +28,80 @@ final class Bootstrap
 			return;
 		}
 
+		self::ensureMailTemplates();
+
 		$em = \Bitrix\Main\EventManager::getInstance();
 		$em->addEventHandler('sale', 'OnOrderNewSendEmail', [Handlers::class, 'onOrderNewSendEmail']);
 		$em->addEventHandler('sale', 'OnOrderStatusSendEmail', [Handlers::class, 'onOrderStatusSendEmail']);
+		$em->addEventHandler('main', 'OnBeforeEventSend', [Handlers::class, 'onBeforeEventSend']);
+	}
+
+	private static function ensureMailTemplates(): void
+	{
+		if (!class_exists(\CEventMessage::class))
+		{
+			return;
+		}
+
+		try
+		{
+			if (Option::get('main', 'mf_order_mail_templates_version', '') === self::MAIL_TEMPLATES_VERSION)
+			{
+				return;
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore and continue
+		}
+
+		$templates = [
+			'SALE_NEW_ORDER' => [
+				'SUBJECT' => 'Заказ: №#MF_ORDER_DISPLAY#',
+				'MESSAGE' => '#MF_ORDER_MAIL_BODY#',
+			],
+			'SALE_STATUS_CHANGED_N' => [
+				'SUBJECT' => 'Статус заказа №#MF_ORDER_DISPLAY#',
+				'MESSAGE' => '#MF_ORDER_MAIL_BODY#',
+			],
+			'SALE_STATUS_CHANGED_F' => [
+				'SUBJECT' => 'Статус заказа №#MF_ORDER_DISPLAY#',
+				'MESSAGE' => '#MF_ORDER_MAIL_BODY#',
+			],
+			'SALE_STATUS_CHANGED_P' => [
+				'SUBJECT' => 'Статус заказа №#MF_ORDER_DISPLAY#',
+				'MESSAGE' => '#MF_ORDER_MAIL_BODY#',
+			],
+		];
+
+		foreach ($templates as $eventName => $data)
+		{
+			$res = \CEventMessage::GetList('id', 'asc', ['EVENT_NAME' => $eventName]);
+			while ($row = $res->Fetch())
+			{
+				$id = (int)($row['ID'] ?? 0);
+				if ($id <= 0)
+				{
+					continue;
+				}
+				$em = new \CEventMessage();
+				$em->Update($id, [
+					'SUBJECT' => $data['SUBJECT'],
+					'MESSAGE' => $data['MESSAGE'],
+					'BODY_TYPE' => 'html',
+					'ACTIVE' => 'Y',
+				]);
+			}
+		}
+
+		try
+		{
+			Option::set('main', 'mf_order_mail_templates_version', self::MAIL_TEMPLATES_VERSION);
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
 	}
 }
 
@@ -84,6 +157,39 @@ final class Handlers
 		}
 
 		return true;
+	}
+
+	public static function onBeforeEventSend(array &$fields, array &$eventMessage, $context, array &$result): void
+	{
+		unset($context, $result);
+
+		$eventName = (string)($eventMessage['EVENT_NAME'] ?? '');
+		if (!in_array($eventName, self::mailEventNames(), true))
+		{
+			return;
+		}
+
+		$body = trim((string)($fields['MF_ORDER_MAIL_BODY'] ?? ''));
+		if ($body === '')
+		{
+			return;
+		}
+
+		$eventMessage['BODY_TYPE'] = 'html';
+		$eventMessage['SITE_TEMPLATE_ID'] = '';
+		$eventMessage['MESSAGE'] = $body;
+		unset($eventMessage['MESSAGE_PHP']);
+	}
+
+	/** @return list<string> */
+	private static function mailEventNames(): array
+	{
+		return [
+			'SALE_NEW_ORDER',
+			'SALE_STATUS_CHANGED_N',
+			'SALE_STATUS_CHANGED_F',
+			'SALE_STATUS_CHANGED_P',
+		];
 	}
 
 	private static function shouldSuppressStatusEmail(string $statusId): bool
@@ -147,6 +253,7 @@ final class Handlers
 final class Renderer
 {
 	private const SITE_HOST = 'motor-force.ru';
+	private const OFFICE_ADDRESS = 'Россия, Санкт-Петербург, ул. Салова, д. 57, к. 1, Литера Ч, 2-й этаж, офис № 1Н (Motor-Force)';
 	private const COLOR_TITLE = '#1a73b8';
 	private const COLOR_SECTION = '#e65100';
 	private const COLOR_LINK = '#1a73b8';
@@ -201,7 +308,7 @@ final class Renderer
 		$html[] = self::sectionTitle('Информация о заказе');
 		$html[] = self::basketTable($order);
 
-		$paymentInstructions = self::card2CardPaymentInstructions($order);
+		$paymentInstructions = self::paymentInstructionsBlock($order);
 		if ($paymentInstructions !== '')
 		{
 			$html[] = $paymentInstructions;
@@ -441,43 +548,357 @@ final class Renderer
 		);
 	}
 
-	private static function card2CardPaymentInstructions(Order $order): string
+	private static function paymentInstructionsBlock(Order $order): string
+	{
+		$payment = self::primaryPayment($order);
+		if (!$payment instanceof Payment)
+		{
+			return '';
+		}
+
+		$type = self::paymentType($payment);
+		$paySystemName = self::paySystemLabel($order);
+		$currency = (string)$order->getCurrency();
+		$paymentSum = (float)$payment->getSum();
+		if ($paymentSum <= 0)
+		{
+			$paymentSum = (float)$order->getPrice();
+		}
+		$sumLabel = self::paymentSumLabel($paymentSum, $currency);
+
+		$content = '';
+		switch ($type)
+		{
+			case 'card2card':
+				$content = self::card2CardPaymentHtml($order, $payment);
+				break;
+			case 'paykeeper':
+				$content = self::paykeeperPaymentHtml($order, $payment, $paySystemName, $sumLabel);
+				break;
+			case 'cash':
+				$content = self::cashPaymentHtml($paySystemName, $sumLabel);
+				break;
+			case 'invoice':
+				$content = self::invoicePaymentHtml($order, $paySystemName, $sumLabel);
+				break;
+		}
+
+		if ($content === '')
+		{
+			return '';
+		}
+
+		return self::sectionTitle('Оплата')
+			. self::block(
+				'<div style="margin-top:14px;padding-top:14px;border-top:1px solid ' . self::COLOR_BORDER . ';">'
+				. $content
+				. '</div>'
+			);
+	}
+
+	private static function card2CardPaymentHtml(Order $order, Payment $payment): string
 	{
 		if (!class_exists(\Mf\Card2Card\TemplateRenderer::class))
 		{
 			return '';
 		}
 
-		$payment = null;
-		foreach ($order->getPaymentCollection() as $p)
+		return \Mf\Card2Card\TemplateRenderer::renderForOrder($order, $payment);
+	}
+
+	private static function paykeeperPaymentHtml(
+		Order $order,
+		Payment $payment,
+		string $paySystemName,
+		string $sumLabel
+	): string
+	{
+		unset($order);
+
+		$payLink = self::paykeeperPayLink($payment);
+
+		$name = $paySystemName !== '' ? $paySystemName : 'PayKeeper';
+		$html = '<div style="font-size:14px;line-height:1.6;color:#333;">'
+			. '<p>Вы выбрали способ оплаты <strong>' . self::esc($name) . '</strong>.</p>'
+			. '<p>Пожалуйста, оплатите заказ на сумму <strong>' . self::esc($sumLabel) . '</strong>.</p>';
+
+		if ($payLink !== '')
 		{
-			if (!$p instanceof Payment)
+			$html .= '<p><a href="' . self::esc($payLink) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;font-weight:bold;">'
+				. 'Перейти к оплате на PayKeeper'
+				. '</a></p>';
+			$html .= '<p style="font-size:13px;color:#666;">Если ссылка не открывается, скопируйте адрес:<br>'
+				. self::esc($payLink)
+				. '</p>';
+		}
+		else
+		{
+			$html .= '<p>Не удалось сформировать ссылку на оплату автоматически. Пожалуйста, свяжитесь с менеджером или перейдите к оплате из личного кабинета.</p>';
+		}
+
+		$html .= '</div>';
+
+		return $html;
+	}
+
+	private static function cashPaymentHtml(string $paySystemName, string $sumLabel): string
+	{
+		$name = $paySystemName !== '' ? $paySystemName : 'Наличными в офисе';
+
+		return '<div style="font-size:14px;line-height:1.6;color:#333;">'
+			. '<p>Вы выбрали способ оплаты <strong>' . self::esc($name) . '</strong>.</p>'
+			. '<p>Вы можете оплатить заказ на сумму <strong>' . self::esc($sumLabel) . '</strong> наличными в нашем офисе по адресу:</p>'
+			. '<p><strong>' . self::esc(self::OFFICE_ADDRESS) . '</strong></p>'
+			. '<p>Рекомендуем заранее уточнить наличие товара и время визита у менеджера.</p>'
+			. '</div>';
+	}
+
+	private static function invoicePaymentHtml(Order $order, string $paySystemName, string $sumLabel): string
+	{
+		$name = $paySystemName !== '' ? $paySystemName : 'Безнал: выставление счёта (для юр. лиц)';
+		$props = self::orderPropsMap($order);
+		$company = self::prop($props, 'COMPANY');
+		$inn = self::prop($props, 'INN');
+
+		$html = '<div style="font-size:14px;line-height:1.6;color:#333;">'
+			. '<p>Вы выбрали способ оплаты <strong>' . self::esc($name) . '</strong>.</p>'
+			. '<p>Сумма заказа: <strong>' . self::esc($sumLabel) . '</strong>.</p>'
+			. '<p>После проверки заказа менеджером мы выставим счёт на оплату и отправим его на указанный e-mail.</p>';
+
+		if ($company !== '' || $inn !== '')
+		{
+			$html .= '<p><strong>Реквизиты для выставления счёта:</strong><br>';
+			if ($company !== '')
 			{
-				continue;
+				$html .= 'Организация: ' . self::esc($company) . '<br>';
 			}
-			$psid = (int)$p->getPaymentSystemId();
-			if ($psid > 0 && \Mf\Card2Card\TemplateRenderer::isCard2CardPaySystemId($psid))
+			if ($inn !== '')
 			{
-				$payment = $p;
+				$html .= 'ИНН: ' . self::esc($inn);
+			}
+			$html .= '</p>';
+		}
+
+		$html .= '<p>Если потребуются дополнительные документы (КПП, юридический адрес и т.д.), менеджер свяжется с вами.</p>'
+			. '</div>';
+
+		return $html;
+	}
+
+	private static function paykeeperPayLink(Payment $payment): string
+	{
+		if (!Loader::includeModule('sale') || !class_exists(\Bitrix\Sale\PaySystem\Manager::class))
+		{
+			return '';
+		}
+
+		$psId = (int)$payment->getPaymentSystemId();
+		if ($psId <= 0)
+		{
+			return '';
+		}
+
+		try
+		{
+			$handler = self::paykeeperHandler($psId);
+			if ($handler instanceof \Sale\Handlers\PaySystem\mf_paykeeperHandler)
+			{
+				$link = trim($handler->resolvePayLink($payment));
+				if ($link !== '' && preg_match('~^https?://~i', $link))
+				{
+					return $link;
+				}
+
+				if ($link === '')
+				{
+					self::log('paykeeper: empty PAY_LINK for paymentId=' . (int)$payment->getId());
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			self::log('paykeeper link: ' . $e->getMessage());
+		}
+
+		return '';
+	}
+
+	private static function paykeeperHandler(int $paySystemId): ?\Sale\Handlers\PaySystem\mf_paykeeperHandler
+	{
+		self::ensurePaykeeperHandlerLoaded();
+
+		$service = \Bitrix\Sale\PaySystem\Manager::getObjectById($paySystemId);
+		if (!$service instanceof \Bitrix\Sale\PaySystem\Service)
+		{
+			return null;
+		}
+
+		try
+		{
+			$ref = new \ReflectionClass($service);
+			$prop = $ref->getProperty('handler');
+			$prop->setAccessible(true);
+			$handler = $prop->getValue($service);
+			if ($handler instanceof \Sale\Handlers\PaySystem\mf_paykeeperHandler)
+			{
+				return $handler;
+			}
+		}
+		catch (\Throwable $e)
+		{
+			self::log('paykeeper handler: ' . $e->getMessage());
+		}
+
+		return null;
+	}
+
+	private static function ensurePaykeeperHandlerLoaded(): void
+	{
+		if (class_exists(\Sale\Handlers\PaySystem\mf_paykeeperHandler::class, false))
+		{
+			return;
+		}
+
+		$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+		$paths = [
+			$docRoot . '/local/php_interface/include/sale_payment/mfpaykeeper/handler.php',
+			$docRoot . '/bitrix/php_interface/include/sale_payment/mfpaykeeper/handler.php',
+		];
+		foreach ($paths as $path)
+		{
+			if ($path !== '' && is_file($path))
+			{
+				require_once $path;
 				break;
 			}
 		}
-		if (!$payment instanceof Payment)
+	}
+
+	private static function paymentSumLabel(float $sum, string $currency): string
+	{
+		$rounded = function_exists('mf_round_price') ? mf_round_price($sum) : (float)ceil($sum);
+		$decimals = ((int)round(abs($rounded) * 10) % 10 === 0) ? 0 : 1;
+		$cur = strtoupper(trim($currency));
+		if ($cur === '')
+		{
+			$cur = 'RUB';
+		}
+
+		return number_format($rounded, $decimals, '.', ' ') . ' ' . $cur;
+	}
+
+	private static function primaryPayment(Order $order): ?Payment
+	{
+		foreach ($order->getPaymentCollection() as $payment)
+		{
+			if ($payment instanceof Payment)
+			{
+				return $payment;
+			}
+		}
+
+		return null;
+	}
+
+	private static function paymentType(Payment $payment): string
+	{
+		$psId = (int)$payment->getPaymentSystemId();
+		if ($psId <= 0)
 		{
 			return '';
 		}
 
-		$html = \Mf\Card2Card\TemplateRenderer::renderForOrder($order, $payment);
-		if ($html === '')
+		if (
+			class_exists(\Mf\Card2Card\TemplateRenderer::class)
+			&& \Mf\Card2Card\TemplateRenderer::isCard2CardPaySystemId($psId)
+		)
+		{
+			return 'card2card';
+		}
+
+		if (function_exists('mf_checkout_invoice_pay_system_ids'))
+		{
+			$invoiceIds = mf_checkout_invoice_pay_system_ids();
+			if (in_array($psId, $invoiceIds, true))
+			{
+				return 'invoice';
+			}
+		}
+
+		$actionFile = self::paySystemActionFile($psId);
+		if ($actionFile === 'mf_paykeeper' || $actionFile === 'mfpaykeeper')
+		{
+			return 'paykeeper';
+		}
+		if ($actionFile === 'cash')
+		{
+			return 'cash';
+		}
+		if ($actionFile === 'bill')
+		{
+			return 'invoice';
+		}
+
+		$name = mb_strtolower(trim((string)$payment->getPaymentSystemName()));
+		if (str_contains($name, 'paykeeper') || str_contains($name, 'сбп'))
+		{
+			return 'paykeeper';
+		}
+		if (str_contains($name, 'налич') && str_contains($name, 'офис'))
+		{
+			return 'cash';
+		}
+		if (str_contains($name, 'безнал') || str_contains($name, 'счёт') || str_contains($name, 'счет'))
+		{
+			return 'invoice';
+		}
+		if (str_contains($name, 'карт') && str_contains($name, 'карт'))
+		{
+			return 'card2card';
+		}
+
+		return '';
+	}
+
+	private static function paySystemActionFile(int $paySystemActionId): string
+	{
+		static $cache = [];
+		if (isset($cache[$paySystemActionId]))
+		{
+			return $cache[$paySystemActionId];
+		}
+
+		$cache[$paySystemActionId] = '';
+		if ($paySystemActionId <= 0)
 		{
 			return '';
 		}
 
-		return self::block(
-			'<div style="margin-top:14px;padding-top:14px;border-top:1px solid ' . self::COLOR_BORDER . ';">'
-			. $html
-			. '</div>'
-		);
+		try
+		{
+			if (Loader::includeModule('sale') && class_exists(\Bitrix\Sale\PaySystem\Manager::class))
+			{
+				$row = \Bitrix\Sale\PaySystem\Manager::getById($paySystemActionId);
+				if (is_array($row))
+				{
+					$cache[$paySystemActionId] = mb_strtolower(trim((string)($row['ACTION_FILE'] ?? '')));
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+
+		return $cache[$paySystemActionId];
+	}
+
+	private static function log(string $message): void
+	{
+		if (class_exists(\Bitrix\Main\Diag\Debug::class))
+		{
+			\Bitrix\Main\Diag\Debug::writeToFile(date('c') . ' mf_order_mail: ' . $message, '', 'mf_order_mail.log');
+		}
 	}
 
 	private static function footerBlock(bool $withProcessingNote = true): string

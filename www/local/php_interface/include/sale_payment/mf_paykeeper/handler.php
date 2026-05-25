@@ -195,7 +195,28 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 		return ['id', 'sum', 'key'];
 	}
 
+	/**
+	 * Ссылка на оплату PayKeeper (для писем и других сценариев без показа шаблона).
+	 */
+	public function resolvePayLink(Payment $payment): string
+	{
+		$params = $this->buildInitParams($payment, false);
+
+		return trim((string)($params['PAY_LINK'] ?? ''));
+	}
+
 	public function initiatePay(Payment $payment, ?Request $request = null)
+	{
+		$params = $this->buildInitParams($payment, true);
+		$this->setExtraParams($params);
+
+		return $this->showTemplate($payment, 'template');
+	}
+
+	/**
+	 * @return array{PAY_LINK:string,QR_CODE:string,QR_LINK:string,ERROR:string}
+	 */
+	private function buildInitParams(Payment $payment, bool $withSbp): array
 	{
 		$params = [
 			'PAY_LINK' => '',
@@ -377,7 +398,7 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 
 			$params['PAY_LINK'] = $pkServer . '/bill/' . rawurlencode((string)$invoiceId) . '/';
 
-			if ($useSbp)
+			if ($withSbp && $useSbp)
 			{
 				$sbp = $this->activateSbpQr(
 					$client,
@@ -401,8 +422,7 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 			$params['ERROR'] = $e->getMessage();
 		}
 
-		$this->setExtraParams($params);
-		return $this->showTemplate($payment, 'template');
+		return $params;
 	}
 
 	public function processRequest(Payment $payment, Request $request)

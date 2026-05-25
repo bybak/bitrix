@@ -258,6 +258,9 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+.mf-search-card__no-stock-row--after-table{
+  margin-top: 12px;
+}
 
 .mf-search-stock-table{
   width: 100%;
