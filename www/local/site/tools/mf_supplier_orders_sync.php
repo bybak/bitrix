@@ -11,9 +11,10 @@
  *   MF_SUPPLIER_ORDERS_LOG=Y — писать php_interface/logs/mf_supplier_orders.log
  *   MF_SUPPLIER_ORDERS_FILL_BASE_PRICE — 0|off: не проставлять закуп из 1С, если в строке есть price.unit_price
  *   MF_SUPPLIER_ORDERS_PRICE_CURRENCY — валюта RAW в b_catalog_price (по умолчанию RUB)
+ *   MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT — наценка к unit_price при записи закупа, % (по умолчанию 50 → unit_price×1,5)
  *
  * Строки JSON: price.unit_price; при сопоставлении с товаром, если в типе цены склада MOTOR_FORCE_INTERNAL
- * (mf_supplier_store_to_price_group) ещё нет закупочной цены — пишется RAW для кластера товара (как внешние прайсы).
+ * (mf_supplier_store_to_price_group) ещё нет закупочной цены — пишется RAW = unit_price + MARKUP_PCT% для кластера товара.
  * В --dry-run каталог не меняется, в JSON — prices_would_fill.
  *
  * Прогресс (по умолчанию вкл., в STDERR; JSON результата — в STDOUT):

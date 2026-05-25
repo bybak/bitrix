@@ -5,7 +5,8 @@ declare(strict_types=1);
 /**
  * Заказы поставщику из UNF HTTP API (supplier_order_get): локальное зеркало в MySQL.
  * Храним только заказы в статусе «в работе»; при исчезновении из выборки — удаляем из БД (без истории).
- * price.unit_price при отсутствии закупа в типе цены склада MOTOR_FORCE_INTERNAL — через mf_ep_set_raw_price_for_catalog_cluster.
+ * price.unit_price при отсутствии закупа в типе цены склада MOTOR_FORCE_INTERNAL — через mf_ep_set_raw_price_for_catalog_cluster
+ *   (в каталог пишется unit_price + наценка MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT%, по умолчанию 50%).
  * Если валюта договора/заказа не RUB — unit_price пересчитывается в ₽ (mf_ep_convert_to_rub), если 1С ещё не прислала converted/RUB.
  */
 
@@ -576,6 +577,58 @@ if (!function_exists('mf_supplier_orders_base_price_currency'))
 	}
 }
 
+if (!function_exists('mf_supplier_orders_unit_price_markup_pct'))
+{
+	/**
+	 * Наценка к price.unit_price из 1С при записи RAW в каталог (50 → unit_price × 1,5).
+	 * Env MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT — проценты (0 = без наценки, только округление).
+	 */
+	function mf_supplier_orders_unit_price_markup_pct(): float
+	{
+		$e = getenv('MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT');
+		if ($e !== false && trim((string)$e) !== '')
+		{
+			$v = (float)str_replace(',', '.', trim((string)$e));
+			if (is_finite($v) && $v >= 0.0)
+			{
+				return $v;
+			}
+		}
+
+		return 50.0;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_catalog_raw_from_unit_price_rub'))
+{
+	/**
+	 * Закупочная RAW для каталога: unit_price в ₽ + наценка (mf_supplier_orders_unit_price_markup_pct).
+	 */
+	function mf_supplier_orders_catalog_raw_from_unit_price_rub(?float $unitPriceRub): ?float
+	{
+		if ($unitPriceRub === null || $unitPriceRub <= 0.0)
+		{
+			return null;
+		}
+		$pct = mf_supplier_orders_unit_price_markup_pct();
+		if (function_exists('mf_apply_markup'))
+		{
+			$raw = mf_apply_markup($unitPriceRub, $pct);
+		}
+		else
+		{
+			$raw = $unitPriceRub * (1.0 + ($pct / 100.0));
+			$raw = function_exists('mf_round_price') ? mf_round_price($raw) : (float)(ceil($raw / 10.0) * 10.0);
+		}
+		if (!is_finite($raw) || $raw <= 0.0)
+		{
+			return null;
+		}
+
+		return $raw;
+	}
+}
+
 if (!function_exists('mf_supplier_orders_internal_store_price_group_id'))
 {
 	/**
@@ -678,7 +731,7 @@ if (!function_exists('mf_supplier_orders_internal_store_raw_price_missing'))
 if (!function_exists('mf_supplier_orders_try_set_internal_store_raw_price_from_1c'))
 {
 	/**
-	 * Закуп из 1С (price.unit_price) в RAW для склада MOTOR_FORCE_INTERNAL, если в типе цены этого склада ещё пусто.
+	 * Закуп из 1С (price.unit_price + наценка MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT%) в RAW для склада MOTOR_FORCE_INTERNAL, если в типе цены этого склада ещё пусто.
 	 * Пишет по кластеру каталога, как внешние прайсы (mf_ep_set_raw_price_for_catalog_cluster).
 	 *
 	 * @return bool true, если dry-run сработал «бы проставил» или реальная запись без ошибок
@@ -718,8 +771,8 @@ if (!function_exists('mf_supplier_orders_try_set_internal_store_raw_price_from_1
 			return false;
 		}
 		$cur = mf_supplier_orders_base_price_currency();
-		$price = function_exists('mf_round_price') ? mf_round_price($unitPrice) : (float)ceil($unitPrice);
-		if ($price <= 0.0)
+		$price = mf_supplier_orders_catalog_raw_from_unit_price_rub($unitPrice);
+		if ($price === null || $price <= 0.0)
 		{
 			return false;
 		}
