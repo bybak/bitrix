@@ -78,6 +78,14 @@
 }
 .mf-search .mf-shop-search__btn:hover{ opacity: .92; }
 .mf-search .mf-shop-search__btn:active{ opacity: .85; }
+.mf-search__stage-note{
+  margin-left: 12px;
+  font-size: 13px;
+  color: #666;
+}
+.mf-search__empty--pending{
+  opacity: .85;
+}
 
 .mf-search__note{
   border-radius: 12px;

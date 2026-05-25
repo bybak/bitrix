@@ -21,6 +21,9 @@ $page = max(1, (int)($_REQUEST['PAGEN_1'] ?? 1));
 $pageSize = max(1, min(50, (int)($arParams['PAGE_RESULT_COUNT'] ?? 25)));
 $iblockId = (int)($arParams['IBLOCK_ID'] ?? 4);
 
+$arResult['MF_SEARCH_PROGRESSIVE'] = ($page === 1 && $queryRaw !== '');
+$arResult['MF_SEARCH_PAGE'] = $page;
+
 $arResult['REQUEST'] = [
 	'QUERY' => ($queryRaw !== '' ? $queryRaw : false),
 	'~QUERY' => $queryRaw,

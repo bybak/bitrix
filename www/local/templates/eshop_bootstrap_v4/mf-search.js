@@ -5,6 +5,7 @@
   var MF_SEARCH_PENDING_KEY = 'mf_search_pending';
   var MF_STORES_URL = '/ajax/mf_search_stores.php';
   var MF_ANALOGS_URL = '/ajax/mf_search_analogs.php';
+  var MF_STAGE_URL = '/ajax/mf_search_stage.php';
 
   function mfAppendRoot(el) {
     if (!el) return;
@@ -48,6 +49,110 @@
     showSearchLoading();
     hideSearchLoading();
     document.documentElement.classList.remove('mf-search-page-pending');
+  }
+
+  function mfCollectSearchProductIds(root) {
+    root = root || document;
+    var ids = [];
+    var seen = {};
+    qsa('.mf-search-card--root[data-product-id]', root).forEach(function (el) {
+      var id = el.getAttribute('data-product-id') || '';
+      if (!id || seen[id]) return;
+      seen[id] = 1;
+      ids.push(id);
+    });
+    return ids;
+  }
+
+  function mfUpdateSearchSummary(root) {
+    if (!root) return;
+    var countEl = qs('[data-mf-search-count]', root);
+    if (countEl) {
+      countEl.textContent = String(mfCollectSearchProductIds(root).length);
+    }
+  }
+
+  function mfSetSearchStageNote(root, text, visible) {
+    if (!root) return;
+    var note = qs('[data-mf-search-stage-note]', root);
+    if (!note) return;
+    if (typeof text === 'string') note.textContent = text;
+    note.hidden = !visible;
+  }
+
+  function mfHideSearchEmptyPending(root) {
+    if (!root) return;
+    var pending = qs('[data-mf-search-empty-pending]', root);
+    if (pending) pending.remove();
+  }
+
+  function mfShowSearchEmptyFinal(root, query) {
+    if (!root) return;
+    mfHideSearchEmptyPending(root);
+    if (mfCollectSearchProductIds(root).length > 0) return;
+    if (qs('[data-mf-search-empty-final]', root)) return;
+    var box = document.createElement('div');
+    box.className = 'mf-search__empty';
+    box.setAttribute('data-mf-search-empty-final', '1');
+    box.innerHTML = '<strong>Ничего не найдено</strong>'
+      + (query ? (' по запросу «' + String(query).replace(/</g, '&lt;') + '».') : '.')
+      + '<div style="margin-top: 8px;">Попробуйте изменить формулировку или сократить запрос.</div>';
+    var results = qs('.mf-search__results', root);
+    if (results && results.parentNode) {
+      results.parentNode.insertBefore(box, results.nextSibling);
+    }
+  }
+
+  function mfLoadSearchStage(root, stage, query) {
+    var excludeIds = mfCollectSearchProductIds(root);
+    return mfPostJson(MF_STAGE_URL, excludeIds, { q: query, stage: String(stage) }).then(function (resp) {
+      if (!resp || !resp.ok) {
+        throw new Error('stage failed');
+      }
+      if (resp.html) {
+        var results = qs('.mf-search__results', root);
+        if (results) {
+          var wrap = document.createElement('div');
+          wrap.innerHTML = resp.html;
+          while (wrap.firstChild) {
+            results.appendChild(wrap.firstChild);
+          }
+        }
+        mfHideSearchEmptyPending(root);
+        mfUpdateSearchSummary(root);
+        return mfLoadSearchStores();
+      }
+      return null;
+    });
+  }
+
+  function mfLoadSearchProgressive() {
+    var root = qs('.mf-search[data-mf-search-progressive="1"]');
+    if (!root) return Promise.resolve();
+    var query = root.getAttribute('data-mf-search-query') || '';
+    if (query.trim() === '') return Promise.resolve();
+
+    var runStage = function (stage) {
+      var labels = { 2: 'Ищем по названию…', 3: 'Расширенный поиск…' };
+      mfSetSearchStageNote(root, labels[stage] || 'Ищем…', true);
+      return mfLoadSearchStage(root, stage, query).then(function () {
+        if (stage === 2) {
+          return runStage(3);
+        }
+        return null;
+      });
+    };
+
+    return runStage(2).then(function () {
+      mfSetSearchStageNote(root, '', false);
+      mfUpdateSearchSummary(root);
+      if (mfCollectSearchProductIds(root).length === 0) {
+        mfShowSearchEmptyFinal(root, query);
+      }
+    }).catch(function () {
+      mfSetSearchStageNote(root, '', false);
+      mfUpdateSearchSummary(root);
+    });
   }
 
   function mfPostJson(url, ids, extra) {
@@ -210,19 +315,15 @@
     });
   }
 
-  function mfInitSearchLazy() {
-    var hasStores = qsa('[data-mf-stores-for]').length > 0;
-    var hasAnalogs = qsa('[data-mf-analogs-for]').length > 0;
-    if (!hasStores && !hasAnalogs) return;
-
-    mfLoadSearchStores().then(function () {
-      return mfLoadSearchAnalogs();
-    });
-  }
-
   function mfInitSearchUi() {
     initSearchPendingOverlay();
-    mfInitSearchLazy();
+    mfLoadSearchStores()
+      .then(function () {
+        return mfLoadSearchProgressive();
+      })
+      .then(function () {
+        return mfLoadSearchAnalogs();
+      });
   }
 
   document.addEventListener('submit', function (e) {

@@ -341,6 +341,62 @@ if (!function_exists('mf_search_render_product_card'))
 	}
 }
 
+if (!function_exists('mf_search_render_product_cards_html'))
+{
+	/**
+	 * @param int[] $productIds
+	 */
+	function mf_search_render_product_cards_html(array $productIds): string
+	{
+		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+		if (empty($productIds) || !function_exists('mf_search_render_product_card'))
+		{
+			return '';
+		}
+
+		$searchLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_catalog_search_lib.php';
+		if (is_file($searchLib))
+		{
+			require_once $searchLib;
+		}
+
+		$rows = function_exists('mf_catalog_search_fetch_rows_by_ids')
+			? mf_catalog_search_fetch_rows_by_ids($productIds)
+			: [];
+
+		ob_start();
+		foreach ($productIds as $id)
+		{
+			$id = (int)$id;
+			$row = $rows[$id] ?? null;
+			if (!is_array($row))
+			{
+				continue;
+			}
+
+			$code = trim((string)($row['CODE'] ?? ''));
+			$url = ($code !== '' ? '/products/' . rawurlencode($code) . '/' : '');
+			$name = trim((string)($row['NAME'] ?? ''));
+
+			mf_search_render_product_card([
+				'id' => $id,
+				'url' => $url,
+				'code' => $code,
+				'prefetch_row' => $row,
+				'title_html' => htmlspecialcharsbx($name !== '' ? $name : ('Товар #' . $id)),
+				'brand' => trim((string)($row['PROPERTY_MF_BRAND_VALUE'] ?? ($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
+				'article' => trim((string)($row['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
+				'oem' => trim((string)($row['PROPERTY_OEM_VALUE'] ?? '')),
+				'is_analog' => false,
+				'lazy_stores' => true,
+				'lazy_analogs' => true,
+			]);
+		}
+
+		return (string)ob_get_clean();
+	}
+}
+
 if (!function_exists('mf_search_analogs_html_for_products'))
 {
 	/**

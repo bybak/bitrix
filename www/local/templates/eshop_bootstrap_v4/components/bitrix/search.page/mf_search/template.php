@@ -45,6 +45,8 @@ $mfAuthBackParamsDelete = [
 $mfRequestPriceBackUrlEnc = urlencode((string)$APPLICATION->GetCurPageParam('', $mfAuthBackParamsDelete));
 $mfLoginWithBackUrl = SITE_DIR . 'login/?login=yes&backurl=' . $mfRequestPriceBackUrlEnc;
 $mfRegisterWithBackUrl = SITE_DIR . 'login/?register=yes&backurl=' . $mfRequestPriceBackUrlEnc;
+$mfSearchProgressive = !empty($arResult['MF_SEARCH_PROGRESSIVE']);
+$mfSearchPage = max(1, (int)($arResult['MF_SEARCH_PAGE'] ?? 1));
 
 // Motor-Force search cards helpers (catalog-only).
 $mfCatalogIblockId = 4;
@@ -62,7 +64,7 @@ if (is_file($mfSearchRenderLib))
 ?>
 
 <!-- mf-search-engine: <?=htmlspecialcharsbx((string)($arResult['MF_SEARCH_ENGINE'] ?? 'unknown'))?>; query-ms: <?=htmlspecialcharsbx((string)($arResult['MF_SEARCH_MS'] ?? '0'))?> -->
-<div class="mf-search">
+<div class="mf-search"<?php if ($mfSearchProgressive && $queryValue !== ''): ?> data-mf-search-progressive="1" data-mf-search-query="<?=$queryValueAttr?>"<?php endif; ?>>
 	<div class="mf-search__panel">
 		<div class="mf-search__top">
 			<div class="mf-shop-search">
@@ -108,10 +110,11 @@ if (is_file($mfSearchRenderLib))
 					<strong><?=GetMessage('SEARCH_ERROR')?></strong><br />
 					<?php ShowError($arResult['ERROR_TEXT']); ?>
 				</div>
-			<?php elseif (!empty($arResult['SEARCH'])): ?>
+			<?php elseif (!empty($arResult['SEARCH']) || ($mfSearchProgressive && $queryValue !== '')): ?>
 				<?php
+				$mfHasInitialResults = !empty($arResult['SEARCH']);
 				$total = 0;
-				if (is_object($arResult['NAV_RESULT'] ?? null))
+				if ($mfHasInitialResults && is_object($arResult['NAV_RESULT'] ?? null))
 				{
 					$total = (int)$arResult['NAV_RESULT']->NavRecordCount;
 				}
@@ -161,15 +164,19 @@ if (is_file($mfSearchRenderLib))
 
 				}
 				?>
-				<div class="mf-search__summary">
-					<span>Найдено: <strong><?=$total ?: count($arResult['SEARCH'])?></strong></span>
+				<div class="mf-search__summary" data-mf-search-summary>
+					<span>Найдено: <strong data-mf-search-count><?=$mfHasInitialResults ? ($total ?: count($arResult['SEARCH'])) : 0?></strong></span>
+					<?php if ($mfSearchProgressive): ?>
+						<span class="mf-search__stage-note" data-mf-search-stage-note<?=$mfHasInitialResults ? ' hidden' : ''?>>Ищем…</span>
+					<?php endif; ?>
 				</div>
 
-				<?php if (($arParams['DISPLAY_TOP_PAGER'] ?? 'N') !== 'N'): ?>
+				<?php if ($mfHasInitialResults && ($arParams['DISPLAY_TOP_PAGER'] ?? 'N') !== 'N'): ?>
 					<?=$arResult['NAV_STRING']?>
 				<?php endif; ?>
 
 				<div class="mf-search__results">
+					<?php if ($mfHasInitialResults): ?>
 					<?php foreach ($arResult['SEARCH'] as $arItem): ?>
 						<?php
 						// Motor-Force: показываем в поиске только товары каталога (IBLOCK_ID=4).
@@ -270,7 +277,14 @@ if (is_file($mfSearchRenderLib))
 						}
 						?>
 					<?php endforeach; ?>
+					<?php endif; ?>
 				</div>
+
+				<?php if ($mfSearchProgressive && !$mfHasInitialResults): ?>
+					<div class="mf-search__empty mf-search__empty--pending" data-mf-search-empty-pending>
+						<strong>Идёт поиск…</strong>
+					</div>
+				<?php endif; ?>
 
 				<div class="mf-search-modal" id="mf-request-price-modal" hidden>
 					<div class="mf-search-modal__backdrop js-mf-request-price-close"></div>
@@ -833,12 +847,12 @@ if (is_file($mfSearchRenderLib))
 				})();
 				</script>
 
-				<?php if (($arParams['DISPLAY_BOTTOM_PAGER'] ?? 'N') !== 'N'): ?>
+				<?php if ($mfHasInitialResults && ($arParams['DISPLAY_BOTTOM_PAGER'] ?? 'N') !== 'N'): ?>
 					<div style="margin-top: 14px;">
 						<?=$arResult['NAV_STRING']?>
 					</div>
 				<?php endif; ?>
-			<?php else: ?>
+			<?php elseif ($queryValue !== '' && !$mfSearchProgressive): ?>
 				<div class="mf-search__empty">
 					<strong>Ничего не найдено</strong><?php if (!empty($queryValue)): ?> по запросу «<?=htmlspecialcharsbx($queryValue)?>»<?php endif; ?>.
 					<div style="margin-top: 8px;">

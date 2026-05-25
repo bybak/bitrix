@@ -972,6 +972,108 @@ if (!function_exists('mf_catalog_search_ids_by_text'))
 	}
 }
 
+if (!function_exists('mf_catalog_search_collect_stage'))
+{
+	/**
+	 * Один этап поиска: 1 — артикул, 2 — артикул в названии, 3 — текст.
+	 *
+	 * @param int[] $excludeIds уже показанные ID (без дублей между этапами)
+	 * @return array{ids: int[], stage: int}
+	 */
+	function mf_catalog_search_collect_stage(string $query, int $stage, array $excludeIds = []): array
+	{
+		$query = trim($query);
+		$stage = (int)$stage;
+		if ($query === '' || $stage < 1 || $stage > 3)
+		{
+			return ['ids' => [], 'stage' => $stage];
+		}
+
+		$exclude = [];
+		foreach ($excludeIds as $id)
+		{
+			$id = (int)$id;
+			if ($id > 0)
+			{
+				$exclude[$id] = true;
+			}
+		}
+
+		$filter = static function (array $ids) use ($exclude): array {
+			$out = [];
+			foreach ($ids as $id)
+			{
+				$id = (int)$id;
+				if ($id > 0 && !isset($exclude[$id]))
+				{
+					$out[] = $id;
+				}
+			}
+
+			return $out;
+		};
+
+		$lib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_import_analogs_lib.php';
+		if (is_file($lib))
+		{
+			require_once $lib;
+		}
+
+		$articleCandidates = function_exists('mf_search_query_article_candidates')
+			? mf_search_query_article_candidates($query)
+			: [];
+
+		if ($stage === 1)
+		{
+			$ids = !empty($articleCandidates)
+				? $filter(mf_catalog_search_ids_by_articles($articleCandidates))
+				: [];
+			$tierMap = [];
+			foreach ($ids as $id)
+			{
+				$tierMap[(int)$id] = 0;
+			}
+
+			return [
+				'ids' => mf_catalog_search_sort_result_ids($ids, $query, $tierMap),
+				'stage' => 1,
+			];
+		}
+
+		if ($stage === 2)
+		{
+			if (empty($articleCandidates))
+			{
+				return ['ids' => [], 'stage' => 2];
+			}
+
+			$ids = $filter(mf_catalog_search_ids_by_article_in_name($articleCandidates));
+			$tierMap = [];
+			foreach ($ids as $id)
+			{
+				$tierMap[(int)$id] = 1;
+			}
+
+			return [
+				'ids' => mf_catalog_search_sort_result_ids($ids, $query, $tierMap),
+				'stage' => 2,
+			];
+		}
+
+		$ids = $filter(mf_catalog_search_ids_by_text($query, 160));
+		$tierMap = [];
+		foreach ($ids as $id)
+		{
+			$tierMap[(int)$id] = 2;
+		}
+
+		return [
+			'ids' => mf_catalog_search_sort_result_ids($ids, $query, $tierMap),
+			'stage' => 3,
+		];
+	}
+}
+
 if (!function_exists('mf_catalog_search_collect_ids'))
 {
 	/**
@@ -996,7 +1098,7 @@ if (!function_exists('mf_catalog_search_collect_ids'))
 		if (class_exists(\Bitrix\Main\Data\Cache::class))
 		{
 			$cache = \Bitrix\Main\Data\Cache::createInstance();
-			$cacheId = 'ids_v4_' . $key;
+			$cacheId = 'ids_v5_s1_' . $key;
 			$cacheDir = '/mf/catalog_search';
 			if ($cache->initCache(900, $cacheId, $cacheDir))
 			{
@@ -1011,60 +1113,10 @@ if (!function_exists('mf_catalog_search_collect_ids'))
 			}
 		}
 
-		$lib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_import_analogs_lib.php';
-		if (is_file($lib))
-		{
-			require_once $lib;
-		}
-
-		$tierMap = [];
-		$ids = [];
-		$articleCandidates = function_exists('mf_search_query_article_candidates')
-			? mf_search_query_article_candidates($query)
-			: [];
-
-		$articleIds = !empty($articleCandidates)
-			? mf_catalog_search_ids_by_articles($articleCandidates)
-			: [];
-		foreach ($articleIds as $id)
-		{
-			$id = (int)$id;
-			if ($id > 0)
-			{
-				$tierMap[$id] = 0;
-			}
-		}
-		$ids = mf_catalog_search_merge_unique_ids($ids, $articleIds);
-
-		$nameArticleIds = !empty($articleCandidates)
-			? mf_catalog_search_ids_by_article_in_name($articleCandidates)
-			: [];
-		foreach ($nameArticleIds as $id)
-		{
-			$id = (int)$id;
-			if ($id > 0 && !isset($tierMap[$id]))
-			{
-				$tierMap[$id] = 1;
-			}
-		}
-		$ids = mf_catalog_search_merge_unique_ids($ids, $nameArticleIds);
-
-		$textIds = mf_catalog_search_ids_by_text($query, 160);
-		foreach ($textIds as $id)
-		{
-			$id = (int)$id;
-			if ($id > 0 && !isset($tierMap[$id]))
-			{
-				$tierMap[$id] = 2;
-			}
-		}
-		$ids = mf_catalog_search_merge_unique_ids($ids, $textIds);
-
-		$ids = mf_catalog_search_sort_result_ids($ids, $query, $tierMap);
-
+		$stage = mf_catalog_search_collect_stage($query, 1, []);
 		$result = [
-			'ids' => $ids,
-			'total' => count($ids),
+			'ids' => (array)($stage['ids'] ?? []),
+			'total' => count((array)($stage['ids'] ?? [])),
 		];
 
 		if ($cache instanceof \Bitrix\Main\Data\Cache && $cache->startDataCache())
