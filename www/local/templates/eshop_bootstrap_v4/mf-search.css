@@ -195,6 +195,9 @@
 }
 
 /* Как на карточке товара (mf-shop.css): бренд/артикул + строка «От …» */
+.mf-search-card .mf-product-meta__item[hidden]{
+  display: none !important;
+}
 .mf-search-card .mf-product-meta{
   margin: 4px 0 10px;
   display: flex;

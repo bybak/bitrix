@@ -34,6 +34,16 @@ if (!function_exists('mf_product_search_card_min_price_print'))
 		{
 			return '';
 		}
+
+		if (function_exists('mf_product_search_card_stores') && function_exists('mf_product_search_card_show_price_from'))
+		{
+			$stores = mf_product_search_card_stores($productId);
+			if (!mf_product_search_card_show_price_from($stores))
+			{
+				return '';
+			}
+		}
+
 		$minP = function_exists('mf_catalog_listing_display_price')
 			? mf_catalog_listing_display_price($productId)
 			: null;

@@ -190,25 +190,51 @@
     });
   }
 
+  function mfAvailHasNoStoreData(html) {
+    return String(html || '').indexOf('Нет данных по складам') !== -1;
+  }
+
+  function mfResolveSearchPriceFrom(block) {
+    if (!block) return '';
+    if (mfAvailHasNoStoreData(block.avail)) return '';
+    if (block.show_price_from === false || block.show_price_from === 0) return '';
+    return String(block.price_from || '').trim();
+  }
+
   function mfUpdatePriceFrom(pid, text) {
-    var item = qs('[data-mf-price-item="' + pid + '"]');
-    var el = qs('[data-mf-price-for="' + pid + '"]');
-    if (!item && !el) return;
+    var nodes = qsa('[data-mf-price-for="' + pid + '"]');
+    var items = qsa('[data-mf-price-item="' + pid + '"]');
+    if (!nodes.length && !items.length) return;
 
     var priceText = String(text || '').trim();
     if (!priceText) {
-      if (item) item.hidden = true;
+      items.forEach(function (item) {
+        item.hidden = true;
+        item.style.display = 'none';
+      });
+      nodes.forEach(function (el) {
+        var item = el.closest ? el.closest('.mf-product-meta__item') : null;
+        if (item) {
+          item.hidden = true;
+          item.style.display = 'none';
+        }
+      });
       return;
     }
 
-    if (!item && el) {
-      item = el.closest('.mf-product-meta__item');
-    }
-    if (item) item.hidden = false;
-    if (!el) return;
-
-    el.classList.remove('mf-product-meta__value--pending');
-    el.textContent = priceText;
+    items.forEach(function (item) {
+      item.hidden = false;
+      item.style.display = '';
+    });
+    nodes.forEach(function (el) {
+      var item = el.closest ? el.closest('.mf-product-meta__item') : null;
+      if (item) {
+        item.hidden = false;
+        item.style.display = '';
+      }
+      el.classList.remove('mf-product-meta__value--pending');
+      el.textContent = priceText;
+    });
   }
 
   function mfRemoveAnalogPending(pid) {
@@ -267,9 +293,7 @@
           availHost.classList.remove('mf-search-card__avail--lazy');
           availHost.removeAttribute('aria-busy');
           availHost.innerHTML = block.avail;
-          if (block.price_from) {
-            mfUpdatePriceFrom(pid, block.price_from);
-          }
+          mfUpdatePriceFrom(pid, mfResolveSearchPriceFrom(block));
         } else {
           availHost.classList.remove('mf-search-card__avail--lazy');
           availHost.removeAttribute('aria-busy');

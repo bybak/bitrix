@@ -164,7 +164,7 @@ if (!function_exists('mf_search_render_card_avail_html'))
 if (!function_exists('mf_search_stores_payload_for_products'))
 {
 	/**
-	 * @return array<string, array{avail:string, price_from:string}>
+	 * @return array<string, array{avail:string, price_from:string, show_price_from:bool}>
 	 */
 	function mf_search_stores_payload_for_products(array $productIds): array
 	{
@@ -230,6 +230,7 @@ if (!function_exists('mf_search_stores_payload_for_products'))
 			$out[(string)$pid] = [
 				'avail' => $avail,
 				'price_from' => $priceFrom,
+				'show_price_from' => $stores !== [],
 			];
 		}
 
