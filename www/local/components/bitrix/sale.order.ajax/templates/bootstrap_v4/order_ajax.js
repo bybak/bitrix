@@ -196,7 +196,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.options.totalPriceChanged = false;
 
-			if (!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
+			if (!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined' || this.isMfCustomCheckout())
 				this.initFirstSection();
 
 			this.initOptions();
@@ -917,19 +917,17 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		checkNotifications: function()
 		{
 			var informer = this.mainErrorsNode.querySelector('[data-type="informer"]'),
-				success, sections, className, text, scrollTop, informerPos;
+				className, text, scrollTop, informerPos;
 
 			if (informer)
 			{
 				if (this.firstLoad && this.result.IS_AUTHORIZED && typeof this.result.LAST_ORDER_DATA.FAIL === 'undefined')
 				{
-					sections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active');
-					success = sections.length && sections[sections.length - 1].getAttribute('data-visited') == 'true';
-					className = success ? 'success' : 'warning';
-					text = (success ? this.params.MESS_SUCCESS_PRELOAD_TEXT : this.params.MESS_FAIL_PRELOAD_TEXT).split('#ORDER_BUTTON#').join(this.params.MESS_ORDER);
+					BX.cleanNode(informer);
+					className = 'success';
+					text = String(this.params.MESS_SUCCESS_PRELOAD_TEXT || '').split('#ORDER_BUTTON#').join(this.params.MESS_ORDER);
 
 					informer.appendChild(
-
 						BX.create('DIV', {
 							style: { paddingLeft: '48px' },
 							children: [
@@ -940,7 +938,27 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 								})
 							]
 						})
+					);
+					BX.addClass(informer, 'alert alert-' + className);
+					informer.style.display = '';
+				}
+				else if (this.firstLoad && this.result.IS_AUTHORIZED && typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
+				{
+					BX.cleanNode(informer);
+					className = 'warning';
+					text = String(this.params.MESS_FAIL_PRELOAD_TEXT || '').split('#ORDER_BUTTON#').join(this.params.MESS_ORDER);
 
+					informer.appendChild(
+						BX.create('DIV', {
+							style: { paddingLeft: '48px' },
+							children: [
+								BX.create('DIV', {props: {className: 'icon-' + className}}),
+								BX.create('p', {
+									props: {className: 'pb-0 mb-0'},
+									html: text
+								})
+							]
+						})
 					);
 					BX.addClass(informer, 'alert alert-' + className);
 					informer.style.display = '';
@@ -1884,7 +1902,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (this.firstLoad && this.result.IS_AUTHORIZED && typeof this.result.LAST_ORDER_DATA.FAIL === 'undefined')
 			{
-				this.showActualBlock();
+				if (this.isMfCustomCheckout())
+					this.changeVisibleContent();
+				else
+					this.showActualBlock();
 			}
 			else if (!this.result.SHOW_AUTH)
 			{
@@ -2013,7 +2034,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.reachGoal('next', actionSection);
 
 			if (
-				(!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
+				this.mfUsesStepByStepFlow()
 				&& section.next.getAttribute('data-visited') == 'false'
 			)
 			{
@@ -2246,7 +2267,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			var titleNode;
 
 			if (
-				(!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
+				this.mfUsesStepByStepFlow()
 				&& section.getAttribute('data-visited') === 'false'
 			)
 			{
@@ -2686,6 +2707,13 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				|| !!(this.result && this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED);
 		},
 
+		mfUsesStepByStepFlow: function()
+		{
+			return !this.result.IS_AUTHORIZED
+				|| typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined'
+				|| this.isMfCustomCheckout();
+		},
+
 		mfPrepareOrderSaveValidation: function()
 		{
 			if (!this.isMfCustomCheckout())
@@ -2846,8 +2874,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			var show = this.shouldShowOrderSaveButtons(),
 				isMobileView = this.isMobileCheckoutView(),
-				showFinalStepButtons =
-					(!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
+				showFinalStepButtons = this.mfUsesStepByStepFlow()
 					&& this.params.SHOW_ORDER_BUTTON === 'final_step';
 
 			var sidebarButton = this.totalInfoBlockNode
@@ -3012,7 +3039,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			for (i = 0; i < sections.length; i++)
 			{
-				state = this.firstLoad && orderDataLoaded;
+				state = this.firstLoad && orderDataLoaded && !mfStrictSteps;
 				state = state || this.shouldBeSectionVisible(sections, i);
 
 				this.changeVisibleSection(sections[i], state);
