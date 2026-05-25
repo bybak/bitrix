@@ -5,6 +5,12 @@ define('BX_NO_ACCELERATOR_RESET', true);
 
 require($_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_before.php');
 
+$mfAjaxFile = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_ajax.php';
+if (is_file($mfAjaxFile))
+{
+	require_once $mfAjaxFile;
+}
+
 header('Content-Type: application/json; charset=UTF-8');
 
 try
@@ -25,6 +31,11 @@ try
 	}
 
 	$fUserId = \Bitrix\Sale\Fuser::getId(true);
+	if (function_exists('mf_ajax_session_release'))
+	{
+		mf_ajax_session_release();
+	}
+
 	$basket = \Bitrix\Sale\Basket::loadItemsForFUser($fUserId, $siteId);
 
 	// Optional filter by product IDs.

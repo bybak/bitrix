@@ -941,20 +941,26 @@ if (!function_exists('mf_catalog_search_ids_by_text'))
 		if (!empty($words))
 		{
 			$parts[] = mf_catalog_search_ids_by_name_words($words, $limit);
-			$parts[] = mf_catalog_search_ids_by_property_substrings(
-				['CML2_ARTICLE', 'MF_ARTICLE_NORM', 'MF_BRAND', 'MF_BRAND_NORM'],
-				$words,
-				$limit
-			);
-		}
-		if (mb_strlen($query) >= 2)
-		{
-			$parts[] = mf_catalog_search_ids_by_name_substring($query, $limit);
-			$parts[] = mf_catalog_search_ids_by_property_substrings(
-				['CML2_ARTICLE', 'MF_ARTICLE_NORM', 'MF_BRAND', 'MF_BRAND_NORM'],
-				[$query],
-				$limit
-			);
+
+			$articleTerm = mb_strlen($query) >= 3 ? $query : '';
+			if ($articleTerm === '')
+			{
+				foreach ($words as $word)
+				{
+					if (mb_strlen((string)$word) > mb_strlen($articleTerm))
+					{
+						$articleTerm = (string)$word;
+					}
+				}
+			}
+			if (mb_strlen($articleTerm) >= 3)
+			{
+				$parts[] = mf_catalog_search_ids_by_property_substrings(
+					['CML2_ARTICLE', 'MF_ARTICLE_NORM'],
+					[$articleTerm],
+					$limit
+				);
+			}
 		}
 
 		$merged = [];
@@ -1023,6 +1029,67 @@ if (!function_exists('mf_catalog_search_collect_stage'))
 			? mf_search_query_article_candidates($query)
 			: [];
 
+		$sortLimited = static function (array $ids, string $queryText, array $tierMap): array {
+			if (count($ids) <= 1)
+			{
+				return $ids;
+			}
+			if (count($ids) > 60)
+			{
+				$head = array_slice($ids, 0, 60);
+				$tail = array_slice($ids, 60);
+				$head = mf_catalog_search_sort_result_ids($head, $queryText, $tierMap);
+
+				return array_merge($head, $tail);
+			}
+
+			return mf_catalog_search_sort_result_ids($ids, $queryText, $tierMap);
+		};
+
+		$loadStageRawIds = static function (int $stageNum, string $queryText) use ($articleCandidates): array {
+			static $runtime = [];
+			$key = $stageNum . '|' . md5(mb_strtolower($queryText));
+			if (isset($runtime[$key]))
+			{
+				return $runtime[$key];
+			}
+
+			$cache = null;
+			if (class_exists(\Bitrix\Main\Data\Cache::class))
+			{
+				$cache = \Bitrix\Main\Data\Cache::createInstance();
+				$cacheId = 'ids_v5_s' . $stageNum . '_' . md5(mb_strtolower($queryText));
+				if ($cache->initCache(900, $cacheId, '/mf/catalog_search'))
+				{
+					$vars = $cache->getVars();
+					if (is_array($vars) && isset($vars['ids']))
+					{
+						return $runtime[$key] = array_values(array_map('intval', (array)$vars['ids']));
+					}
+				}
+			}
+
+			$raw = [];
+			if ($stageNum === 2)
+			{
+				if (!empty($articleCandidates))
+				{
+					$raw = mf_catalog_search_ids_by_article_in_name($articleCandidates);
+				}
+			}
+			elseif ($stageNum === 3)
+			{
+				$raw = mf_catalog_search_ids_by_text($queryText, 120);
+			}
+
+			if ($cache instanceof \Bitrix\Main\Data\Cache && $cache->startDataCache())
+			{
+				$cache->endDataCache(['ids' => $raw]);
+			}
+
+			return $runtime[$key] = $raw;
+		};
+
 		if ($stage === 1)
 		{
 			$ids = !empty($articleCandidates)
@@ -1035,7 +1102,7 @@ if (!function_exists('mf_catalog_search_collect_stage'))
 			}
 
 			return [
-				'ids' => mf_catalog_search_sort_result_ids($ids, $query, $tierMap),
+				'ids' => $sortLimited($ids, $query, $tierMap),
 				'stage' => 1,
 			];
 		}
@@ -1047,7 +1114,7 @@ if (!function_exists('mf_catalog_search_collect_stage'))
 				return ['ids' => [], 'stage' => 2];
 			}
 
-			$ids = $filter(mf_catalog_search_ids_by_article_in_name($articleCandidates));
+			$ids = $filter($loadStageRawIds(2, $query));
 			$tierMap = [];
 			foreach ($ids as $id)
 			{
@@ -1055,12 +1122,12 @@ if (!function_exists('mf_catalog_search_collect_stage'))
 			}
 
 			return [
-				'ids' => mf_catalog_search_sort_result_ids($ids, $query, $tierMap),
+				'ids' => $sortLimited($ids, $query, $tierMap),
 				'stage' => 2,
 			];
 		}
 
-		$ids = $filter(mf_catalog_search_ids_by_text($query, 160));
+		$ids = $filter($loadStageRawIds(3, $query));
 		$tierMap = [];
 		foreach ($ids as $id)
 		{
@@ -1068,7 +1135,7 @@ if (!function_exists('mf_catalog_search_collect_stage'))
 		}
 
 		return [
-			'ids' => mf_catalog_search_sort_result_ids($ids, $query, $tierMap),
+			'ids' => $sortLimited($ids, $query, $tierMap),
 			'stage' => 3,
 		];
 	}

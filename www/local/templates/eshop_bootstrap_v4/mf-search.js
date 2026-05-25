@@ -240,11 +240,6 @@
           mfUpdatePriceFrom(pid, 'Запросить цену');
         }
       });
-      try {
-        if (typeof window.__mfSearchSyncBasket === 'function') {
-          window.__mfSearchSyncBasket();
-        }
-      } catch (_) {}
     }).catch(function () {
       hosts.forEach(function (host) {
         var pid = host.getAttribute('data-mf-stores-for') || '';
@@ -322,6 +317,14 @@
         return mfLoadSearchProgressive();
       })
       .then(function () {
+        return mfLoadSearchStores();
+      })
+      .then(function () {
+        try {
+          if (typeof window.__mfSearchSyncBasket === 'function') {
+            window.__mfSearchSyncBasket();
+          }
+        } catch (_) {}
         return mfLoadSearchAnalogs();
       });
   }

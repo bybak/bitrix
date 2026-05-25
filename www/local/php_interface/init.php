@@ -1816,6 +1816,23 @@ if (!function_exists('mf_catalog_batch_products_have_stock'))
 	 */
 	function mf_catalog_batch_products_have_stock(array $productIds): array
 	{
+		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+		if ($productIds === [])
+		{
+			return [];
+		}
+
+		if (function_exists('mf_catalog_warm_products'))
+		{
+			mf_catalog_warm_products($productIds);
+		}
+
+		$warm = [];
+		if (isset($GLOBALS['MF_CATALOG_WARM']['store_amounts']) && is_array($GLOBALS['MF_CATALOG_WARM']['store_amounts']))
+		{
+			$warm = $GLOBALS['MF_CATALOG_WARM']['store_amounts'];
+		}
+
 		$out = [];
 		foreach ($productIds as $pid)
 		{
@@ -1824,11 +1841,23 @@ if (!function_exists('mf_catalog_batch_products_have_stock'))
 			{
 				continue;
 			}
+
 			$sum = 0.0;
-			foreach (mf_catalog_product_store_amounts($pid) as $amt)
+			if (isset($warm[$pid]) && is_array($warm[$pid]))
 			{
-				$sum += (float)$amt;
+				foreach ($warm[$pid] as $amt)
+				{
+					$sum += (float)$amt;
+				}
 			}
+			elseif (function_exists('mf_catalog_product_store_amounts'))
+			{
+				foreach (mf_catalog_product_store_amounts($pid) as $amt)
+				{
+					$sum += (float)$amt;
+				}
+			}
+
 			$out[$pid] = $sum > 1e-9;
 		}
 
