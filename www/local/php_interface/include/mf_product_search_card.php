@@ -1,6 +1,6 @@
 <?php
 /**
- * Карточка товара в стиле поиска (mf_search): склады, сроки, количество, «В корзину»; «Запросить цену» только если нет складов.
+ * Карточка товара в стиле поиска (mf_search): склады, сроки, количество, «В корзину»; «Запросить цену» если нет складов или нет цен ни на одном складе.
  * Используется на детальной странице товара (аналоги) и может быть подключена из других шаблонов.
  */
 
@@ -268,6 +268,58 @@ if (!function_exists('mf_product_search_card_stores'))
 	}
 }
 
+if (!function_exists('mf_product_search_card_stores_have_price'))
+{
+	/** true — хотя бы у одной строки mf_product_search_card_stores есть цена > 0. */
+	function mf_product_search_card_stores_have_price(array $stores): bool
+	{
+		foreach ($stores as $s)
+		{
+			if (!is_array($s))
+			{
+				continue;
+			}
+			$p = $s['price'] ?? null;
+			if ($p !== null && is_finite((float)$p) && (float)$p > 0.0)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_product_search_card_product_has_store_price'))
+{
+	/** true — для товара есть отображаемая цена хотя бы на одном из storeIds. */
+	function mf_product_search_card_product_has_store_price(int $productId, array $storeIds): bool
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return false;
+		}
+		foreach ($storeIds as $sid)
+		{
+			$sid = (int)$sid;
+			if ($sid <= 0)
+			{
+				continue;
+			}
+			$p = function_exists('mf_ep_display_price_for_store')
+				? mf_ep_display_price_for_store($productId, $sid, 1.0)
+				: null;
+			if ($p !== null && is_finite((float)$p) && (float)$p > 0.0)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
 if (!function_exists('mf_product_search_card_warm_cache'))
 {
 	/**
@@ -343,6 +395,8 @@ if (!function_exists('mf_product_search_card_render'))
 
 		$priceFrom = mf_product_search_card_min_price_print($id);
 		$stores = mf_product_search_card_stores($id);
+		$mfShowRequestPrice = empty($stores)
+			|| !mf_product_search_card_stores_have_price($stores);
 
 		if ($productNamePlain === '')
 		{
@@ -469,9 +523,12 @@ if (!function_exists('mf_product_search_card_render'))
 							<?php endforeach; ?>
 						</tbody>
 					</table>
-				<?php else: ?>
+				<?php endif; ?>
+				<?php if ($mfShowRequestPrice): ?>
 					<div class="mf-search-card__no-stock-row">
-						<div class="mf-search-card__no-stock">Нет данных по складам</div>
+						<?php if (empty($stores)): ?>
+							<div class="mf-search-card__no-stock">Нет данных по складам</div>
+						<?php endif; ?>
 						<button
 							type="button"
 							class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price-global"

@@ -7,6 +7,10 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 {
 	function mf_search_render_card_avail_inner(int $id, string $titlePlain, string $url, array $stores): void
 	{
+		$showRequestPrice = empty($stores)
+			|| !function_exists('mf_product_search_card_stores_have_price')
+			|| !mf_product_search_card_stores_have_price($stores);
+
 		if (!empty($stores))
 		{
 			?>
@@ -105,11 +109,15 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 				</tbody>
 			</table>
 			<?php
-			return;
 		}
-		?>
+
+		if ($showRequestPrice)
+		{
+			?>
 		<div class="mf-search-card__no-stock-row">
+			<?php if (empty($stores)): ?>
 			<div class="mf-search-card__no-stock">Нет данных по складам</div>
+			<?php endif; ?>
 			<button
 				type="button"
 				class="btn btn-sm btn-warning mf-search-stock__btn mf-search-stock__btn--request js-mf-request-price"
@@ -119,6 +127,7 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 			>Запросить цену</button>
 		</div>
 		<?php
+		}
 	}
 }
 

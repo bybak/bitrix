@@ -436,6 +436,8 @@ if ($elementId > 0)
 
 	if (!empty($mfOrderedStoreIds))
 	{
+		$mfDetailHasStorePrice = function_exists('mf_product_search_card_product_has_store_price')
+			&& mf_product_search_card_product_has_store_price($elementId, $mfOrderedStoreIds);
 		ob_start();
 		?>
 		<div class="mf-detail-stock-wrap">
@@ -579,11 +581,25 @@ if ($elementId > 0)
 					</tbody>
 				</table>
 			</div>
+			<?php if (!$mfDetailHasStorePrice): ?>
+				<div class="mt-3">
+					<button
+						type="button"
+						class="btn btn-warning js-mf-request-price-global"
+						data-product-id="<?= (int)$elementId ?>"
+						data-product-name="<?=htmlspecialcharsbx($mfDetNameForReq)?>"
+						data-product-url="<?=htmlspecialcharsbx($mfDetProductUrl)?>"
+						data-user-name="<?=htmlspecialcharsbx($mfDetReqN)?>"
+						data-user-email="<?=htmlspecialcharsbx($mfDetReqE)?>"
+						data-user-locked="<?=$mfDetReqLocked ? '1' : '0'?>"
+					>Запросить цену</button>
+				</div>
+			<?php endif; ?>
 		</div>
 		<?php
 		$mfStockTabHtml = trim((string)ob_get_clean());
 	}
-	else
+	elseif ($elementId > 0)
 	{
 		ob_start();
 		?>
