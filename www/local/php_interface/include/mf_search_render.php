@@ -283,8 +283,8 @@ if (!function_exists('mf_search_render_product_card'))
 		{
 			$stores = mf_product_search_card_stores($id);
 		}
-		$showPricePill = $lazyStores
-			|| (function_exists('mf_product_search_card_show_price_from')
+		$showPricePill = !$lazyStores
+			&& (function_exists('mf_product_search_card_show_price_from')
 				? mf_product_search_card_show_price_from($stores)
 				: !empty($stores));
 
@@ -298,10 +298,10 @@ if (!function_exists('mf_search_render_product_card'))
 		$rootAttrs = '';
 		if ($id > 0)
 		{
+			$rootAttrs = ' data-product-id="' . $id . '"';
 			if (!$isAnalog)
 			{
-				$rootAttrs = ' data-product-id="' . $id . '"'
-					. ' data-product-name="' . htmlspecialcharsbx($titlePlain) . '"'
+				$rootAttrs .= ' data-product-name="' . htmlspecialcharsbx($titlePlain) . '"'
 					. ' data-product-url="' . htmlspecialcharsbx($url) . '"';
 				if ($lazyAnalogs)
 				{

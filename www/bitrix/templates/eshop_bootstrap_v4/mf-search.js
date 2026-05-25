@@ -194,6 +194,13 @@
     return String(html || '').indexOf('Нет данных по складам') !== -1;
   }
 
+  function mfAvailDomHasNoStoreData(availHost) {
+    if (!availHost) return true;
+    if (availHost.querySelector('.mf-search-card__no-stock')) return true;
+    var rows = availHost.querySelectorAll('.mf-search-stock-table tbody tr');
+    return !rows || !rows.length;
+  }
+
   function mfResolveSearchPriceFrom(block) {
     if (!block) return '';
     if (mfAvailHasNoStoreData(block.avail)) return '';
@@ -201,51 +208,68 @@
     return String(block.price_from || '').trim();
   }
 
-  function mfUpdatePriceFrom(pid, text) {
-    var nodes = qsa('[data-mf-price-for="' + pid + '"]');
-    var items = qsa('[data-mf-price-item="' + pid + '"]');
-    if (!nodes.length && !items.length) return;
-
-    var priceText = String(text || '').trim();
-    if (!priceText) {
-      items.forEach(function (item) {
-        item.hidden = true;
-        item.style.display = 'none';
-      });
-      nodes.forEach(function (el) {
-        var item = el.closest ? el.closest('.mf-product-meta__item') : null;
-        if (item) {
-          item.hidden = true;
-          item.style.display = 'none';
-        }
-      });
-      return;
-    }
-
-    items.forEach(function (item) {
-      item.hidden = false;
-      item.style.display = '';
-    });
-    nodes.forEach(function (el) {
-      var item = el.closest ? el.closest('.mf-product-meta__item') : null;
-      if (item) {
-        item.hidden = false;
-        item.style.display = '';
-      }
-      el.classList.remove('mf-product-meta__value--pending');
-      el.textContent = priceText;
-    });
-  }
-
-  function mfRemoveAnalogPending(pid) {
-    qsa('[data-mf-analogs-pending-for="' + pid + '"]').forEach(function (n) { n.remove(); });
-  }
-
   function mfEscAttr(value) {
     return String(value || '')
       .replace(/&/g, '&amp;')
       .replace(/"/g, '&quot;')
       .replace(/</g, '&lt;');
+  }
+
+  function mfApplyPricePill(host, pid, text) {
+    if (!host || !pid) return;
+    var meta = host.querySelector ? host.querySelector('.mf-product-meta') : null;
+    if (!meta) return;
+
+    var priceText = String(text || '').trim();
+    var item = meta.querySelector('[data-mf-price-item="' + pid + '"]');
+
+    if (!priceText) {
+      if (item && item.parentNode) item.parentNode.removeChild(item);
+      return;
+    }
+
+    if (!item) {
+      item = document.createElement('div');
+      item.className = 'mf-product-meta__item';
+      item.setAttribute('data-mf-price-item', pid);
+      item.innerHTML = ''
+        + '<span class="mf-product-meta__label">От</span>'
+        + '<span class="mf-product-meta__value" data-mf-price-for="' + mfEscAttr(pid) + '"></span>';
+      meta.insertBefore(item, meta.firstChild);
+    }
+
+    item.hidden = false;
+    item.style.display = '';
+    var el = item.querySelector('[data-mf-price-for]');
+    if (el) {
+      el.classList.remove('mf-product-meta__value--pending');
+      el.textContent = priceText;
+    }
+  }
+
+  function mfSyncPricePillFromAvail(host, pid, availHost, block) {
+    if (!host || !pid || !availHost) return;
+    var priceText = block ? mfResolveSearchPriceFrom(block) : '';
+    if (mfAvailDomHasNoStoreData(availHost)) {
+      mfApplyPricePill(host, pid, '');
+      return;
+    }
+    mfApplyPricePill(host, pid, priceText);
+  }
+
+  function mfUpdatePriceFrom(pid, text) {
+    qsa('.mf-search-card[data-product-id="' + pid + '"]').forEach(function (host) {
+      var availHost = host.querySelector('.mf-search-card__avail');
+      if (availHost && mfAvailDomHasNoStoreData(availHost)) {
+        mfApplyPricePill(host, pid, '');
+        return;
+      }
+      mfApplyPricePill(host, pid, text);
+    });
+  }
+
+  function mfRemoveAnalogPending(pid) {
+    qsa('[data-mf-analogs-pending-for="' + pid + '"]').forEach(function (n) { n.remove(); });
   }
 
   function mfBuildNoStockAvailHtml(host, pid, message) {
@@ -264,14 +288,16 @@
       + '</div>';
   }
 
-  function mfLoadSearchStores() {
+  var mfStoresLoadChain = Promise.resolve();
+
+  function mfLoadSearchStoresOnce() {
     var hosts = qsa('[data-mf-stores-for]');
     if (!hosts.length) return Promise.resolve();
 
     var ids = [];
     var seen = {};
     hosts.forEach(function (h) {
-      var id = h.getAttribute('data-mf-stores-for') || '';
+      var id = h.getAttribute('data-mf-stores-for') || h.getAttribute('data-product-id') || '';
       if (!id || seen[id]) return;
       seen[id] = 1;
       ids.push(id);
@@ -284,7 +310,7 @@
       }
       var blocks = resp.blocks;
       hosts.forEach(function (host) {
-        var pid = host.getAttribute('data-mf-stores-for') || '';
+        var pid = host.getAttribute('data-mf-stores-for') || host.getAttribute('data-product-id') || '';
         var block = blocks[pid];
         host.removeAttribute('data-mf-stores-for');
         var availHost = host.querySelector('.mf-search-card__avail--lazy') || host.querySelector('.mf-search-card__avail');
@@ -293,17 +319,16 @@
           availHost.classList.remove('mf-search-card__avail--lazy');
           availHost.removeAttribute('aria-busy');
           availHost.innerHTML = block.avail;
-          mfUpdatePriceFrom(pid, mfResolveSearchPriceFrom(block));
         } else {
           availHost.classList.remove('mf-search-card__avail--lazy');
           availHost.removeAttribute('aria-busy');
           availHost.innerHTML = mfBuildNoStockAvailHtml(host, pid, 'Нет данных по складам');
-          mfUpdatePriceFrom(pid, '');
         }
+        mfSyncPricePillFromAvail(host, pid, availHost, block || null);
       });
     }).catch(function () {
       hosts.forEach(function (host) {
-        var pid = host.getAttribute('data-mf-stores-for') || '';
+        var pid = host.getAttribute('data-mf-stores-for') || host.getAttribute('data-product-id') || '';
         var availHost = host.querySelector('.mf-search-card__avail--lazy') || host.querySelector('.mf-search-card__avail');
         if (availHost) {
           availHost.innerHTML = mfBuildNoStockAvailHtml(host, pid, 'Не удалось загрузить склады');
@@ -311,9 +336,18 @@
           availHost.removeAttribute('aria-busy');
         }
         host.removeAttribute('data-mf-stores-for');
-        if (pid) mfUpdatePriceFrom(pid, '');
+        mfSyncPricePillFromAvail(host, pid, availHost, null);
       });
     });
+  }
+
+  function mfLoadSearchStores() {
+    mfStoresLoadChain = mfStoresLoadChain.then(function () {
+      return mfLoadSearchStoresOnce();
+    }, function () {
+      return mfLoadSearchStoresOnce();
+    });
+    return mfStoresLoadChain;
   }
 
   function mfApplyAnalogBlocks(blocks, ids) {
