@@ -426,7 +426,7 @@ if (!function_exists('mf_product_search_card_render'))
 										}
 									?></td>
 									<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
-									<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
+									<td class="mf-ta-r mf-search-stock-table__price mf-price"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
 									<td class="mf-ta-r">
 										<?php
 										$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);

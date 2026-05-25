@@ -198,12 +198,52 @@
   color: #000;
 }
 
-/* Mobile total duplicate */
+/* Mobile total duplicate — на MF checkout не используем верхний блок */
 .mf-order #bx-soa-total-mobile .bx-soa-cart-total{
   border: var(--mf-border);
   border-radius: var(--mf-radius);
   background: #fff;
   padding: 12px;
+}
+
+@media (max-width: 575.98px){
+  /* Верхний дубликат итогов на мобильном всегда скрыт — только нижний #bx-soa-orderSave */
+  .mf-order #bx-soa-total-mobile,
+  .mf-order #bx-soa-total{
+    display: none !important;
+  }
+
+  .mf-order #bx-soa-order:not(.mf-buyer-step-active) #bx-soa-orderSave,
+  .mf-order #bx-soa-order:not(.mf-buyer-step-active) #bx-soa-total .bx-soa-cart-total-button-container{
+    display: none !important;
+  }
+
+  .mf-order #bx-soa-orderSave #mf-order-save-total{
+    margin-bottom: 10px;
+  }
+}
+
+/* «Изменить» только у пройденных шагов */
+.mf-order .bx-soa-section.bx-active:not(.bx-step-completed):not(.bx-selected) .bx-soa-editstep{
+  display: none !important;
+}
+.mf-order .bx-soa-section.bx-active:not(.bx-step-completed):not(.bx-selected) .bx-soa-section-content{
+  display: none !important;
+}
+
+/* eDost: скрыть техническую доставку Bitrix («Стандартный»), показать виртуальные тарифы */
+.mf-order #bx-soa-delivery .bx-soa-pp,
+.mf-order #bx-soa-delivery .bx-soa-pp-item-container,
+.mf-order #bx-soa-delivery .bx-soa-pp-desc-container,
+.mf-order #bx-soa-delivery .bx-soa-pp-company,
+.mf-order #bx-soa-delivery .bx-soa-pp-list{
+  display: none !important;
+}
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-edost-box{
+  display: none !important;
+}
+.mf-order #bx-soa-delivery.bx-selected #mf-edost-box{
+  display: block;
 }
 
 /* Reduce default blue outlines */

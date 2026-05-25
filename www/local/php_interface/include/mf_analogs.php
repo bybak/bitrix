@@ -743,6 +743,18 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 					WHERE `UF_PRODUCT_ID` IN (" . $inOrig . ")
 					LIMIT 1000
 				");
+				$oidToSearchPids = [];
+				foreach ($productIds as $pid)
+				{
+					foreach (array_keys($related[$pid] ?? []) as $oid)
+					{
+						$oid = (int)$oid;
+						if ($oid > 0)
+						{
+							$oidToSearchPids[$oid][$pid] = true;
+						}
+					}
+				}
 				while ($r = $sibRes->fetch())
 				{
 					$oid = (int)($r['UF_PRODUCT_ID'] ?? 0);
@@ -751,14 +763,11 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 					{
 						continue;
 					}
-					foreach ($productIds as $pid)
+					foreach (array_keys($oidToSearchPids[$oid] ?? []) as $pid)
 					{
-						if (isset($related[$pid][$oid]))
+						if ($sib !== $pid)
 						{
-							if ($sib !== $pid)
-							{
-								$related[$pid][$sib] = true;
-							}
+							$related[$pid][$sib] = true;
 						}
 					}
 				}

@@ -540,7 +540,7 @@ else
 						}
 						?>
 					</div>
-					<a href="javascript:void(0)" style="margin: 10px 0" class="btn btn-primary btn-lg d-none d-sm-inline-block" data-save-button="true">
+					<a href="javascript:void(0)" style="margin: 10px 0" class="btn btn-primary btn-lg btn-order-save w-100" data-save-button="true">
 						<?=$arParams['MESS_ORDER']?>
 					</a>
 				</div>

@@ -451,6 +451,7 @@
   font-size: 16px;
   font-weight: 900;
   color: #000;
+  white-space: nowrap;
 }
 .mf-pcard__qty .product-item-amount-field-container{
   border: 1px solid rgba(0,0,0,.12);
@@ -496,6 +497,10 @@
 }
 .mf-pcard__actions .btn:hover{ opacity: .92; }
 .mf-pcard__actions .btn:active{ opacity: .85; }
+.mf-pcard__actions .js-mf-add-store[data-in-basket="1"]{
+  background: #e2e5ea !important;
+  color: rgba(0,0,0,.72) !important;
+}
 .mf-pcard__actions .btn.btn-link{
   background: transparent !important;
   text-transform: none;
@@ -595,6 +600,7 @@
 .mf-pline__cur{
   font-size: 18px;
   font-weight: 900;
+  white-space: nowrap;
 }
 .mf-pline__actions .btn{
   border-radius: 12px;
@@ -604,6 +610,10 @@
   font-weight: 900 !important;
   text-transform: uppercase !important;
   letter-spacing: .8px !important;
+}
+.mf-pline__actions .js-mf-add-store[data-in-basket="1"]{
+  background: #e2e5ea !important;
+  color: rgba(0,0,0,.72) !important;
 }
 
 .mf-shop-modal{
@@ -1176,6 +1186,10 @@
   vertical-align: middle !important;
   width: 1%;
   white-space: nowrap;
+}
+.mf-detail-stock-table__price{
+  white-space: nowrap;
+  width: 1%;
 }
 .mf-detail-stock-table__qty-stepper .mf-search-qty{
   margin-left: auto;

@@ -1502,6 +1502,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				this.alignBasketColumns();
 				this.basketBlockScrollCheck();
 				this.mapsReady && this.resizeMapContainers();
+				this.syncMfCheckoutStepVisibility();
 			}, 50, this));
 			BX.addCustomEvent('onDeliveryExtraServiceValueChange', BX.proxy(this.sendRequest, this));
 		},
@@ -1923,18 +1924,39 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		 */
 		clickOrderSaveAction: function(event)
 		{
+			this.mfPrepareOrderSaveValidation();
+
 			if (this.isValidForm())
 			{
 				this.allowOrderSave();
 
 				if (this.params.USER_CONSENT === 'Y' && BX.UserConsent)
 				{
-					BX.onCustomEvent('bx-soa-order-save', []);
+					var consentNode = this.orderSaveBlockNode
+						? this.orderSaveBlockNode.querySelector('[data-bx-user-consent]')
+						: null,
+						consentCheckbox = consentNode
+							? consentNode.querySelector('input[type="checkbox"]')
+							: null;
+
+					// Согласие уже отмечено — не ждём UserConsent (на мобильном control часто не цепляется к событию).
+					if (consentCheckbox && consentCheckbox.checked)
+					{
+						this.doSaveAction();
+					}
+					else
+					{
+						BX.onCustomEvent('bx-soa-order-save', []);
+					}
 				}
 				else
 				{
 					this.doSaveAction();
 				}
+			}
+			else if (this.isBuyerStepActive() && this.propsBlockNode)
+			{
+				this.animateScrollTo(this.propsBlockNode, 400, 20);
 			}
 
 			return BX.PreventDefault(event);
@@ -2001,13 +2023,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				if (editStep)
 					editStep.style.display = '';
 
-				allSections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active');
-				if (section.next.id == allSections[allSections.length - 1].id)
-					this.switchOrderSaveButtons(true);
 			}
 
 			this.fade(actionSection, section.next);
 			this.show(section.next);
+			this.syncMfCheckoutStepVisibility();
 
 			// Motor-Force customization:
 			// After fading Delivery block, Bitrix renders the collapsed summary ("Стандартный 0 ₽").
@@ -2097,6 +2117,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			{
 				// ignore
 			}
+			this.syncMfCheckoutStepVisibility();
 			this.animateScrollTo(section.next, 800);
 			return BX.PreventDefault(event);
 		},
@@ -2408,6 +2429,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.activeSectionId = node.id;
 			BX.removeClass(node, 'bx-step-error bx-step-warning');
+			BX.addClass(node, 'bx-selected');
+			BX.removeClass(node, 'bx-step-completed');
 
 			switch (node.id)
 			{
@@ -2443,8 +2466,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			}
 
 			node.setAttribute('data-visited', 'true');
-			BX.addClass(node, 'bx-selected');
-			BX.removeClass(node, 'bx-step-completed');
+
+			if (node.id === this.deliveryBlockNode.id)
+				this.mfTriggerEdostDeliveryInit(50);
 		},
 
 		showByClick: function(event)
@@ -2461,6 +2485,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			fadeNode && this.fade(fadeNode);
 			this.show(showNode);
+			this.syncMfCheckoutStepVisibility();
 			// Motor-Force customization: clicking "изменить" on Delivery should show virtual offers.
 			try
 			{
@@ -2589,7 +2614,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		{
 			var orderSaveNode = this.orderSaveBlockNode,
 				totalButton = this.totalBlockNode.querySelector('.bx-soa-cart-total-button-container'),
-				mobileButton = this.mobileTotalBlockNode.querySelector('.bx-soa-cart-total-button-container'),
+				mobileButton = this.mobileTotalBlockNode && this.mobileTotalBlockNode.querySelector('.bx-soa-cart-total-button-container'),
 				lastState = this.orderSaveBlockNode.style.display == '';
 
 			if (lastState != state)
@@ -2639,6 +2664,308 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			}
 		},
 
+		isMobileCheckoutView: function()
+		{
+			if (this.isMobile)
+				return true;
+
+			try
+			{
+				return window.matchMedia && window.matchMedia('(max-width: 575.98px)').matches;
+			}
+			catch (e)
+			{
+				return false;
+			}
+		},
+
+		isMfCustomCheckout: function()
+		{
+			return this.params.MF_CUSTOM_GUEST_FLOW === 'Y'
+				|| this.params.MF_ORDER_MAKE_SIGNATURE === 'Y'
+				|| !!(this.result && this.result.MF_CHECKOUT && this.result.MF_CHECKOUT.ENABLED);
+		},
+
+		mfPrepareOrderSaveValidation: function()
+		{
+			if (!this.isMfCustomCheckout())
+				return;
+
+			try
+			{
+				var mfB = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress,
+					mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+
+				if (mfB && typeof mfB.syncPickupFromSelectedStore === 'function')
+					mfB.syncPickupFromSelectedStore();
+				if (mfB && typeof mfB.sync === 'function')
+					mfB.sync();
+				if (mfE && typeof mfE.ensureFields === 'function')
+					mfE.ensureFields();
+				if (mfE && typeof mfE.ensureBitrixLocationPropertyFilled === 'function')
+					mfE.ensureBitrixLocationPropertyFilled({sendRefresh: false});
+			}
+			catch (ePrep) {}
+		},
+
+		mfIsDeliveryLocationSatisfied: function()
+		{
+			if (!this.isMfCustomCheckout())
+				return false;
+
+			try
+			{
+				var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost,
+					form = BX('bx-soa-order-form');
+
+				if (mfE)
+				{
+					if (typeof mfE.getEffectiveLocationCode === 'function'
+						&& BX.type.isNotEmptyString(String(mfE.getEffectiveLocationCode() || '').trim()))
+					{
+						return true;
+					}
+
+					if (typeof mfE.peekNominatimJson === 'function'
+						&& BX.type.isNotEmptyString(String(mfE.peekNominatimJson() || '').trim()))
+					{
+						return true;
+					}
+
+					if (typeof mfE.getFallbackLocationCode === 'function'
+						&& BX.type.isNotEmptyString(String(mfE.getFallbackLocationCode() || '').trim()))
+					{
+						return true;
+					}
+				}
+
+				if (form)
+				{
+					if (BX.type.isNotEmptyString(String((form.querySelector('input[name="MF_EDOST_TARIF_ID"]') || {}).value || '').trim()))
+						return true;
+					if (BX.type.isNotEmptyString(String((form.querySelector('input[name="MF_NOMINATIM_JSON"]') || {}).value || '').trim()))
+						return true;
+				}
+
+				var hiddenLoc = this.orderBlockNode
+					? this.orderBlockNode.querySelectorAll('.bx-soa-location-input-container input[type="hidden"][name^="ORDER_PROP_"]')
+					: [];
+
+				for (var i = 0; i < hiddenLoc.length; i++)
+				{
+					if (BX.type.isNotEmptyString(String(hiddenLoc[i].value || '').trim()))
+						return true;
+				}
+			}
+			catch (eLoc) {}
+
+			return false;
+		},
+
+		hideMobileTopTotalPanel: function()
+		{
+			if (!this.mobileTotalBlockNode)
+				return;
+
+			BX.removeClass(this.mobileTotalBlockNode, 'd-block d-sm-none');
+			this.mobileTotalBlockNode.style.setProperty('display', 'none', 'important');
+		},
+
+		syncMobileBottomOrderSummary: function(show)
+		{
+			if (!this.orderSaveBlockNode || !this.isMobileCheckoutView() || !this.isMfCustomCheckout())
+				return;
+
+			var saveBtn = this.orderSaveBlockNode.querySelector('[data-save-button]'),
+				bottomTotal = this.orderSaveBlockNode.querySelector('#mf-order-save-total');
+
+			if (!show)
+			{
+				if (bottomTotal)
+					bottomTotal.style.display = 'none';
+				return;
+			}
+
+			if (!bottomTotal)
+			{
+				bottomTotal = BX.create('DIV', {
+					props: {id: 'mf-order-save-total', className: 'mf-order-save-total-wrap'}
+				});
+				if (saveBtn)
+					this.orderSaveBlockNode.insertBefore(bottomTotal, saveBtn);
+				else
+					this.orderSaveBlockNode.insertBefore(bottomTotal, this.orderSaveBlockNode.firstChild);
+			}
+
+			bottomTotal.style.display = '';
+			BX.cleanNode(bottomTotal);
+
+			if (this.totalInfoBlockNode)
+			{
+				var clone = this.totalInfoBlockNode.cloneNode(true),
+					cloneBtn = clone.querySelector('.bx-soa-cart-total-button-container');
+
+				if (cloneBtn)
+					cloneBtn.parentNode.removeChild(cloneBtn);
+
+				bottomTotal.appendChild(clone);
+			}
+		},
+
+		isBuyerStepActive: function()
+		{
+			return !!(this.propsBlockNode && this.activeSectionId === this.propsBlockNode.id);
+		},
+
+		shouldShowOrderSaveButtons: function()
+		{
+			var sections = this.orderBlockNode
+				? this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active')
+				: [];
+
+			if (this.isMobileCheckoutView())
+				return this.isBuyerStepActive();
+
+			return this.shouldBeSectionVisible(sections, sections.length - 1);
+		},
+
+		applyOrderSavePanelsVisibility: function()
+		{
+			if (!this.orderBlockNode)
+				return;
+
+			if (this.result && this.result.SHOW_AUTH)
+			{
+				if (this.orderSaveBlockNode)
+					this.orderSaveBlockNode.style.display = 'none';
+				if (this.mobileTotalBlockNode)
+					this.mobileTotalBlockNode.style.display = 'none';
+				BX.removeClass(this.orderBlockNode, 'mf-buyer-step-active');
+				return;
+			}
+
+			var show = this.shouldShowOrderSaveButtons(),
+				isMobileView = this.isMobileCheckoutView(),
+				showFinalStepButtons =
+					(!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
+					&& this.params.SHOW_ORDER_BUTTON === 'final_step';
+
+			var sidebarButton = this.totalInfoBlockNode
+				? this.totalInfoBlockNode.querySelector('.bx-soa-cart-total-button-container')
+				: null;
+
+			if (isMobileView)
+			{
+				this.hideMobileTopTotalPanel();
+
+				if (this.totalBlockNode)
+					this.totalBlockNode.style.setProperty('display', 'none', 'important');
+
+				if (this.orderSaveBlockNode)
+					this.orderSaveBlockNode.style.display = show ? '' : 'none';
+
+				if (sidebarButton)
+					sidebarButton.setAttribute('style', 'display: none !important');
+
+				this.syncMobileBottomOrderSummary(show);
+			}
+			else
+			{
+				this.hideMobileTopTotalPanel();
+
+				if (this.totalBlockNode)
+					this.totalBlockNode.style.removeProperty('display');
+
+				if (this.mobileTotalBlockNode)
+					this.mobileTotalBlockNode.style.display = 'none';
+
+				if (showFinalStepButtons)
+					this.switchOrderSaveButtons(show);
+				else if (this.orderSaveBlockNode)
+					this.orderSaveBlockNode.style.display = '';
+			}
+
+			if (show)
+				BX.addClass(this.orderBlockNode, 'mf-buyer-step-active');
+			else
+				BX.removeClass(this.orderBlockNode, 'mf-buyer-step-active');
+		},
+
+		mfTriggerEdostDeliveryInit: function(delayMs)
+		{
+			var wait = (typeof delayMs === 'number') ? delayMs : 0;
+
+			setTimeout(function(){
+				try {
+					if (BX.saleOrderAjax)
+					{
+						if (!BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.initDeferredControl === 'function')
+							BX.saleOrderAjax.initDeferredControl();
+
+						BX.saleOrderAjax.__mfNomAnchorRetries = 0;
+						if (BX.saleOrderAjax.__mfBuyerAddress && typeof BX.saleOrderAjax.__mfBuyerAddress.installNominatim === 'function')
+							BX.saleOrderAjax.__mfBuyerAddress.installNominatim(BX.saleOrderAjax);
+						if (BX.saleOrderAjax.__mfBuyerAddress && typeof BX.saleOrderAjax.__mfBuyerAddress.syncBitrixLocationVisibility === 'function')
+							BX.saleOrderAjax.__mfBuyerAddress.syncBitrixLocationVisibility(BX.saleOrderAjax);
+					}
+
+					if (!BX.saleOrderAjax || !BX.saleOrderAjax.__mfEdost)
+						return;
+
+					if (typeof BX.saleOrderAjax.__mfEdost.injectStyles === 'function')
+						BX.saleOrderAjax.__mfEdost.injectStyles();
+					if (typeof BX.saleOrderAjax.__mfEdost.ensureFields === 'function')
+						BX.saleOrderAjax.__mfEdost.ensureFields();
+					if (typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
+						BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
+				} catch(e) {}
+			}, wait);
+		},
+
+		syncMfCheckoutStepVisibility: function()
+		{
+			if (!this.orderBlockNode || (this.result && this.result.SHOW_AUTH))
+				return;
+
+			var sections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active'),
+				i, section, isActive, isCompleted, editStep, content,
+				deliveryActivated = false;
+
+			for (i = 0; i < sections.length; i++)
+			{
+				section = sections[i];
+				isActive = section.id === this.activeSectionId;
+				isCompleted = BX.hasClass(section, 'bx-step-completed');
+				editStep = section.querySelector('.bx-soa-editstep');
+				content = section.querySelector('.bx-soa-section-content');
+
+				if (isActive)
+				{
+					if (editStep)
+						editStep.style.display = 'none';
+
+					if (content && section.id !== this.basketBlockNode.id)
+						content.style.display = '';
+
+					if (section.id === this.deliveryBlockNode.id)
+						deliveryActivated = true;
+				}
+				else if (isCompleted)
+				{
+					this.changeVisibleSection(section, true);
+				}
+				else
+				{
+					this.changeVisibleSection(section, false);
+				}
+			}
+
+			if (deliveryActivated)
+				this.mfTriggerEdostDeliveryInit(0);
+
+			this.applyOrderSavePanelsVisibility();
+		},
+
 		/**
 		 * Returns true if current section or next sections had already visited
 		 */
@@ -2680,7 +3007,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				i, state;
 
 			var orderDataLoaded = !!this.result.IS_AUTHORIZED && this.params.USE_PRELOAD === 'Y' && this.result.LAST_ORDER_DATA.FAIL !== true,
-				skipFlag = true;
+				skipFlag = true,
+				mfStrictSteps = this.params.MF_CUSTOM_GUEST_FLOW === 'Y' || this.params.MF_ORDER_MAKE_SIGNATURE === 'Y';
 
 			for (i = 0; i < sections.length; i++)
 			{
@@ -2689,7 +3017,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				this.changeVisibleSection(sections[i], state);
 
-				if (this.firstLoad && skipFlag)
+				if (this.firstLoad && skipFlag && !mfStrictSteps)
 				{
 					if (
 						state
@@ -2712,13 +3040,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				}
 			}
 
-			if (
-				(!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined')
-				&& this.params.SHOW_ORDER_BUTTON === 'final_step'
-			)
-			{
-				this.switchOrderSaveButtons(this.shouldBeSectionVisible(sections, sections.length - 1));
-			}
+			this.syncMfCheckoutStepVisibility();
 		},
 
 		changeVisibleSection: function(section, state)
@@ -2785,9 +3107,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				this.deliveryBlockNode.style.display = 'none';
 			}
 
-			this.orderSaveBlockNode.style.display = this.result.SHOW_AUTH ? 'none' : '';
-			this.mobileTotalBlockNode.style.display = this.result.SHOW_AUTH ? 'none' : '';
-
 			this.checkPickUpShow();
 
 			var sections = this.orderBlockNode.querySelectorAll('.bx-soa-section.bx-active'), i;
@@ -2801,6 +3120,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.editTotalBlock();
 			this.totalBlockFixFont();
+			this.syncMfCheckoutStepVisibility();
 
 			if (this.__mfPendingPersonTypeSectionReset)
 			{
@@ -3388,9 +3708,6 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					this.editPropsBlock(active);
 					break;
 			}
-
-			if (active)
-				section.setAttribute('data-visited', 'true');
 		},
 
 		editAuthBlock: function()
@@ -6226,6 +6543,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			{
 				BX.remove(BX.lastChild(node));
 				node.appendChild(BX.firstChild(this.deliveryHiddenBlockNode));
+				this.mfTriggerEdostDeliveryInit(0);
 			}
 			else
 			{
@@ -6259,19 +6577,15 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				this.getBlockFooter(deliveryContent);
 			}
 
-			// Motor-Force customization:
-			// After the active Delivery DOM is fully rebuilt, force virtual eDost render again.
-			// This is more reliable than only relying on navigation callbacks/timers.
 			if (activeNodeMode)
 			{
+				var self = this;
 				setTimeout(function(){
-					try {
-						if (BX && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.__mfEdost.onEnterDelivery === 'function')
-						{
-							BX.saleOrderAjax.__mfEdost.onEnterDelivery(true);
-						}
-					} catch(e) {}
+					self.mfTriggerEdostDeliveryInit(0);
 				}, 0);
+				setTimeout(function(){
+					self.mfTriggerEdostDeliveryInit(0);
+				}, 250);
 			}
 		},
 
@@ -8343,13 +8657,16 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!this.options.propertyValidation)
 				return true;
 
+			this.mfPrepareOrderSaveValidation();
+
 			// Motor-Force: «Местоположение» в «Покупателе» скрыто (Photon/Nominatim), значение в DELIVERY_*.
 			// Без excludeLocation Bitrix снова гоняет validateLocation по пустому sls — весь блок «Покупатель» красный.
 			var regionErrors = this.isValidRegionBlock(),
 				propsErrors = this.isValidPropertiesBlock(true),
+				onBuyerStep = this.isBuyerStepActive(),
 				navigated = false, tooltips, i;
 
-			if (regionErrors.length)
+			if (regionErrors.length && !onBuyerStep)
 			{
 				navigated = true;
 				// Motor-Force customization: location+zip are inside Delivery block.
@@ -8376,15 +8693,17 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (regionErrors.length)
 			{
-				this.showError(this.deliveryBlockNode, regionErrors);
-				BX.addClass(this.deliveryBlockNode, 'bx-step-error');
+				if (onBuyerStep)
+					this.showError(this.propsBlockNode, regionErrors);
+				else
+					this.showError(this.deliveryBlockNode, regionErrors);
+
+				BX.addClass(onBuyerStep ? this.propsBlockNode : this.deliveryBlockNode, 'bx-step-error');
 			}
 
 			if (propsErrors.length)
 			{
-				if (this.activeSectionId !== this.propsBlockNode.id)
-					this.showError(this.propsBlockNode, propsErrors);
-
+				this.showError(this.propsBlockNode, propsErrors);
 				BX.addClass(this.propsBlockNode, 'bx-step-error');
 			}
 
@@ -8396,6 +8715,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!this.options.propertyValidation)
 				return [];
 
+			if (this.isMfCustomCheckout() && this.mfIsDeliveryLocationSatisfied())
+				return [];
+
 			var regionProps = this.orderBlockNode.querySelectorAll('.bx-soa-location-input-container[data-property-id-row]'),
 				regionErrors = [],
 				id, arProperty, data, i;
@@ -8403,6 +8725,18 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			for (i = 0; i < regionProps.length; i++)
 			{
 				id = regionProps[i].getAttribute('data-property-id-row');
+
+				if (this.isMfCustomCheckout())
+				{
+					try
+					{
+						var hiddenLoc = regionProps[i].querySelector('input[type="hidden"][name="ORDER_PROP_' + id + '"]');
+						if (hiddenLoc && BX.type.isNotEmptyString(String(hiddenLoc.value || '').trim()))
+							continue;
+					}
+					catch (eMfReg) {}
+				}
+
 				arProperty = this.validation.properties[id];
 				data = this.getValidationData(arProperty, regionProps[i]);
 
@@ -8837,6 +9171,23 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			var parent = BX.findParent(input, { tagName: 'DIV', className: 'form-group' }),
 				value = this.getLocationString(parent),
 				errors = [];
+
+			if (this.isMfCustomCheckout())
+			{
+				try
+				{
+					if (this.mfIsDeliveryLocationSatisfied())
+						return [];
+
+					if (parent)
+					{
+						var hiddenLoc = parent.querySelector('input[type="hidden"][name^="ORDER_PROP_"]');
+						if (hiddenLoc && BX.type.isNotEmptyString(String(hiddenLoc.value || '').trim()))
+							return [];
+					}
+				}
+				catch (eMfValLoc) {}
+			}
 
 			if (arProperty.MULTIPLE === 'Y' && arProperty.IS_LOCATION !== 'Y')
 			{
@@ -9372,6 +9723,17 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 		editMobileTotalBlock: function()
 		{
+			if (!this.mobileTotalBlockNode)
+				return;
+
+			// Motor-Force: на мобильном итоги только внизу (#bx-soa-orderSave), не дублируем сверху.
+			if (this.isMfCustomCheckout() && this.isMobileCheckoutView())
+			{
+				BX.cleanNode(this.mobileTotalBlockNode);
+				this.hideMobileTopTotalPanel();
+				return;
+			}
+
 			if (this.result.SHOW_AUTH)
 				BX.removeClass(this.mobileTotalBlockNode, 'd-block d-sm-none');
 			else
@@ -9655,6 +10017,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		{
 			BX.ready(BX.delegate(function(){
 				var control = BX.UserConsent && BX.UserConsent.load(this.orderBlockNode);
+				if (!control && this.orderSaveBlockNode)
+					control = BX.UserConsent && BX.UserConsent.load(this.orderSaveBlockNode);
 				if (control)
 				{
 					BX.addCustomEvent(control, BX.UserConsent.events.save, BX.proxy(this.doSaveAction, this));

@@ -673,6 +673,7 @@
 #contactsmain .contact__icon,#contactsmain .contact__label{display:inline-block;vertical-align:middle}
 #contactsmain .contact__icon{margin-right:1rem;width:1.5rem}
 #contactsmain .contact__icon svg{fill:#b2bcc3;max-height:1.5rem;max-width:1.5rem;vertical-align:top}
+#contactsmain .contact__icon_max svg{fill:none;max-height:1.5rem;max-width:1.5rem;vertical-align:top}
 #contactsmain .contact__item{color:#000;display:inline-block;font-style:normal;margin-bottom:1rem}
 #contactsmain .contact__list{margin-bottom:-1rem}
 #contactsmain .contact__desc{color:#4c5b66;margin-top:.5rem}

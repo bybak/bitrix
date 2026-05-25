@@ -482,7 +482,7 @@ if ($elementId > 0)
 								}
 								?>
 							</td>
-							<td class="text-right">
+							<td class="text-right mf-detail-stock-table__price mf-price">
 								<?php if ($storePrice !== null): ?>
 									<?php
 									echo function_exists('mf_format_display_price_rub')
@@ -723,8 +723,8 @@ if ($elementId > 0)
 			<div class="mf-detail-shell__min-price">От <span><?=$mfMinPriceText?></span></div>
 		<?php endif; ?>
 
-		<?php if ($mfBrand !== '' || $mfArticle !== '' || $mfOem !== ''): ?>
-			<div class="mf-product-meta mf-product-meta--detail" aria-label="Бренд, артикул и OEM">
+		<?php if ($mfBrand !== '' || $mfArticle !== ''): ?>
+			<div class="mf-product-meta mf-product-meta--detail" aria-label="Бренд и артикул">
 				<?php if ($mfBrand !== ''): ?>
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Бренд:</span>
@@ -735,12 +735,6 @@ if ($elementId > 0)
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Артикул:</span>
 						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfArticle)?></span>
-					</div>
-				<?php endif; ?>
-				<?php if ($mfOem !== ''): ?>
-					<div class="mf-product-meta__item">
-						<span class="mf-product-meta__label">OEM:</span>
-						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($mfOem)?></span>
 					</div>
 				<?php endif; ?>
 			</div>

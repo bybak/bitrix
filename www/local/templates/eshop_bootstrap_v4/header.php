@@ -24,12 +24,21 @@ $isRent = ($curPage === SITE_DIR."prokat/index.php");
 $isDocuments = ($curPage === SITE_DIR."documents/index.php");
 $isCooperation = ($curPage === SITE_DIR."sotrudnichestvo/index.php");
 $isFaq = ($curPage === SITE_DIR."faq/index.php");
-$isProducts = (strpos($curPage, SITE_DIR."products/") === 0);
+$curDir = $APPLICATION->GetCurDir();
+$isKatalogZapchastey = (
+	strpos($curPage, SITE_DIR . 'katalog-zapchastey/') === 0
+	|| $curPage === SITE_DIR . 'katalog-zapchastey/index.php'
+	|| strpos($curDir, SITE_DIR . 'katalog-zapchastey') === 0
+);
+$isCatalog = (
+	strpos($curPage, SITE_DIR . 'catalog/') === 0
+	|| strpos($curDir, SITE_DIR . 'catalog') === 0
+);
+$isProducts = (strpos($curPage, SITE_DIR."products/") === 0) || $isKatalogZapchastey || $isCatalog;
 $isSearch = (strpos($curPage, SITE_DIR."search/") === 0);
 $cartPathPrefix = SITE_DIR . "personal/cart/";
 $isCart = ($curPage === rtrim($cartPathPrefix, "/") || strpos($curPage, $cartPathPrefix) === 0);
 $orderMakePrefix = rtrim((string)SITE_DIR, '/') . '/personal/order/make';
-$curDir = $APPLICATION->GetCurDir();
 $isOrderMake = (
 	strpos($curPage, $orderMakePrefix) === 0
 	|| stripos($curPage, 'personal/order/make') !== false
@@ -142,6 +151,8 @@ if (function_exists('mf_seo_apply_for_current_page'))
 	// so broken external/proxied images are immediately replaced with a placeholder.
 	$imgFallbackJs = $mfAssetVer(SITE_TEMPLATE_PATH . "/mf-img-fallback.js");
 	echo '<script src="' . htmlspecialcharsbx($imgFallbackJs) . '"></script>' . "\n";
+	$basketJs = $mfAssetVer(SITE_TEMPLATE_PATH . "/mf-basket.js");
+	echo '<script src="' . htmlspecialcharsbx($basketJs) . '"></script>' . "\n";
 
 	if ($isProducts)
 	{

@@ -255,6 +255,53 @@
     });
   }
 
+  function mfApplyAnalogBlocks(blocks, ids) {
+    if (!blocks) return;
+    var idSet = {};
+    (ids || []).forEach(function (id) { idSet[String(id)] = 1; });
+    qsa('[data-mf-analogs-for]').forEach(function (host) {
+      var pid = host.getAttribute('data-mf-analogs-for') || '';
+      if (!pid) return;
+      if (ids && ids.length && !idSet[pid]) return;
+      mfRemoveAnalogPending(pid);
+      var html = blocks[pid];
+      host.removeAttribute('data-mf-analogs-for');
+      if (!html) return;
+      var wrap = document.createElement('div');
+      wrap.className = 'mf-search-card__analogs';
+      wrap.innerHTML = html;
+      host.appendChild(wrap);
+    });
+  }
+
+  function mfEnsureAnalogsStatusBar() {
+    var statusBar = document.getElementById('mf-search-analogs-status');
+    if (statusBar) return statusBar;
+    var results = qs('.mf-search__results');
+    if (!results || !results.parentNode) return null;
+    statusBar = document.createElement('div');
+    statusBar.id = 'mf-search-analogs-status';
+    statusBar.className = 'mf-search-analogs-status';
+    statusBar.innerHTML = '<span class="mf-search-analogs-status__spinner" aria-hidden="true"></span> Подбираем аналоги…';
+    results.parentNode.insertBefore(statusBar, results.nextSibling);
+    return statusBar;
+  }
+
+  function mfLoadSearchAnalogsChunk(ids) {
+    if (!ids.length) return Promise.resolve();
+    var idSet = {};
+    ids.forEach(function (id) { idSet[String(id)] = 1; });
+    return mfPostJson(MF_ANALOGS_URL, ids, { limit: '8' }).then(function (resp) {
+      if (!resp || !resp.ok || !resp.blocks) {
+        ids.forEach(mfRemoveAnalogPending);
+        return;
+      }
+      mfApplyAnalogBlocks(resp.blocks);
+    }).catch(function () {
+      ids.forEach(mfRemoveAnalogPending);
+    });
+  }
+
   function mfLoadSearchAnalogs() {
     var hosts = qsa('[data-mf-analogs-for]');
     if (!hosts.length) return Promise.resolve();
@@ -269,50 +316,48 @@
     });
     if (!ids.length) return Promise.resolve();
 
-    var statusBar = document.getElementById('mf-search-analogs-status');
-    if (!statusBar) {
-      var results = qs('.mf-search__results');
-      if (results && results.parentNode) {
-        statusBar = document.createElement('div');
-        statusBar.id = 'mf-search-analogs-status';
-        statusBar.className = 'mf-search-analogs-status';
-        statusBar.innerHTML = '<span class="mf-search-analogs-status__spinner" aria-hidden="true"></span> Подбираем аналоги…';
-        results.parentNode.insertBefore(statusBar, results.nextSibling);
-      }
+    var statusBar = mfEnsureAnalogsStatusBar();
+    var chunkSize = 6;
+    var chunks = [];
+    for (var i = 0; i < ids.length; i += chunkSize) {
+      chunks.push(ids.slice(i, i + chunkSize));
     }
 
-    return mfPostJson(MF_ANALOGS_URL, ids, { limit: '8' }).then(function (resp) {
-      if (statusBar) statusBar.remove();
-      if (!resp || !resp.ok || !resp.blocks) {
-        ids.forEach(mfRemoveAnalogPending);
-        return;
-      }
-      var blocks = resp.blocks;
-      hosts.forEach(function (host) {
-        var pid = host.getAttribute('data-mf-analogs-for') || '';
-        mfRemoveAnalogPending(pid);
-        var html = blocks[pid];
-        host.removeAttribute('data-mf-analogs-for');
-        if (!html) return;
-        var wrap = document.createElement('div');
-        wrap.className = 'mf-search-card__analogs';
-        wrap.innerHTML = html;
-        host.appendChild(wrap);
+    var chain = Promise.resolve();
+    chunks.forEach(function (chunk, idx) {
+      chain = chain.then(function () {
+        return mfLoadSearchAnalogsChunk(chunk).then(function () {
+          if (idx === 0 && statusBar) {
+            statusBar.remove();
+          }
+          if (idx === 0) {
+            return mfLoadSearchStores();
+          }
+          return null;
+        });
       });
+    });
+
+    return chain.then(function () {
+      if (statusBar && statusBar.parentNode) statusBar.remove();
+      return mfLoadSearchStores();
+    }).then(function () {
       try {
         if (typeof window.__mfSearchSyncBasket === 'function') {
           window.__mfSearchSyncBasket();
         }
       } catch (_) {}
     }).catch(function () {
-      if (statusBar) statusBar.remove();
+      if (statusBar && statusBar.parentNode) statusBar.remove();
       ids.forEach(mfRemoveAnalogPending);
     });
   }
 
   function mfInitSearchUi() {
     initSearchPendingOverlay();
-    mfLoadSearchStores()
+    var storesPromise = mfLoadSearchStores();
+    var analogsPromise = mfLoadSearchAnalogs();
+    storesPromise
       .then(function () {
         return mfLoadSearchProgressive();
       })
@@ -320,13 +365,16 @@
         return mfLoadSearchStores();
       })
       .then(function () {
+        return mfLoadSearchAnalogs();
+      })
+      .then(function () {
         try {
           if (typeof window.__mfSearchSyncBasket === 'function') {
             window.__mfSearchSyncBasket();
           }
         } catch (_) {}
-        return mfLoadSearchAnalogs();
       });
+    analogsPromise.catch(function () {});
   }
 
   document.addEventListener('submit', function (e) {

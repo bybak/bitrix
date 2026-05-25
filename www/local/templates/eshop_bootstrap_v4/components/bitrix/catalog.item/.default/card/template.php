@@ -119,6 +119,12 @@ if (\CModule::IncludeModule('catalog'))
 	}
 }
 
+$mfAddStoreId = 0;
+if ($canBuy && function_exists('mf_catalog_listing_preferred_store_id'))
+{
+	$mfAddStoreId = (int)mf_catalog_listing_preferred_store_id((int)($actualItem['ID'] ?? 0));
+}
+
 $code = trim((string)($item['CODE'] ?? ''));
 $placeholder = function_exists('mf_mf_placeholder_img_url') ? (string)mf_mf_placeholder_img_url() : '';
 $imgSrc = function_exists('mf_mf_product_img_url') ? (string)mf_mf_product_img_url($code, 1) : '';
@@ -195,14 +201,8 @@ foreach (['CML2_ARTICLE', 'MF_ARTICLE_NORM', 'ARTNUMBER', 'ARTICLE'] as $c)
 	if ($article === '' && is_array($actualItem)) $article = $mfGetProp($actualItem, $c);
 	if ($article !== '') break;
 }
-$oem = $mfGetProp($item, 'OEM');
-if ($oem === '' && is_array($actualItem))
-{
-	$oem = $mfGetProp($actualItem, 'OEM');
-}
-
 // Fallback: if properties weren't selected in catalog.section result, fetch by ID.
-if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::includeModule('iblock'))
+if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('iblock'))
 {
 	static $mfPropsById = [];
 	$pid = (int)($item['ID'] ?? 0);
@@ -226,20 +226,17 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 				'PROPERTY_CML2_ARTICLE',
 				'PROPERTY_MF_ARTICLE_NORM',
 				'PROPERTY_MF_BRAND_NORM',
-				'PROPERTY_OEM',
 			]
 		)->Fetch();
 		$mfPropsById[$pid] = [
 			'brand' => trim((string)($r['PROPERTY_MF_BRAND_VALUE'] ?? ($r['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
 			'article' => trim((string)($r['PROPERTY_CML2_ARTICLE_VALUE'] ?? ($r['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''))),
-			'oem' => trim((string)($r['PROPERTY_OEM_VALUE'] ?? '')),
 		];
 	}
 	if ($pid > 0 && isset($mfPropsById[$pid]))
 	{
 		if ($brand === '') $brand = $mfPropsById[$pid]['brand'];
 		if ($article === '') $article = $mfPropsById[$pid]['article'];
-		if ($oem === '') $oem = $mfPropsById[$pid]['oem'];
 	}
 }
 ?>
@@ -285,8 +282,8 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 			<? if ($itemHasDetailUrl): ?></a><? endif; ?>
 		</h3>
 
-		<?php if ($brand !== '' || $article !== '' || $oem !== ''): ?>
-			<div class="mf-product-meta" aria-label="Бренд, артикул и OEM">
+		<?php if ($brand !== '' || $article !== ''): ?>
+			<div class="mf-product-meta" aria-label="Бренд и артикул">
 				<?php if ($brand !== ''): ?>
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Бренд:</span>
@@ -297,12 +294,6 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 					<div class="mf-product-meta__item">
 						<span class="mf-product-meta__label">Артикул:</span>
 						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($article)?></span>
-					</div>
-				<?php endif; ?>
-				<?php if ($oem !== ''): ?>
-					<div class="mf-product-meta__item">
-						<span class="mf-product-meta__label">OEM:</span>
-						<span class="mf-product-meta__value"><?=htmlspecialcharsbx($oem)?></span>
 					</div>
 				<?php endif; ?>
 			</div>
@@ -347,12 +338,22 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 			</div>
 		</div>
 
-		<div class="mf-pcard__actions product-item-hidden" data-entity="buttons-block">
+		<div class="mf-pcard__actions" data-entity="buttons-block">
 			<?php // Keep quantity input for Bitrix JS (no UI for quantity selector). ?>
 			<input type="hidden" id="<?=$itemIds['QUANTITY']?>" name="<?=$arParams['PRODUCT_QUANTITY_VARIABLE']?>" value="<?=$measureRatio?>" />
 
 			<?php if (!$haveOffers): ?>
-				<?php if ($canBuy): ?>
+				<?php if ($canBuy && $mfAddStoreId > 0): ?>
+					<div class="mf-pcard__btn product-item-button-container" id="<?=$itemIds['BASKET_ACTIONS']?>">
+						<button
+							type="button"
+							class="btn btn-default <?=$buttonSizeClass?> js-mf-add-store"
+							data-product-id="<?= (int)($actualItem['ID'] ?? 0) ?>"
+							data-store-id="<?= (int)$mfAddStoreId ?>"
+							data-qty="1"
+						><?=$btnText?></button>
+					</div>
+				<?php elseif ($canBuy): ?>
 					<div class="mf-pcard__btn product-item-button-container" id="<?=$itemIds['BASKET_ACTIONS']?>">
 						<a class="btn btn-default <?=$buttonSizeClass?>" id="<?=$itemIds['BUY_LINK']?>" href="javascript:void(0)" rel="nofollow">
 							<?=$btnText?>
@@ -405,9 +406,19 @@ if (($brand === '' || $article === '' || $oem === '') && \Bitrix\Main\Loader::in
 							Запросить цену
 						</button>
 						<div id="<?=$itemIds['BASKET_ACTIONS']?>" <?=($actualItem['CAN_BUY'] ? '' : 'style="display: none;"')?>>
-							<a class="btn btn-default <?=$buttonSizeClass?>" id="<?=$itemIds['BUY_LINK']?>" href="javascript:void(0)" rel="nofollow">
-								<?=$btnText?>
-							</a>
+							<?php if ($mfAddStoreId > 0): ?>
+								<button
+									type="button"
+									class="btn btn-default <?=$buttonSizeClass?> js-mf-add-store"
+									data-product-id="<?= (int)($actualItem['ID'] ?? 0) ?>"
+									data-store-id="<?= (int)$mfAddStoreId ?>"
+									data-qty="1"
+								><?=$btnText?></button>
+							<?php else: ?>
+								<a class="btn btn-default <?=$buttonSizeClass?>" id="<?=$itemIds['BUY_LINK']?>" href="javascript:void(0)" rel="nofollow">
+									<?=$btnText?>
+								</a>
+							<?php endif; ?>
 						</div>
 					</div>
 				<?php else: ?>

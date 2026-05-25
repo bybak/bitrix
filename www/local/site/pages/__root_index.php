@@ -627,11 +627,6 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 													<div class="contact-phones__phone contact-phone contact-phone_mobile"><a class="js-phone-number__8966751-97-52" href="tel:8966751-97-52">8 (966) 751-97-52</a></div>
 													<div class="contact__desc">Билайн (Магазин/Ремонт)</div>
 												</div>
-												<div class="display-inline-block small-12 medium-6 large-12 contact__item">
-													<div class="contact-phones__phone contact-phone_desktop js-phone-number__8993489-84-64">8 (993) 489-84-64</div>
-													<div class="contact-phones__phone contact-phone contact-phone_mobile"><a class="js-phone-number__8993489-84-64" href="tel:8993489-84-64">8 (993) 489-84-64</a></div>
-													<div class="contact__desc">Прокат</div>
-												</div>
 											</div>
 										</div>
 									</div>
@@ -672,7 +667,6 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 											</div>
 											<div class="contact__list text-center medium-text-left small-12 medium-9 large-8 column">
 												<div class="small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="mailto:andrey@motor-force.ru">andrey@motor-force.ru</a><div class="contact__desc">Магазин/Ремонт</div></div>
-												<div class="small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="mailto:prokat@motor-force.ru">prokat@motor-force.ru</a><div class="contact__desc">Прокат</div></div>
 											</div>
 										</div>
 									</div>
@@ -693,7 +687,6 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 											<div class="contact__list text-center medium-text-left small-12 medium-9 large-8 column">
 												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://wa.me/89218837340" target="_blank">8 (921) 883-73-40</a><div class="contact__desc">Магазин/Ремонт</div></div>
 												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://wa.me/89667519752" target="_blank">8 (966) 751-97-52</a><div class="contact__desc">Магазин/Ремонт</div></div>
-												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://wa.me/89934898464" target="_blank">8 (993) 489-84-64</a><div class="contact__desc">Прокат</div></div>
 											</div>
 										</div>
 									</div>
@@ -714,7 +707,6 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 											<div class="contact__list text-center medium-text-left small-12 medium-9 large-8 column">
 												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><span>8 (921) 883-73-40</span><div class="contact__desc">Магазин/Ремонт</div></div>
 												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><span>8 (966) 751-97-52</span><div class="contact__desc">Магазин/Ремонт</div></div>
-												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><span>8 (993) 489-84-64</span><div class="contact__desc">Прокат</div></div>
 											</div>
 										</div>
 									</div>
@@ -735,7 +727,24 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 											<div class="contact__list text-center medium-text-left small-12 medium-9 large-8 column">
 												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://t.me/89218837340" target="_blank">8 (921) 883-73-40</a><div class="contact__desc">Магазин/Ремонт</div></div>
 												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://t.me/89667519752" target="_blank">8 (966) 751-97-52</a><div class="contact__desc">Магазин/Ремонт</div></div>
-												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://t.me/89934898464" target="_blank">8 (993) 489-84-64</a><div class="contact__desc">Прокат</div></div>
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="small-12 large-6 inline-column contacts__item">
+									<div class="contacts-max contact">
+										<div class="row">
+											<div class="text-center medium-text-left small-12 medium-3 large-4 column">
+												<div class="contact__title">
+													<div class="contact__icon contact__icon_max">
+														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="mfHomeMaxGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#5B6CFF"/><stop offset="100%" stop-color="#A855F7"/></linearGradient></defs><rect width="24" height="24" rx="6" fill="url(#mfHomeMaxGrad)"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="8" font-weight="700">MAX</text></svg>
+													</div>
+													<div class="contact__label">Max</div>
+												</div>
+											</div>
+											<div class="contact__list text-center medium-text-left small-12 medium-9 large-8 column">
+												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://max.ru/?phone=79218837340" target="_blank" rel="noopener noreferrer">8 (921) 883-73-40</a><div class="contact__desc">Магазин/Ремонт</div></div>
+												<div class="display-inline-block small-12 medium-6 large-12 contact__item"><a class="contacts-emails__link" href="https://max.ru/?phone=79667519752" target="_blank" rel="noopener noreferrer">8 (966) 751-97-52</a><div class="contact__desc">Магазин/Ремонт</div></div>
 											</div>
 										</div>
 									</div>

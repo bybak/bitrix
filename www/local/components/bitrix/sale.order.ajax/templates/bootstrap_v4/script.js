@@ -19,14 +19,25 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			ctx.submitFormProxy.apply(ctx, arguments);
 		}, this);
 
-		BX(function(){
-			ctx.initDeferredControl();
-		});
-		BX(function(){
-			ctx.BXCallAllowed = true; // unlock form refresher
-		});
-
 		this.controls.scope = BX('bx-soa-order');
+
+		// Bitrix BX(ready) на checkout иногда не срабатывает (кеш/composite) — eDost не инициализируется.
+		var runInitDeferred = function(){
+			try {
+				ctx.initDeferredControl();
+			} catch (eInit) {}
+			ctx.BXCallAllowed = true; // unlock form refresher
+		};
+
+		if (typeof document !== 'undefined' && document.readyState !== 'loading' && this.controls.scope)
+			runInitDeferred();
+		else
+			BX(runInitDeferred);
+
+		setTimeout(function(){
+			if (typeof ctx.__mfEdost !== 'object' || typeof ctx.__mfEdost.ensureFields !== 'function')
+				runInitDeferred();
+		}, 0);
 
 		try
 		{
@@ -551,7 +562,30 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				} catch(eRestore) {}
 			};
 
+			mfEdost.injectStyles = function(){
+				try {
+					if (document.getElementById('mf-edost-style'))
+						return;
+
+					var st = document.createElement('style');
+					st.id = 'mf-edost-style';
+					st.type = 'text/css';
+					st.appendChild(document.createTextNode(
+						'#bx-soa-delivery .bx-soa-pp-item-container,' +
+						'#bx-soa-delivery .bx-soa-pp-company,' +
+						'#bx-soa-delivery .bx-soa-pp-desc-container,' +
+						'#bx-soa-delivery .bx-soa-pp-list,' +
+						'#bx-soa-delivery .bx-soa-pp{display:none !important;}' +
+						'#bx-soa-delivery:not(.bx-selected) #mf-edost-box{display:none !important;}' +
+						'#bx-soa-delivery .bx-soa-more-btn button[disabled]{pointer-events:none;opacity:.55;}'
+					));
+					(document.head || document.documentElement).appendChild(st);
+				} catch(e) {}
+			};
+
 			mfEdost.ensureFields = function(){
+				mfEdost.injectStyles();
+
 				var form = BX('bx-soa-order-form');
 				if (!form) return;
 
@@ -616,27 +650,6 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (!del || !del.querySelector) return;
 				var content = del.querySelector('.bx-soa-section-content');
 				if (!content) return;
-
-				// Hard-hide Bitrix delivery cards (including "Стандартный") via CSS.
-				// This is more reliable than walking the DOM after each refresh.
-				try {
-					if (!document.getElementById('mf-edost-style'))
-					{
-						var st = document.createElement('style');
-						st.id = 'mf-edost-style';
-						st.type = 'text/css';
-						st.appendChild(document.createTextNode(
-							'#bx-soa-delivery .bx-soa-pp-item-container,' +
-							'#bx-soa-delivery .bx-soa-pp-company,' +
-							'#bx-soa-delivery .bx-soa-pp-desc-container,' +
-							'#bx-soa-delivery .bx-soa-pp-list,' +
-							'#bx-soa-delivery .bx-soa-pp{display:none !important;}' +
-							'#bx-soa-delivery:not(.bx-selected) #mf-edost-box{display:none !important;}' +
-							'#bx-soa-delivery .bx-soa-more-btn button[disabled]{pointer-events:none;opacity:.55;}'
-						));
-						(document.head || document.documentElement).appendChild(st);
-					}
-				} catch(e) {}
 
 				// Patch Bitrix collapsed delivery summary builder once.
 				// Bitrix recreates the collapsed "Доставка" summary from its technical delivery
@@ -1009,6 +1022,15 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					// без force onEnterDelivery выходит раньше времени и не восстанавливает #mf-edost-box / список тарифов.
 					if (!force && !mfEdost.isDeliveryActive())
 						return;
+
+					try {
+						ctx.__mfNomAnchorRetries = 0;
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.installNominatim === 'function')
+							ctx.__mfBuyerAddress.installNominatim(ctx);
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncBitrixLocationVisibility === 'function')
+							ctx.__mfBuyerAddress.syncBitrixLocationVisibility(ctx);
+					} catch(eNomMount) {}
+
 					mfEdost.ensureFields();
 					mfEdost.hideBitrixDeliveryCards();
 
@@ -1529,6 +1551,32 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				locationText = '';
 			return locationText;
 		};
+
+		// Только явно сохранённый адрес (профиль / прошлый заказ), без дефолта Bitrix «Москва, Центр…».
+		mfBuyerAddress.getSavedDeliveryLocationText = function(){
+			var prop = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
+			if (!prop)
+				return '';
+			if (prop.VALUE != null && String(prop.VALUE).trim() !== '')
+				return String(prop.VALUE).trim();
+			if (prop.VALUE_FORMATTED != null && String(prop.VALUE_FORMATTED).trim() !== '')
+				return String(prop.VALUE_FORMATTED).trim();
+			return '';
+		};
+
+		mfBuyerAddress.getLocationPrefill = function(){
+			try {
+				var mc = mfEdost.getMfCheckout();
+				var nomPre = mc && mc.LAST_ORDER_NOMINATIM_JSON ? String(mc.LAST_ORDER_NOMINATIM_JSON).trim() : '';
+				if (nomPre)
+				{
+					var parsedPre = JSON.parse(nomPre);
+					if (parsedPre && parsedPre.display_name)
+						return String(parsedPre.display_name).trim();
+				}
+			} catch(eNomPre) {}
+			return mfBuyerAddress.getSavedDeliveryLocationText();
+		};
 		mfBuyerAddress.hideLegacyRows = function(){
 			var customLocationProp = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
 			var customAddressProp = mfBuyerAddress.getPropByCode('DELIVERY_ADDRESS');
@@ -1619,9 +1667,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var locationInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
 				var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
 				var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
-				var locationText = mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT');
-				if (!locationText)
-					locationText = mfBuyerAddress.getLocationText();
+				var locationText = mfBuyerAddress.getLocationPrefill();
 
 				if (locationInput && locationInput !== false)
 				{
@@ -1631,6 +1677,15 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						{
 							locationInput.value = locationText;
 							mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', locationText);
+						}
+						else
+						{
+							var bitrixDefault = String(mfBuyerAddress.getLocationText() || '').trim();
+							if (bitrixDefault && String(locationInput.value || '').trim() === bitrixDefault)
+							{
+								locationInput.value = '';
+								mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', '');
+							}
 						}
 						locationInput.readOnly = true;
 						locationInput.setAttribute('readonly', 'readonly');
@@ -1689,26 +1744,77 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					if (wrapNom && !ctx.__mfNominatimActive)
 					{
 						var nomInp = wrapNom.querySelector('input[type="text"]');
-						if (nomInp && !String(nomInp.value || '').trim())
+						if (nomInp)
 						{
-							var pre = '';
-							if (locationInput && locationInput !== false && BX.type.isNotEmptyString(String(locationInput.value || '')))
-								pre = String(locationInput.value || '').trim();
-							if (!pre)
-								pre = String(mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT') || '').trim();
-							if (!pre)
-								pre = String(mfBuyerAddress.getLocationText() || '').trim();
+							var pre = mfBuyerAddress.getLocationPrefill();
 							if (pre)
 								nomInp.value = pre;
+							else
+							{
+								var bitrixDefaultNom = String(mfBuyerAddress.getLocationText() || '').trim();
+								if (bitrixDefaultNom && String(nomInp.value || '').trim() === bitrixDefaultNom)
+									nomInp.value = '';
+							}
 						}
 					}
 				} catch(eNomPre) {}
 			} catch(e) {}
 		};
 
+		mfBuyerAddress.findDeliveryLocationAnchor = function(ctx){
+			var findLocCol = function(root){
+				if (!root || !root.querySelector)
+					return null;
+
+				var dcont = root.querySelector('.bx-soa-section-content');
+				var locCol = dcont ? dcont.querySelector('.bx_soa_location .col') : null;
+
+				return (BX.type.isElementNode(locCol) && locCol.parentNode) ? locCol : null;
+			};
+
+			var delActive = BX('bx-soa-delivery');
+			var delHidden = BX('bx-soa-delivery-hidden');
+			var anchorRow = null;
+
+			if (delActive && delActive.classList.contains('bx-selected'))
+				anchorRow = findLocCol(delActive);
+			if (!anchorRow)
+				anchorRow = findLocCol(delHidden);
+			if (!anchorRow)
+				anchorRow = findLocCol(delActive);
+
+			if (!anchorRow)
+			{
+				try
+				{
+					for (var pidAnchor in ctx.properties)
+					{
+						if (!ctx.properties.hasOwnProperty(pidAnchor))
+							continue;
+						if (ctx.properties[pidAnchor].type === 'LOCATION')
+						{
+							anchorRow = ctx.getRowByPropId(pidAnchor);
+							break;
+						}
+					}
+				} catch(eAnch) {}
+			}
+
+			if (!anchorRow)
+			{
+				var locPropFallback = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
+				if (locPropFallback && locPropFallback.ID)
+					anchorRow = ctx.getRowByPropId(locPropFallback.ID);
+			}
+
+			return (anchorRow && anchorRow.parentNode) ? anchorRow : null;
+		};
+
 		mfBuyerAddress.installNominatim = function(ctx){
-			if (document.getElementById('mf-nominatim-wrap'))
+			var delActive = BX('bx-soa-delivery');
+			if (delActive && delActive.querySelector('#mf-nominatim-wrap'))
 				return;
+
 			var searchUrl = String(mfEdost.getMfCheckout().NOMINATIM_SEARCH_URL || '');
 			if (!searchUrl)
 				return;
@@ -1781,52 +1887,15 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			};
 
 			// Вставляем ПЕРЕД полем Bitrix «Местоположение», иначе пользователь ищет Майами во внутреннем справочнике (там часто нет зарубежных городов).
-			var anchorRow = null;
-			try
-			{
-				for (var pidAnchor in ctx.properties)
-				{
-					if (!ctx.properties.hasOwnProperty(pidAnchor))
-						continue;
-					if (ctx.properties[pidAnchor].type === 'LOCATION')
-					{
-						anchorRow = ctx.getRowByPropId(pidAnchor);
-						break;
-					}
-				}
-			} catch(eAnch) {}
-			if (!anchorRow)
-			{
-				var locPropFallback = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
-				if (locPropFallback && locPropFallback.ID)
-				{
-					anchorRow = ctx.getRowByPropId(locPropFallback.ID);
-				}
-			}
-			// Местоположение перенесено в шаг «Доставка» (.bx_soa_location): строки в «Покупатель» может не быть —
-			// без anchor Nominatim не монтировался → пустой блок и «Заполните Местоположение».
-			if (!anchorRow)
-			{
-				try
-				{
-					var delSec = BX('bx-soa-delivery');
-					var dcont = delSec ? delSec.querySelector('.bx-soa-section-content') : null;
-					var locCol = dcont ? dcont.querySelector('.bx_soa_location .col') : null;
-					if (BX.type.isElementNode(locCol) && locCol.parentNode)
-					{
-						anchorRow = locCol;
-					}
-				}
-				catch (eDelAnch) {}
-			}
-			if (!anchorRow || !anchorRow.parentNode || anchorRow.parentNode.querySelector('#mf-nominatim-wrap'))
+			var anchorRow = mfBuyerAddress.findDeliveryLocationAnchor(ctx);
+			if (!anchorRow || anchorRow.parentNode.querySelector('#mf-nominatim-wrap'))
 			{
 				var retries = ctx.__mfNomAnchorRetries = (ctx.__mfNomAnchorRetries || 0) + 1;
-				if (retries <= 8 && !document.getElementById('mf-nominatim-wrap'))
+				if (retries <= 12 && !(delActive && delActive.querySelector('#mf-nominatim-wrap')))
 				{
 					setTimeout(function(){
 						try { mfBuyerAddress.installNominatim(ctx); } catch (eR) {}
-					}, retries * 250);
+					}, retries * 200);
 				}
 				return;
 			}
@@ -1839,7 +1908,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				style: {fontSize: '12px', opacity: '0.9', marginBottom: '8px', lineHeight: '1.45'}
 			});
 			var inp = BX.create('INPUT', {
-				props: {type: 'text', autocomplete: 'off', placeholder: 'Например: Miami, Майами, Berlin, Санкт-Петербург Невский'},
+				props: {type: 'text', autocomplete: 'off', placeholder: 'Введите населенный пункт'},
 				style: {width: '100%', padding: '8px 10px', border: '1px solid #d9d9d9', borderRadius: '4px', boxSizing: 'border-box', background: '#fff'}
 			});
 			var errBox = BX.create('DIV', {attrs: {id: 'mf-nominatim-err'}, style: {display: 'none', color: '#842029', fontSize: '12px', marginTop: '6px'}});
@@ -2072,27 +2141,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			try {
 				if (!ctx.__mfNominatimActive && inp)
 				{
-					var preFill = '';
-					try {
-						var mcPre = mfEdost.getMfCheckout();
-						var nomPre = mcPre && mcPre.LAST_ORDER_NOMINATIM_JSON ? String(mcPre.LAST_ORDER_NOMINATIM_JSON).trim() : '';
-						if (nomPre)
-						{
-							var parsedPre = JSON.parse(nomPre);
-							if (parsedPre && parsedPre.display_name)
-								preFill = String(parsedPre.display_name).trim();
-						}
-					} catch(eNomPre) {}
-					if (!preFill)
-					{
-						var lip0 = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
-						if (lip0 && lip0 !== false && BX.type.isNotEmptyString(String(lip0.value || '')))
-							preFill = String(lip0.value || '').trim();
-					}
-					if (!preFill)
-						preFill = String(mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT') || '').trim();
-					if (!preFill)
-						preFill = String(mfBuyerAddress.getLocationText() || '').trim();
+					var preFill = mfBuyerAddress.getLocationPrefill();
 					if (preFill)
 						inp.value = preFill;
 				}

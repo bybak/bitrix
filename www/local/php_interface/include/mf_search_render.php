@@ -61,7 +61,7 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 								}
 							?></td>
 							<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
-							<td class="mf-ta-r"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
+							<td class="mf-ta-r mf-search-stock-table__price mf-price"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
 							<td class="mf-ta-r">
 								<?php
 								$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);
@@ -259,18 +259,21 @@ if (!function_exists('mf_search_render_product_card'))
 		}
 
 		$rootAttrs = '';
-		if (!$isAnalog && $id > 0)
+		if ($id > 0)
 		{
-			$rootAttrs = ' data-product-id="' . $id . '"'
-				. ' data-product-name="' . htmlspecialcharsbx($titlePlain) . '"'
-				. ' data-product-url="' . htmlspecialcharsbx($url) . '"';
+			if (!$isAnalog)
+			{
+				$rootAttrs = ' data-product-id="' . $id . '"'
+					. ' data-product-name="' . htmlspecialcharsbx($titlePlain) . '"'
+					. ' data-product-url="' . htmlspecialcharsbx($url) . '"';
+				if ($lazyAnalogs)
+				{
+					$rootAttrs .= ' data-mf-analogs-for="' . $id . '"';
+				}
+			}
 			if ($lazyStores)
 			{
 				$rootAttrs .= ' data-mf-stores-for="' . $id . '"';
-			}
-			if ($lazyAnalogs)
-			{
-				$rootAttrs .= ' data-mf-analogs-for="' . $id . '"';
 			}
 		}
 		?>
@@ -306,7 +309,7 @@ if (!function_exists('mf_search_render_product_card'))
 				</div>
 			</div>
 
-			<?php if ($lazyStores && !$isAnalog): ?>
+			<?php if ($lazyStores): ?>
 				<div class="mf-search-card__avail mf-search-card__avail--lazy" aria-busy="true">
 					<div class="mf-search-card__avail-loading">
 						<span class="mf-search-inline-spinner" aria-hidden="true"></span>
@@ -412,6 +415,22 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 			return [];
 		}
 
+		$limit = max(1, min(12, (int)$limit));
+		sort($productIds, SORT_NUMERIC);
+		$cacheKey = 'v3_' . md5(implode(',', $productIds) . '|' . $limit);
+		if (class_exists(\Bitrix\Main\Data\Cache::class))
+		{
+			$cache = \Bitrix\Main\Data\Cache::createInstance();
+			if ($cache->initCache(3600, $cacheKey, '/mf/search_analogs'))
+			{
+				$cached = $cache->getVars();
+				if (is_array($cached))
+				{
+					return $cached;
+				}
+			}
+		}
+
 		$mfCatalogIblockId = 4;
 		$mfAnalogsByProductId = [];
 		$mfAnalogRowsById = [];
@@ -452,11 +471,6 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 		if (empty($allAnalogIds))
 		{
 			return [];
-		}
-
-		if (function_exists('mf_product_search_card_warm_cache'))
-		{
-			mf_product_search_card_warm_cache(array_merge($productIds, $allAnalogIds));
 		}
 
 		if (class_exists('CIBlockElement'))
@@ -521,6 +535,7 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 					'article' => trim((string)($rA['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
 					'oem' => trim((string)($rA['PROPERTY_OEM_VALUE'] ?? '')),
 					'is_analog' => true,
+					'lazy_stores' => true,
 				];
 			}
 			if (empty($analogsData))
@@ -539,6 +554,14 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 			</div>
 			<?php
 			$out[(int)$pid] = (string)ob_get_clean();
+		}
+
+		if (isset($cache) && is_object($cache))
+		{
+			if ($cache->startDataCache())
+			{
+				$cache->endDataCache($out);
+			}
 		}
 
 		return $out;

@@ -4,6 +4,40 @@
   --fallback-font-paragraph: "ProximaNova-Bold", Futura, Avenir, Helvetica, -apple-system, BlinkMacSystemFont, Roboto, Arial, "Droid Sans", sans-serif;
 }
 
+/* Цены на всём сайте — без переноса (мобильные таблицы складов, карточки, корзина). */
+.mf-price,
+.product-item-price-current,
+.product-item-price-old,
+.product-item-detail-price-current,
+.product-item-detail-price-old,
+.basket-item-price-current,
+.basket-item-price-current-text,
+.basket-item-price-old,
+.basket-item-price-old-text,
+.basket-coupon-block-total-price-current,
+.basket-coupon-block-total-price-old,
+.basket-coupon-block-total-price-delivery,
+.bx-price,
+.bx-price-old,
+.mf-pcard__cur,
+.mf-pcard__old,
+.mf-pline__cur,
+.mf-pline__old,
+.mf-detail-shell__min-price,
+.mf-detail-shell__min-price span,
+.mf-detail-stock-table__price,
+.mf-search-stock-table__price,
+.mf-product-meta__item:first-child .mf-product-meta__value,
+[data-mf-price-for]{
+  white-space: nowrap;
+}
+
+.js-mf-add-store[data-in-basket="1"] {
+  background: #e2e5ea !important;
+  border-color: #d5d9e0 !important;
+  color: rgba(0, 0, 0, .72) !important;
+}
+
 /* Some Bitrix/legacy bootstrap styles may set html{font-size:10px} on some pages.
    We use rem units in header/breadcrumbs; enforce standard root size to prevent "tiny" text. */
 html{
@@ -243,6 +277,27 @@ html{
 
   /* Prevent content being covered by fixed bottom bar */
   body { padding-bottom: var(--mf-nav-h, 0px); }
+
+  /* Jivo widget: full-screen wrapper must not block taps on page content */
+  jdiv[class*="container__"],
+  jdiv.jv-pseudo-height {
+    pointer-events: none !important;
+  }
+  jdiv.wrap__dYhHC,
+  jdiv[class*="iconContainer"],
+  jdiv[class*="buttonContainer"] {
+    pointer-events: auto !important;
+  }
+
+  .mf-pcard__actions,
+  .mf-pline__actions {
+    position: relative;
+    z-index: 2;
+  }
+  .js-mf-add-store {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, .08);
+  }
 }
 
 /* Mobile bottom bar: center/align icons perfectly */

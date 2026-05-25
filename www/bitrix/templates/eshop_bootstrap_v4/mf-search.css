@@ -304,6 +304,10 @@
   border-bottom: 0;
 }
 .mf-ta-r{ text-align: right; }
+.mf-search-stock-table__price{
+  white-space: nowrap;
+  width: 1%;
+}
 
 /* Доставка до СПб: индикатор в кружке (таблицы складов) */
 .mf-store-delivery-spb{

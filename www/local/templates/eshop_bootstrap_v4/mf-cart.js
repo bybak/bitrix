@@ -50,6 +50,11 @@
     return false;
   }
 
+  function isLegacyBitrixUpload(src) {
+    if (!src) return false;
+    return /\/upload\/iblock\//i.test(src);
+  }
+
   function patchBasketImages(root) {
     root = root || document;
     var imgs = root.querySelectorAll('.basket-item-image');
@@ -59,8 +64,7 @@
       if (!item) continue;
 
       var cur = img.getAttribute('src') || '';
-      // Сервер уже подставил реальный URL (MF_EXT_IMAGES, /upload/, внешний CDN) — не затираем mf-img/0001.jpg
-      if (!isBasketImagePlaceholder(cur)) {
+      if (!isBasketImagePlaceholder(cur) && !isLegacyBitrixUpload(cur)) {
         continue;
       }
 

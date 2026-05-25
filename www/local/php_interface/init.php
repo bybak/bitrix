@@ -305,6 +305,69 @@ if (!function_exists('mf_mf_product_card_preview_src'))
 	}
 }
 
+if (!function_exists('mf_is_legacy_bitrix_upload_image_url'))
+{
+	function mf_is_legacy_bitrix_upload_image_url(string $url): bool
+	{
+		$url = trim($url);
+		if ($url === '')
+		{
+			return false;
+		}
+
+		return (bool)preg_match('#/upload/iblock/#i', $url);
+	}
+}
+
+if (!function_exists('mf_catalog_basket_canonical_image_url'))
+{
+	/**
+	 * Картинка товара в корзине/checkout: как на витрине (MF_EXT_IMAGES / mf-img), не /upload/iblock/.
+	 */
+	function mf_catalog_basket_canonical_image_url(int $productId, array $row = [], string $fallback = ''): string
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			$fallback = trim($fallback);
+
+			return ($fallback !== '' && !mf_is_legacy_bitrix_upload_image_url($fallback)) ? $fallback : '';
+		}
+
+		$code = '';
+		if (function_exists('mf_catalog_element_code_for_basket_row'))
+		{
+			$code = mf_catalog_element_code_for_basket_row($productId, $row);
+		}
+		elseif (!empty($row['DETAIL_PAGE_URL']) && preg_match('#/products/([^/]+)/?#', (string)$row['DETAIL_PAGE_URL'], $m))
+		{
+			$code = (string)$m[1];
+		}
+
+		$mfSrc = '';
+		if (function_exists('mf_mf_product_card_preview_src'))
+		{
+			$mfSrc = trim((string)mf_mf_product_card_preview_src($productId, $code));
+		}
+		elseif ($code !== '' && function_exists('mf_mf_product_img_url'))
+		{
+			$mfSrc = trim((string)mf_mf_product_img_url($code, 1));
+		}
+		if ($mfSrc !== '')
+		{
+			return $mfSrc;
+		}
+
+		$fallback = trim($fallback);
+		if ($fallback !== '' && !mf_is_legacy_bitrix_upload_image_url($fallback))
+		{
+			return $fallback;
+		}
+
+		return '';
+	}
+}
+
 // Ensure catalog IBlock URL templates are set (needed for search URLs).
 if (!function_exists('mf_ensure_catalog_iblock_url_templates'))
 {
@@ -2413,6 +2476,60 @@ if (!function_exists('mf_catalog_listing_display_price'))
 	}
 }
 
+if (!function_exists('mf_catalog_listing_preferred_store_id'))
+{
+	/**
+	 * Склад для кнопки «В корзину» в списках каталога: минимальная цена среди складов с остатком.
+	 */
+	function mf_catalog_listing_preferred_store_id(int $productId): int
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !function_exists('mf_product_search_card_stores'))
+		{
+			return 0;
+		}
+
+		$bestSid = 0;
+		$bestPrice = null;
+		foreach (mf_product_search_card_stores($productId) as $row)
+		{
+			if ((float)($row['amount'] ?? 0) <= 1e-9)
+			{
+				continue;
+			}
+			$p = $row['price'] ?? null;
+			if ($p === null || (float)$p <= 0)
+			{
+				continue;
+			}
+			$p = (float)$p;
+			if ($bestPrice === null || $p < $bestPrice)
+			{
+				$bestPrice = $p;
+				$bestSid = (int)($row['store_id'] ?? 0);
+			}
+		}
+
+		if ($bestSid <= 0)
+		{
+			foreach (mf_product_search_card_stores($productId) as $row)
+			{
+				if ((float)($row['amount'] ?? 0) <= 1e-9)
+				{
+					continue;
+				}
+				$sid = (int)($row['store_id'] ?? 0);
+				if ($sid > 0)
+				{
+					return $sid;
+				}
+			}
+		}
+
+		return $bestSid > 0 ? $bestSid : 0;
+	}
+}
+
 if (!function_exists('mf_ep_basket_unit_price_with_fallback'))
 {
 	/**
@@ -2501,8 +2618,9 @@ if (!function_exists('mf_format_display_price_rub'))
 	function mf_format_display_price_rub(float $amount): string
 	{
 		$rounded = mf_round_price($amount);
+		$nbsp = "\u{00A0}";
 
-		return number_format($rounded, 0, '.', ' ') . ' ₽';
+		return str_replace(' ', $nbsp, number_format($rounded, 0, '.', ' ')) . $nbsp . '₽';
 	}
 }
 

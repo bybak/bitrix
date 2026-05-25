@@ -106,17 +106,18 @@ foreach ($this->basketItems as $row)
 
 	$hideDetailPicture = false;
 
+	$fallbackSrc = '';
 	if (!empty($row['PREVIEW_PICTURE_SRC']))
 	{
-		$rowData['IMAGE_URL'] = $row['PREVIEW_PICTURE_SRC'];
+		$fallbackSrc = (string)$row['PREVIEW_PICTURE_SRC'];
 	}
 	elseif (!empty($row['DETAIL_PICTURE_SRC']))
 	{
 		$hideDetailPicture = true;
-		$rowData['IMAGE_URL'] = $row['DETAIL_PICTURE_SRC'];
+		$fallbackSrc = (string)$row['DETAIL_PICTURE_SRC'];
 	}
 
-	if (empty($rowData['IMAGE_URL']))
+	if ($fallbackSrc === '')
 	{
 		$picId = (int)($row['PREVIEW_PICTURE'] ?? 0);
 		if ($picId <= 0)
@@ -128,27 +129,26 @@ foreach ($this->basketItems as $row)
 			$rImg = \CFile::ResizeImageGet($picId, ['width' => 110, 'height' => 110], BX_RESIZE_IMAGE_PROPORTIONAL, true);
 			if (!empty($rImg['src']))
 			{
-				$rowData['IMAGE_URL'] = $rImg['src'];
+				$fallbackSrc = (string)$rImg['src'];
 			}
 		}
 	}
 
-	if (empty($rowData['IMAGE_URL']) && (int)$rowData['PRODUCT_ID'] > 0 && function_exists('mf_mf_product_card_preview_src'))
+	if ((int)$rowData['PRODUCT_ID'] > 0 && function_exists('mf_catalog_basket_canonical_image_url'))
 	{
-		$catalogCode = '';
-		if (function_exists('mf_catalog_element_code_for_basket_row'))
+		$canonical = (string)mf_catalog_basket_canonical_image_url((int)$rowData['PRODUCT_ID'], $row, $fallbackSrc);
+		if ($canonical !== '')
 		{
-			$catalogCode = mf_catalog_element_code_for_basket_row((int)$rowData['PRODUCT_ID'], $row);
+			$rowData['IMAGE_URL'] = $canonical;
 		}
-		elseif (!empty($row['DETAIL_PAGE_URL']) && preg_match('#/products/([^/]+)/?#', (string)$row['DETAIL_PAGE_URL'], $mCode))
+		elseif ($fallbackSrc !== '')
 		{
-			$catalogCode = (string)$mCode[1];
+			$rowData['IMAGE_URL'] = $fallbackSrc;
 		}
-		$previewSrc = (string)mf_mf_product_card_preview_src((int)$rowData['PRODUCT_ID'], $catalogCode);
-		if ($previewSrc !== '')
-		{
-			$rowData['IMAGE_URL'] = $previewSrc;
-		}
+	}
+	elseif ($fallbackSrc !== '')
+	{
+		$rowData['IMAGE_URL'] = $fallbackSrc;
 	}
 
 	if (!empty($row['SKU_DATA']))

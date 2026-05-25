@@ -87,7 +87,11 @@ $mfForm = mf_handle_static_form(
 <h3>Как начать сотрудничество</h3>
 <p>1. Зарегистрируйтесь на нашем сайте для доступа к ценам и заказам в любое время.<br />2. Напишите нам на почту или через сайт &mdash; расскажите о вашем бизнесе (салон, магазин, сервис, прокат) для предоставления скидок.</p>
 </div>
-</div></div></div><div class=" mrb-row__content -inline-group_top mrb-row-index-1"><div class="mrb-small-18 mrb-medium-18
+</div></div></div><?php
+global $USER;
+$mfCoopShowRegister = !(is_object($USER) && method_exists($USER, 'IsAuthorized') && $USER->IsAuthorized());
+if ($mfCoopShowRegister):
+?><div class=" mrb-row__content -inline-group_top mrb-row-index-1"><div class="mrb-small-18 mrb-medium-18
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0"><div id="mrb-button-block"
      class="user-inner mrb-button-block theme-default"
      style="text-align: center">
@@ -96,7 +100,7 @@ $mfForm = mf_handle_static_form(
         <span class="mrb-btn-item-text">Зарегистрироваться</span>
     </a>
 </div>
-</div></div></div><div class=" mrb-row__content -inline-group_top mrb-row-index-2"><div class="mrb-small-18 mrb-medium-18
+</div></div></div><?php endif; ?><div class=" mrb-row__content -inline-group_top mrb-row-index-2"><div class="mrb-small-18 mrb-medium-18
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0">                            
 <div id="mrb-triggers" class="mrb-triggers theme-default-circle"><div class="bl-trigger-title user-inner">
             <p>Выгода от сотрудничества</p>
