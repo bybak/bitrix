@@ -57,13 +57,6 @@ $aMenuLinks = Array(
 		""
 	),
 	Array(
-		"ДОКУМЕНТЫ",
-		"/documents/",
-		Array(),
-		Array(),
-		""
-	),
-	Array(
 		"Блог",
 		"/blog/",
 		Array(),
@@ -75,13 +68,6 @@ $aMenuLinks = Array(
 		"/sotrudnichestvo/",
 		Array(),
 		Array(),
-		""
-	),
-	Array(
-		"Оптовый сайт",
-		"https://opt.motor-force.ru/",
-		Array(),
-		Array("TARGET" => "_blank", "REL" => "nofollow noopener"),
 		""
 	),
 	Array(

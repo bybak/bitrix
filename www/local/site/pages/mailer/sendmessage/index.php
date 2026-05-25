@@ -79,7 +79,6 @@ $lines = [];
 $lines[] = "Заявка с сайта";
 $lines[] = "Форма: lead_form";
 $lines[] = "Дата: ".date("Y-m-d H:i:s");
-$lines[] = "IP: ".($_SERVER["REMOTE_ADDR"] ?? "");
 $lines[] = "---";
 $lines[] = "Имя: ".$fields["fio"];
 $lines[] = "Телефон: ".$fields["phone"];

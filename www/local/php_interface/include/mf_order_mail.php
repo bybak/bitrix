@@ -55,14 +55,19 @@ final class Handlers
 		}
 	}
 
-	public static function onOrderStatusSendEmail(int $orderId, &$eventName, &$fields, $statusId): void
+	public static function onOrderStatusSendEmail(int $orderId, &$eventName, &$fields, $statusId): bool
 	{
 		try
 		{
+			if (self::shouldSuppressStatusEmail((string)$statusId))
+			{
+				return false;
+			}
+
 			$order = self::loadOrder($orderId);
 			if (!$order)
 			{
-				return;
+				return true;
 			}
 
 			$display = Renderer::orderDisplayNumber($order);
@@ -77,6 +82,45 @@ final class Handlers
 		{
 			self::log($e->getMessage());
 		}
+
+		return true;
+	}
+
+	private static function shouldSuppressStatusEmail(string $statusId): bool
+	{
+		$statusId = trim($statusId);
+		if ($statusId === '')
+		{
+			return false;
+		}
+
+		if (Loader::includeModule('sale') && class_exists(\Bitrix\Sale\OrderStatus::class))
+		{
+			$initial = trim((string)\Bitrix\Sale\OrderStatus::getInitialStatus());
+			if ($initial !== '' && $statusId === $initial)
+			{
+				return true;
+			}
+		}
+
+		if (class_exists(\CSaleStatus::class))
+		{
+			$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+			$row = \CSaleStatus::GetByID($statusId, $lang);
+			if (is_array($row))
+			{
+				$name = mb_strtolower(trim((string)($row['NAME'] ?? '')));
+				if (
+					str_contains($name, 'ожидается оплата')
+					|| str_contains($name, 'принят, ожидается')
+				)
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	private static function loadOrder(int $orderId): ?Order
@@ -127,78 +171,46 @@ final class Renderer
 
 	public static function renderNewOrder(Order $order): string
 	{
-		return self::renderOrderMail($order, false);
+		return self::renderOrderMail($order);
 	}
 
 	public static function renderAdminNewOrder(Order $order): string
 	{
-		return self::renderOrderMail($order, true);
+		return self::renderNewOrder($order);
 	}
 
-	private static function renderOrderMail(Order $order, bool $forAdmin): string
+	private static function renderOrderMail(Order $order): string
 	{
 		$display = self::orderDisplayNumber($order);
 		$siteUrl = self::siteUrl($order);
 		$siteLink = '<a href="' . self::esc($siteUrl) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">'
 			. self::esc(self::SITE_HOST) . '</a>';
-		$dateInsert = '';
-		$dateObj = $order->getDateInsert();
-		if ($dateObj instanceof \Bitrix\Main\Type\DateTime)
-		{
-			$dateInsert = $dateObj->format('d.m.Y H:i:s');
-		}
 
 		$html = [];
 		$html[] = self::wrapOpen();
-		$adminUrl = rtrim($siteUrl, '/') . '/bitrix/admin/sale_order_view.php?ID=' . (int)$order->getId() . '&lang=ru';
 
-		if ($forAdmin)
-		{
-			$subtitle = 'Поступил новый заказ на сайте ' . $siteLink;
-			if ($dateInsert !== '')
-			{
-				$subtitle .= '<br>Дата: ' . self::esc($dateInsert);
-			}
-			$subtitle .= '<br><a href="' . self::esc($adminUrl) . '" style="color:' . self::COLOR_LINK . ';">Открыть заказ в админке</a>';
-
-			$html[] = self::block(
-				'<div style="text-align:center;margin:0 0 18px 0;">'
-				. '<div style="font-size:28px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
-				. 'Новый заказ: №' . self::esc($display)
-				. '</div>'
-				. '<div style="font-size:14px;color:#333;line-height:1.5;">' . $subtitle . '</div>'
-				. '</div>'
-			);
-		}
-		else
-		{
-			$html[] = self::block(
-				'<div style="text-align:center;margin:0 0 18px 0;">'
-				. '<div style="font-size:28px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
-				. 'Заказ: №' . self::esc($display)
-				. '</div>'
-				. '<div style="font-size:14px;color:#333;">Вы сделали заказ на сайте ' . $siteLink . '</div>'
-				. '</div>'
-			);
-		}
+		$html[] = self::block(
+			'<div style="text-align:center;margin:0 0 18px 0;">'
+			. '<div style="font-size:28px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
+			. 'Заказ: №' . self::esc($display)
+			. '</div>'
+			. '<div style="font-size:14px;color:#333;">Заказ оформлен на сайте ' . $siteLink . '</div>'
+			. '</div>'
+		);
 
 		$html[] = self::sectionTitle('Информация о заказе');
 		$html[] = self::basketTable($order);
 
-		$html[] = self::sectionTitle($forAdmin ? 'Данные покупателя' : 'Ваши данные');
+		$paymentInstructions = self::card2CardPaymentInstructions($order);
+		if ($paymentInstructions !== '')
+		{
+			$html[] = $paymentInstructions;
+		}
+
+		$html[] = self::sectionTitle('Данные покупателя');
 		$html[] = self::customerTable($order);
 
-		if ($forAdmin)
-		{
-			$html[] = self::sectionTitle('Служебная информация');
-			$html[] = self::adminMetaTable($order);
-			$html[] = self::adminFooterBlock($adminUrl);
-		}
-		else
-		{
-			$html[] = self::footerBlock();
-		}
-
+		$html[] = self::footerBlock();
 		$html[] = self::wrapClose();
 
 		return implode("\n", $html);
@@ -277,8 +289,12 @@ final class Renderer
 				$brand = self::basketItemBrand($item, $productId);
 				$storeTitle = self::basketItemStoreTitle($item);
 				$article = self::basketItemArticle($item, $productId);
+				$productUrl = self::basketItemProductUrl($productId, $order);
 
-				$nameHtml = self::esc($name !== '' ? $name : '—');
+				$nameText = self::esc($name !== '' ? $name : '—');
+				$nameHtml = $productUrl !== ''
+					? '<a href="' . self::esc($productUrl) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">' . $nameText . '</a>'
+					: $nameText;
 				if ($article !== '')
 				{
 					$nameHtml .= '<br><span style="font-size:12px;color:#666;">Артикул: ' . self::esc($article) . '</span>';
@@ -366,6 +382,8 @@ final class Renderer
 		$deliveryName = self::deliveryLabel($order);
 		$confirm = self::prop($props, 'MF_CONFIRM_CHANNEL');
 		$comment = trim((string)$order->getField('USER_DESCRIPTION'));
+		$statusName = self::orderStatusLabel($order);
+		$paySystem = self::paySystemLabel($order);
 
 		$rows = [
 			['ФИО', $fio],
@@ -375,6 +393,8 @@ final class Renderer
 			['Улица, Дом, Квартира', $address],
 			['Индекс', $zip],
 			['Способ доставки', $deliveryName],
+			['Статус', $statusName],
+			['Способ оплаты', $paySystem],
 			['Удобный способ подтверждения заказа', $confirm],
 			['Комментарий', $comment],
 		];
@@ -421,90 +441,43 @@ final class Renderer
 		);
 	}
 
-	private static function adminMetaTable(Order $order): string
+	private static function card2CardPaymentInstructions(Order $order): string
 	{
-		$uid = (int)$order->getUserId();
-		$profileEmail = '';
-		$profileLogin = '';
-		$profileName = '';
-		if ($uid > 0 && class_exists(\CUser::class))
+		if (!class_exists(\Mf\Card2Card\TemplateRenderer::class))
 		{
-			$u = \CUser::GetByID($uid)->Fetch();
-			if (is_array($u))
-			{
-				$profileEmail = trim((string)($u['EMAIL'] ?? ''));
-				$profileLogin = trim((string)($u['LOGIN'] ?? ''));
-				$profileName = trim((string)($u['NAME'] ?? '') . ' ' . (string)($u['LAST_NAME'] ?? ''));
-			}
+			return '';
 		}
 
-		$rows = [
-			['ID заказа', (string)(int)$order->getId()],
-			['Статус', trim((string)$order->getField('STATUS_ID'))],
-			['Отменён', (string)$order->getField('CANCELED') === 'Y' ? 'да' : 'нет'],
-			['Оплачен', $order->isPaid() ? 'да' : 'нет'],
-			['User ID', $uid > 0 ? (string)$uid : '—'],
-			['E-mail (профиль)', $profileEmail],
-			['ФИО (профиль)', $profileName],
-			['Логин', $profileLogin],
-			['Способ оплаты', self::paySystemLabel($order)],
-		];
-
-		return self::keyValueTable($rows);
-	}
-
-	/** @param list<array{0: string, 1: string}> $rows */
-	private static function keyValueTable(array $rows): string
-	{
-		$body = '';
-		foreach ($rows as [$label, $value])
+		$payment = null;
+		foreach ($order->getPaymentCollection() as $p)
 		{
-			$value = trim((string)$value);
-			if ($value === '' || $value === '—')
+			if (!$p instanceof Payment)
 			{
 				continue;
 			}
-			$valueHtml = self::esc($value);
-			if ($label === 'E-mail (профиль)')
+			$psid = (int)$p->getPaymentSystemId();
+			if ($psid > 0 && \Mf\Card2Card\TemplateRenderer::isCard2CardPaySystemId($psid))
 			{
-				$valueHtml = '<a href="mailto:' . self::esc($value) . '" style="color:' . self::COLOR_LINK . ';">' . self::esc($value) . '</a>';
+				$payment = $p;
+				break;
 			}
-			$body .= '<tr>'
-				. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';width:45%;color:#555;vertical-align:top;">'
-				. self::esc($label)
-				. '</td>'
-				. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">'
-				. $valueHtml
-				. '</td></tr>';
+		}
+		if (!$payment instanceof Payment)
+		{
+			return '';
 		}
 
-		if ($body === '')
+		$html = \Mf\Card2Card\TemplateRenderer::renderForOrder($order, $payment);
+		if ($html === '')
 		{
-			$body = '<tr><td colspan="2" style="padding:10px;color:#666;">Нет данных</td></tr>';
+			return '';
 		}
 
 		return self::block(
-			'<table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;">'
-			. $body
-			. '</table>'
+			'<div style="margin-top:14px;padding-top:14px;border-top:1px solid ' . self::COLOR_BORDER . ';">'
+			. $html
+			. '</div>'
 		);
-	}
-
-	private static function adminFooterBlock(string $adminOrderUrl): string
-	{
-		$parts = [
-			'<div style="text-align:center;font-weight:bold;font-size:16px;margin:0 0 10px 0;">'
-			. '<a href="' . self::esc($adminOrderUrl) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">Открыть заказ в админке</a>'
-			. '</div>',
-			'<div style="text-align:center;font-weight:bold;margin:0 0 6px 0;">Часы работы:</div>',
-			'<div style="text-align:center;line-height:1.5;margin:0 0 14px 0;">'
-			. 'Пн-Чт с 10:00 до 18:00;<br>'
-			. 'Пт с 10:00 до 17:00;<br>'
-			. 'Сб-Вс - Выходной.'
-			. '</div>',
-		];
-
-		return self::block(implode("\n", $parts));
 	}
 
 	private static function footerBlock(bool $withProcessingNote = true): string
@@ -599,6 +572,12 @@ final class Renderer
 
 	private static function deliveryLabel(Order $order): string
 	{
+		$edost = self::parseEdostDelivery((string)$order->getField('COMMENTS'));
+		if ($edost !== '')
+		{
+			return $edost;
+		}
+
 		$name = '';
 		foreach ($order->getShipmentCollection() as $shipment)
 		{
@@ -614,15 +593,6 @@ final class Renderer
 		}
 
 		if (self::isTechnicalDeliveryName($name))
-		{
-			$edost = self::parseEdostFromComments((string)$order->getField('COMMENTS'));
-			if ($edost !== '')
-			{
-				return $edost;
-			}
-		}
-
-		if ($name === '' || self::isTechnicalDeliveryName($name))
 		{
 			$comments = trim((string)$order->getField('COMMENTS'));
 			if (preg_match('~Доставка: стоимость будет рассчитана менеджером~u', $comments))
@@ -668,13 +638,42 @@ final class Renderer
 		return '';
 	}
 
-	private static function parseEdostFromComments(string $comments): string
+	private static function parseEdostDelivery(string $comments): string
 	{
 		$comments = trim($comments);
 		if ($comments === '')
 		{
 			return '';
 		}
+
+		if (preg_match(
+			'~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*(?:([0-9]+(?:[.,][0-9]+)?)\s*₽|оплата при получении)\s*\(tarif_id=([^)]+)\)~mu',
+			$comments,
+			$m
+		))
+		{
+			$company = trim((string)$m[1]);
+			$tariff = trim((string)$m[2]);
+			$priceRaw = trim((string)($m[3] ?? ''));
+			$tarifId = trim((string)($m[4] ?? ''));
+
+			if ($tarifId === 'custom' || mb_strtolower($company) === 'свой вариант')
+			{
+				$label = $tariff !== '' ? $tariff : 'Свой вариант';
+			}
+			else
+			{
+				$label = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
+			}
+
+			if ($priceRaw !== '')
+			{
+				$label .= ' — ' . str_replace('.', ',', $priceRaw) . ' ₽';
+			}
+
+			return $label;
+		}
+
 		if (preg_match('~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*([0-9]+(?:[.,][0-9]+)?)\s*₽~u', $comments, $m))
 		{
 			$company = trim((string)$m[1]);
@@ -686,6 +685,64 @@ final class Renderer
 		}
 
 		return '';
+	}
+
+	private static function orderStatusLabel(Order $order): string
+	{
+		$statusId = trim((string)$order->getField('STATUS_ID'));
+		if ($statusId === '')
+		{
+			return '';
+		}
+
+		if (Loader::includeModule('sale') && class_exists(\CSaleStatus::class))
+		{
+			$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+			$row = \CSaleStatus::GetByID($statusId, $lang);
+			if (is_array($row))
+			{
+				$name = trim((string)($row['NAME'] ?? ''));
+				if ($name !== '')
+				{
+					return $name;
+				}
+			}
+		}
+
+		return $statusId;
+	}
+
+	private static function basketItemProductUrl(int $productId, Order $order): string
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return '';
+		}
+
+		$code = '';
+		if (Loader::includeModule('iblock') && class_exists(\CIBlockElement::class))
+		{
+			$res = \CIBlockElement::GetList(
+				[],
+				['ID' => $productId],
+				false,
+				['nTopCount' => 1],
+				['ID', 'CODE']
+			);
+			if ($row = $res->Fetch())
+			{
+				$code = trim((string)($row['CODE'] ?? ''));
+			}
+		}
+
+		$base = rtrim(self::siteUrl($order), '/');
+		if ($code !== '')
+		{
+			return $base . '/products/' . rawurlencode($code) . '/';
+		}
+
+		return $base . '/products/?ELEMENT_ID=' . $productId;
 	}
 
 	private static function basketItemProp(BasketItemBase $item, string $code): string

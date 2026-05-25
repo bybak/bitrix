@@ -43,6 +43,13 @@
     }
   }
 
+  function isBasketImagePlaceholder(src) {
+    if (!src) return true;
+    if (/no_photo\.png/i.test(src)) return true;
+    if (/mf-no-photo\.svg/i.test(src)) return true;
+    return false;
+  }
+
   function patchBasketImages(root) {
     root = root || document;
     var imgs = root.querySelectorAll('.basket-item-image');
@@ -50,6 +57,12 @@
       var img = imgs[i];
       var item = img.closest ? img.closest('[data-entity="basket-item"]') : null;
       if (!item) continue;
+
+      var cur = img.getAttribute('src') || '';
+      // Сервер уже подставил реальный URL (MF_EXT_IMAGES, /upload/, внешний CDN) — не затираем mf-img/0001.jpg
+      if (!isBasketImagePlaceholder(cur)) {
+        continue;
+      }
 
       var link =
         item.querySelector('a[href*="/products/"]') ||
@@ -67,9 +80,7 @@
         ? '/mf-img'
         : (window.location && window.location.protocol === 'https:' ? 'https://' : 'http://') + 'img-motor-force.ru';
       var target = base + '/products/' + code + '/0001.jpg';
-      var cur = img.getAttribute('src') || '';
-      // Bitrix basket UI may re-render and restore original /upload/ URLs.
-      // Keep enforcing our canonical image URL.
+      // Bitrix basket UI may re-render and restore placeholder — подставляем канонический mf-img только тогда.
       if (cur !== target) {
         img.setAttribute('src', target);
       }

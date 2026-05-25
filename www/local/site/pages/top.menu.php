@@ -50,13 +50,6 @@ $aMenuLinks = Array(
         ""
     ),
     Array(
-        "Документы",
-        "/documents/",
-        Array(),
-        Array(),
-        ""
-    ),
-    Array(
         "Ремонт моторов",
         "/remont_motorov/",
         Array(),

@@ -1418,7 +1418,7 @@ if (!function_exists('mf_store_delivery_spb_ui'))
 		$storeId = (int)$storeId;
 		$productId = (int)$productId;
 		$titleOk = 'Доставка до склада СПб включена';
-		$titleNoWeight = 'Вес товара не задан (0 г) — доставка до СПб с внешнего склада недоступна';
+		$titleNoWeight = 'Доставка не включена. Доставка: 18 долларов за кг';
 		if ($storeId <= 0)
 		{
 			return ['ok' => true, 'title' => $titleOk];

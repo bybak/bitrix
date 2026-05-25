@@ -26,21 +26,49 @@ if ($arResult['DATA_SAVED'] === 'Y')
 		<input type="hidden" name="EMAIL" value=<?=$arResult["arUser"]["EMAIL"]?> />
 
 		<h2><?=GetMessage("LEGEND_PROFILE")?></h2>
-		<strong><?=GetMessage('NAME')?></strong><br/>
-		<input type="text" name="NAME" maxlength="50" value="<?=$arResult["arUser"]["NAME"]?>" /><br><br>
 
-		<strong><?=GetMessage('LAST_NAME')?></strong><br/>
-		<input type="text" name="LAST_NAME" maxlength="50" value="<?=$arResult["arUser"]["LAST_NAME"]?>" /><br><br>
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('NAME')?></strong>
+			<input type="text" name="NAME" maxlength="50" value="<?=$arResult["arUser"]["NAME"]?>" />
+		</div>
 
-		<strong><?=GetMessage('SECOND_NAME')?></strong><br/>
-		<input type="text" name="SECOND_NAME" maxlength="50"  value="<?=$arResult["arUser"]["SECOND_NAME"]?>" /><br><br>
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('LAST_NAME')?></strong>
+			<input type="text" name="LAST_NAME" maxlength="50" value="<?=$arResult["arUser"]["LAST_NAME"]?>" />
+		</div>
+
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('SECOND_NAME')?></strong>
+			<input type="text" name="SECOND_NAME" maxlength="50" value="<?=$arResult["arUser"]["SECOND_NAME"]?>" />
+		</div>
+
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('MF_PERSONAL_PHONE')?></strong>
+			<input type="tel" name="PERSONAL_PHONE" maxlength="255" autocomplete="tel" value="<?=htmlspecialcharsbx((string)($arResult["arUser"]["PERSONAL_PHONE"] ?? ''))?>" />
+		</div>
+
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('MF_PERSONAL_CITY_REGION')?></strong>
+			<input type="text" name="PERSONAL_CITY" maxlength="255" value="<?=htmlspecialcharsbx((string)($arResult['MF_CITY_REGION'] ?? $arResult["arUser"]["PERSONAL_CITY"] ?? ''))?>" />
+			<input type="hidden" name="PERSONAL_STATE" value="" />
+		</div>
+
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('MF_PERSONAL_STREET')?></strong>
+			<input type="text" name="PERSONAL_STREET" maxlength="255" value="<?=htmlspecialcharsbx((string)($arResult["arUser"]["PERSONAL_STREET"] ?? ''))?>" />
+		</div>
 
 		<h2><?=GetMessage("MAIN_PSWD")?></h2>
-		<strong><?=GetMessage('NEW_PASSWORD_REQ')?></strong><br/>
-		<input type="password" name="NEW_PASSWORD" maxlength="50" value="" autocomplete="off" /> <br><br>
 
-		<strong><?=GetMessage('NEW_PASSWORD_CONFIRM')?></strong><br/>
-		<input type="password" name="NEW_PASSWORD_CONFIRM" maxlength="50" value="" autocomplete="off" /> <br><br>
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('NEW_PASSWORD_REQ')?></strong>
+			<input type="password" name="NEW_PASSWORD" maxlength="50" value="" autocomplete="off" />
+		</div>
+
+		<div class="mf-profile-field">
+			<strong><?=GetMessage('NEW_PASSWORD_CONFIRM')?></strong>
+			<input type="password" name="NEW_PASSWORD_CONFIRM" maxlength="50" value="" autocomplete="off" />
+		</div>
 
 		<?php
 		if($arResult["USER_PROPERTIES"]["SHOW"] === "Y"):
@@ -49,28 +77,29 @@ if ($arResult['DATA_SAVED'] === 'Y')
 			<?php
 			foreach ($arResult["USER_PROPERTIES"]["DATA"] as $FIELD_NAME => $arUserField):
 				?>
-				<strong><?=$arUserField["EDIT_FORM_LABEL"]?><?= ($arUserField["MANDATORY"] === "Y" ? '<span class="starrequired">*</span>' : '') ?></strong><br/>
-				<?php
-				$APPLICATION->IncludeComponent(
-					"bitrix:system.field.edit",
-					$arUserField["USER_TYPE"]["USER_TYPE_ID"],
-					[
-						"bVarsFromForm" => $arResult["bVarsFromForm"],
-						"arUserField" => $arUserField,
-					],
-					null,
-					[
-						"HIDE_ICONS" => "Y",
-					]
-				);?>
-				<br/>
+				<div class="mf-profile-field">
+					<strong><?=$arUserField["EDIT_FORM_LABEL"]?><?= ($arUserField["MANDATORY"] === "Y" ? '<span class="starrequired">*</span>' : '') ?></strong>
+					<?php
+					$APPLICATION->IncludeComponent(
+						"bitrix:system.field.edit",
+						$arUserField["USER_TYPE"]["USER_TYPE_ID"],
+						[
+							"bVarsFromForm" => $arResult["bVarsFromForm"],
+							"arUserField" => $arUserField,
+						],
+						null,
+						[
+							"HIDE_ICONS" => "Y",
+						]
+					);?>
+				</div>
 			<?php
 			endforeach;
 		endif;
 		?>
 
-		<input name="save" value="<?=GetMessage("MAIN_SAVE")?>" class="bx_bt_button bx_big shadow" type="submit">
+		<div class="mf-profile-actions">
+			<input name="save" value="<?=GetMessage("MAIN_SAVE")?>" class="bx_bt_button bx_big shadow" type="submit">
+		</div>
 	</form>
 </div>
-<br>
-// Social profile linking (socserv) intentionally disabled for this project.

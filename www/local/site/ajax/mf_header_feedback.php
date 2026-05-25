@@ -126,43 +126,47 @@ try
 		$from = $toPrimary;
 	}
 
-	$lines = [];
+	$metaRows = [
+		['Дата', date('Y-m-d H:i:s')],
+		['Страница', $pageUrl !== '' ? $pageUrl : '—'],
+		['Авторизован', $isAuthorized ? 'да' : 'нет'],
+	];
+	if ($isAuthorized && method_exists($USER, 'GetID'))
+	{
+		$metaRows[] = ['ID пользователя', (string)$USER->GetID()];
+	}
+
 	if ($formType === 'write_us')
 	{
 		$subject = 'Сообщение с сайта: ' . $name;
-		$lines[] = 'Напишите нам — форма в шапке сайта';
+		$dataRows = array_merge($metaRows, [
+			['Имя', $name],
+			['E-mail', $email],
+			['Сообщение', $message],
+		]);
+		$htmlBody = \Mf\SiteMail\Renderer::render(
+			'Сообщение с сайта',
+			'Напишите нам — форма в шапке сайта',
+			$dataRows
+		);
 	}
 	else
 	{
 		$subject = 'Заявка на обратный звонок: ' . $name;
-		$lines[] = 'Обратный звонок — форма в шапке сайта';
-	}
-	$lines[] = 'Дата: ' . date('Y-m-d H:i:s');
-	$lines[] = 'IP: ' . (string)($_SERVER['REMOTE_ADDR'] ?? '');
-	$lines[] = 'Страница: ' . ($pageUrl !== '' ? $pageUrl : '—');
-	$lines[] = 'Авторизован: ' . ($isAuthorized ? 'да' : 'нет');
-	if ($isAuthorized && method_exists($USER, 'GetID'))
-	{
-		$lines[] = 'ID пользователя: ' . (string)$USER->GetID();
-	}
-	$lines[] = '---';
-	$lines[] = 'Имя: ' . $name;
-	if ($formType === 'write_us')
-	{
-		$lines[] = 'E-mail: ' . $email;
-		$lines[] = 'Сообщение:';
-		$lines[] = $message;
-	}
-	else
-	{
-		$lines[] = 'Телефон: ' . $phone;
+		$dataRows = array_merge($metaRows, [
+			['Имя', $name],
+			['Телефон', $phone],
+		]);
 		if ($message !== '')
 		{
-			$lines[] = 'Комментарий:';
-			$lines[] = $message;
+			$dataRows[] = ['Комментарий', $message];
 		}
+		$htmlBody = \Mf\SiteMail\Renderer::render(
+			'Заявка на обратный звонок',
+			'Обратный звонок — форма в шапке сайта',
+			$dataRows
+		);
 	}
-	$body = implode("\n", $lines) . "\n";
 
 	$header = ['From' => $from];
 	if ($formType === 'write_us' && filter_var($email, FILTER_VALIDATE_EMAIL))
@@ -180,9 +184,9 @@ try
 	$sent = class_exists(Mail::class) && Mail::send([
 		'TO' => $toPrimary,
 		'SUBJECT' => $subject,
-		'BODY' => $body,
+		'BODY' => $htmlBody,
 		'CHARSET' => 'UTF-8',
-		'CONTENT_TYPE' => 'text',
+		'CONTENT_TYPE' => 'html',
 		'HEADER' => $header,
 	]);
 	if (!$sent)

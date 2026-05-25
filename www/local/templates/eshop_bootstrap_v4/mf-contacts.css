@@ -223,6 +223,14 @@
 	color: rgba(0,0,0,.55);
 }
 
+.mf-contacts-page .contact__icon_max{
+	fill: none;
+}
+.mf-contacts-page .contact__icon_max svg{
+	width: 24px;
+	height: 24px;
+}
+
 /* Requisites as a card */
 .mf-contacts-page #contactsdetails .company-detail__content{
 	border: var(--mf-border);

@@ -1902,8 +1902,20 @@ if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 					$basketImagesScaling
 				);
 			}
-			// Как в корзине (mf-cart.js): канонические картинки с внешнего хоста /mf-img, а не только /upload/resize
-			if (function_exists('mf_mf_product_img_url'))
+			// Как на витрине, если Bitrix не дал SRC: MF_EXT_IMAGES / аналоги / mf-img
+			$hasPreviewSrc = trim((string)($d['PREVIEW_PICTURE_SRC'] ?? '')) !== '';
+			if (!$hasPreviewSrc && function_exists('mf_mf_product_card_preview_src'))
+			{
+				$catalogCode = mf_catalog_element_code_for_basket_row($productId, $d);
+				$mfSrc = (string)mf_mf_product_card_preview_src($productId, $catalogCode);
+				if ($mfSrc !== '')
+				{
+					$d['PREVIEW_PICTURE_SRC'] = $mfSrc;
+					$d['PREVIEW_PICTURE_SRC_2X'] = $mfSrc;
+					$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $mfSrc;
+				}
+			}
+			elseif (!$hasPreviewSrc && function_exists('mf_mf_product_img_url'))
 			{
 				$catalogCode = mf_catalog_element_code_for_basket_row($productId, $d);
 				if ($catalogCode !== '')

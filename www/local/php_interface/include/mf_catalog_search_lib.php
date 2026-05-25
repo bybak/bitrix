@@ -1,7 +1,7 @@
 <?php
 /**
  * Быстрый поиск по каталогу (IBLOCK) без CSearch.
- * Артикулы — прямой SQL (b_iblock_element_prop_s{N}), текст — только NAME.
+ * Артикулы — прямой SQL (b_iblock_element_prop_s{N}), текст — NAME / свойства бренда и артикула.
  */
 
 if (!function_exists('mf_catalog_search_iblock_id'))
@@ -228,6 +228,213 @@ if (!function_exists('mf_catalog_search_fetch_rows_by_ids'))
 	}
 }
 
+if (!function_exists('mf_catalog_search_merge_unique_ids'))
+{
+	/**
+	 * @param int[] $base
+	 * @param int[] $add
+	 * @return int[]
+	 */
+	function mf_catalog_search_merge_unique_ids(array $base, array $add): array
+	{
+		$seen = [];
+		foreach ($base as $id)
+		{
+			$id = (int)$id;
+			if ($id > 0)
+			{
+				$seen[$id] = true;
+			}
+		}
+
+		foreach ($add as $id)
+		{
+			$id = (int)$id;
+			if ($id > 0 && !isset($seen[$id]))
+			{
+				$seen[$id] = true;
+				$base[] = $id;
+			}
+		}
+
+		return $base;
+	}
+}
+
+if (!function_exists('mf_catalog_search_ensure_brand_dict'))
+{
+	function mf_catalog_search_ensure_brand_dict(): void
+	{
+		if (function_exists('mf_brand_find'))
+		{
+			return;
+		}
+
+		$dictFile = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/mf_brand_dict.php';
+		if ($dictFile !== '' && is_file($dictFile))
+		{
+			require_once $dictFile;
+		}
+	}
+}
+
+if (!function_exists('mf_catalog_search_brand_sort_context'))
+{
+	/**
+	 * Контекст приоритета брендов: канон из сопоставления vs исходный алиас.
+	 *
+	 * @return array{preferred: array<string, string>, aliases: array<string, true>}
+	 */
+	function mf_catalog_search_brand_sort_context(string $query): array
+	{
+		mf_catalog_search_ensure_brand_dict();
+
+		$preferred = [];
+		$aliases = [];
+		if (!function_exists('mf_brand_find') || !function_exists('mf_brand_norm'))
+		{
+			return ['preferred' => $preferred, 'aliases' => $aliases];
+		}
+
+		$candidates = mf_catalog_search_text_words($query);
+		$query = trim($query);
+		if ($query !== '')
+		{
+			$candidates[] = $query;
+		}
+
+		$seen = [];
+		foreach ($candidates as $candidate)
+		{
+			$candidate = trim((string)$candidate);
+			if ($candidate === '' || isset($seen[mb_strtolower($candidate)]))
+			{
+				continue;
+			}
+			$seen[mb_strtolower($candidate)] = true;
+
+			$canon = mf_brand_find($candidate, false);
+			if ($canon === '')
+			{
+				continue;
+			}
+
+			$canonNorm = mf_brand_norm($canon);
+			$aliasNorm = mf_brand_norm($candidate);
+			if ($canonNorm !== '')
+			{
+				$preferred[$canonNorm] = $canon;
+			}
+			if ($aliasNorm !== '' && $aliasNorm !== $canonNorm)
+			{
+				$aliases[$aliasNorm] = true;
+			}
+		}
+
+		return ['preferred' => $preferred, 'aliases' => $aliases];
+	}
+}
+
+if (!function_exists('mf_catalog_search_brand_rank_for_product'))
+{
+	/**
+	 * @param array{preferred: array<string, string>, aliases: array<string, true>} $ctx
+	 */
+	function mf_catalog_search_brand_rank_for_product(string $brandNorm, array $ctx): int
+	{
+		$brandNorm = trim($brandNorm);
+		if ($brandNorm === '')
+		{
+			return 2;
+		}
+		if (isset($ctx['preferred'][$brandNorm]))
+		{
+			return 0;
+		}
+		if (isset($ctx['aliases'][$brandNorm]))
+		{
+			return 1;
+		}
+
+		return 2;
+	}
+}
+
+if (!function_exists('mf_catalog_search_sort_result_ids'))
+{
+	/**
+	 * Приоритет: наличие → сопоставленный бренд → тип совпадения → исходный порядок.
+	 *
+	 * @param int[] $ids
+	 * @param array<int, int> $tierMap 0=артикул, 1=артикул в названии, 2=текст
+	 * @return int[]
+	 */
+	function mf_catalog_search_sort_result_ids(array $ids, string $query, array $tierMap): array
+	{
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+		if (count($ids) <= 1)
+		{
+			return $ids;
+		}
+
+		$stockMap = function_exists('mf_catalog_batch_products_have_stock')
+			? mf_catalog_batch_products_have_stock($ids)
+			: [];
+
+		$brandMap = [];
+		foreach (mf_catalog_search_fetch_rows_by_ids($ids) as $id => $row)
+		{
+			$brand = trim((string)($row['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+			if ($brand === '')
+			{
+				$brand = trim((string)($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
+			}
+			if (function_exists('mf_brand_norm'))
+			{
+				mf_catalog_search_ensure_brand_dict();
+				$brandMap[(int)$id] = mf_brand_norm($brand);
+			}
+			else
+			{
+				$brandMap[(int)$id] = mb_strtoupper($brand);
+			}
+		}
+
+		$brandCtx = mf_catalog_search_brand_sort_context($query);
+		$indexed = [];
+		foreach ($ids as $pos => $id)
+		{
+			$id = (int)$id;
+			$indexed[] = [
+				'id' => $id,
+				'pos' => $pos,
+				'stock' => !empty($stockMap[$id]) ? 0 : 1,
+				'brand_rank' => mf_catalog_search_brand_rank_for_product((string)($brandMap[$id] ?? ''), $brandCtx),
+				'tier' => (int)($tierMap[$id] ?? 9),
+			];
+		}
+
+		usort($indexed, static function (array $a, array $b): int {
+			if ($a['stock'] !== $b['stock'])
+			{
+				return $a['stock'] <=> $b['stock'];
+			}
+			if ($a['brand_rank'] !== $b['brand_rank'])
+			{
+				return $a['brand_rank'] <=> $b['brand_rank'];
+			}
+			if ($a['tier'] !== $b['tier'])
+			{
+				return $a['tier'] <=> $b['tier'];
+			}
+
+			return $a['pos'] <=> $b['pos'];
+		});
+
+		return array_values(array_map(static fn(array $row): int => (int)$row['id'], $indexed));
+	}
+}
+
 if (!function_exists('mf_catalog_search_is_article_only_query'))
 {
 	function mf_catalog_search_is_article_only_query(string $query): bool
@@ -349,6 +556,209 @@ if (!function_exists('mf_catalog_search_ids_by_articles'))
 					AND p.VALUE IN (' . $inValues . ')
 				ORDER BY p.IBLOCK_ELEMENT_ID
 				LIMIT 120';
+		}
+
+		return mf_catalog_search_sql_ids($sql);
+	}
+}
+
+if (!function_exists('mf_catalog_search_ids_by_article_in_name'))
+{
+	/**
+	 * Товары, в названии которых встречается артикул из запроса.
+	 *
+	 * @param string[] $candidates
+	 * @return int[]
+	 */
+	function mf_catalog_search_ids_by_article_in_name(array $candidates, int $limit = 120): array
+	{
+		$values = mf_catalog_search_article_values($candidates);
+		if (empty($values) || !class_exists(\Bitrix\Main\Application::class))
+		{
+			return [];
+		}
+
+		$filtered = [];
+		foreach ($values as $value)
+		{
+			$value = trim((string)$value);
+			if ($value === '' || mb_strlen($value) < 3)
+			{
+				continue;
+			}
+			if (function_exists('mf_analogs_norm_article') && function_exists('mf_search_query_article_is_plausible'))
+			{
+				$norm = mf_analogs_norm_article($value);
+				if ($norm !== '' && !mf_search_query_article_is_plausible($norm))
+				{
+					continue;
+				}
+			}
+			$filtered[] = $value;
+		}
+		$filtered = array_values(array_unique($filtered));
+		if (empty($filtered))
+		{
+			return [];
+		}
+
+		$helper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+		$iblockId = mf_catalog_search_iblock_id();
+		$where = ["e.IBLOCK_ID = {$iblockId}", "e.ACTIVE = 'Y'"];
+		$nameConds = [];
+		foreach ($filtered as $value)
+		{
+			$nameConds[] = "e.NAME LIKE '%" . $helper->forSql($value) . "%'";
+		}
+		$where[] = '(' . implode(' OR ', $nameConds) . ')';
+
+		$sql = '
+			SELECT e.ID
+			FROM b_iblock_element e
+			WHERE ' . implode(' AND ', $where) . '
+			ORDER BY e.NAME
+			LIMIT ' . (int)$limit;
+
+		return mf_catalog_search_sql_ids($sql);
+	}
+}
+
+if (!function_exists('mf_catalog_search_ids_by_name_words'))
+{
+	/**
+	 * @param string[] $words
+	 * @return int[]
+	 */
+	function mf_catalog_search_ids_by_name_words(array $words, int $limit = 120): array
+	{
+		if (empty($words) || !class_exists(\Bitrix\Main\Application::class))
+		{
+			return [];
+		}
+
+		$helper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+		$iblockId = mf_catalog_search_iblock_id();
+		$where = ["e.IBLOCK_ID = {$iblockId}", "e.ACTIVE = 'Y'"];
+		foreach ($words as $word)
+		{
+			$where[] = "e.NAME LIKE '%" . $helper->forSql((string)$word) . "%'";
+		}
+
+		$sql = '
+			SELECT e.ID
+			FROM b_iblock_element e
+			WHERE ' . implode(' AND ', $where) . '
+			ORDER BY e.NAME
+			LIMIT ' . (int)$limit;
+
+		return mf_catalog_search_sql_ids($sql);
+	}
+}
+
+if (!function_exists('mf_catalog_search_ids_by_name_substring'))
+{
+	function mf_catalog_search_ids_by_name_substring(string $term, int $limit = 120): array
+	{
+		$term = trim($term);
+		if ($term === '' || mb_strlen($term) < 2 || !class_exists(\Bitrix\Main\Application::class))
+		{
+			return [];
+		}
+
+		$helper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+		$iblockId = mf_catalog_search_iblock_id();
+		$sql = '
+			SELECT e.ID
+			FROM b_iblock_element e
+			WHERE e.IBLOCK_ID = ' . $iblockId . "
+				AND e.ACTIVE = 'Y'
+				AND e.NAME LIKE '%" . $helper->forSql($term) . "%'
+			ORDER BY e.NAME
+			LIMIT " . (int)$limit;
+
+		return mf_catalog_search_sql_ids($sql);
+	}
+}
+
+if (!function_exists('mf_catalog_search_ids_by_property_substrings'))
+{
+	/**
+	 * Поиск подстроки в свойствах артикула / бренда.
+	 *
+	 * @param string[] $propertyCodes
+	 * @param string[] $terms
+	 * @return int[]
+	 */
+	function mf_catalog_search_ids_by_property_substrings(array $propertyCodes, array $terms, int $limit = 120): array
+	{
+		$terms = array_values(array_unique(array_filter(array_map('trim', $terms), static fn($t) => $t !== '' && mb_strlen((string)$t) >= 2)));
+		if (empty($terms) || empty($propertyCodes) || !class_exists(\Bitrix\Main\Application::class))
+		{
+			return [];
+		}
+
+		$iblockId = mf_catalog_search_iblock_id();
+		$meta = mf_catalog_search_meta($iblockId);
+		$version = (int)($meta['version'] ?? 1);
+		$props = (array)($meta['props'] ?? []);
+		$pids = [];
+		foreach ($propertyCodes as $code)
+		{
+			$pid = (int)($props[$code] ?? 0);
+			if ($pid > 0)
+			{
+				$pids[$pid] = true;
+			}
+		}
+		if (empty($pids))
+		{
+			return [];
+		}
+
+		$helper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+		$valueConds = [];
+		foreach ($terms as $term)
+		{
+			$valueConds[] = "p.VALUE LIKE '%" . $helper->forSql((string)$term) . "%'";
+		}
+
+		if ($version === 2)
+		{
+			$propConds = [];
+			foreach (array_keys($pids) as $pid)
+			{
+				foreach ($terms as $term)
+				{
+					$propConds[] = 's.PROPERTY_' . (int)$pid . " LIKE '%" . $helper->forSql((string)$term) . "%'";
+				}
+			}
+			if (empty($propConds))
+			{
+				return [];
+			}
+
+			$sql = '
+				SELECT DISTINCT s.IBLOCK_ELEMENT_ID AS ID
+				FROM b_iblock_element_prop_s' . $iblockId . ' s
+				INNER JOIN b_iblock_element e ON e.ID = s.IBLOCK_ELEMENT_ID
+				WHERE e.IBLOCK_ID = ' . $iblockId . "
+					AND e.ACTIVE = 'Y'
+					AND (" . implode(' OR ', $propConds) . ')
+				ORDER BY s.IBLOCK_ELEMENT_ID
+				LIMIT ' . (int)$limit;
+		}
+		else
+		{
+			$sql = '
+				SELECT DISTINCT p.IBLOCK_ELEMENT_ID AS ID
+				FROM b_iblock_element_property p
+				INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID
+				WHERE e.IBLOCK_ID = ' . $iblockId . "
+					AND e.ACTIVE = 'Y'
+					AND p.IBLOCK_PROPERTY_ID IN (" . implode(',', array_keys($pids)) . ')
+					AND (' . implode(' OR ', $valueConds) . ')
+				ORDER BY p.IBLOCK_ELEMENT_ID
+				LIMIT ' . (int)$limit;
 		}
 
 		return mf_catalog_search_sql_ids($sql);
@@ -484,59 +894,78 @@ if (!function_exists('mf_catalog_search_ids_by_brand_words'))
 if (!function_exists('mf_catalog_search_ids_by_text'))
 {
 	/**
+	 * Текстовый поиск: название, артикулы, бренды (включая сопоставленные алиасы).
+	 *
 	 * @return int[]
 	 */
-	function mf_catalog_search_ids_by_text(string $query, int $limit = 80): array
+	function mf_catalog_search_ids_by_text(string $query, int $limit = 120): array
 	{
 		$query = trim($query);
-		if ($query === '' || mb_strlen($query) < 2 || !class_exists(\Bitrix\Main\Application::class))
+		if ($query === '' || mb_strlen($query) < 2)
 		{
 			return [];
 		}
+
+		mf_catalog_search_ensure_brand_dict();
 
 		$words = mf_catalog_search_text_words($query);
-		if (empty($words))
+		$brandWords = $words;
+		if (function_exists('mf_brand_find'))
 		{
-			return [];
-		}
-
-		$brandIds = mf_catalog_search_ids_by_brand_words($words, $limit);
-		if (!empty($brandIds) && count($words) === 1 && mb_strlen($words[0]) <= 6)
-		{
-			return $brandIds;
-		}
-
-		$helper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
-		$iblockId = mf_catalog_search_iblock_id();
-		$where = ["e.IBLOCK_ID = {$iblockId}", "e.ACTIVE = 'Y'"];
-		foreach ($words as $word)
-		{
-			$where[] = "e.NAME LIKE '%" . $helper->forSql($word) . "%'";
-		}
-
-		$sql = '
-			SELECT e.ID
-			FROM b_iblock_element e
-			WHERE ' . implode(' AND ', $where) . '
-			ORDER BY e.NAME
-			LIMIT ' . (int)$limit;
-
-		$ids = mf_catalog_search_sql_ids($sql);
-		if (empty($ids))
-		{
-			return $brandIds;
-		}
-
-		$seen = [];
-		$merged = [];
-		foreach (array_merge($brandIds, $ids) as $id)
-		{
-			$id = (int)$id;
-			if ($id > 0 && !isset($seen[$id]))
+			$brandCandidates = $words;
+			$brandCandidates[] = $query;
+			$seenBrand = [];
+			foreach ($brandCandidates as $candidate)
 			{
-				$seen[$id] = true;
-				$merged[] = $id;
+				$candidate = trim((string)$candidate);
+				if ($candidate === '' || isset($seenBrand[mb_strtolower($candidate)]))
+				{
+					continue;
+				}
+				$seenBrand[mb_strtolower($candidate)] = true;
+				$canon = mf_brand_find($candidate, false);
+				if ($canon !== '')
+				{
+					$brandWords[] = $canon;
+					$brandWords[] = $candidate;
+				}
 			}
+		}
+		$brandWords = array_values(array_unique(array_filter(array_map('trim', $brandWords))));
+
+		$parts = [];
+		if (!empty($brandWords))
+		{
+			$parts[] = mf_catalog_search_ids_by_brand_words($brandWords, $limit);
+		}
+		if (!empty($words))
+		{
+			$parts[] = mf_catalog_search_ids_by_name_words($words, $limit);
+			$parts[] = mf_catalog_search_ids_by_property_substrings(
+				['CML2_ARTICLE', 'MF_ARTICLE_NORM', 'MF_BRAND', 'MF_BRAND_NORM'],
+				$words,
+				$limit
+			);
+		}
+		if (mb_strlen($query) >= 2)
+		{
+			$parts[] = mf_catalog_search_ids_by_name_substring($query, $limit);
+			$parts[] = mf_catalog_search_ids_by_property_substrings(
+				['CML2_ARTICLE', 'MF_ARTICLE_NORM', 'MF_BRAND', 'MF_BRAND_NORM'],
+				[$query],
+				$limit
+			);
+		}
+
+		$merged = [];
+		foreach ($parts as $chunk)
+		{
+			$merged = mf_catalog_search_merge_unique_ids($merged, (array)$chunk);
+		}
+
+		if (count($merged) > $limit)
+		{
+			$merged = array_slice($merged, 0, $limit);
 		}
 
 		return $merged;
@@ -567,7 +996,7 @@ if (!function_exists('mf_catalog_search_collect_ids'))
 		if (class_exists(\Bitrix\Main\Data\Cache::class))
 		{
 			$cache = \Bitrix\Main\Data\Cache::createInstance();
-			$cacheId = 'ids_v3_' . $key;
+			$cacheId = 'ids_v4_' . $key;
 			$cacheDir = '/mf/catalog_search';
 			if ($cache->initCache(900, $cacheId, $cacheDir))
 			{
@@ -588,32 +1017,50 @@ if (!function_exists('mf_catalog_search_collect_ids'))
 			require_once $lib;
 		}
 
-		$articleIds = [];
-		if (function_exists('mf_search_query_article_candidates'))
-		{
-			$articleIds = mf_catalog_search_ids_by_articles(mf_search_query_article_candidates($query));
-		}
+		$tierMap = [];
+		$ids = [];
+		$articleCandidates = function_exists('mf_search_query_article_candidates')
+			? mf_search_query_article_candidates($query)
+			: [];
 
-		$ids = $articleIds;
-		$seen = [];
-		foreach ($ids as $id)
+		$articleIds = !empty($articleCandidates)
+			? mf_catalog_search_ids_by_articles($articleCandidates)
+			: [];
+		foreach ($articleIds as $id)
 		{
-			$seen[(int)$id] = true;
-		}
-
-		$skipText = !empty($articleIds) || mf_catalog_search_is_article_only_query($query);
-		if (!$skipText)
-		{
-			foreach (mf_catalog_search_ids_by_text($query, 80) as $id)
+			$id = (int)$id;
+			if ($id > 0)
 			{
-				$id = (int)$id;
-				if ($id > 0 && !isset($seen[$id]))
-				{
-					$seen[$id] = true;
-					$ids[] = $id;
-				}
+				$tierMap[$id] = 0;
 			}
 		}
+		$ids = mf_catalog_search_merge_unique_ids($ids, $articleIds);
+
+		$nameArticleIds = !empty($articleCandidates)
+			? mf_catalog_search_ids_by_article_in_name($articleCandidates)
+			: [];
+		foreach ($nameArticleIds as $id)
+		{
+			$id = (int)$id;
+			if ($id > 0 && !isset($tierMap[$id]))
+			{
+				$tierMap[$id] = 1;
+			}
+		}
+		$ids = mf_catalog_search_merge_unique_ids($ids, $nameArticleIds);
+
+		$textIds = mf_catalog_search_ids_by_text($query, 160);
+		foreach ($textIds as $id)
+		{
+			$id = (int)$id;
+			if ($id > 0 && !isset($tierMap[$id]))
+			{
+				$tierMap[$id] = 2;
+			}
+		}
+		$ids = mf_catalog_search_merge_unique_ids($ids, $textIds);
+
+		$ids = mf_catalog_search_sort_result_ids($ids, $query, $tierMap);
 
 		$result = [
 			'ids' => $ids,

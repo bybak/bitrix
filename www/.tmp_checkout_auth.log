@@ -471,3 +471,5 @@
 2026-05-21T17:49:36+03:00 initDelivery {"user_id":1,"person_type_id":1,"delivery_id":8,"buyer_store":0,"delivery_count":1}
 2026-05-21T17:49:49+03:00 initUserProfiles {"user_id":1,"person_type_id":1,"request_method":"POST","profile_id":2,"profile_change":"N","profiles_count":1}
 2026-05-21T17:49:49+03:00 initDelivery {"user_id":1,"person_type_id":1,"delivery_id":8,"buyer_store":0,"delivery_count":1}
+2026-05-25T07:31:15+03:00 initUserProfiles {"user_id":1,"person_type_id":1,"request_method":"GET","profile_id":2,"profile_change":"","profiles_count":1}
+2026-05-25T07:31:15+03:00 initDelivery {"user_id":1,"person_type_id":1,"delivery_id":8,"buyer_store":0,"delivery_count":1}

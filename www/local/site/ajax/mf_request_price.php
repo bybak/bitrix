@@ -97,24 +97,28 @@ try
 		$from = $toPrimary;
 	}
 
-	$lines = [];
-	$lines[] = 'Запрос цены с поиска';
-	$lines[] = 'Дата: ' . date('Y-m-d H:i:s');
-	$lines[] = 'IP: ' . (string)($_SERVER['REMOTE_ADDR'] ?? '');
-	$lines[] = 'Авторизован: ' . ($isAuthorized ? 'да' : 'нет');
+	$dataRows = [
+		['Дата', date('Y-m-d H:i:s')],
+		['Авторизован', $isAuthorized ? 'да' : 'нет'],
+	];
 	if ($isAuthorized && method_exists($USER, 'GetID'))
 	{
-		$lines[] = 'ID пользователя: ' . (string)$USER->GetID();
+		$dataRows[] = ['ID пользователя', (string)$USER->GetID()];
 	}
-	$lines[] = '---';
-	$lines[] = 'Товар ID: ' . ($productId > 0 ? (string)$productId : '—');
-	$lines[] = 'Товар: ' . $productName;
-	$lines[] = 'Ссылка: ' . ($productUrl !== '' ? $productUrl : '—');
-	$lines[] = 'Имя: ' . $name;
-	$lines[] = 'E-mail: ' . $email;
-	$lines[] = 'Комментарий:';
-	$lines[] = ($comment !== '' ? $comment : '—');
-	$body = implode("\n", $lines) . "\n";
+	$dataRows = array_merge($dataRows, [
+		['Товар ID', $productId > 0 ? (string)$productId : '—'],
+		['Товар', $productName],
+		['Ссылка', $productUrl !== '' ? $productUrl : '—'],
+		['Имя', $name],
+		['E-mail', $email],
+		['Комментарий', $comment !== '' ? $comment : '—'],
+	]);
+
+	$htmlBody = \Mf\SiteMail\Renderer::render(
+		'Запрос цены',
+		'Запрос цены с поиска',
+		$dataRows
+	);
 
 	// Bitrix\Main\Mail\Mail: HEADER — массив. Несколько адресов в To ломают часть MTA (Mail.ru + Gmail).
 	// Один основной получатель в To, остальные — Bcc.
@@ -137,9 +141,9 @@ try
 	$params = [
 		'TO' => $toPrimary,
 		'SUBJECT' => $subject,
-		'BODY' => $body,
+		'BODY' => $htmlBody,
 		'CHARSET' => 'UTF-8',
-		'CONTENT_TYPE' => 'text',
+		'CONTENT_TYPE' => 'html',
 		'HEADER' => $header,
 	];
 

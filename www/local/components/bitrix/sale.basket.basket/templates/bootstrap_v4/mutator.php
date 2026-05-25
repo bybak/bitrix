@@ -133,6 +133,24 @@ foreach ($this->basketItems as $row)
 		}
 	}
 
+	if (empty($rowData['IMAGE_URL']) && (int)$rowData['PRODUCT_ID'] > 0 && function_exists('mf_mf_product_card_preview_src'))
+	{
+		$catalogCode = '';
+		if (function_exists('mf_catalog_element_code_for_basket_row'))
+		{
+			$catalogCode = mf_catalog_element_code_for_basket_row((int)$rowData['PRODUCT_ID'], $row);
+		}
+		elseif (!empty($row['DETAIL_PAGE_URL']) && preg_match('#/products/([^/]+)/?#', (string)$row['DETAIL_PAGE_URL'], $mCode))
+		{
+			$catalogCode = (string)$mCode[1];
+		}
+		$previewSrc = (string)mf_mf_product_card_preview_src((int)$rowData['PRODUCT_ID'], $catalogCode);
+		if ($previewSrc !== '')
+		{
+			$rowData['IMAGE_URL'] = $previewSrc;
+		}
+	}
+
 	if (!empty($row['SKU_DATA']))
 	{
 		$propMap = array();

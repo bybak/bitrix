@@ -85,15 +85,15 @@ $mfForm = mf_handle_static_form(
 <p>Бренды: BRP (Can-Am, Ski-Doo, Sea-Doo, Lynx), Polaris, Yamaha, Arctic Cat, Kawasaki, Honda, Suzuki и многие другие.</p>
 <p><br /></p>
 <h3>Как начать сотрудничество</h3>
-<p>1. Напишите нам на почту или через сайт &mdash; расскажите о вашем бизнесе (салон, магазин, сервис, прокат).<br />2.&nbsp;Пришлите ссылку на ваш сайт или краткое описание.<br />3. Зарегистрируйтесь на нашем оптовом сайте для доступа к ценам и заказам в любое время:&nbsp;<span style="font-weight: bold;"><a href="https://opt.motor-force.ru/" class="">opt.motor-force.ru</a></span></p>
+<p>1. Зарегистрируйтесь на нашем сайте для доступа к ценам и заказам в любое время.<br />2. Напишите нам на почту или через сайт &mdash; расскажите о вашем бизнесе (салон, магазин, сервис, прокат) для предоставления скидок.</p>
 </div>
 </div></div></div><div class=" mrb-row__content -inline-group_top mrb-row-index-1"><div class="mrb-small-18 mrb-medium-18
             mrb-col-index-0 mrb-large-18"><div class="-gd-content mrb-block-index-0"><div id="mrb-button-block"
      class="user-inner mrb-button-block theme-default"
      style="text-align: center">
-    <a href="https://opt.motor-force.ru/"
-       target="_blank"               class="mrb-btn-medium mrb-btn-item a">
-        <span class="mrb-btn-item-text">Посетить оптовый сайт</span>
+    <a href="/login/?register=yes&amp;backurl=/sotrudnichestvo/"
+       class="mrb-btn-medium mrb-btn-item a">
+        <span class="mrb-btn-item-text">Зарегистрироваться</span>
     </a>
 </div>
 </div></div></div><div class=" mrb-row__content -inline-group_top mrb-row-index-2"><div class="mrb-small-18 mrb-medium-18

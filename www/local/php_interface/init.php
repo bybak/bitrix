@@ -3537,3 +3537,13 @@ if (is_file($mfContactMapInclude))
 {
 	require_once $mfContactMapInclude;
 }
+
+$mfSiteMailInclude = __DIR__ . '/include/mf_site_mail.php';
+if (is_file($mfSiteMailInclude))
+{
+	require_once $mfSiteMailInclude;
+	if (class_exists('\\Mf\\SiteMail\\Bootstrap'))
+	{
+		\Mf\SiteMail\Bootstrap::init();
+	}
+}

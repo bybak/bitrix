@@ -57,7 +57,6 @@
 				<div class="col-6 col-md-4 col-lg-3 mb-4 mb-lg-0">
 					<div class="mf-footer-title">Услуги</div>
 					<ul class="mf-footer-links">
-						<li><a href="/prokat/">Прокат техники</a></li>
 						<li><a href="/remont_motorov/">Ремонт моторов</a></li>
 						<li><a href="/vikup_mototehniki/">Выкуп мототехники</a></li>
 						<li><a href="/sotrudnichestvo/">Сотрудничество</a></li>
@@ -69,7 +68,6 @@
 					<ul class="mf-footer-links">
 						<li><a href="/posts/">Новости</a></li>
 						<li><a href="/blog/">Блог</a></li>
-						<li><a href="/documents/">Документы</a></li>
 						<li><a href="/dogovor-oferti/">Договор оферты</a></li>
 					</ul>
 

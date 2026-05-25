@@ -79,16 +79,6 @@ if (is_file($mfSearchRenderLib))
 						/>
 						<button class="mf-shop-search__btn" type="submit"><?=GetMessage('SEARCH_GO')?></button>
 						<input type="hidden" name="how" value="<?=$how?>" />
-						<?php if ($arParams['SHOW_WHERE']): ?>
-							<select name="where" class="mf-search__where">
-								<option value=""><?=GetMessage('SEARCH_ALL')?></option>
-								<?php foreach (($arResult['DROPDOWN'] ?? []) as $key => $value): ?>
-									<option value="<?=htmlspecialcharsbx($key)?>"<?=((string)($arResult['REQUEST']['WHERE'] ?? '') === (string)$key) ? ' selected' : ''?>>
-										<?=htmlspecialcharsbx($value)?>
-									</option>
-								<?php endforeach; ?>
-							</select>
-						<?php endif; ?>
 				</form>
 			</div>
 

@@ -572,7 +572,6 @@ final class Sender
 			return;
 		}
 
-		$payment = null;
 		$paymentSystemId = 0;
 
 		$pc = $order->getPaymentCollection();
@@ -587,7 +586,6 @@ final class Sender
 				$psid = (int)$p->getPaymentSystemId();
 				if ($psid > 0)
 				{
-					$payment = $p;
 					$paymentSystemId = $psid;
 					break;
 				}
@@ -599,81 +597,8 @@ final class Sender
 			return;
 		}
 
-		$emailTo = '';
-		$props = $order->getPropertyCollection();
-		if ($props && method_exists($props, 'getUserEmail'))
-		{
-			$ep = $props->getUserEmail();
-			if ($ep)
-			{
-				$emailTo = trim((string)$ep->getValue());
-			}
-		}
-		$emailToOverride = Config::emailToOverride();
-		if ($emailToOverride !== '')
-		{
-			$emailTo = $emailToOverride;
-		}
-
-		if ($emailTo === '')
-		{
-			Db::markError($orderId, $paymentSystemId, '', 'Empty customer email');
-			return;
-		}
-
-		$siteId = (string)$order->getSiteId();
-		if ($siteId === '')
-		{
-			$siteId = SITE_ID;
-		}
-
-		try
-		{
-			Installer::ensureMailEventTemplates();
-
-			$payload = [
-				'EVENT_NAME' => Installer::EVENT_NAME,
-				'LID' => $siteId,
-				'C_FIELDS' => TemplateRenderer::buildFields($order, $payment),
-			];
-			$payload['C_FIELDS']['EMAIL_TO'] = $emailTo;
-
-			// Important:
-			// In many Bitrix setups emails are queued into b_event and require cron/agents to actually send.
-			// For this payment method we need immediate delivery.
-			$res = method_exists(MailEvent::class, 'sendImmediate')
-				? MailEvent::sendImmediate($payload)
-				: MailEvent::send($payload);
-
-			$ok = true;
-			$errText = '';
-			if (is_object($res) && method_exists($res, 'isSuccess'))
-			{
-				$ok = (bool)$res->isSuccess();
-				if (!$ok && method_exists($res, 'getErrorMessages'))
-				{
-					$errText = implode('; ', (array)$res->getErrorMessages());
-				}
-			}
-			elseif ($res === false || $res === null || $res === 0 || $res === '0' || $res === 'F')
-			{
-				$ok = false;
-				$errText = 'MailEvent send failed';
-			}
-
-			if (!$ok)
-			{
-				Db::markError($orderId, $paymentSystemId, $emailTo, $errText !== '' ? $errText : 'MailEvent send failed');
-				return;
-			}
-
-			Db::markSent($orderId, $paymentSystemId, $emailTo);
-		}
-		catch (\Throwable $e)
-		{
-			Db::markError($orderId, $paymentSystemId, $emailTo, $e->getMessage());
-			Bootstrap::log('Send failed', ['orderId' => $orderId, 'e' => $e->getMessage()]);
-		}
+		// Реквизиты и инструкция по оплате включены в письмо SALE_NEW_ORDER (mf_order_mail.php).
+		Db::markSent($orderId, $paymentSystemId, '');
 	}
 }
 

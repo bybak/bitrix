@@ -14,11 +14,11 @@ if (!function_exists('mf_contact_map_render'))
 			$mapId = 'mf-contact-map';
 		}
 
-		// Запасные координаты: ул. Салова, 57 (если геокодер не ответит).
-		$lat = 59.886799;
-		$lon = 30.374732;
-		$address = 'Санкт-Петербург, ул. Салова, 57, корпус 1, литера Ч';
-		$balloon = 'Motor-Force, ул. Салова, 57к1, оф. 1Н';
+		// Проверенные координаты здания «ул. Салова, 57к1Ч» (Яндекс.Карты).
+		$lat = 59.887598;
+		$lon = 30.371510;
+		$address = 'Санкт-Петербург, ул. Салова, 57к1Ч';
+		$balloon = 'Motor-Force, ул. Салова, д. 57, к. 1, литера Ч, оф. 1Н';
 
 		$apiKey = '';
 		if (class_exists(\Bitrix\Main\Config\Option::class))
@@ -38,7 +38,7 @@ if (!function_exists('mf_contact_map_render'))
 <script>
 (function () {
 	var mapId = <?= json_encode($mapId, JSON_UNESCAPED_UNICODE) ?>;
-	var fallbackCenter = [<?= $lat ?>, <?= $lon ?>];
+	var center = [<?= $lat ?>, <?= $lon ?>];
 	var address = <?= json_encode($address, JSON_UNESCAPED_UNICODE) ?>;
 	var balloon = <?= json_encode($balloon, JSON_UNESCAPED_UNICODE) ?>;
 
@@ -56,24 +56,20 @@ if (!function_exists('mf_contact_map_render'))
 			function renderAt(coords) {
 				var map = new ymaps.Map(el, {
 					center: coords,
-					zoom: 17,
+					zoom: 18,
 					controls: ['zoomControl', 'fullscreenControl']
 				});
 				map.behaviors.disable('scrollZoom');
 				map.geoObjects.add(new ymaps.Placemark(coords, {
-					balloonContent: balloon
+					balloonContent: balloon,
+					hintContent: address
 				}, {
 					preset: 'islands#redDotIcon'
 				}));
 			}
 
-			ymaps.geocode(address, { results: 1 }).then(function (res) {
-				var first = res.geoObjects.get(0);
-				var coords = first ? first.geometry.getCoordinates() : fallbackCenter;
-				renderAt(coords);
-			}, function () {
-				renderAt(fallbackCenter);
-			});
+			// Фиксированная точка здания 57к1Ч: геокодер часто попадает в соседний корпус.
+			renderAt(center);
 		});
 	}
 

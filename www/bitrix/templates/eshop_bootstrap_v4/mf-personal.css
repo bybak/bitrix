@@ -798,14 +798,30 @@
 }
 
 .bx_profile h2{
-  margin: 0 0 .75rem;
+  margin: 1rem 0 .5rem;
   font-weight: 900;
   color: rgba(17,24,39,.92);
 }
 
+.bx_profile h2:first-child{
+  margin-top: 0;
+}
+
+.bx_profile .mf-profile-field{
+  margin-bottom: .65rem;
+}
+
+.bx_profile .mf-profile-field:last-of-type{
+  margin-bottom: 0;
+}
+
+.bx_profile .mf-profile-actions{
+  margin-top: 1rem;
+}
+
 .bx_profile strong{
-  display: inline-block;
-  margin: .75rem 0 .35rem;
+  display: block;
+  margin: 0 0 .2rem;
   font-weight: 800;
   color: rgba(17,24,39,.88);
 }

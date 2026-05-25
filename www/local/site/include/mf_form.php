@@ -62,7 +62,6 @@ if (!function_exists('mf_handle_static_form'))
 		$lines[] = 'Заявка с сайта';
 		$lines[] = 'Форма: '.$formId;
 		$lines[] = 'Дата: '.date('Y-m-d H:i:s');
-		$lines[] = 'IP: '.($_SERVER['REMOTE_ADDR'] ?? '');
 		$lines[] = '---';
 
 		foreach ($fields as $name => $label)
