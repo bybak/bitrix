@@ -213,13 +213,23 @@ if (!function_exists('mf_search_stores_payload_for_products'))
 			}
 			$code = is_array($row) ? trim((string)($row['CODE'] ?? '')) : '';
 			$url = ($code !== '' ? '/products/' . rawurlencode($code) . '/' : '/products/?ELEMENT_ID=' . $pid);
-			$priceFrom = function_exists('mf_product_search_card_min_price_print')
-				? mf_product_search_card_min_price_print($pid)
-				: '';
+			$stores = function_exists('mf_product_search_card_stores') ? mf_product_search_card_stores($pid) : [];
+			$priceFrom = '';
+			if (
+				$stores !== []
+				&& function_exists('mf_product_search_card_min_price_print')
+			)
+			{
+				$priceFrom = mf_product_search_card_min_price_print($pid);
+				if ($priceFrom === '')
+				{
+					$priceFrom = 'Запросить цену';
+				}
+			}
 			$avail = mf_search_render_card_avail_html($pid, $titlePlain, $url);
 			$out[(string)$pid] = [
 				'avail' => $avail,
-				'price_from' => $priceFrom !== '' ? $priceFrom : 'Запросить цену',
+				'price_from' => $priceFrom,
 			];
 		}
 
@@ -272,6 +282,10 @@ if (!function_exists('mf_search_render_product_card'))
 		{
 			$stores = mf_product_search_card_stores($id);
 		}
+		$showPricePill = $lazyStores
+			|| (function_exists('mf_product_search_card_show_price_from')
+				? mf_product_search_card_show_price_from($stores)
+				: !empty($stores));
 
 		$wrapTag = $isAnalog ? 'div' : 'article';
 		$titlePlain = trim(html_entity_decode(strip_tags($titleHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
@@ -307,7 +321,8 @@ if (!function_exists('mf_search_render_product_card'))
 				<div class="mf-search-card__main">
 					<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
 					<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
-						<div class="mf-product-meta__item">
+						<?php if ($showPricePill): ?>
+						<div class="mf-product-meta__item"<?=($id > 0 ? ' data-mf-price-item="' . $id . '"' : '')?>>
 							<span class="mf-product-meta__label">От</span>
 							<span class="mf-product-meta__value<?=($lazyStores ? ' mf-product-meta__value--pending' : '')?>"<?=($lazyStores && $id > 0 ? ' data-mf-price-for="' . $id . '"' : '')?>>
 								<?php if ($lazyStores): ?>
@@ -319,6 +334,7 @@ if (!function_exists('mf_search_render_product_card'))
 								<?php endif; ?>
 							</span>
 						</div>
+						<?php endif; ?>
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">Бренд</span>
 							<span class="mf-product-meta__value"><?= $brand !== '' ? htmlspecialcharsbx($brand) : '—' ?></span>

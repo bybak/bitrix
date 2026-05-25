@@ -268,6 +268,15 @@ if (!function_exists('mf_product_search_card_stores'))
 	}
 }
 
+if (!function_exists('mf_product_search_card_show_price_from'))
+{
+	/** Пилюля «От …» только если есть хотя бы одна строка складов. */
+	function mf_product_search_card_show_price_from(array $stores): bool
+	{
+		return $stores !== [];
+	}
+}
+
 if (!function_exists('mf_product_search_card_stores_have_price'))
 {
 	/** true — хотя бы у одной строки mf_product_search_card_stores есть цена > 0. */
@@ -411,10 +420,12 @@ if (!function_exists('mf_product_search_card_render'))
 				<div class="mf-search-card__main">
 					<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
 					<div class="mf-product-meta" aria-label="Цена, бренд и артикул">
+						<?php if (mf_product_search_card_show_price_from($stores)): ?>
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">От</span>
 							<span class="mf-product-meta__value"><?= $priceFrom !== '' ? htmlspecialcharsbx($priceFrom) : 'Запросить цену' ?></span>
 						</div>
+						<?php endif; ?>
 						<div class="mf-product-meta__item">
 							<span class="mf-product-meta__label">Бренд</span>
 							<span class="mf-product-meta__value"><?= $brand !== '' ? htmlspecialcharsbx($brand) : '—' ?></span>

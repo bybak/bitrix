@@ -191,10 +191,24 @@
   }
 
   function mfUpdatePriceFrom(pid, text) {
+    var item = qs('[data-mf-price-item="' + pid + '"]');
     var el = qs('[data-mf-price-for="' + pid + '"]');
+    if (!item && !el) return;
+
+    var priceText = String(text || '').trim();
+    if (!priceText) {
+      if (item) item.hidden = true;
+      return;
+    }
+
+    if (!item && el) {
+      item = el.closest('.mf-product-meta__item');
+    }
+    if (item) item.hidden = false;
     if (!el) return;
+
     el.classList.remove('mf-product-meta__value--pending');
-    el.textContent = String(text || 'Запросить цену');
+    el.textContent = priceText;
   }
 
   function mfRemoveAnalogPending(pid) {
@@ -260,7 +274,7 @@
           availHost.classList.remove('mf-search-card__avail--lazy');
           availHost.removeAttribute('aria-busy');
           availHost.innerHTML = mfBuildNoStockAvailHtml(host, pid, 'Нет данных по складам');
-          mfUpdatePriceFrom(pid, 'Запросить цену');
+          mfUpdatePriceFrom(pid, '');
         }
       });
     }).catch(function () {
@@ -273,7 +287,7 @@
           availHost.removeAttribute('aria-busy');
         }
         host.removeAttribute('data-mf-stores-for');
-        if (pid) mfUpdatePriceFrom(pid, 'Запросить цену');
+        if (pid) mfUpdatePriceFrom(pid, '');
       });
     });
   }
