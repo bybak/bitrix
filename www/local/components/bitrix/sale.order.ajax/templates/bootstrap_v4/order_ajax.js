@@ -532,6 +532,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.loadingScreen.overlay.element.style.opacity = '0';
 			this.loadingScreen.show();
 			this.loadingScreen.overlay.element.style.opacity = '0.6';
+			// Mobile: overlay steals focus and closes the keyboard during refreshOrderAjax.
+			if (this.isMobile && this.loadingScreen.overlay && this.loadingScreen.overlay.element)
+			{
+				this.loadingScreen.overlay.element.style.pointerEvents = 'none';
+			}
 
 			return true;
 		},
@@ -1522,7 +1527,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				this.alignBasketColumns();
 				this.basketBlockScrollCheck();
 				this.mapsReady && this.resizeMapContainers();
-				this.syncMfCheckoutStepVisibility();
+				if (!this.mfIsVirtualKeyboardOpen())
+					this.syncMfCheckoutStepVisibility();
 			}, 50, this));
 			BX.addCustomEvent('onDeliveryExtraServiceValueChange', BX.proxy(this.sendRequest, this));
 		},
@@ -2706,6 +2712,21 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			{
 				return false;
 			}
+		},
+
+		// Android/iOS: virtual keyboard shrinks visualViewport — ignore resize side-effects while typing.
+		mfIsVirtualKeyboardOpen: function()
+		{
+			try
+			{
+				if (window.visualViewport && window.innerHeight)
+				{
+					return window.visualViewport.height < window.innerHeight * 0.75;
+				}
+			}
+			catch (e) {}
+
+			return false;
 		},
 
 		isMfCustomCheckout: function()
@@ -7979,20 +8000,27 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			{
 				try {
 					var mfBGeo = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
-					if (mfBGeo && typeof mfBGeo.syncDeliveryGeoToBuyerFields === 'function')
+					if (mfBGeo && typeof mfBGeo.isCheckoutFieldFocused === 'function' && mfBGeo.isCheckoutFieldFocused())
 					{
-						var streetProbe = mfBGeo.getInputByCode('DELIVERY_ADDRESS');
-						var streetEmpty = !streetProbe || streetProbe === false || String(streetProbe.value || '').trim() === '';
-						mfBGeo.syncDeliveryGeoToBuyerFields({
-							forceZip: true,
-							syncStreet: streetEmpty,
-							forceStreet: streetEmpty
-						});
+						// skip
 					}
-					if (mfBGeo && typeof mfBGeo.syncLegacyDeliveryAddressProperty === 'function')
-						mfBGeo.syncLegacyDeliveryAddressProperty();
-					if (mfBGeo && typeof mfBGeo.sync === 'function')
-						mfBGeo.sync();
+					else if (mfBGeo)
+					{
+						if (typeof mfBGeo.syncDeliveryGeoToBuyerFields === 'function')
+						{
+							var streetProbe = mfBGeo.getInputByCode('DELIVERY_ADDRESS');
+							var streetEmpty = !streetProbe || streetProbe === false || String(streetProbe.value || '').trim() === '';
+							mfBGeo.syncDeliveryGeoToBuyerFields({
+								forceZip: true,
+								syncStreet: streetEmpty,
+								forceStreet: streetEmpty
+							});
+						}
+						if (typeof mfBGeo.syncLegacyDeliveryAddressProperty === 'function')
+							mfBGeo.syncLegacyDeliveryAddressProperty();
+						if (typeof mfBGeo.sync === 'function')
+							mfBGeo.sync();
+					}
 				} catch(eMfPropsGeo) {}
 			}
 		},

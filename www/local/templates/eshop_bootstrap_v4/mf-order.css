@@ -78,6 +78,12 @@
   border-radius: 12px;
   border: 1px solid rgba(0,0,0,.14);
   box-shadow: none !important;
+  /* iOS: <16px prevents reliable keyboard focus on checkout inputs */
+  font-size: 16px;
+}
+.mf-order .mf-nominatim-wrap__input,
+.mf-order #mf-nominatim-wrap input[type="text"]{
+  font-size: 16px;
 }
 .mf-order textarea.form-control{
   height: auto;

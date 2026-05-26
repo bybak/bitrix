@@ -47,6 +47,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				{
 					try
 					{
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.isCheckoutFieldFocused === 'function'
+							&& ctx.__mfBuyerAddress.isCheckoutFieldFocused())
+						{
+							return;
+						}
+
 						var wrap = document.getElementById('mf-nominatim-wrap');
 						var inp = wrap ? wrap.querySelector('input[type="text"]') : null;
 						if (inp && ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncNominatimInputValue === 'function')
@@ -1043,7 +1049,6 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 								if (locInputR && locInputR !== false)
 								{
 									locInputR.value = locLine;
-									locInputR.readOnly = true;
 									try {
 										if (typeof ctx.__mfBuyerAddress.syncOrderPropInputsByCode === 'function')
 											ctx.__mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', locLine);
@@ -1989,6 +1994,19 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		} catch (eEarlyEns) {}
 
 		var mfBuyerAddress = ctx.__mfBuyerAddress || (ctx.__mfBuyerAddress = {});
+		mfBuyerAddress.isCheckoutFieldFocused = function(){
+			try {
+				var el = document.activeElement;
+				if (!el || !el.tagName)
+					return false;
+				var tag = String(el.tagName).toUpperCase();
+				if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT')
+					return false;
+				var form = BX('bx-soa-order-form');
+				return !!(form && form.contains && form.contains(el));
+			} catch(eFocus) {}
+			return false;
+		};
 		mfBuyerAddress.getPropByCode = function(code){
 			try {
 				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
@@ -2429,9 +2447,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				{
 					locationInput.value = geo.locationLine;
 					mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', geo.locationLine);
-					locationInput.readOnly = true;
-					locationInput.setAttribute('readonly', 'readonly');
-					locationInput.style.backgroundColor = '#f8f9fa';
+					try {
+						locationInput.removeAttribute('readonly');
+						locationInput.readOnly = false;
+					} catch(eRo) {}
 				}
 
 				var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
@@ -2542,6 +2561,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 		mfBuyerAddress.syncNominatimInputValue = function(){
 			try {
+				if (mfBuyerAddress.isCheckoutFieldFocused())
+					return;
+
 				var wrapNom = document.getElementById('mf-nominatim-wrap');
 				if (!wrapNom)
 					return;
@@ -2553,7 +2575,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var cur = String(nomInp.value || '').trim();
 
 				// Не перебивать, пока пользователь набирает запрос и ещё не выбрал адрес.
-				if (document.activeElement === nomInp && !pre && !ctx.__mfNominatimActive)
+				if (document.activeElement === nomInp || ctx.__mfNominatimTyping)
 					return;
 
 				if (pre)
@@ -2636,9 +2658,25 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						continue;
 					var rowLoc = ctx.getRowByPropId(pidLoc);
 					if (rowLoc)
+					{
 						BX.addClass(rowLoc, 'mf-checkout-hide-location');
+						mfBuyerAddress.disableFocusOnRow(rowLoc);
+					}
 				}
 			} catch(eHloc) {}
+		};
+
+		mfBuyerAddress.disableFocusOnRow = function(row){
+			try {
+				if (!row || !row.querySelectorAll)
+					return;
+				var nodes = row.querySelectorAll('input, select, textarea, button, [tabindex]');
+				for (var i = 0; i < nodes.length; i++)
+				{
+					nodes[i].setAttribute('tabindex', '-1');
+					nodes[i].setAttribute('aria-hidden', 'true');
+				}
+			} catch(eDis) {}
 		};
 
 		mfBuyerAddress.showBitrixLocationSelector = function(ctx){
@@ -2669,6 +2707,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 		mfBuyerAddress.sync = function(){
 			try {
+				if (mfBuyerAddress.isCheckoutFieldFocused())
+					return;
+
 				var mfEsync = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
 				var isDeliveryMode = mfEsync && typeof mfEsync.isPickupMode === 'function' && !mfEsync.isPickupMode();
 				if (isDeliveryMode)
@@ -2712,9 +2753,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 								mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', '');
 							}
 						}
-						locationInput.readOnly = true;
-						locationInput.setAttribute('readonly', 'readonly');
-						locationInput.style.backgroundColor = '#f8f9fa';
+						try {
+							locationInput.removeAttribute('readonly');
+							locationInput.readOnly = false;
+							locationInput.style.backgroundColor = '';
+						} catch(eRo2) {}
 					}
 				}
 
@@ -2959,8 +3002,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 			var wrap = BX.create('DIV', {attrs: {id: 'mf-nominatim-wrap', className: 'mf-nominatim-wrap'}});
 			var inp = BX.create('INPUT', {
-				props: {type: 'text', autocomplete: 'off', placeholder: 'Введите адрес', className: 'form-control'},
-				attrs: {class: 'form-control mf-nominatim-wrap__input'}
+				props: {type: 'text', autocomplete: 'street-address', placeholder: 'Введите адрес', className: 'form-control'},
+				attrs: {class: 'form-control mf-nominatim-wrap__input', inputmode: 'search'}
 			});
 			var errBox = BX.create('DIV', {attrs: {id: 'mf-nominatim-err'}, style: {display: 'none', color: '#842029', fontSize: '12px', marginTop: '6px'}});
 			var list = BX.create('DIV', {
@@ -3180,17 +3223,38 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			};
 
 			BX.bind(inp, 'input', function(){
+				ctx.__mfNominatimTyping = true;
 				var q = inp.value;
 				if (timer)
 					clearTimeout(timer);
 				timer = setTimeout(function(){ runSearch(q); }, 400);
 			});
-			BX.bind(document, 'click', function(ev){
+			BX.bind(inp, 'focus', function(){
+				ctx.__mfNominatimTyping = true;
 				try {
-					if (!wrap.contains(ev.target))
-						list.style.display = 'none';
-				} catch(e) {}
+					inp.removeAttribute('readonly');
+					inp.readOnly = false;
+				} catch(eF) {}
 			});
+			BX.bind(inp, 'blur', function(){
+				setTimeout(function(){
+					if (document.activeElement !== inp)
+						ctx.__mfNominatimTyping = false;
+				}, 250);
+			});
+			var closeNominatimList = function(ev){
+				try {
+					if (!wrap || !list)
+						return;
+					if (ev && ev.target && wrap.contains(ev.target))
+						return;
+					if (document.activeElement && wrap.contains(document.activeElement))
+						return;
+					list.style.display = 'none';
+				} catch(e) {}
+			};
+			BX.bind(document, 'mousedown', closeNominatimList);
+			BX.bind(document, 'touchstart', closeNominatimList);
 
 			try {
 				if (!ctx.__mfNominatimActive && inp)
@@ -3448,7 +3512,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		} catch(e) {}
 
 		try {
-			mfBuyerAddress.sync();
+			if (!mfBuyerAddress.isCheckoutFieldFocused())
+				mfBuyerAddress.sync();
 		} catch(eBuyer) {}
 
 		try {
