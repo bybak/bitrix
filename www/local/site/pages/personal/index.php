@@ -159,7 +159,7 @@ if (is_object($USER) && $USER->IsAuthorized())
 		"SHOW_PROFILE_PAGE" => "Y",
 		"ALLOW_INNER" => "N",
 		"ONLY_INNER_FULL" => "N",
-		"SHOW_SUBSCRIBE_PAGE" => "Y",
+		"SHOW_SUBSCRIBE_PAGE" => "N",
 		"USER_PROPERTY_PRIVATE" => array(),
 		"USE_AJAX_LOCATIONS_PROFILE" => "N"
 	)

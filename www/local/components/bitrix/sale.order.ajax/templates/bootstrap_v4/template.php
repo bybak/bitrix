@@ -625,6 +625,9 @@ else
 	$messages = Loc::loadLanguageFile(__FILE__);
 	?>
 	<script>
+		<?php if (function_exists('mf_mf_placeholder_img_url')): ?>
+		window.MF_PLACEHOLDER_IMG_URL = <?=CUtil::PhpToJSObject(mf_mf_placeholder_img_url())?>;
+		<?php endif; ?>
 		BX.message(<?=CUtil::PhpToJSObject($messages)?>);
 		BX.Sale.OrderAjaxComponent.init({
 			result: <?=CUtil::PhpToJSObject($arResult['JS_DATA'])?>,

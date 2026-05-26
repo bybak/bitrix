@@ -803,43 +803,4 @@ $APPLICATION->SetPageProperty("HIDE_SIDEBAR", "Y");
 </section>
 </div>
 
-<div class="mf-breakout">
-	<section
-			data-block-id="21"
-			data-region="1"
-			id="subscribe"
-			class="block-21 widget-sort onmain on-view widget-block -nt-widget nh-editor-panel
-         subscribe_light lazyload  js-indent"
-	>
-		<div class="widget">
-			<div class="js-indent-add"></div>
-			<div class="widget__wrapper">
-				<div class="widget__header widget__header--indent-bottom widget__header--center widget__header__title_underlined">
-					<h2 class="nh-h2 widget__header__title
-                    widget__header__title--content widget__header__title--center">
-						Рассылка
-					</h2>
-				</div>
-				<div class="widget__content widget__content_filled">
-					<div data-ng-non-bindable class="content-block" id="subscribe-show">
-						<div class="subscribe-add-form">
-							<?php
-							$APPLICATION->IncludeComponent(
-								"bitrix:sender.subscribe",
-								"mf_main_subscribe",
-								array(
-									"SET_TITLE" => "N",
-									"HIDE_MAILINGS" => "Y",
-								),
-								false
-							);
-							?>
-						</div>
-					</div>
-					<div class="on-edit on-edit_border edit-mode small-10 small-offset-1" id="subscribe-edit"></div>
-				</div>
-			</div>
-		</div>
-	</section>
-</div>
 <?require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");?>

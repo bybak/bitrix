@@ -455,6 +455,15 @@ if (is_file($mfSearchRenderLib))
 							catch (e2) {}
 						}
 					}
+					function mfStabilizeProductImages()
+					{
+						try {
+							if (typeof window.__mfStabilizeBrokenImages === 'function') {
+								window.__mfStabilizeBrokenImages(document);
+							}
+						} catch (e0) {}
+					}
+
 					function mfApplyInBasketState(productQtyMap)
 					{
 						productQtyMap = productQtyMap || {};
@@ -551,6 +560,7 @@ if (is_file($mfSearchRenderLib))
 							if (!resp || !resp.ok) return;
 							try { mfSetHeaderBasketCount(resp.basket_count); } catch(e1) {}
 							try { mfApplyInBasketState(resp.products || {}); } catch(e2) {}
+							mfStabilizeProductImages();
 						};
 
 						if (window.BX && BX.ajax)
@@ -796,6 +806,7 @@ if (is_file($mfSearchRenderLib))
 									} catch(e00) {}
 									// Ensure the page state (buttons + header) matches real basket.
 									try { setTimeout(mfSyncBasketState, 30); } catch (e1) {}
+									mfStabilizeProductImages();
 								},
 								onfailure: function(){
 									btn.disabled = false;

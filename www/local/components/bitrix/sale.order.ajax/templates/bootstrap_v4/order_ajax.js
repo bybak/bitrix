@@ -99,7 +99,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			this.siteId = parameters.siteID || '';
 			this.ajaxUrl = parameters.ajaxUrl || '';
 			this.templateFolder = parameters.templateFolder || '';
-			this.defaultBasketItemLogo = this.templateFolder + "/images/product_logo.png";
+			this.defaultBasketItemLogo = (typeof window !== 'undefined' && window.MF_PLACEHOLDER_IMG_URL)
+				? String(window.MF_PLACEHOLDER_IMG_URL)
+				: '/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg';
 			this.defaultStoreLogo = this.templateFolder + "/images/pickup_logo.png";
 			this.defaultDeliveryLogo = this.templateFolder + "/images/delivery_logo.png";
 			this.defaultPaySystemLogo = this.templateFolder + "/images/pay/generic.svg";

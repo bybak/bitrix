@@ -223,11 +223,125 @@ if (!function_exists('mf_mf_product_img_url'))
 	}
 }
 
+if (!function_exists('mf_mf_is_placeholder_img_url'))
+{
+	function mf_mf_is_placeholder_img_url(string $url): bool
+	{
+		$url = trim($url);
+		if ($url === '')
+		{
+			return true;
+		}
+
+		return (bool)preg_match('#/mf-no-photo\.svg(?:\?|$)#i', $url)
+			|| (bool)preg_match('#/no_photo\.png(?:\?|$)#i', $url);
+	}
+}
+
+if (!function_exists('mf_mf_more_photo_slot_count_from_row'))
+{
+	function mf_mf_more_photo_slot_count_from_row(array $el): int
+	{
+		$v = $el['PROPERTY_MORE_PHOTO_VALUE'] ?? null;
+		if ($v === null || $v === false || $v === '')
+		{
+			return 0;
+		}
+		if (is_array($v))
+		{
+			$n = 0;
+			foreach ($v as $one)
+			{
+				if ((int)$one > 0)
+				{
+					$n++;
+				}
+				elseif (is_string($one) && trim($one) !== '')
+				{
+					$n++;
+				}
+			}
+
+			return $n;
+		}
+
+		return (int)$v > 0 ? 1 : 0;
+	}
+}
+
+if (!function_exists('mf_mf_product_card_gallery_slot_count'))
+{
+	/**
+	 * Число слотов галереи, для которых на деталке подставляется mf_mf_product_img_url(CODE, n).
+	 */
+	function mf_mf_product_card_gallery_slot_count(int $productId, ?array $prefetchRow = null, int $iblockId = 4): int
+	{
+		$productId = (int)$productId;
+		$iblockId = (int)$iblockId;
+		$el = is_array($prefetchRow) ? $prefetchRow : [];
+		$hasPictureFields = array_key_exists('PREVIEW_PICTURE', $el)
+			|| array_key_exists('DETAIL_PICTURE', $el)
+			|| array_key_exists('PROPERTY_MORE_PHOTO_VALUE', $el);
+
+		if (!$hasPictureFields && $productId > 0 && $iblockId > 0 && class_exists('CIBlockElement'))
+		{
+			$rs = \CIBlockElement::GetList(
+				[],
+				['IBLOCK_ID' => $iblockId, 'ID' => $productId],
+				false,
+				['nTopCount' => 1],
+				['ID', 'PREVIEW_PICTURE', 'DETAIL_PICTURE', 'PROPERTY_MORE_PHOTO']
+			);
+			if ($row = $rs->Fetch())
+			{
+				$el = array_merge($el, $row);
+			}
+		}
+
+		$n = mf_mf_more_photo_slot_count_from_row($el);
+		if ($n > 0)
+		{
+			return $n;
+		}
+
+		$prevId = (int)($el['PREVIEW_PICTURE'] ?? 0);
+		$detailId = (int)($el['DETAIL_PICTURE'] ?? 0);
+		if ($prevId <= 0 && $detailId <= 0)
+		{
+			return 0;
+		}
+		if ($prevId > 0 && $detailId <= 0)
+		{
+			return 1;
+		}
+		if ($detailId > 0 && $prevId <= 0)
+		{
+			return 1;
+		}
+		if ($prevId === $detailId)
+		{
+			return 1;
+		}
+		if (class_exists('CFile'))
+		{
+			$prevPath = (string)\CFile::GetPath($prevId);
+			$detailPath = (string)\CFile::GetPath($detailId);
+			if ($prevPath !== '' && $detailPath !== '' && $prevPath === $detailPath)
+			{
+				return 1;
+			}
+		}
+
+		return 2;
+	}
+}
+
 if (!function_exists('mf_mf_product_card_preview_src'))
 {
 	/**
 	 * Первое изображение для карточки (поиск, списки): как catalog.element bootstrap_v4 —
-	 * сначала MF_EXT_IMAGES, иначе mf_analogs_meta_images_for_product, иначе mf_mf_product_img_url(CODE,1).
+	 * сначала MF_EXT_IMAGES, иначе mf_analogs_meta_images_for_product,
+	 * иначе mf_mf_product_img_url(CODE,1) только если у товара есть слоты галереи.
 	 *
 	 * @param array<string,mixed>|null $prefetchRow строка CIBlockElement::GetList с PROPERTY_MF_EXT_IMAGES_VALUE, если уже подгружена
 	 */
@@ -298,7 +412,11 @@ if (!function_exists('mf_mf_product_card_preview_src'))
 
 		if ($code !== '')
 		{
-			return (string)mf_mf_product_img_url($code, 1);
+			$nSlots = mf_mf_product_card_gallery_slot_count($productId, $prefetchRow, $iblockId);
+			if ($nSlots > 0)
+			{
+				return (string)mf_mf_product_img_url($code, 1);
+			}
 		}
 
 		return '';
@@ -362,6 +480,11 @@ if (!function_exists('mf_catalog_basket_canonical_image_url'))
 		if ($fallback !== '' && !mf_is_legacy_bitrix_upload_image_url($fallback))
 		{
 			return $fallback;
+		}
+
+		if (function_exists('mf_mf_placeholder_img_url'))
+		{
+			return (string)mf_mf_placeholder_img_url();
 		}
 
 		return '';

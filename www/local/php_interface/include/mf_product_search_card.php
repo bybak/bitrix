@@ -412,6 +412,10 @@ if (!function_exists('mf_product_search_card_render'))
 			}
 		}
 
+		$imgIsPlaceholder = function_exists('mf_mf_is_placeholder_img_url')
+			? mf_mf_is_placeholder_img_url($img)
+			: (strpos($img, 'mf-no-photo') !== false);
+
 		$priceFrom = mf_product_search_card_min_price_print($id);
 		$stores = mf_product_search_card_stores($id);
 		$mfShowRequestPrice = empty($stores)
@@ -424,8 +428,8 @@ if (!function_exists('mf_product_search_card_render'))
 		?>
 		<div class="mf-search-card mf-search-card--analog">
 			<div class="mf-search-card__top">
-				<a class="mf-search-card__img" href="<?=htmlspecialcharsbx($url)?>">
-					<img src="<?=htmlspecialcharsbx($img)?>" alt="" loading="lazy" decoding="async" />
+				<a class="mf-search-card__img<?=($imgIsPlaceholder ? ' mf-search-card__img--placeholder' : '')?>" href="<?=htmlspecialcharsbx($url)?>">
+					<img src="<?=htmlspecialcharsbx($img)?>" alt="" class="<?=($imgIsPlaceholder ? 'mf-img--placeholder' : '')?>"<?=($imgIsPlaceholder ? '' : ' loading="lazy"')?> decoding="async" />
 				</a>
 				<div class="mf-search-card__main">
 					<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>

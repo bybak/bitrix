@@ -1939,6 +1939,16 @@ if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 					}
 				}
 			}
+			if (trim((string)($d['PREVIEW_PICTURE_SRC'] ?? '')) === '' && function_exists('mf_mf_placeholder_img_url'))
+			{
+				$ph = (string)mf_mf_placeholder_img_url();
+				if ($ph !== '')
+				{
+					$d['PREVIEW_PICTURE_SRC'] = $ph;
+					$d['PREVIEW_PICTURE_SRC_2X'] = $ph;
+					$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $ph;
+				}
+			}
 			// Срок доставки в checkout, как в корзине: по выбранному складу (MF_STORE_ID).
 			$storeId = mf_sale_order_ajax_row_store_id($d);
 			if ($storeId > 0 && function_exists('mf_store_delivery_term'))

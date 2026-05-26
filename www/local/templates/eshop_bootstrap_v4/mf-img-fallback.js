@@ -5,25 +5,82 @@
   } catch (e) {}
 
   var PLACEHOLDER = '/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg';
-  // Match both legacy direct host and local proxy.
   var HOST_RE = /(^\/mf-img\/)|(^|\/\/)img-motor-force\.ru\//i;
+
+  function isPlaceholderSrc(src) {
+    return !src || /mf-no-photo\.svg/i.test(src) || /no_photo\.png/i.test(src);
+  }
+
+  function isMfProductImgSrc(src) {
+    return !!src && HOST_RE.test(src) && !isPlaceholderSrc(src);
+  }
+
+  function markPlaceholderWrap(img) {
+    if (!img || !img.closest) return;
+    var wrap = img.closest('.mf-search-card__img, .mf-pcard__media-inner, .mf-pcard__media, .mf-pline__media-link');
+    if (!wrap) return;
+    if (wrap.classList.contains('mf-search-card__img')) {
+      wrap.classList.add('mf-search-card__img--placeholder');
+    } else if (wrap.classList.contains('mf-pcard__media-inner')) {
+      wrap.classList.add('mf-pcard__media-inner--placeholder');
+    } else if (wrap.classList.contains('mf-pline__media-link')) {
+      wrap.classList.add('mf-pline__media-link--placeholder');
+    }
+  }
+
+  function applyImgPlaceholder(img) {
+    if (!img || img.getAttribute('data-mf-img-fallback') === '1') return;
+    img.setAttribute('data-mf-img-fallback', '1');
+    try {
+      img.removeAttribute('srcset');
+    } catch (e1) {}
+    try {
+      img.removeAttribute('loading');
+    } catch (e2) {}
+    img.classList.add('mf-img--placeholder');
+    markPlaceholderWrap(img);
+    if ((img.getAttribute('src') || '') !== PLACEHOLDER) {
+      img.setAttribute('src', PLACEHOLDER);
+    }
+  }
+
+  function stabilizeBrokenImages(root) {
+    root = root || document;
+    var imgs = root.querySelectorAll ? root.querySelectorAll('img') : [];
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      if (!img || img.getAttribute('data-mf-img-fallback') === '1') continue;
+      var src = img.getAttribute('src') || '';
+      if (!isMfProductImgSrc(src)) continue;
+      if (img.complete && img.naturalWidth === 0) {
+        applyImgPlaceholder(img);
+      }
+    }
+  }
 
   document.addEventListener(
     'error',
     function (e) {
       var t = e && e.target;
       if (!t || !t.tagName || t.tagName.toLowerCase() !== 'img') return;
-
       var src = t.getAttribute('src') || '';
-      if (!HOST_RE.test(src)) return;
-      if (src === PLACEHOLDER) return;
-
-      try {
-        t.removeAttribute('srcset');
-      } catch (e2) {}
-      t.setAttribute('src', PLACEHOLDER);
+      if (!isMfProductImgSrc(src)) return;
+      applyImgPlaceholder(t);
     },
     true
   );
-})();
 
+  function initStabilize() {
+    stabilizeBrokenImages(document);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initStabilize);
+  } else {
+    initStabilize();
+  }
+
+  if (typeof window !== 'undefined') {
+    window.__mfStabilizeBrokenImages = stabilizeBrokenImages;
+  }
+})();

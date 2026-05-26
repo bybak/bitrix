@@ -34,12 +34,12 @@
 			<div class="row mf-footer-top">
 				<div class="col-12 col-md-4 col-lg-3 mb-4 mb-lg-0">
 					<div class="mf-footer-brand">Motor-Force</div>
-					<div class="mf-footer-tagline">Запчасти для мототехники</div>
+					<div class="mf-footer-tagline">Запчасти и аксессуары для мототехники</div>
 					<ul class="mf-footer-contact">
 						<li><a href="tel:+78129864276">8 (812) 986-42-76</a></li>
 						<li><a href="tel:+79218837340">8 (921) 883-73-40</a></li>
 						<li><a href="mailto:andrey@motor-force.ru">andrey@motor-force.ru</a></li>
-						<li class="mf-footer-muted">Санкт‑Петербург, ул. Салова, 57к1</li>
+						<li class="mf-footer-muted">Санкт-Петербург, ул. Салова, д. 57, к. 1 Литера Ч</li>
 					</ul>
 				</div>
 
@@ -87,7 +87,7 @@
 					<div class="mf-footer-copy">
 						<span class="mf-footer-year"><?=$mfYearLabel?></span> © Motor‑Force
 						<span class="mf-footer-dot">•</span>
-						<span class="mf-footer-muted">Запчасти для мототехники</span>
+						<span class="mf-footer-muted">Запчасти и аксессуары для мототехники</span>
 					</div>
 				</div>
 				<div class="col-12 col-md-5 mt-3 mt-md-0 text-md-right">

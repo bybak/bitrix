@@ -145,10 +145,26 @@ foreach ($this->basketItems as $row)
 		{
 			$rowData['IMAGE_URL'] = $fallbackSrc;
 		}
+		elseif (function_exists('mf_mf_placeholder_img_url'))
+		{
+			$ph = (string)mf_mf_placeholder_img_url();
+			if ($ph !== '')
+			{
+				$rowData['IMAGE_URL'] = $ph;
+			}
+		}
 	}
 	elseif ($fallbackSrc !== '')
 	{
 		$rowData['IMAGE_URL'] = $fallbackSrc;
+	}
+	elseif (function_exists('mf_mf_placeholder_img_url'))
+	{
+		$ph = (string)mf_mf_placeholder_img_url();
+		if ($ph !== '')
+		{
+			$rowData['IMAGE_URL'] = $ph;
+		}
 	}
 
 	if (!empty($row['SKU_DATA']))

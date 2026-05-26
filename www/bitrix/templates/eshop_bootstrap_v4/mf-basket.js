@@ -109,6 +109,11 @@
       if (!resp || !resp.ok) return;
       try { mfSetHeaderBasketCount(resp.basket_count); } catch (e1) {}
       try { mfApplyInBasketState(resp.products || {}); } catch (e2) {}
+      try {
+        if (typeof window.__mfStabilizeBrokenImages === 'function') {
+          window.__mfStabilizeBrokenImages(document);
+        }
+      } catch (e3) {}
     };
 
     if (window.BX && BX.ajax) {
@@ -202,6 +207,11 @@
         }
       } catch (e2) {}
       try { setTimeout(mfSyncBasketState, 30); } catch (e3) {}
+      try {
+        if (typeof window.__mfStabilizeBrokenImages === 'function') {
+          window.__mfStabilizeBrokenImages(document);
+        }
+      } catch (e4) {}
     };
 
     if (window.BX && BX.ajax) {

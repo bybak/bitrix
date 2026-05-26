@@ -127,11 +127,28 @@ if ($canBuy && function_exists('mf_catalog_listing_preferred_store_id'))
 
 $code = trim((string)($item['CODE'] ?? ''));
 $placeholder = function_exists('mf_mf_placeholder_img_url') ? (string)mf_mf_placeholder_img_url() : '';
-$imgSrc = function_exists('mf_mf_product_img_url') ? (string)mf_mf_product_img_url($code, 1) : '';
+$productId = (int)($item['ID'] ?? 0);
+$imgSrc = '';
+if (function_exists('mf_mf_product_card_preview_src'))
+{
+	$imgSrc = (string)mf_mf_product_card_preview_src(
+		$productId,
+		$code,
+		is_array($item) ? $item : null,
+		(int)($item['IBLOCK_ID'] ?? 4)
+	);
+}
+elseif ($code !== '' && function_exists('mf_mf_product_img_url'))
+{
+	$imgSrc = (string)mf_mf_product_img_url($code, 1);
+}
 if ($imgSrc === '')
 {
 	$imgSrc = $placeholder;
 }
+$imgIsPlaceholder = function_exists('mf_mf_is_placeholder_img_url')
+	? mf_mf_is_placeholder_img_url($imgSrc)
+	: (strpos($imgSrc, 'mf-no-photo') !== false);
 
 // Brand + article (SKU) for card meta line.
 $mfNormVal = static function($v): string
@@ -247,9 +264,9 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 	<?php else: ?>
 		<span class="mf-pcard__media" data-entity="image-wrapper">
 	<?php endif; ?>
-			<span class="mf-pcard__media-inner">
+			<span class="mf-pcard__media-inner<?=($imgIsPlaceholder ? ' mf-pcard__media-inner--placeholder' : '')?>">
 				<span class="product-item-image-original" id="<?=$itemIds['PICT']?>">
-					<img class="mf-pcard__media-img" src="<?=$imgSrc?>" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+					<img class="mf-pcard__media-img<?=($imgIsPlaceholder ? ' mf-img--placeholder' : '')?>" src="<?=$imgSrc?>" alt="" aria-hidden="true"<?=($imgIsPlaceholder ? '' : ' loading="lazy"')?> decoding="async" />
 				</span>
 			</span>
 			<span style="display:none" aria-hidden="true">

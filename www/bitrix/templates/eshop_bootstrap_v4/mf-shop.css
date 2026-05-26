@@ -327,6 +327,13 @@
   aspect-ratio: 1 / 1;
   background: #fff url("/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg?v=2") center / 78px 78px no-repeat;
 }
+.mf-pcard__media-inner--placeholder,
+.mf-pcard__media-inner:has(.mf-img--placeholder){
+  background: #fff url("/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg?v=2") center / 78px 78px no-repeat;
+}
+.mf-pcard__media-img.mf-img--placeholder{
+  opacity: 1;
+}
 .mf-pcard__media-inner::before{
   content:"";
   display:block;

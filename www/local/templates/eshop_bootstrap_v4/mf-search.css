@@ -180,7 +180,7 @@
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgba(0,0,0,.08);
-  background: rgba(0,0,0,.02);
+  background: #fff url("/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg?v=2") center / 48px 48px no-repeat;
 }
 .mf-search-card__img img{
   width: 100%;
@@ -188,6 +188,9 @@
   object-fit: contain;
   object-position: center;
   display: block;
+}
+.mf-search-card__img img.mf-img--placeholder{
+  background: transparent;
 }
 .mf-search-card__main .mf-search-card__title{
   margin: 0 0 6px;

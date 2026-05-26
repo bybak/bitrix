@@ -271,6 +271,9 @@ if (!function_exists('mf_search_render_product_card'))
 			$u = (string)mf_mf_product_img_url($code, 1);
 			if ($u !== '') $img = $u;
 		}
+		$imgIsPlaceholder = function_exists('mf_mf_is_placeholder_img_url')
+			? mf_mf_is_placeholder_img_url($img)
+			: (strpos($img, 'mf-no-photo') !== false);
 
 		$priceFrom = (string)($data['price_from_print'] ?? '');
 		if ($priceFrom === '' && !$lazyStores && function_exists('mf_product_search_card_min_price_print'))
@@ -316,8 +319,8 @@ if (!function_exists('mf_search_render_product_card'))
 		?>
 		<<?=$wrapTag?> class="mf-search-card<?=($isAnalog ? ' mf-search-card--analog' : ' mf-search-card--root')?>"<?=$rootAttrs?>>
 			<div class="mf-search-card__top">
-				<a class="mf-search-card__img" href="<?=htmlspecialcharsbx($url)?>">
-					<img src="<?=htmlspecialcharsbx($img)?>" alt="" loading="lazy" decoding="async" />
+				<a class="mf-search-card__img<?=($imgIsPlaceholder ? ' mf-search-card__img--placeholder' : '')?>" href="<?=htmlspecialcharsbx($url)?>">
+					<img src="<?=htmlspecialcharsbx($img)?>" alt="" class="<?=($imgIsPlaceholder ? 'mf-img--placeholder' : '')?>"<?=($imgIsPlaceholder ? '' : ' loading="lazy"')?> decoding="async" />
 				</a>
 				<div class="mf-search-card__main">
 					<a class="mf-search-card__title" href="<?=htmlspecialcharsbx($url)?>"><?=$titleHtml?></a>
@@ -527,11 +530,14 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 					'ID',
 					'NAME',
 					'CODE',
+					'PREVIEW_PICTURE',
+					'DETAIL_PICTURE',
 					'PROPERTY_CML2_ARTICLE',
 					'PROPERTY_MF_BRAND',
 					'PROPERTY_MF_BRAND_NORM',
 					'PROPERTY_OEM',
 					'PROPERTY_MF_EXT_IMAGES',
+					'PROPERTY_MORE_PHOTO',
 				]
 			);
 			while ($r = $rsA->Fetch())

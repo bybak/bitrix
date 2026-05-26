@@ -53,12 +53,5 @@ $aMenuLinks = Array(
 		Array(),
 		""
 	),
-	Array(
-		"Подписки",
-		"personal/subscribe/",
-		Array(),
-		Array(),
-		""
-	),
 );
 ?>

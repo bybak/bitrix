@@ -20,11 +20,14 @@ if (!function_exists('mf_catalog_search_select'))
 			'ID',
 			'NAME',
 			'CODE',
+			'PREVIEW_PICTURE',
+			'DETAIL_PICTURE',
 			'PROPERTY_CML2_ARTICLE',
 			'PROPERTY_MF_BRAND',
 			'PROPERTY_MF_BRAND_NORM',
 			'PROPERTY_OEM',
 			'PROPERTY_MF_EXT_IMAGES',
+			'PROPERTY_MORE_PHOTO',
 		];
 	}
 }

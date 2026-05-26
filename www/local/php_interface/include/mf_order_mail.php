@@ -589,11 +589,7 @@ final class Renderer
 		}
 
 		return self::sectionTitle('Оплата')
-			. self::block(
-				'<div style="margin-top:14px;padding-top:14px;border-top:1px solid ' . self::COLOR_BORDER . ';">'
-				. $content
-				. '</div>'
-			);
+			. self::block($content);
 	}
 
 	private static function card2CardPaymentHtml(Order $order, Payment $payment): string
