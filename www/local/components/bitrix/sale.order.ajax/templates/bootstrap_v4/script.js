@@ -1566,6 +1566,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 					mfEdost._summaryObserver = new MutationObserver(function(){
 						try {
+							if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.isUserEditingAddress === 'function'
+								&& ctx.__mfBuyerAddress.isUserEditingAddress())
+								return;
 							mfEdost.deferApplyDeliverySummary();
 						} catch(e1) {}
 					});
@@ -2472,6 +2475,21 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			return false;
 		};
 
+		mfBuyerAddress.flushPendingCheckoutRefresh = function(){
+			try {
+				if (typeof mfBuyerAddress.isUserEditingAddress === 'function' && mfBuyerAddress.isUserEditingAddress())
+					return;
+				if (!window.BX || !BX.Sale || !BX.Sale.OrderAjaxComponent)
+					return;
+				var comp = BX.Sale.OrderAjaxComponent;
+				if (!comp.__mfPendingRefreshWhileEditing)
+					return;
+				comp.__mfPendingRefreshWhileEditing = false;
+				if (typeof comp.sendRequest === 'function')
+					comp.sendRequest('refreshOrderAjax');
+			} catch(eFlush) {}
+		};
+
 		mfBuyerAddress.bindAddressFieldGuards = function(){
 			try {
 				var guardCodes = ['DELIVERY_ADDRESS', 'DELIVERY_ZIP', 'DELIVERY_LOCATION_TEXT'];
@@ -2488,8 +2506,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						BX.bind(gInp, 'blur', function(){
 							setTimeout(function(){
 								if (!mfBuyerAddress.isUserEditingAddress())
+								{
 									ctx.__mfBuyerAddressEditing = false;
-							}, 180);
+									mfBuyerAddress.flushPendingCheckoutRefresh();
+								}
+							}, 220);
 						});
 					})(guardCodes[gci]);
 				}
@@ -3090,7 +3111,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			var wrap = BX.create('DIV', {attrs: {id: 'mf-nominatim-wrap', className: 'mf-nominatim-wrap'}});
 			var inp = BX.create('INPUT', {
 				props: {type: 'text', autocomplete: 'street-address', placeholder: 'Введите адрес', className: 'form-control'},
-				attrs: {class: 'form-control mf-nominatim-wrap__input', inputmode: 'search'}
+				attrs: {
+					class: 'form-control mf-nominatim-wrap__input',
+					inputmode: 'text',
+					autocapitalize: 'off',
+					autocorrect: 'off',
+					spellcheck: 'false',
+					enterkeyhint: 'search'
+				}
 			});
 			var errBox = BX.create('DIV', {attrs: {id: 'mf-nominatim-err'}, style: {display: 'none', color: '#842029', fontSize: '12px', marginTop: '6px'}});
 			var list = BX.create('DIV', {
@@ -3223,8 +3251,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 									style: {padding: '8px 10px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: '13px'},
 									text: it.display_name || ''
 								});
-								BX.bind(line, 'click', function(ev){
+								var pickNominatimItem = function(ev){
 									try {
+										if (ev && ev.preventDefault)
+											ev.preventDefault();
 										if (ev && ev.stopPropagation)
 											ev.stopPropagation();
 									} catch(eStop) {}
@@ -3296,7 +3326,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 												ctx.__mfBuyerAddress.syncNominatimInputValue();
 										} catch(eNomAfterPick) {}
 									}, 300);
-								});
+								};
+								BX.bind(line, 'touchend', pickNominatimItem);
+								BX.bind(line, 'click', pickNominatimItem);
 								list.appendChild(line);
 							})(resp.items[i]);
 						}
@@ -3327,8 +3359,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				setTimeout(function(){
 					if (document.activeElement !== inp
 						&& !(typeof mfBuyerAddress.isUserEditingAddress === 'function' && mfBuyerAddress.isUserEditingAddress()))
+					{
 						ctx.__mfNominatimTyping = false;
-				}, 250);
+						mfBuyerAddress.flushPendingCheckoutRefresh();
+					}
+				}, 280);
 			});
 			var closeNominatimList = function(ev){
 				try {
@@ -3341,8 +3376,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					list.style.display = 'none';
 				} catch(e) {}
 			};
-			BX.bind(document, 'mousedown', closeNominatimList);
-			BX.bind(document, 'touchstart', closeNominatimList);
+			// touchstart/mousedown на document ломают фокус и клавиатуру на Samsung/Android.
+			BX.bind(document, 'click', function(ev){
+				setTimeout(function(){ closeNominatimList(ev); }, 0);
+			});
 
 			try {
 				if (!ctx.__mfNominatimActive && inp)
@@ -3593,23 +3630,35 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 		this.BXCallAllowed = true;
 
+		var mfAddressEditing = false;
+		try {
+			mfAddressEditing = typeof mfBuyerAddress.isUserEditingAddress === 'function'
+				&& mfBuyerAddress.isUserEditingAddress();
+		} catch(eAddrEdit) {}
+
 		// Motor-Force customization:
 		// Virtual eDost list: always hide Bitrix delivery cards and render eDost offers.
 		try {
 			mfEdost.ensureFields();
-			mfEdost.hideBitrixDeliveryCards();
-			mfEdost.applyDeliverySummary();
-			mfEdost.applyTotalDeliveryLine();
+			if (!mfAddressEditing)
+			{
+				mfEdost.hideBitrixDeliveryCards();
+				mfEdost.applyDeliverySummary();
+				mfEdost.applyTotalDeliveryLine();
+			}
 		} catch(e) {}
 
 		try {
-			if (!mfBuyerAddress.isCheckoutFieldFocused())
+			if (!mfAddressEditing && !mfBuyerAddress.isCheckoutFieldFocused())
 				mfBuyerAddress.sync();
 		} catch(eBuyer) {}
 
 		try {
-			mfBuyerAddress.installNominatim(ctx);
-			mfBuyerAddress.dedupeNominatimWrap();
+			if (!mfAddressEditing || !document.getElementById('mf-nominatim-wrap'))
+			{
+				mfBuyerAddress.installNominatim(ctx);
+				mfBuyerAddress.dedupeNominatimWrap();
+			}
 		} catch(eNom) {}
 
 		try {
@@ -3617,6 +3666,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		} catch(eCc) {}
 
 		try {
+			if (!mfAddressEditing)
+			{
 			mfEdost.restoreLastOrderPreload();
 			// Force empty location on first load only for guests.
 			// Authorized users should keep location restored from their selected profile.
@@ -3699,6 +3750,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			try { mfEdost.installSummaryObserver(); } catch(eObserver) {}
 			// force: иначе при гонке с bx-selected onEnterDelivery может выйти до ensureFields/fetch.
 			try { mfEdost.onEnterDelivery(true); } catch(e) {}
+			}
 		} catch(e) {}
 
 		//set location initialized flag and refresh region & property actual content

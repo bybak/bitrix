@@ -226,12 +226,21 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		{
 			var form;
 
+			action = BX.type.isNotEmptyString(action) ? action : 'refreshOrderAjax';
+
+			// Android/Samsung: не перерисовываем форму, пока пользователь вводит адрес — иначе клавиатура закрывается.
+			if (action === 'refreshOrderAjax' && this.isMfCustomCheckout() && this.mfIsAddressFieldBeingEdited())
+			{
+				this.__mfPendingRefreshWhileEditing = true;
+				return;
+			}
+
+			this.__mfLoaderVisual = !(this.isMobile && action === 'refreshOrderAjax');
+
 			if (!this.startLoader())
 				return;
 
 			this.firstLoad = false;
-
-			action = BX.type.isNotEmptyString(action) ? action : 'refreshOrderAjax';
 
 			if (action === 'showAuthForm')
 			{
@@ -510,6 +519,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			this.BXFormPosting = true;
 
+			// Mobile refresh: overlay сдвигает viewport и закрывает клавиатуру (Samsung/Android).
+			if (this.isMobile && this.__mfLoaderVisual === false)
+				return true;
+
 			if (!this.loadingScreen)
 			{
 				this.loadingScreen = new BX.PopupWindow('loading_screen', null, {
@@ -584,6 +597,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		animateScrollTo: function(node, duration, shiftToTop)
 		{
 			if (!node)
+				return;
+
+			// Прокрутка во время ввода адреса на mobile закрывает клавиатуру (Samsung/Android).
+			if (this.isMobile && this.mfIsAddressFieldBeingEdited())
 				return;
 
 			var scrollTop = BX.GetWindowScrollPos().scrollTop,
@@ -2970,12 +2987,28 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				BX.removeClass(this.orderBlockNode, 'mf-buyer-step-active');
 		},
 
+		mfIsAddressFieldBeingEdited: function()
+		{
+			try {
+				var mfb = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+				if (mfb && typeof mfb.isUserEditingAddress === 'function' && mfb.isUserEditingAddress())
+					return true;
+				if (mfb && typeof mfb.isCheckoutFieldFocused === 'function' && mfb.isCheckoutFieldFocused())
+					return true;
+			} catch(eMfAddr) {}
+			return false;
+		},
+
 		mfTriggerEdostDeliveryInit: function(delayMs)
 		{
 			var wait = (typeof delayMs === 'number') ? delayMs : 0;
 
 			setTimeout(function(){
 				try {
+					if (BX.Sale && BX.Sale.OrderAjaxComponent && typeof BX.Sale.OrderAjaxComponent.mfIsAddressFieldBeingEdited === 'function'
+						&& BX.Sale.OrderAjaxComponent.mfIsAddressFieldBeingEdited())
+						return;
+
 					if (BX.saleOrderAjax)
 					{
 						if (!BX.saleOrderAjax.__mfEdost && typeof BX.saleOrderAjax.initDeferredControl === 'function')
@@ -6620,6 +6653,15 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			if (this.initialized.delivery)
 			{
+				try {
+					if (this.mfIsAddressFieldBeingEdited())
+					{
+						if (activeNodeMode)
+							this.mfTriggerEdostDeliveryInit(500);
+						return;
+					}
+				} catch(eDelDom) {}
+
 				BX.remove(BX.lastChild(node));
 				node.appendChild(BX.firstChild(this.deliveryHiddenBlockNode));
 				this.mfTriggerEdostDeliveryInit(0);
