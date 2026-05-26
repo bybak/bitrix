@@ -239,8 +239,12 @@
   width: 78px;
   min-width: 78px;
   max-width: 78px;
-  padding-right: 12px;
+  padding-right: 20px;
   padding-bottom: 0;
+  margin-right: 4px;
+}
+.mf-cart .basket-item-block-info{
+  padding-left: 2px;
 }
 .mf-cart .basket-item-image{
   width: 78px;
@@ -254,7 +258,12 @@
 .mf-cart .basket-item-block-image--placeholder{
   position: relative;
   overflow: hidden;
-  background: #fff url("/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg?v=2") center 38% / 52px auto no-repeat;
+  height: 78px;
+  background-color: #fff;
+  background-image: url("/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg?v=2");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 100% auto;
   border-radius: 12px;
   border: 1px solid rgba(0,0,0,.06);
 }
