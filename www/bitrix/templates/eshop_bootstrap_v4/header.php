@@ -499,7 +499,7 @@ if (function_exists('mf_seo_apply_for_current_page'))
 					</div>
 					<div class="form-group">
 						<label for="mf-callback-comment">Комментарий <span class="mf-header-modal__optional">(необязательно)</span></label>
-						<textarea id="mf-callback-comment" class="form-control" name="message" rows="3" placeholder="Удобное время для звонка"></textarea>
+						<textarea id="mf-callback-comment" class="form-control" name="message" rows="3"></textarea>
 					</div>
 					<div class="mf-header-modal__actions">
 						<button type="submit" class="btn btn-warning mf-header-modal__submit">Заказать звонок</button>
