@@ -222,10 +222,14 @@ final class Renderer
 			return '<a href="mailto:' . self::esc($value) . '" style="color:' . self::COLOR_LINK . ';">' . self::esc($value) . '</a>';
 		}
 
-		if (in_array($label, ['Ссылка', 'Страница'], true) && preg_match('~^https?://~i', $value))
+		if (in_array($label, ['Ссылка', 'Страница'], true))
 		{
-			return '<a href="' . self::esc($value) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">'
-				. self::esc($value) . '</a>';
+			$value = self::absoluteUrl($value);
+			if (preg_match('~^https?://~i', $value))
+			{
+				return '<a href="' . self::esc($value) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">'
+					. self::esc($value) . '</a>';
+			}
 		}
 
 		if (str_contains($value, "\n"))

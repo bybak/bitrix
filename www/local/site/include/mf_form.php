@@ -64,6 +64,11 @@ if (!function_exists('mf_form_resolve_page_url'))
 
 		if ($pageUrl !== '')
 		{
+			if (class_exists(\Mf\SiteMail\Renderer::class))
+			{
+				return \Mf\SiteMail\Renderer::absoluteUrl($pageUrl);
+			}
+
 			return $pageUrl;
 		}
 

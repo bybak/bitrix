@@ -64,6 +64,9 @@ try
 	$phone = preg_replace('~[\r\n]+~', '', $phone ?? '');
 	$message = trim((string)preg_replace('~\r\n?~', "\n", $message ?? ''));
 	$pageUrl = preg_replace('~[\r\n]+~', '', $pageUrl ?? '');
+	$pageUrlForMail = $pageUrl !== '' && class_exists(\Mf\SiteMail\Renderer::class)
+		? \Mf\SiteMail\Renderer::absoluteUrl($pageUrl)
+		: $pageUrl;
 
 	$errors = [];
 	if ($name === '')
@@ -128,7 +131,7 @@ try
 
 	$metaRows = [
 		['Дата', date('Y-m-d H:i:s')],
-		['Страница', $pageUrl !== '' ? $pageUrl : '—'],
+		['Страница', $pageUrlForMail !== '' ? $pageUrlForMail : '—'],
 		['Авторизован', $isAuthorized ? 'да' : 'нет'],
 	];
 	if ($isAuthorized && method_exists($USER, 'GetID'))

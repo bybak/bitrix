@@ -282,7 +282,7 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 						<?=-$price['PERCENT']?>%
 					</span>
 				<?php endif; ?>
-				<span class="mf-pcard__chip <?=$canBuy ? 'mf-pcard__chip--ok' : ($mfChipOrderOnly ? 'mf-pcard__chip--order' : (!empty($mfChipSupplierPending) ? 'mf-pcard__chip--order' : 'mf-pcard__chip--no'))?>">
+				<span class="mf-pcard__chip <?=$canBuy ? 'mf-pcard__chip--ok' : 'mf-pcard__chip--order'?>">
 					<?php if ($canBuy): ?>В наличии<?php elseif ($mfChipOrderOnly): ?>Под заказ<?php elseif (!empty($mfChipSupplierPending)): ?>Ожидается<?php else: ?>Под заказ<?php endif; ?>
 				</span>
 			</span>
