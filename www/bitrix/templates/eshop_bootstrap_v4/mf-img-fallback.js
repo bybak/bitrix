@@ -17,7 +17,7 @@
 
   function markPlaceholderWrap(img) {
     if (!img || !img.closest) return;
-    var wrap = img.closest('.mf-search-card__img, .mf-pcard__media-inner, .mf-pcard__media, .mf-pline__media-link');
+    var wrap = img.closest('.mf-search-card__img, .mf-pcard__media-inner, .mf-pcard__media, .mf-pline__media-link, .basket-item-block-image');
     if (!wrap) return;
     if (wrap.classList.contains('mf-search-card__img')) {
       wrap.classList.add('mf-search-card__img--placeholder');
@@ -25,6 +25,8 @@
       wrap.classList.add('mf-pcard__media-inner--placeholder');
     } else if (wrap.classList.contains('mf-pline__media-link')) {
       wrap.classList.add('mf-pline__media-link--placeholder');
+    } else if (wrap.classList.contains('basket-item-block-image')) {
+      wrap.classList.add('basket-item-block-image--placeholder');
     }
   }
 
@@ -39,6 +41,10 @@
     } catch (e2) {}
     img.classList.add('mf-img--placeholder');
     markPlaceholderWrap(img);
+    try {
+      img.setAttribute('alt', '');
+      img.setAttribute('aria-hidden', 'true');
+    } catch (e3) {}
     if ((img.getAttribute('src') || '') !== PLACEHOLDER) {
       img.setAttribute('src', PLACEHOLDER);
     }

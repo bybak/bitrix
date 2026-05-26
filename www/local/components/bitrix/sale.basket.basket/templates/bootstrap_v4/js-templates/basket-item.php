@@ -40,6 +40,10 @@ if (!empty($arParams['LABEL_PROP_POSITION']))
 		$labelPositionClass .= isset($positionClassMap[$pos]) ? ' '.$positionClassMap[$pos] : '';
 	}
 }
+
+$mfPlaceholder = function_exists('mf_mf_placeholder_img_url')
+	? (string)mf_mf_placeholder_img_url()
+	: '/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg';
 ?>
 <script id="basket-item-template" type="text/html">
 	<tr class="basket-items-list-item-container{{#SHOW_RESTORE}} basket-items-list-item-container-expend{{/SHOW_RESTORE}}"
@@ -78,13 +82,13 @@ if (!empty($arParams['LABEL_PROP_POSITION']))
 					if (in_array('PREVIEW_PICTURE', $arParams['COLUMNS_LIST']))
 					{
 						?>
-						<div class="basket-item-block-image<?=(!isset($mobileColumns['PREVIEW_PICTURE']) ? ' d-none d-sm-block' : '')?>">
+						<div class="basket-item-block-image{{#IMAGE_IS_PLACEHOLDER}} basket-item-block-image--placeholder{{/IMAGE_IS_PLACEHOLDER}}<?=(!isset($mobileColumns['PREVIEW_PICTURE']) ? ' d-none d-sm-block' : '')?>">
 							{{#DETAIL_PAGE_URL}}
 								<a href="{{DETAIL_PAGE_URL}}" class="basket-item-image-link">
 							{{/DETAIL_PAGE_URL}}
 
-							<img class="basket-item-image" alt="{{NAME}}"
-								src="{{{IMAGE_URL}}}{{^IMAGE_URL}}<?=$templateFolder?>/images/no_photo.png{{/IMAGE_URL}}">
+							<img class="basket-item-image{{#IMAGE_IS_PLACEHOLDER}} mf-img--placeholder{{/IMAGE_IS_PLACEHOLDER}}" alt="" aria-hidden="true"
+								src="{{{IMAGE_URL}}}{{^IMAGE_URL}}<?=htmlspecialcharsbx($mfPlaceholder)?>{{/IMAGE_URL}}">
 
 							{{#SHOW_LABEL}}
 								<div class="basket-item-label-text basket-item-label-big <?=$labelPositionClass?>">

@@ -167,6 +167,15 @@ foreach ($this->basketItems as $row)
 		}
 	}
 
+	if (!empty($rowData['IMAGE_URL']) && function_exists('mf_mf_is_placeholder_img_url'))
+	{
+		$rowData['IMAGE_IS_PLACEHOLDER'] = mf_mf_is_placeholder_img_url((string)$rowData['IMAGE_URL']);
+	}
+	else
+	{
+		$rowData['IMAGE_IS_PLACEHOLDER'] = empty($rowData['IMAGE_URL']);
+	}
+
 	if (!empty($row['SKU_DATA']))
 	{
 		$propMap = array();
