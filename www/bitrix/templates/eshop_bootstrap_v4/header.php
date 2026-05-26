@@ -142,7 +142,7 @@ if (function_exists('mf_seo_apply_for_current_page'))
 <head>
 	<title><?$APPLICATION->ShowTitle()?></title>
 	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
-	<meta name="viewport" content="user-scalable=no, initial-scale=1.0, maximum-scale=1.0, width=device-width">
+	<meta name="viewport" content="<?= $isOrderMake ? 'width=device-width, initial-scale=1' : 'user-scalable=no, initial-scale=1.0, maximum-scale=1.0, width=device-width' ?>">
 	<link rel="shortcut icon" type="image/x-icon" href="<?=SITE_DIR?>favicon.ico" />
 	<? $APPLICATION->ShowHead(); ?>
 	<?php

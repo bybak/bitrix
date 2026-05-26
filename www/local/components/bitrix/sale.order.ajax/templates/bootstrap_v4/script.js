@@ -47,6 +47,32 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				{
 					try
 					{
+						// Пока пользователь вводит адрес — не перерисовываем поля и не запускаем тяжёлую инициализацию.
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.isUserEditingAddress === 'function'
+							&& ctx.__mfBuyerAddress.isUserEditingAddress())
+						{
+							try {
+								if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncOrderPropInputsByCode === 'function')
+								{
+									var mfbLight = ctx.__mfBuyerAddress;
+									var mfCodesLight = ['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP'], cli, cinpL, cvL;
+									for (cli = 0; cli < mfCodesLight.length; cli++)
+									{
+										cinpL = mfbLight.getInputByCode(mfCodesLight[cli]);
+										if (cinpL && cinpL !== false)
+										{
+											cvL = String(cinpL.value || '');
+											if (BX.type.isNotEmptyString(cvL))
+												mfbLight.syncOrderPropInputsByCode(mfCodesLight[cli], cvL);
+										}
+									}
+								}
+								var mfELight = (typeof BX !== 'undefined' && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost) ? BX.saleOrderAjax.__mfEdost : null;
+								if (mfELight && typeof mfELight.ensureFields === 'function')
+									mfELight.ensureFields();
+							} catch(eLightRef) {}
+							return;
+						}
 						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.isCheckoutFieldFocused === 'function'
 							&& ctx.__mfBuyerAddress.isCheckoutFieldFocused())
 						{
@@ -101,8 +127,6 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							ctx.__mfBuyerAddress.syncDeliveryGeoToBuyerFields({forceZip: true});
 						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.sync === 'function')
 							ctx.__mfBuyerAddress.sync();
-						if (mfE && typeof mfE.onEnterDelivery === 'function')
-							mfE.onEnterDelivery(true);
 					}
 					catch (eMfRef) {}
 				});
@@ -191,7 +215,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					} catch(eMfOrd) {}
 
 					try {
-						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.sync === 'function')
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.sync === 'function'
+							&& !(typeof ctx.__mfBuyerAddress.isUserEditingAddress === 'function'
+								&& ctx.__mfBuyerAddress.isUserEditingAddress()))
 						{
 							ctx.__mfBuyerAddress.sync();
 						}
@@ -879,7 +905,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						var ctrl = ctx.properties[pidLoc].control;
 						if (ctrl && typeof ctrl.setValueByLocationCode === 'function')
 						{
+							ctx.__mfSuppressLocationRefresh = true;
 							try { ctrl.setValueByLocationCode(code); } catch(eC) {}
+							setTimeout(function(){
+								try { ctx.__mfSuppressLocationRefresh = false; } catch(eSup) {}
+							}, 700);
 						}
 						ctx.__mfLocationTouched = true;
 						applied = true;
@@ -1515,17 +1545,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			};
 
 			mfEdost.deferApplyDeliverySummary = function(){
-				var delays = [0, 30, 120, 300];
-				for (var i = 0; i < delays.length; i++)
-				{
-					(function(delay){
-						setTimeout(function(){
-							try { mfEdost.applyDeliverySummary(); } catch(e1) {}
-							try { mfEdost.applyTotalDeliveryLine(); } catch(e2) {}
-							try { mfEdost.syncSelectedRadio(); } catch(e3) {}
-						}, delay);
-					})(delays[i]);
-				}
+				if (mfEdost._summaryDebounceTimer)
+					clearTimeout(mfEdost._summaryDebounceTimer);
+				mfEdost._summaryDebounceTimer = setTimeout(function(){
+					mfEdost._summaryDebounceTimer = null;
+					try { mfEdost.applyDeliverySummary(); } catch(e1) {}
+					try { mfEdost.applyTotalDeliveryLine(); } catch(e2) {}
+					try { mfEdost.syncSelectedRadio(); } catch(e3) {}
+				}, 180);
 			};
 
 			mfEdost.installSummaryObserver = function(){
@@ -2424,9 +2451,56 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			return null;
 		};
 
+		mfBuyerAddress.isUserEditingAddress = function(){
+			try {
+				if (ctx.__mfNominatimTyping || ctx.__mfBuyerAddressEditing)
+					return true;
+				var active = document.activeElement;
+				if (!active || typeof active.tagName === 'undefined')
+					return false;
+				var wrapNom = document.getElementById('mf-nominatim-wrap');
+				if (wrapNom && wrapNom.contains && wrapNom.contains(active))
+					return true;
+				var addrCodes = ['DELIVERY_ADDRESS', 'DELIVERY_ZIP', 'DELIVERY_LOCATION_TEXT'];
+				for (var aci = 0; aci < addrCodes.length; aci++)
+				{
+					var addrInp = mfBuyerAddress.getInputByCode(addrCodes[aci]);
+					if (addrInp && addrInp !== false && addrInp === active)
+						return true;
+				}
+			} catch(eEditAddr) {}
+			return false;
+		};
+
+		mfBuyerAddress.bindAddressFieldGuards = function(){
+			try {
+				var guardCodes = ['DELIVERY_ADDRESS', 'DELIVERY_ZIP', 'DELIVERY_LOCATION_TEXT'];
+				for (var gci = 0; gci < guardCodes.length; gci++)
+				{
+					(function(codeGuard){
+						var gInp = mfBuyerAddress.getInputByCode(codeGuard);
+						if (!gInp || gInp === false || gInp._mfAddressGuardBound)
+							return;
+						gInp._mfAddressGuardBound = true;
+						BX.bind(gInp, 'focus', function(){
+							ctx.__mfBuyerAddressEditing = true;
+						});
+						BX.bind(gInp, 'blur', function(){
+							setTimeout(function(){
+								if (!mfBuyerAddress.isUserEditingAddress())
+									ctx.__mfBuyerAddressEditing = false;
+							}, 180);
+						});
+					})(guardCodes[gci]);
+				}
+			} catch(eBindGuard) {}
+		};
+
 		mfBuyerAddress.syncDeliveryGeoToBuyerFields = function(options){
 			options = options || {};
 			try {
+				var activeEl = null;
+				try { activeEl = document.activeElement; } catch(eActEl) {}
 				var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
 				if (!mfE || typeof mfE.isPickupMode !== 'function' || mfE.isPickupMode())
 					return false;
@@ -2443,7 +2517,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					ctx.__mfDeliveryZipLast = geo.zip;
 
 				var locationInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
-				if (locationInput && locationInput !== false && geo.locationLine)
+				if (locationInput && locationInput !== false && geo.locationLine && locationInput !== activeEl)
 				{
 					locationInput.value = geo.locationLine;
 					mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', geo.locationLine);
@@ -2454,7 +2528,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 
 				var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
-				if (zipInput && zipInput !== false && geo.zip)
+				if (zipInput && zipInput !== false && geo.zip && zipInput !== activeEl)
 				{
 					if (options.forceZip || !ctx.__mfBuyerZipChangedManually || String(zipInput.value || '').trim() === '')
 					{
@@ -2466,7 +2540,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (options.syncStreet !== false)
 				{
 					var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
-					if (streetInput && streetInput !== false && geo.streetLine
+					if (streetInput && streetInput !== false && geo.streetLine && streetInput !== activeEl
 						&& !mfBuyerAddress.isPickupDefaultAddress(geo.streetLine))
 					{
 						var curStreet = String(streetInput.value || '').trim();
@@ -2575,7 +2649,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var cur = String(nomInp.value || '').trim();
 
 				// Не перебивать, пока пользователь набирает запрос и ещё не выбрал адрес.
-				if (document.activeElement === nomInp || ctx.__mfNominatimTyping)
+				if ((document.activeElement === nomInp || ctx.__mfNominatimTyping || (wrapNom.contains && wrapNom.contains(document.activeElement)))
+					&& !pre && !ctx.__mfNominatimActive)
 					return;
 
 				if (pre)
@@ -2707,11 +2782,21 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 		mfBuyerAddress.sync = function(){
 			try {
+				mfBuyerAddress.bindAddressFieldGuards();
+
+				if (typeof mfBuyerAddress.isUserEditingAddress === 'function' && mfBuyerAddress.isUserEditingAddress())
+				{
+					try { mfBuyerAddress.hideLegacyRows(); } catch(eHideLegacy) {}
+					try { mfBuyerAddress.syncBitrixLocationVisibility(ctx); } catch(eVisEdit) {}
+					return;
+				}
 				if (mfBuyerAddress.isCheckoutFieldFocused())
 					return;
 
 				var mfEsync = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
 				var isDeliveryMode = mfEsync && typeof mfEsync.isPickupMode === 'function' && !mfEsync.isPickupMode();
+				var activeElSync = null;
+				try { activeElSync = document.activeElement; } catch(eActSync) {}
 				if (isDeliveryMode)
 				{
 					var streetProbe = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
@@ -2732,7 +2817,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var isDeliveryModeLoc = isDeliveryMode;
 					var hasGeoLoc = isDeliveryModeLoc && String(locationInput.value || '').trim() !== ''
 						&& !mfBuyerAddress.isGenericLocationDefault(String(locationInput.value || '').trim());
-					if (!ctx.__mfNominatimActive && !hasGeoLoc)
+					if (!ctx.__mfNominatimActive && !hasGeoLoc && locationInput !== activeElSync)
 					{
 						if (locationText)
 						{
@@ -2767,12 +2852,13 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var streetVal = mfBuyerAddress.getPropValueByCode('DELIVERY_ADDRESS');
 					if (isDeliveryMode && mfBuyerAddress.isPickupDefaultAddress(streetVal))
 						streetVal = '';
-					if (streetVal !== '')
+					if (streetVal !== '' && streetInput !== activeElSync)
 					{
 						streetInput.value = streetVal;
 						mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', streetVal);
 					}
-					else if (isDeliveryMode && mfBuyerAddress.isPickupDefaultAddress(String(streetInput.value || '')))
+					else if (isDeliveryMode && mfBuyerAddress.isPickupDefaultAddress(String(streetInput.value || ''))
+						&& streetInput !== activeElSync)
 					{
 						streetInput.value = '';
 						mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', '');
@@ -2793,7 +2879,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					if (isDeliveryMode)
 					{
 						var geoZip = mfBuyerAddress.getDeliveryGeoFromSelection();
-						if (geoZip && geoZip.zip && (!ctx.__mfBuyerZipChangedManually || String(zipInput.value || '').trim() === ''))
+						if (geoZip && geoZip.zip && zipInput !== activeElSync
+							&& (!ctx.__mfBuyerZipChangedManually || String(zipInput.value || '').trim() === ''))
 						{
 							zipInput.value = geoZip.zip;
 							mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ZIP', geoZip.zip);
@@ -3238,7 +3325,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			});
 			BX.bind(inp, 'blur', function(){
 				setTimeout(function(){
-					if (document.activeElement !== inp)
+					if (document.activeElement !== inp
+						&& !(typeof mfBuyerAddress.isUserEditingAddress === 'function' && mfBuyerAddress.isUserEditingAddress()))
 						ctx.__mfNominatimTyping = false;
 				}, 250);
 			});
@@ -3358,6 +3446,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							control.bindEvent('after-select-real-value', function(){
 								try {
 									if (!ctx.BXCallAllowed) return;
+									if (ctx.__mfSuppressLocationRefresh) return;
 									if (
 										ctx.__mfNominatimActive
 										|| (ctx.__mfNominatimJsonLast && mfEdost.getDeliveryMode() === mfEdost.DELIVERY_MODE_DELIVERY)
@@ -3384,7 +3473,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 										mfEdost.ensureFields();
 										mfEdost.fetchOffers(locVal, '', {allowInactive: mfEdost.isAuthorized()});
 										mfEdost.updateGate(locVal);
-										mfBuyerAddress.sync();
+										if (!(typeof mfBuyerAddress.isUserEditingAddress === 'function'
+											&& mfBuyerAddress.isUserEditingAddress()))
+											mfBuyerAddress.sync();
 									}, 50);
 								} catch(e) {}
 							});
@@ -3565,8 +3656,6 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			}
 
 			// Pull offers on each refresh using current LOCATION/ZIP values.
-			mfEdost.restoreLastOrderPreload();
-
 			var locInit = mfEdost.getEffectiveLocationCode();
 			var zipInit = '';
 			try {
@@ -3748,6 +3837,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 	submitFormProxy: function(item, control)
 	{
+		if (this.__mfSuppressLocationRefresh)
+			return;
+
 		var propId = false;
 		for(var k in this.properties){
 			if(typeof this.properties[k].control != 'undefined' && this.properties[k].control == control){
@@ -3755,6 +3847,13 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				break;
 			}
 		}
+
+		try {
+			if (propId !== false && this.properties[propId] && this.properties[propId].type === 'LOCATION'
+				&& this.__mfBuyerAddress && typeof this.__mfBuyerAddress.isUserEditingAddress === 'function'
+				&& this.__mfBuyerAddress.isUserEditingAddress())
+				return;
+		} catch(eLocEdit) {}
 
 		// turning LOCATION_ALT_PROP_DISPLAY_MANUAL on\off
 

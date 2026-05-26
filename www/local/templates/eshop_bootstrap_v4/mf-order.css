@@ -320,6 +320,13 @@
 .mf-order .mf-nominatim-wrap__input{
   width: 100%;
 }
+@media (max-width: 575.98px){
+  .mf-order .form-control,
+  .mf-order .mf-nominatim-wrap__input,
+  .mf-order textarea.form-control{
+    font-size: 16px;
+  }
+}
 .mf-order .mf-edost-box{
   margin-top: 4px;
 }

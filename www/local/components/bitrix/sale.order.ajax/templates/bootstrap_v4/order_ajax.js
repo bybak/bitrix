@@ -2443,7 +2443,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				transition: BX.easing.makeEaseOut(BX.easing.transitions.quad),
 				step: function(state){
 					node.style.height = state.height + "px";
-					if (nextSection)
+					if (nextSection && !this.isMobile)
 						window.scrollTo(0, state.scrollTop);
 				},
 				complete: function(){
@@ -8000,7 +8000,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			{
 				try {
 					var mfBGeo = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
-					if (mfBGeo && typeof mfBGeo.isCheckoutFieldFocused === 'function' && mfBGeo.isCheckoutFieldFocused())
+					var mfSkipPropsSync = mfBGeo && (
+						(typeof mfBGeo.isCheckoutFieldFocused === 'function' && mfBGeo.isCheckoutFieldFocused())
+						|| (typeof mfBGeo.isUserEditingAddress === 'function' && mfBGeo.isUserEditingAddress())
+					);
+					if (mfSkipPropsSync)
 					{
 						// skip
 					}
