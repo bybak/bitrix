@@ -38,6 +38,7 @@ $isProducts = (strpos($curPage, SITE_DIR."products/") === 0) || $isKatalogZapcha
 $isSearch = (strpos($curPage, SITE_DIR."search/") === 0);
 $cartPathPrefix = SITE_DIR . "personal/cart/";
 $isCart = ($curPage === rtrim($cartPathPrefix, "/") || strpos($curPage, $cartPathPrefix) === 0);
+$showDeliverySpbLegend = function_exists('mf_page_shows_delivery_spb_legend') && mf_page_shows_delivery_spb_legend();
 $orderMakePrefix = rtrim((string)SITE_DIR, '/') . '/personal/order/make';
 $isOrderMake = (
 	strpos($curPage, $orderMakePrefix) === 0
@@ -187,6 +188,11 @@ if (function_exists('mf_seo_apply_for_current_page'))
 		$js = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-cart.js");
 		echo '<script src="'.htmlspecialcharsbx($js).'" defer></script>'."\n";
 	}
+	if ($showDeliverySpbLegend)
+	{
+		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-delivery-spb-legend.css");
+		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
+	}
 	if ($isOrderMake)
 	{
 		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-order.css");
@@ -242,7 +248,7 @@ if (function_exists('mf_seo_apply_for_current_page'))
 	}
 	?>
 </head>
-<body class="bx-background-image bx-theme-<?=$theme?><?if($isHome):?> mf-home<?endif?><?if($isPosts):?> mf-posts-page<?endif?><?if($isBlog):?> mf-blog-page<?endif?>" <?$APPLICATION->ShowProperty("backgroundImage");?>>
+<body class="bx-background-image bx-theme-<?=$theme?><?if($isHome):?> mf-home<?endif?><?if($isPosts):?> mf-posts-page<?endif?><?if($isBlog):?> mf-blog-page<?endif?><?if($showDeliverySpbLegend):?> mf-has-delivery-spb-legend<?endif?>" <?$APPLICATION->ShowProperty("backgroundImage");?>>
 <div id="panel"><? $APPLICATION->ShowPanel(); ?></div>
 <div class="bx-wrapper" id="bx_eshop_wrap">
 	<header class="mf-header">

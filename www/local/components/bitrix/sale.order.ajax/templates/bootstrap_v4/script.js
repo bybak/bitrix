@@ -49,7 +49,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					{
 						var wrap = document.getElementById('mf-nominatim-wrap');
 						var inp = wrap ? wrap.querySelector('input[type="text"]') : null;
-						if (inp && ctx.__mfNominatimDisplayLine && !String(inp.value || '').trim())
+						if (inp && ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncNominatimInputValue === 'function')
+							ctx.__mfBuyerAddress.syncNominatimInputValue();
+						else if (inp && ctx.__mfNominatimDisplayLine && !String(inp.value || '').trim())
 							inp.value = String(ctx.__mfNominatimDisplayLine);
 						var jForm = BX('bx-soa-order-form');
 						if (jForm && ctx.__mfNominatimJsonLast && !String((jForm.querySelector('input[name="MF_NOMINATIM_JSON"]') || {}).value || '').trim())
@@ -89,6 +91,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							mfE.ensureFields();
 						if (mfE && typeof mfE.restoreLastOrderPreload === 'function')
 							mfE.restoreLastOrderPreload();
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncDeliveryGeoToBuyerFields === 'function')
+							ctx.__mfBuyerAddress.syncDeliveryGeoToBuyerFields({forceZip: true});
 						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.sync === 'function')
 							ctx.__mfBuyerAddress.sync();
 						if (mfE && typeof mfE.onEnterDelivery === 'function')
@@ -262,6 +266,83 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			mfEdost.selectedId = '';
 			mfEdost.selected = null;
 			mfEdost._managerDeliveryFallback = false;
+			mfEdost._edostCalculated = false;
+			mfEdost.initPickupOffer = function(){
+				var mc = mfEdost.getMfCheckout();
+				var p = mc && mc.PICKUP ? mc.PICKUP : null;
+				mfEdost.PICKUP_ID = p && p.ID ? String(p.ID) : 'pickup';
+				mfEdost.PICKUP_OFFER = {
+					id: mfEdost.PICKUP_ID,
+					company: p && p.COMPANY ? String(p.COMPANY) : 'Самовывоз',
+					name: p && p.NAME ? String(p.NAME) : 'Санкт-Петербург, ул. Салова, д. 57, к. 1 Литера Ч',
+					price: p && p.PRICE != null && p.PRICE !== '' ? String(p.PRICE) : '0'
+				};
+				mfEdost.PICKUP_UI_LABEL = p && p.LABEL
+					? String(p.LABEL)
+					: ('Самовывоз (' + mfEdost.PICKUP_OFFER.name + ') — стоимость 0 ₽');
+				mfEdost.PICKUP_LOCATION_TEXT = p && p.LOCATION_TEXT
+					? String(p.LOCATION_TEXT)
+					: 'Санкт-Петербург';
+			};
+			mfEdost.isPickupId = function(id){
+				return String(id || '') === String(mfEdost.PICKUP_ID || 'pickup');
+			};
+			mfEdost.isPickupSelected = function(){
+				return mfEdost.isPickupMode();
+			};
+			mfEdost.formatTariffPriceText = function(price){
+				price = String(price == null ? '' : price).trim();
+				if (price === '0' || price === '0.0' || price === '0,0')
+					return '0 ₽';
+				if (price !== '')
+					return price + ' ₽';
+				return 'При получении';
+			};
+			mfEdost.syncPickupAddressVisibility = function(){
+				// Адрес и расчёт eDost остаются доступны при самовывозе — не скрываем поля.
+				try {
+					var del = BX('bx-soa-delivery');
+					if (del)
+						BX.removeClass(del, 'mf-pickup-selected');
+				} catch(e) {}
+			};
+			mfEdost.applyPickupOrderProps = function(){
+				// Тариф самовывоза уже в MF_EDOST_*; видимый адрес не перезаписываем — пользователь может считать доставку.
+				try {
+					mfEdost.ensureBitrixLocationPropertyFilled({sendRefresh: false});
+				} catch(ePickupProps) {}
+			};
+			mfEdost.getUiSelectedTariffId = function(){
+				var form = BX('bx-soa-order-form');
+				var selectedId = '';
+				try {
+					if (form)
+					{
+						var idEl0 = form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]');
+						selectedId = idEl0 ? String(idEl0.value || '') : '';
+					}
+				} catch(eSelId) {}
+				if (!selectedId && mfEdost.selectedId)
+					selectedId = String(mfEdost.selectedId);
+				return selectedId;
+			};
+			mfEdost.abortEdostFetch = function(){
+				mfEdost._fetchGen = (mfEdost._fetchGen || 0) + 1;
+				mfEdost._inFlight = false;
+			};
+			mfEdost.renderPickupOnlyList = function(){
+				mfEdost.ensureFields();
+				var root = BX('bx-soa-order') || document;
+				var list = root && root.querySelector ? root.querySelector('#mf-edost-list') : null;
+				if (!list)
+					return;
+
+				BX.cleanNode(list);
+				var selectedId = mfEdost.getUiSelectedTariffId();
+				mfEdost.renderPickupOption(list, selectedId);
+				try { mfEdost.syncSelectedRadio(); } catch(eSyncPu) {}
+				try { mfEdost.updateGate(mfEdost.getEffectiveLocationCode()); } catch(eGatePu) {}
+			};
 			mfEdost.isAuthorized = function(){
 				try {
 					return !!(
@@ -279,6 +360,42 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var del = BX('bx-soa-delivery');
 					return !!(del && del.classList && del.classList.contains('bx-selected'));
 				} catch(e) { return false; }
+			};
+
+			// Редактируемый UI (радио, адрес, eDost) живёт в активном шаге или в #bx-soa-delivery-hidden,
+			// но не в свёрнутом summary #bx-soa-delivery — иначе после «Далее» радио дублируются в summary.
+			mfEdost.getDeliveryEditRoot = function(){
+				var del = BX('bx-soa-delivery');
+				var delHidden = BX('bx-soa-delivery-hidden');
+				try {
+					if (del && del.classList && del.classList.contains('bx-selected'))
+						return del;
+					if (delHidden && delHidden.querySelector('.bx-soa-section-content'))
+						return delHidden;
+				} catch(eRoot) {}
+				return del || delHidden;
+			};
+
+			mfEdost.getDeliveryEditContent = function(){
+				var root = mfEdost.getDeliveryEditRoot();
+				return root && root.querySelector ? root.querySelector('.bx-soa-section-content') : null;
+			};
+
+			mfEdost.cleanupFadeDeliveryUi = function(){
+				try {
+					var del = BX('bx-soa-delivery');
+					if (!del || (del.classList && del.classList.contains('bx-selected')))
+						return;
+					var fadeContent = del.querySelector('.bx-soa-section-content');
+					if (!fadeContent)
+						return;
+					var stray = fadeContent.querySelector('#mf-delivery-mode, #mf-nominatim-wrap, #mf-edost-box, #mf-edost-note, #mf-edost-warning');
+					while (stray)
+					{
+						BX.remove(stray);
+						stray = fadeContent.querySelector('#mf-delivery-mode, #mf-nominatim-wrap, #mf-edost-box, #mf-edost-note, #mf-edost-warning');
+					}
+				} catch(eCleanup) {}
 			};
 			mfEdost.getCurrentLocationCode = function(){
 				try {
@@ -324,7 +441,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					if (typeof window !== 'undefined' && window.MF_CHECKOUT_BOOT)
 					{
 						var boot = window.MF_CHECKOUT_BOOT;
-						var bootKeys = ['FALLBACK_LOCATION_CODE', 'LAST_ORDER_EDOST', 'LAST_ORDER_NOMINATIM_JSON', 'LAST_ORDER_EDOST_TO_CITY'];
+						var bootKeys = ['FALLBACK_LOCATION_CODE', 'LAST_ORDER_EDOST', 'LAST_ORDER_NOMINATIM_JSON', 'LAST_ORDER_EDOST_TO_CITY', 'LAST_ORDER_DELIVERY_MODE', 'DELIVERY_MODE', 'PICKUP'];
 						for (var bi = 0; bi < bootKeys.length; bi++)
 						{
 							var bk = bootKeys[bi];
@@ -334,6 +451,354 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					}
 				} catch(eBoot) {}
 				return out;
+			};
+
+			mfEdost.initPickupOffer();
+
+			mfEdost.DELIVERY_MODE_PICKUP = 'pickup';
+			mfEdost.DELIVERY_MODE_DELIVERY = 'delivery';
+
+			mfEdost.resolveInitialDeliveryMode = function(){
+				var form = BX('bx-soa-order-form');
+				try {
+					var hid = form ? form.querySelector('input[name="MF_DELIVERY_MODE"]') : null;
+					var fromHid = hid ? String(hid.value || '').trim() : '';
+					if (fromHid === mfEdost.DELIVERY_MODE_PICKUP || fromHid === mfEdost.DELIVERY_MODE_DELIVERY)
+						return fromHid;
+				} catch(eH) {}
+				var mc = mfEdost.getMfCheckout();
+				var fromMc = mc && mc.DELIVERY_MODE ? String(mc.DELIVERY_MODE).trim() : '';
+				if (fromMc === mfEdost.DELIVERY_MODE_PICKUP || fromMc === mfEdost.DELIVERY_MODE_DELIVERY)
+					return fromMc;
+				var fromLast = mc && mc.LAST_ORDER_DELIVERY_MODE ? String(mc.LAST_ORDER_DELIVERY_MODE).trim() : '';
+				if (fromLast === mfEdost.DELIVERY_MODE_PICKUP || fromLast === mfEdost.DELIVERY_MODE_DELIVERY)
+					return fromLast;
+				return mfEdost.DELIVERY_MODE_PICKUP;
+			};
+
+			mfEdost.getDeliveryMode = function(){
+				var form = BX('bx-soa-order-form');
+				var el = form ? form.querySelector('input[name="MF_DELIVERY_MODE"]') : null;
+				var v = el ? String(el.value || '').trim() : '';
+				if (v === mfEdost.DELIVERY_MODE_PICKUP || v === mfEdost.DELIVERY_MODE_DELIVERY)
+					return v;
+				return mfEdost.resolveInitialDeliveryMode();
+			};
+
+			mfEdost.isPickupMode = function(){
+				return mfEdost.getDeliveryMode() === mfEdost.DELIVERY_MODE_PICKUP;
+			};
+
+			mfEdost.isDeliveryAddressProperty = function(arProperty){
+				if (!arProperty)
+					return false;
+
+				var code = String(arProperty.CODE || '').toUpperCase();
+				var name = String(arProperty.NAME || '').trim();
+				var type = String(arProperty.TYPE || '').toUpperCase();
+
+				if (type === 'LOCATION' || arProperty.IS_LOCATION === 'Y')
+					return true;
+				if (code === 'DELIVERY_LOCATION_TEXT' || code === 'DELIVERY_ADDRESS' || code === 'DELIVERY_ZIP')
+					return true;
+				if (code === 'ADDRESS' || code === 'FULL_ADDRESS' || code === 'DELIVERY_ADDR' || code === 'CITY' || code === 'ZIP')
+					return true;
+				if (name === 'Адрес доставки')
+					return true;
+				if (arProperty.IS_ADDRESS === 'Y' || arProperty.IS_ADDRESS === true)
+					return true;
+				if (arProperty.IS_ZIP === 'Y' || arProperty.IS_ZIP === true)
+					return true;
+
+				return false;
+			};
+
+			mfEdost.syncPickupTariffFields = function(){
+				var pickup = mfEdost.PICKUP_OFFER || {};
+				mfEdost.selected = pickup;
+				mfEdost.selectedId = String(pickup.id || 'pickup');
+				var form = BX('bx-soa-order-form');
+				if (!form)
+					return;
+				var setHidden = function(name, val){
+					var el = form.querySelector('input[type="hidden"][name="' + name + '"]');
+					if (el)
+						el.value = String(val != null ? val : '');
+				};
+				setHidden('MF_EDOST_TARIF_ID', pickup.id || 'pickup');
+				setHidden('MF_EDOST_TARIF_COMPANY', pickup.company || 'Самовывоз');
+				setHidden('MF_EDOST_TARIF_NAME', pickup.name || '');
+				setHidden('MF_EDOST_TARIF_PRICE', pickup.price != null ? pickup.price : '0');
+				try { mfEdost.clearManagerDeliveryFallback(); } catch(eClr) {}
+				try {
+					if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncMotorForcePickupAddress === 'function')
+						ctx.__mfBuyerAddress.syncMotorForcePickupAddress();
+				} catch(ePickupAddr) {}
+			};
+
+			mfEdost.applyDeliveryModeClasses = function(mode){
+				var del = BX('bx-soa-delivery');
+				if (!del)
+					return;
+				BX.removeClass(del, 'mf-delivery-mode-pickup');
+				BX.removeClass(del, 'mf-delivery-mode-delivery');
+				BX.addClass(del, mode === mfEdost.DELIVERY_MODE_PICKUP ? 'mf-delivery-mode-pickup' : 'mf-delivery-mode-delivery');
+			};
+
+			mfEdost.ensureDeliveryPanel = function(){
+				var content = mfEdost.getDeliveryEditContent();
+				if (!content)
+					return null;
+				var modeWrap = content.querySelector('#mf-delivery-mode');
+				if (!modeWrap)
+					return null;
+
+				var panel = modeWrap.querySelector('#mf-delivery-panel');
+				if (!panel)
+				{
+					panel = BX.create('DIV', {attrs: {id: 'mf-delivery-panel', className: 'mf-delivery-panel'}});
+					modeWrap.appendChild(panel);
+				}
+				return panel;
+			};
+
+			mfEdost.mountDeliveryUi = function(){
+				try {
+					var panel = mfEdost.ensureDeliveryPanel();
+					if (!panel)
+						return;
+
+					var del = BX('bx-soa-delivery');
+					var content = del ? del.querySelector('.bx-soa-section-content') : null;
+					if (!content)
+						return;
+
+					var pick = function(id){
+						return panel.querySelector(id) || content.querySelector(id);
+					};
+					var note = pick('#mf-edost-note');
+					var warn = pick('#mf-edost-warning');
+					var nom = pick('#mf-nominatim-wrap');
+					var box = pick('#mf-edost-box');
+
+					[note, warn, nom, box].forEach(function(el){
+						if (el)
+							panel.appendChild(el);
+					});
+				} catch(eMount) {}
+			};
+
+			mfEdost.syncDeliveryModeRadios = function(mode){
+				var form = BX('bx-soa-order-form');
+				if (!form)
+					return;
+				var radios = form.querySelectorAll('input[name="MF_DELIVERY_MODE_UI"]');
+				for (var ri = 0; ri < radios.length; ri++)
+					radios[ri].checked = (String(radios[ri].value) === mode);
+			};
+
+			mfEdost.clearDeliveryAddressUi = function(){
+				try {
+					ctx.__mfNominatimActive = false;
+					ctx.__mfNominatimDisplayLine = '';
+					ctx.__mfNominatimJsonLast = '';
+					ctx.__mfEdostCityLast = '';
+					ctx.__mfDeliveryLocationLine = '';
+					ctx.__mfDeliveryZipLast = '';
+					window.MF_CHECKOUT_GEO = window.MF_CHECKOUT_GEO || {};
+					window.MF_CHECKOUT_GEO.nominatimJson = '';
+					window.MF_CHECKOUT_GEO.edostCity = '';
+				} catch(eCtxClr) {}
+
+				try {
+					var form = BX('bx-soa-order-form');
+					if (form)
+					{
+						var jEl = form.querySelector('input[name="MF_NOMINATIM_JSON"]');
+						var cEl = form.querySelector('input[name="MF_EDOST_TO_CITY"]');
+						if (jEl)
+							jEl.value = '';
+						if (cEl)
+							cEl.value = '';
+					}
+				} catch(eFormClr) {}
+
+				try {
+					var wrap = document.getElementById('mf-nominatim-wrap');
+					var inp = wrap ? wrap.querySelector('input[type="text"]') : null;
+					if (inp)
+						inp.value = '';
+					var list = document.getElementById('mf-nominatim-list');
+					if (list)
+					{
+						list.style.display = 'none';
+						BX.cleanNode(list);
+					}
+					var err = document.getElementById('mf-nominatim-err');
+					if (err)
+					{
+						err.style.display = 'none';
+						err.textContent = '';
+					}
+				} catch(eUiClr) {}
+
+				try {
+					mfEdost.offers = [];
+					mfEdost._edostCalculated = false;
+					mfEdost._lastKey = '';
+					mfEdost.clearSelection();
+					if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.clearPickupSyncedBuyerFields === 'function')
+						ctx.__mfBuyerAddress.clearPickupSyncedBuyerFields({forceStreet: true});
+					var listEl = document.querySelector('#mf-edost-list');
+					if (listEl)
+						BX.cleanNode(listEl);
+					var selEl = document.querySelector('#mf-edost-selected');
+					if (selEl)
+						selEl.textContent = '';
+					var warnEl = document.querySelector('#mf-edost-warning');
+					if (warnEl)
+					{
+						warnEl.style.display = 'none';
+						warnEl.textContent = '';
+					}
+				} catch(eOffersClr) {}
+			};
+
+			mfEdost.setDeliveryMode = function(mode, options){
+				options = options || {};
+				var prevMode = mfEdost.getDeliveryMode();
+				mode = (mode === mfEdost.DELIVERY_MODE_DELIVERY)
+					? mfEdost.DELIVERY_MODE_DELIVERY
+					: mfEdost.DELIVERY_MODE_PICKUP;
+
+				var form = BX('bx-soa-order-form');
+				if (!form)
+					return;
+
+				var hid = form.querySelector('input[name="MF_DELIVERY_MODE"]');
+				if (!hid)
+				{
+					hid = BX.create('INPUT', {props: {type: 'hidden', name: 'MF_DELIVERY_MODE', value: mode}});
+					form.appendChild(hid);
+				}
+				hid.value = mode;
+
+				mfEdost.applyDeliveryModeClasses(mode);
+				mfEdost.syncDeliveryModeRadios(mode);
+				mfEdost.mountDeliveryUi();
+
+				if (mode === mfEdost.DELIVERY_MODE_PICKUP)
+				{
+					mfEdost.abortEdostFetch();
+					mfEdost.clearDeliveryAddressUi();
+					mfEdost.syncPickupTariffFields();
+				}
+				else if (options.clearPickupTariff !== false)
+				{
+					var idEl = form.querySelector('input[name="MF_EDOST_TARIF_ID"]');
+					if (idEl && mfEdost.isPickupId(idEl.value))
+						mfEdost.clearSelection();
+				}
+
+				if (mode === mfEdost.DELIVERY_MODE_DELIVERY && prevMode === mfEdost.DELIVERY_MODE_PICKUP)
+				{
+					try {
+						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.clearPickupSyncedBuyerFields === 'function')
+							ctx.__mfBuyerAddress.clearPickupSyncedBuyerFields({forceStreet: true});
+					} catch(eClrBuyerFromPickup) {}
+				}
+
+				try { mfEdost.updateGate(mfEdost.getEffectiveLocationCode()); } catch(eGate) {}
+				try { mfEdost.applyDeliverySummary(); } catch(eSum) {}
+				try { mfEdost.applyTotalDeliveryLine(); } catch(eTot) {}
+
+				if (mode === mfEdost.DELIVERY_MODE_DELIVERY && options.fetch !== false)
+				{
+					if (mfEdost.hasUserDeliveryDestination())
+					{
+						var loc = mfEdost.getEffectiveLocationCode();
+						var zipDigits = '';
+						try {
+							if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getInputByCode === 'function')
+							{
+								var zInp = ctx.__mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+								if (zInp && zInp !== false)
+									zipDigits = String(zInp.value || '').replace(/\D+/g, '');
+							}
+						} catch(eZip) {}
+						mfEdost.fetchOffers(loc, zipDigits, {allowInactive: true});
+					}
+					else
+					{
+						mfEdost.renderOffers([]);
+						try { mfEdost.updateGate(''); } catch(eGateEmpty) {}
+					}
+				}
+			};
+
+			mfEdost.ensureDeliveryModeUi = function(){
+				mfEdost.cleanupFadeDeliveryUi();
+
+				var content = mfEdost.getDeliveryEditContent();
+				if (!content)
+					return;
+				var form = BX('bx-soa-order-form');
+				if (!form)
+					return;
+
+				if (!form.querySelector('input[name="MF_DELIVERY_MODE"]'))
+				{
+					form.appendChild(BX.create('INPUT', {
+						props: {type: 'hidden', name: 'MF_DELIVERY_MODE', value: mfEdost.resolveInitialDeliveryMode()}
+					}));
+				}
+
+				if (content.querySelector('#mf-delivery-mode'))
+				{
+					mfEdost.applyDeliveryModeClasses(mfEdost.getDeliveryMode());
+					mfEdost.syncDeliveryModeRadios(mfEdost.getDeliveryMode());
+					mfEdost.mountDeliveryUi();
+					return;
+				}
+
+				var pickupLabel = String(
+					mfEdost.PICKUP_UI_LABEL
+					|| ('Самовывоз (' + String((mfEdost.PICKUP_OFFER && mfEdost.PICKUP_OFFER.name) || '') + ') — стоимость 0 ₽')
+				);
+				var wrap = BX.create('DIV', {attrs: {id: 'mf-delivery-mode', className: 'mf-delivery-mode'}});
+
+				var makeRow = function(value, labelText){
+					var row = BX.create('DIV', {props: {className: 'mf-delivery-mode__option'}});
+					var radio = BX.create('INPUT', {props: {type: 'radio', name: 'MF_DELIVERY_MODE_UI', value: value}});
+					var label = BX.create('SPAN', {text: ' ' + labelText});
+					var selectMode = function(){
+						try { radio.checked = true; } catch(eChk) {}
+						mfEdost.setDeliveryMode(value);
+					};
+					BX.bind(radio, 'change', function(){
+						if (radio.checked)
+							selectMode();
+					});
+					BX.bind(row, 'click', function(e){
+						if (e.target === radio)
+							return;
+						selectMode();
+					});
+					row.appendChild(radio);
+					row.appendChild(label);
+					return row;
+				};
+
+				wrap.appendChild(makeRow(mfEdost.DELIVERY_MODE_PICKUP, pickupLabel));
+				wrap.appendChild(makeRow(mfEdost.DELIVERY_MODE_DELIVERY, 'Доставка'));
+				wrap.appendChild(BX.create('DIV', {attrs: {id: 'mf-delivery-panel', className: 'mf-delivery-panel'}}));
+				content.insertBefore(wrap, content.firstChild);
+
+				if (!mfEdost._deliveryModeInited)
+				{
+					mfEdost._deliveryModeInited = true;
+					mfEdost.setDeliveryMode(mfEdost.resolveInitialDeliveryMode(), {fetch: false, clearPickupTariff: false});
+				}
 			};
 
 			mfEdost.getFallbackLocationCode = function(){
@@ -477,6 +942,26 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				return false;
 			};
 
+			// Только явный адрес доставки (Nominatim / прошлый заказ), без дефолта Bitrix «Санкт-Петербург».
+			mfEdost.hasUserDeliveryDestination = function(){
+				if (BX.type.isNotEmptyString(mfEdost.peekNominatimJson()))
+					return true;
+				if (BX.type.isNotEmptyString(String(mfEdost.getEdostCity() || '')))
+					return true;
+				try {
+					if (ctx.__mfNominatimActive && ctx.__mfNominatimDisplayLine && String(ctx.__mfNominatimDisplayLine).trim() !== '')
+						return true;
+				} catch(eDisp) {}
+				try {
+					var mc = mfEdost.getMfCheckout();
+					if (mc && mc.LAST_ORDER_NOMINATIM_JSON && String(mc.LAST_ORDER_NOMINATIM_JSON).trim() !== '')
+						return true;
+					if (mc && mc.LAST_ORDER_EDOST_TO_CITY && String(mc.LAST_ORDER_EDOST_TO_CITY).trim() !== '')
+						return true;
+				} catch(eMc2) {}
+				return false;
+			};
+
 			mfEdost.pickOfferForPreload = function(offers){
 				if (!offers || !offers.length)
 					return null;
@@ -503,6 +988,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					if (!mc)
 						return;
 
+					if (mc.LAST_ORDER_DELIVERY_MODE)
+					{
+						mfEdost.setDeliveryMode(String(mc.LAST_ORDER_DELIVERY_MODE), {fetch: false, clearPickupTariff: false});
+					}
+
 					var nom = String(mc.LAST_ORDER_NOMINATIM_JSON || '').trim();
 					var city = String(mc.LAST_ORDER_EDOST_TO_CITY || '').trim();
 					if (nom)
@@ -516,7 +1006,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					mfEdost.ensureFields();
 
 					var edost = mc.LAST_ORDER_EDOST;
-					if (edost && edost.ID)
+					if (edost && edost.ID && !mfEdost.isPickupMode())
 					{
 						mfEdost.setSelected({
 							id: String(edost.ID),
@@ -535,6 +1025,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						}
 						if (!locLine && ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getPropValueByCode === 'function')
 							locLine = String(ctx.__mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT') || '').trim();
+						if (locLine && ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.isGenericLocationDefault === 'function'
+							&& ctx.__mfBuyerAddress.isGenericLocationDefault(locLine))
+						{
+							locLine = '';
+						}
 						if (locLine)
 						{
 							ctx.__mfNominatimDisplayLine = locLine;
@@ -576,6 +1071,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						'#bx-soa-delivery .bx-soa-pp-desc-container,' +
 						'#bx-soa-delivery .bx-soa-pp-list,' +
 						'#bx-soa-delivery .bx-soa-pp{display:none !important;}' +
+						'#bx-soa-delivery:not(.bx-selected) #mf-delivery-panel{display:none !important;}' +
+						'#bx-soa-delivery:not(.bx-selected) #mf-delivery-mode{display:none !important;}' +
+						'#bx-soa-delivery:not(.bx-selected) #mf-nominatim-wrap{display:none !important;}' +
 						'#bx-soa-delivery:not(.bx-selected) #mf-edost-box{display:none !important;}' +
 						'#bx-soa-delivery .bx-soa-more-btn button[disabled]{pointer-events:none;opacity:.55;}'
 					));
@@ -585,9 +1083,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 			mfEdost.ensureFields = function(){
 				mfEdost.injectStyles();
+				mfEdost.cleanupFadeDeliveryUi();
 
 				var form = BX('bx-soa-order-form');
 				if (!form) return;
+
+				try { mfEdost.ensureDeliveryModeUi(); } catch(eModeUi) {}
 
 				var ensureHidden = function(name){
 					var el = form.querySelector('input[type="hidden"][name="' + name + '"]');
@@ -646,9 +1147,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				} catch(e) {}
 
 				// Container in delivery section content (NOT before the title).
-				var del = BX('bx-soa-delivery');
-				if (!del || !del.querySelector) return;
-				var content = del.querySelector('.bx-soa-section-content');
+				var content = mfEdost.getDeliveryEditContent();
 				if (!content) return;
 
 				// Patch Bitrix collapsed delivery summary builder once.
@@ -680,6 +1179,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 								var wrappedEditFadeDeliveryContent = function(){
 									var result = originalEditFadeDeliveryContent.apply(this, arguments);
 									try {
+										mfEdost.cleanupFadeDeliveryUi();
 										mfEdost.deferApplyDeliverySummary();
 									} catch(ePatch) {}
 									return result;
@@ -704,20 +1204,42 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				// (#bx-soa-delivery:not(.bx-selected) #mf-edost-box). Раньше здесь был return при !isDeliveryActive() —
 				// из‑за этого #mf-edost-list не создавался, renderOffers выходил по if (!list) и тарифы eDost не показывались.
 
-				var box = content.querySelector('#mf-edost-box');
+				var panel = mfEdost.ensureDeliveryPanel();
+				if (!panel)
+					return;
+
+				if (!panel.querySelector('#mf-edost-note'))
+				{
+					panel.appendChild(BX.create('DIV', {
+						attrs: {id: 'mf-edost-note', className: 'mf-edost-note'},
+						text: 'Расчёт доставки ориентировочный. Доставка оплачивается при получении. Финальная стоимость будет подтверждена менеджером после уточнения деталей.'
+					}));
+				}
+				if (!panel.querySelector('#mf-edost-warning'))
+				{
+					panel.appendChild(BX.create('DIV', {
+						attrs: {id: 'mf-edost-warning', className: 'mf-edost-warning'},
+						style: {display: 'none'}
+					}));
+				}
+
+				var box = panel.querySelector('#mf-edost-box');
 				if (!box)
 				{
-					box = BX.create('DIV', {attrs: {id: 'mf-edost-box'}, style: {margin: '10px 0'}});
-					var note = BX.create('DIV', {text: 'Расчёт доставки ориентировочный. Доставка оплачивается при получении. Финальная стоимость будет подтверждена менеджером после уточнения деталей.', style: {fontSize: '12px', opacity: '0.75', marginBottom: '10px'}});
-					var warn = BX.create('DIV', {attrs: {id: 'mf-edost-warning'}, style: {display: 'none', marginBottom: '10px'}});
-					var list = BX.create('DIV', {attrs: {id: 'mf-edost-list'}});
-					var sel = BX.create('DIV', {attrs: {id: 'mf-edost-selected'}, style: {marginTop: '10px', fontSize: '13px'}});
-					box.appendChild(note);
-					box.appendChild(warn);
-					box.appendChild(list);
-					box.appendChild(sel);
-					content.insertBefore(box, content.firstChild);
+					box = BX.create('DIV', {attrs: {id: 'mf-edost-box', className: 'mf-edost-box'}});
+					box.appendChild(BX.create('DIV', {attrs: {id: 'mf-edost-list', className: 'mf-edost-list'}}));
+					box.appendChild(BX.create('DIV', {attrs: {id: 'mf-edost-selected', className: 'mf-edost-selected'}}));
+					panel.appendChild(box);
 				}
+				else
+				{
+					if (!box.querySelector('#mf-edost-list'))
+						box.appendChild(BX.create('DIV', {attrs: {id: 'mf-edost-list', className: 'mf-edost-list'}}));
+					if (!box.querySelector('#mf-edost-selected'))
+						box.appendChild(BX.create('DIV', {attrs: {id: 'mf-edost-selected', className: 'mf-edost-selected'}}));
+				}
+
+				mfEdost.mountDeliveryUi();
 			};
 
 			mfEdost.hideBitrixDeliveryCards = function(){
@@ -733,12 +1255,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 				var hasTariff = idEl && BX.type.isNotEmptyString(idEl.value);
 				var eff = mfEdost.getEffectiveLocationCode();
-				var hasLoc = BX.type.isNotEmptyString(String(eff || ''))
-					|| BX.type.isNotEmptyString(String(mfEdost.getEdostCity() || ''))
-					|| BX.type.isNotEmptyString(mfEdost.peekNominatimJson());
-
+				var hasLoc = mfEdost.isPickupMode()
+					? true
+					: mfEdost.hasUserDeliveryDestination();
+				var canProceedDelivery = mfEdost.isPickupMode()
+					|| (hasLoc && (hasTariff || mfEdost._managerDeliveryFallback));
 				var nextBtn = del.querySelector('.bx-soa-more-btn button.pull-right.btn.btn-primary, .bx-soa-more-btn button.btn.btn-primary');
-				var canProceedDelivery = hasLoc && (hasTariff || mfEdost._managerDeliveryFallback);
 				if (nextBtn)
 				{
 					if (!canProceedDelivery)
@@ -756,7 +1278,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var warn = del.querySelector('#mf-edost-warning');
 				if (warn)
 				{
-					if (!hasLoc)
+					if (mfEdost.isPickupMode())
+					{
+						warn.style.display = 'none';
+						warn.textContent = '';
+					}
+					else if (!hasLoc)
 					{
 						warn.style.display = '';
 						warn.className = 'alert alert-warning';
@@ -813,7 +1340,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				{
 					if (idEl.value)
 					{
-						sel.textContent = 'Выбрано: ' + (cEl.value ? (cEl.value + ' — ') : '') + nEl.value + ' — ' + (pEl.value !== '' ? (pEl.value + ' ₽') : 'оплата доставки при получении');
+						sel.textContent = 'Выбрано: ' + (cEl.value ? (cEl.value + ' — ') : '') + nEl.value + ' — ' + mfEdost.formatTariffPriceText(pEl.value);
 					}
 					else
 					{
@@ -826,6 +1353,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				} catch(e) {}
 
 				try { mfEdost.syncSelectedRadio(); } catch(eSync) {}
+				try { mfEdost.syncPickupAddressVisibility(); } catch(ePickupUi) {}
 				try { mfEdost.applyDeliverySummary(); } catch(e) {}
 				try { mfEdost.applyTotalDeliveryLine(); } catch(e2) {}
 				try { mfEdost.deferApplyDeliverySummary(); } catch(eDeferred) {}
@@ -873,6 +1401,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var sel = root && root.querySelector ? root.querySelector('#mf-edost-selected') : null;
 					if (sel) sel.textContent = '';
 				} catch(e) {}
+				try { mfEdost.syncPickupAddressVisibility(); } catch(ePickupClr) {}
 				try { mfEdost.applyDeliverySummary(); } catch(e2) {}
 				try { mfEdost.applyTotalDeliveryLine(); } catch(e3) {}
 			};
@@ -897,7 +1426,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 
 				var text = (company ? (company + ' — ') : '') + name;
-				var priceText = price !== '' ? (price + ' ₽') : 'При получении';
+				var priceText = mfEdost.formatTariffPriceText(price);
 
 				var blocks = [];
 				try { BX('bx-soa-delivery') && blocks.push(BX('bx-soa-delivery')); } catch(e) {}
@@ -940,7 +1469,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					}
 					else if (tid)
 					{
-						text = price !== '' ? (price + ' ₽') : 'При получении';
+						text = mfEdost.formatTariffPriceText(price);
 					}
 
 					var roots = [];
@@ -1034,21 +1563,27 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					mfEdost.ensureFields();
 					mfEdost.hideBitrixDeliveryCards();
 
-					var loc = mfEdost.getEffectiveLocationCode();
-					var zipDigits = '';
-					try {
-						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getInputByCode === 'function')
-						{
-							var zInp = ctx.__mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
-							if (zInp && zInp !== false)
-								zipDigits = String(zInp.value || '').replace(/\D+/g, '');
-						}
-					} catch(eZ) {}
-					var fetchOpts = force ? { allowInactive: true } : {};
-					// Re-render cached offers for current location (fetchOffers already does a cheap re-render
-					// when key matches and offers are cached).
-					if (BX.type.isNotEmptyString(loc) || mfEdost.hasDestinationSignal())
+					if (mfEdost.isPickupMode())
 					{
+						mfEdost.syncPickupTariffFields();
+						mfEdost.updateGate(mfEdost.getEffectiveLocationCode());
+						mfEdost.applyDeliverySummary();
+						return;
+					}
+
+					var fetchOpts = force ? { allowInactive: true } : {};
+					if (mfEdost.hasUserDeliveryDestination())
+					{
+						var loc = mfEdost.getEffectiveLocationCode();
+						var zipDigits = '';
+						try {
+							if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getInputByCode === 'function')
+							{
+								var zInp = ctx.__mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+								if (zInp && zInp !== false)
+									zipDigits = String(zInp.value || '').replace(/\D+/g, '');
+							}
+						} catch(eZ) {}
 						mfEdost.fetchOffers(loc, zipDigits, fetchOpts);
 					}
 					else
@@ -1057,7 +1592,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					}
 
 					mfEdost.syncSelectedRadio();
-					mfEdost.updateGate(loc);
+					mfEdost.updateGate(mfEdost.getEffectiveLocationCode());
 					mfEdost.applyDeliverySummary();
 				} catch(e) {}
 			};
@@ -1078,7 +1613,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					}
 				}
 
-				var row = BX.create('DIV', {style: {padding: '10px', border: '1px solid #e5e5e5', borderRadius: '6px', marginBottom: '8px'}});
+				var row = BX.create('DIV', {props: {className: 'mf-edost-tariff mf-edost-tariff--custom'}});
 				var radio = BX.create('INPUT', {props: {type: 'radio', name: 'MF_EDOST_TARIF_UI', value: 'custom'}});
 				if (selectedId === 'custom')
 				{
@@ -1143,6 +1678,52 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				list.appendChild(row);
 			};
 
+			mfEdost.shouldShowCustomOption = function(){
+				return !mfEdost.isPickupMode() && !!mfEdost._edostCalculated;
+			};
+
+			mfEdost.appendCustomOptionIfReady = function(list, selectedId){
+				if (mfEdost.shouldShowCustomOption())
+					mfEdost.renderCustomOption(list, selectedId);
+			};
+
+			mfEdost.renderPickupOption = function(list, selectedId){
+				if (!list)
+					return;
+
+				var pickup = mfEdost.PICKUP_OFFER || {
+					id: 'pickup',
+					company: 'Самовывоз',
+					name: 'Санкт-Петербург, ул. Салова, д. 57, к. 1 Литера Ч',
+					price: '0'
+				};
+				var row = BX.create('DIV', {style: {padding: '10px', border: '1px solid #e5e5e5', borderRadius: '6px', marginBottom: '8px', cursor: 'pointer'}});
+				var radio = BX.create('INPUT', {props: {type: 'radio', name: 'MF_EDOST_TARIF_UI', value: pickup.id}});
+				if (selectedId === pickup.id)
+				{
+					radio.checked = true;
+				}
+				var label = BX.create('SPAN', {text: ' ' + String(mfEdost.PICKUP_UI_LABEL || ('Самовывоз (' + pickup.name + ') — стоимость 0 ₽'))});
+				var selectPickup = function(){
+					radio.checked = true;
+					mfEdost.setSelected(pickup);
+				};
+
+				BX.bind(radio, 'change', function(){
+					if (radio.checked)
+						selectPickup();
+				});
+				BX.bind(row, 'click', function(e){
+					if (e.target === radio)
+						return;
+					selectPickup();
+				});
+
+				row.appendChild(radio);
+				row.appendChild(label);
+				list.appendChild(row);
+			};
+
 			mfEdost.renderOffers = function(offers){
 				mfEdost.ensureFields();
 				var root = BX('bx-soa-order') || document;
@@ -1150,8 +1731,13 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (!list)
 					return;
 
+				if (mfEdost.isPickupMode())
+					return;
+
 				BX.cleanNode(list);
 				offers = offers && offers.length ? offers : [];
+
+				var selectedId = mfEdost.getUiSelectedTariffId();
 
 				if (!offers.length)
 				{
@@ -1159,31 +1745,18 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						var locEmpty = mfEdost.getEffectiveLocationCode();
 						mfEdost.updateGate(locEmpty);
 
-						// If location is not chosen yet, don't show "no delivery options" message.
-						// The warning above ("Выберите местоположение...") is enough.
-						if (!mfEdost.hasDestinationSignal())
+						if (!mfEdost.hasUserDeliveryDestination() || !mfEdost._edostCalculated)
 						{
 							return;
 						}
 					} catch(e) {}
 
-					list.appendChild(BX.create('DIV', {text: 'Нет доступных способов доставки для выбранного адреса.', style: {opacity: '0.8', marginBottom: '8px'}}));
-					mfEdost.renderCustomOption(list, selectedId);
+					list.appendChild(BX.create('DIV', {
+						props: {className: 'mf-edost-tariff mf-edost-tariff--empty'},
+						text: 'Нет доступных способов доставки для выбранного адреса.'
+					}));
+					mfEdost.appendCustomOptionIfReady(list, selectedId);
 					return;
-				}
-
-				var form = BX('bx-soa-order-form');
-				var selectedId = '';
-				try {
-					if (form)
-					{
-						var idEl = form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]');
-						selectedId = idEl ? String(idEl.value || '') : '';
-					}
-				} catch(e) {}
-				if (!selectedId && mfEdost.selectedId)
-				{
-					selectedId = String(mfEdost.selectedId);
 				}
 
 				for (var i = 0; i < offers.length; i++)
@@ -1200,7 +1773,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 								days = ' (' + df + '–' + (dt || df) + ' дн.)';
 						} catch(e2) {}
 
-						var row = BX.create('DIV', {style: {padding: '8px 10px', border: '1px solid #e5e5e5', borderRadius: '6px', marginBottom: '8px', cursor: 'pointer'}});
+						var row = BX.create('DIV', {props: {className: 'mf-edost-tariff'}});
 						var radio = BX.create('INPUT', {props: {type: 'radio', name: 'MF_EDOST_TARIF_UI', value: id}});
 						if (selectedId !== '' && selectedId === id)
 						{
@@ -1217,7 +1790,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					})(offers[i]);
 				}
 
-				mfEdost.renderCustomOption(list, selectedId);
+				mfEdost.appendCustomOptionIfReady(list, selectedId);
 
 				// If selection exists, ensure it is checked after re-render.
 				try { mfEdost.syncSelectedRadio(); } catch(e) {}
@@ -1231,6 +1804,16 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				options = options || {};
 				var allowInactive = !!options.allowInactive;
 				var deliveryActive = mfEdost.isDeliveryActive();
+
+				if (mfEdost.isPickupMode())
+					return;
+
+				if (!mfEdost.hasUserDeliveryDestination())
+				{
+					mfEdost.ensureFields();
+					mfEdost.renderOffers([]);
+					return;
+				}
 
 				// Normally we fetch/render only in the open Delivery step,
 				// but for authorized users we also allow background prefill.
@@ -1250,16 +1833,16 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 				var key = (locationCode || '__geo__') + '|' + zipDigits + '|' + edostCity;
 				// If form was re-rendered, we may need to re-render offers even without refetch.
-				if (!mfEdost._inFlight && mfEdost._lastKey === key && mfEdost.offers && mfEdost.offers.length)
+				if (!mfEdost._inFlight && mfEdost._lastKey === key && mfEdost._edostCalculated)
 				{
 					mfEdost.ensureFields();
-					mfEdost.renderOffers(mfEdost.offers);
+					mfEdost.renderOffers(mfEdost.offers || []);
 					mfEdost.hideBitrixDeliveryCards();
 					try {
 						var formCached = BX('bx-soa-order-form');
 						var idElCached = formCached ? formCached.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 						var hasSelectedCached = !!(idElCached && BX.type.isNotEmptyString(String(idElCached.value || '')));
-						if (!hasSelectedCached)
+						if (!hasSelectedCached && !mfEdost.isPickupMode())
 						{
 							var pickCached = mfEdost.pickOfferForPreload(mfEdost.offers);
 							if (pickCached)
@@ -1275,11 +1858,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (mfEdost._lastKey !== '' && mfEdost._lastKey !== key)
 				{
 					try { mfEdost.clearManagerDeliveryFallback(); } catch(eK) {}
-					mfEdost.clearSelection();
+					mfEdost._edostCalculated = false;
+					if (!mfEdost.isPickupMode())
+						mfEdost.clearSelection();
 				}
 
 				mfEdost._inFlight = true;
 				mfEdost._lastKey = key;
+				var fetchGen = mfEdost._fetchGen || 0;
 
 				var nomJson = '';
 				try {
@@ -1305,17 +1891,29 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					},
 					onsuccess: function(resp){
 						mfEdost._inFlight = false;
+						if (fetchGen !== (mfEdost._fetchGen || 0))
+							return;
+						mfEdost._edostCalculated = true;
 						if (resp && resp.ok && resp.offers && resp.offers.length)
 						{
 							try { mfEdost.clearManagerDeliveryFallback(); } catch(eM0) {}
 							mfEdost.offers = resp.offers;
 							mfEdost.ensureFields();
+							if (mfEdost.isPickupMode())
+							{
+								mfEdost.hideBitrixDeliveryCards();
+								return;
+							}
 							mfEdost.renderOffers(resp.offers);
+							try {
+								if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncNominatimInputValue === 'function')
+									ctx.__mfBuyerAddress.syncNominatimInputValue();
+							} catch(eNomAfterOffers) {}
 							try {
 								var form = BX('bx-soa-order-form');
 								var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 								var hasSelectedTariff = !!(idEl && BX.type.isNotEmptyString(String(idEl.value || '')));
-								if (!hasSelectedTariff)
+								if (!hasSelectedTariff && !mfEdost.isPickupMode())
 								{
 									var pickOffer = mfEdost.pickOfferForPreload(resp.offers);
 									if (pickOffer)
@@ -1351,15 +1949,28 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 									warn.textContent = 'Не удалось получить тарифы eDost: ' + detail + '. Обновите страницу или проверьте адрес.';
 								}
 							} catch(eWn) {}
+							if (mfEdost.isPickupMode())
+							{
+								mfEdost.hideBitrixDeliveryCards();
+								return;
+							}
 							mfEdost.renderOffers([]);
 							mfEdost.hideBitrixDeliveryCards();
 						}
 					},
 					onfailure: function(){
 						mfEdost._inFlight = false;
+						if (fetchGen !== (mfEdost._fetchGen || 0))
+							return;
+						mfEdost._edostCalculated = true;
 						mfEdost.offers = [];
 						try { mfEdost.clearManagerDeliveryFallback(); } catch(eF) {}
 						mfEdost.ensureFields();
+						if (mfEdost.isPickupMode())
+						{
+							mfEdost.hideBitrixDeliveryCards();
+							return;
+						}
 						mfEdost.renderOffers([]);
 						mfEdost.hideBitrixDeliveryCards();
 					}
@@ -1428,7 +2039,6 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			return false;
 		};
 
-		// Все поля ORDER_PROP_<id> в форме (видимые + скрытые копии) — иначе POST без «Адрес доставки».
 		mfBuyerAddress.syncOrderPropInputsByCode = function(code, valueStr){
 			try {
 				var prop = mfBuyerAddress.getPropByCode(code);
@@ -1446,6 +2056,173 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					nodes[ni].value = v;
 				}
 			} catch(eSync) {}
+		};
+
+		mfBuyerAddress.syncOrderPropInputsByPropId = function(propId, valueStr){
+			try {
+				propId = parseInt(propId, 10);
+				if (!propId)
+					return;
+				var form = BX('bx-soa-order-form');
+				if (!form)
+					return;
+				var sel = 'input[name="ORDER_PROP_' + propId + '"], textarea[name="ORDER_PROP_' + propId + '"]';
+				var nodes = form.querySelectorAll(sel);
+				var v = String(valueStr != null ? valueStr : '');
+				for (var ni = 0; ni < nodes.length; ni++)
+				{
+					try { nodes[ni].disabled = false; } catch(ed) {}
+					nodes[ni].value = v;
+				}
+			} catch(eSyncId) {}
+		};
+
+		mfBuyerAddress.isLegacyDeliveryAddressProperty = function(arProperty){
+			if (!arProperty)
+				return false;
+			var code = String(arProperty.CODE || '').toUpperCase();
+			var name = String(arProperty.NAME || '').trim();
+			if (code === 'DELIVERY_LOCATION_TEXT' || code === 'DELIVERY_ADDRESS' || code === 'DELIVERY_ZIP')
+				return false;
+			return name === 'Адрес доставки'
+				|| code === 'ADDRESS'
+				|| code === 'FULL_ADDRESS'
+				|| code === 'DELIVERY_ADDR';
+		};
+
+		mfBuyerAddress.buildCombinedDeliveryAddressLine = function(){
+			var city = String(mfBuyerAddress.getPropValueByCode('DELIVERY_LOCATION_TEXT') || '').trim();
+			var street = String(mfBuyerAddress.getPropValueByCode('DELIVERY_ADDRESS') || '').trim();
+			var zip = String(mfBuyerAddress.getPropValueByCode('DELIVERY_ZIP') || '').trim();
+			var parts = [];
+			if (city)
+				parts.push(city);
+			if (street)
+				parts.push(street);
+			var combined = parts.join(', ');
+			if (zip)
+				combined = combined ? (combined + ', ' + zip) : zip;
+			return combined;
+		};
+
+		mfBuyerAddress.syncLegacyDeliveryAddressProperty = function(){
+			try {
+				var combined = mfBuyerAddress.buildCombinedDeliveryAddressLine();
+				if (!combined)
+					return false;
+
+				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+				var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+				for (var i = 0; i < props.length; i++)
+				{
+					if (!props[i] || !props[i].ID)
+						continue;
+					if (!mfBuyerAddress.isLegacyDeliveryAddressProperty(props[i]))
+						continue;
+					mfBuyerAddress.syncOrderPropInputsByPropId(props[i].ID, combined);
+				}
+				return true;
+			} catch(eLegacySync) {}
+			return false;
+		};
+
+		mfBuyerAddress.getPickupDefaultAddresses = function(){
+			var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+			var pickup = (mfE && mfE.PICKUP_OFFER) ? mfE.PICKUP_OFFER : {};
+			var locText = String((mfE && mfE.PICKUP_LOCATION_TEXT) || 'Санкт-Петербург').trim();
+			var fullAddr = String(pickup.name || 'Санкт-Петербург, ул. Салова, д. 57, к. 1 Литера Ч').trim();
+			return {
+				loc: locText,
+				full: fullAddr,
+				combined: fullAddr || locText
+			};
+		};
+
+		mfBuyerAddress.isPickupDefaultAddress = function(text){
+			text = String(text || '').trim();
+			if (text === '')
+				return false;
+			var defs = mfBuyerAddress.getPickupDefaultAddresses();
+			return text === defs.full || text === defs.combined || text === defs.loc;
+		};
+
+		mfBuyerAddress.clearPickupSyncedBuyerFields = function(options){
+			options = options || {};
+			var forceStreet = !!options.forceStreet;
+			var defs = mfBuyerAddress.getPickupDefaultAddresses();
+
+			var shouldClear = function(val){
+				val = String(val || '').trim();
+				if (val === '')
+					return false;
+				return forceStreet || mfBuyerAddress.isPickupDefaultAddress(val);
+			};
+
+			var clearByCode = function(code, always){
+				var inp = mfBuyerAddress.getInputByCode(code);
+				var val = mfBuyerAddress.getPropValueByCode(code);
+				var cur = (inp && inp !== false) ? String(inp.value || '').trim() : String(val || '').trim();
+				if (!always && !shouldClear(cur) && !shouldClear(val))
+					return;
+				mfBuyerAddress.syncOrderPropInputsByCode(code, '');
+				if (inp && inp !== false)
+					inp.value = '';
+			};
+
+			clearByCode('DELIVERY_ADDRESS', forceStreet);
+			clearByCode('DELIVERY_LOCATION_TEXT', false);
+
+			try {
+				var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+				var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+				for (var i = 0; i < props.length; i++)
+				{
+					if (!props[i] || !props[i].ID)
+						continue;
+					if (mfE && typeof mfE.isDeliveryAddressProperty === 'function' && !mfE.isDeliveryAddressProperty(props[i]))
+						continue;
+					var codeUp = String(props[i].CODE || '').toUpperCase();
+					if (codeUp === 'DELIVERY_LOCATION_TEXT' || codeUp === 'DELIVERY_ADDRESS' || codeUp === 'DELIVERY_ZIP')
+						continue;
+					var propVal = mfBuyerAddress.getPropValueByCode(String(props[i].CODE || ''));
+					if (!shouldClear(propVal))
+						continue;
+					mfBuyerAddress.syncOrderPropInputsByPropId(props[i].ID, '');
+				}
+			} catch(eLegacyClr) {}
+		};
+
+		mfBuyerAddress.syncMotorForcePickupAddress = function(){
+			try {
+				var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				if (!mfE || typeof mfE.isPickupMode !== 'function' || !mfE.isPickupMode())
+					return;
+
+				var pickup = mfE.PICKUP_OFFER || {};
+				var locText = String(mfE.PICKUP_LOCATION_TEXT || 'Санкт-Петербург').trim();
+				var fullAddr = String(pickup.name || 'Санкт-Петербург, ул. Салова, д. 57, к. 1 Литера Ч').trim();
+				var combined = fullAddr || locText;
+
+				mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', locText);
+				mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', fullAddr);
+
+				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+				var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+				for (var i = 0; i < props.length; i++)
+				{
+					if (!props[i] || !props[i].ID)
+						continue;
+					if (!mfE.isDeliveryAddressProperty(props[i]))
+						continue;
+					var code = String(props[i].CODE || '').toUpperCase();
+					if (code === 'DELIVERY_LOCATION_TEXT' || code === 'DELIVERY_ADDRESS' || code === 'DELIVERY_ZIP')
+						continue;
+					if (String(props[i].TYPE || '').toUpperCase() === 'LOCATION' || props[i].IS_LOCATION === 'Y')
+						continue;
+					mfBuyerAddress.syncOrderPropInputsByPropId(props[i].ID, combined);
+				}
+			} catch(ePickupSync) {}
 		};
 
 		// ПВЗ (СДЭК и т.п.): «Улица, дом» не заполняют вручную — isValidForm() идёт до AJAX, onBeforeSendRequest не успевает.
@@ -1553,6 +2330,140 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		};
 
 		// Только явно сохранённый адрес (профиль / прошлый заказ), без дефолта Bitrix «Москва, Центр…».
+		mfBuyerAddress.formatLocationLineFromAddr = function(addr, displayName){
+			if (!addr || typeof addr !== 'object')
+				return String(displayName || '').trim();
+			var parts = [];
+			if (addr.state)
+				parts.push(String(addr.state).trim());
+			if (addr.region && addr.region !== addr.state)
+				parts.push(String(addr.region).trim());
+			var city = addr.city || addr.town || addr.village || addr.locality || addr.hamlet || addr.municipality || addr.name;
+			if (city)
+				parts.push(String(city).trim());
+			var out = [];
+			for (var pi = 0; pi < parts.length; pi++)
+			{
+				if (pi === 0 || parts[pi] !== parts[pi - 1])
+					out.push(parts[pi]);
+			}
+			return out.length ? out.join(', ') : String(displayName || '').trim();
+		};
+
+		mfBuyerAddress.formatStreetLineFromAddr = function(addr){
+			if (!addr || typeof addr !== 'object')
+				return '';
+			var p = [];
+			if (addr.road)
+				p.push(String(addr.road).trim());
+			if (addr.house_number)
+				p.push(String(addr.house_number).trim());
+			if (addr.building)
+				p.push('к. ' + String(addr.building).trim());
+			if (addr.flat)
+				p.push('кв. ' + String(addr.flat).trim());
+			return p.join(', ');
+		};
+
+		mfBuyerAddress.getDeliveryGeoFromSelection = function(){
+			try {
+				var raw = '';
+				if (typeof mfEdost.peekNominatimJson === 'function')
+					raw = String(mfEdost.peekNominatimJson() || '').trim();
+				if (!raw && ctx.__mfNominatimJsonLast)
+					raw = String(ctx.__mfNominatimJsonLast).trim();
+				if (!raw && window.MF_CHECKOUT_GEO && window.MF_CHECKOUT_GEO.nominatimJson)
+					raw = String(window.MF_CHECKOUT_GEO.nominatimJson).trim();
+
+				var it = null;
+				if (raw)
+				{
+					it = typeof raw === 'object' ? raw : JSON.parse(raw);
+				}
+
+				var addr = it && it.address ? it.address : {};
+				var displayName = it && it.display_name ? String(it.display_name).trim() : '';
+				var locationLine = mfBuyerAddress.formatLocationLineFromAddr(addr, displayName);
+				if (!locationLine && ctx.__mfDeliveryLocationLine)
+					locationLine = String(ctx.__mfDeliveryLocationLine).trim();
+				var streetLine = mfBuyerAddress.formatStreetLineFromAddr(addr);
+				var zip = '';
+				if (addr && addr.postcode)
+					zip = String(addr.postcode).replace(/\D+/g, '');
+				if (!zip && ctx.__mfDeliveryZipLast)
+					zip = String(ctx.__mfDeliveryZipLast).replace(/\D+/g, '');
+
+				if (!locationLine && !zip && !streetLine && !displayName)
+					return null;
+
+				return {
+					locationLine: locationLine,
+					streetLine: streetLine,
+					zip: zip,
+					displayLine: displayName
+				};
+			} catch(eGeo) {}
+			return null;
+		};
+
+		mfBuyerAddress.syncDeliveryGeoToBuyerFields = function(options){
+			options = options || {};
+			try {
+				var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				if (!mfE || typeof mfE.isPickupMode !== 'function' || mfE.isPickupMode())
+					return false;
+				if (typeof mfE.hasUserDeliveryDestination === 'function' && !mfE.hasUserDeliveryDestination())
+					return false;
+
+				var geo = mfBuyerAddress.getDeliveryGeoFromSelection();
+				if (!geo)
+					return false;
+
+				if (geo.locationLine)
+					ctx.__mfDeliveryLocationLine = geo.locationLine;
+				if (geo.zip)
+					ctx.__mfDeliveryZipLast = geo.zip;
+
+				var locationInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
+				if (locationInput && locationInput !== false && geo.locationLine)
+				{
+					locationInput.value = geo.locationLine;
+					mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', geo.locationLine);
+					locationInput.readOnly = true;
+					locationInput.setAttribute('readonly', 'readonly');
+					locationInput.style.backgroundColor = '#f8f9fa';
+				}
+
+				var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+				if (zipInput && zipInput !== false && geo.zip)
+				{
+					if (options.forceZip || !ctx.__mfBuyerZipChangedManually || String(zipInput.value || '').trim() === '')
+					{
+						zipInput.value = geo.zip;
+						mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ZIP', geo.zip);
+					}
+				}
+
+				if (options.syncStreet !== false)
+				{
+					var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
+					if (streetInput && streetInput !== false && geo.streetLine
+						&& !mfBuyerAddress.isPickupDefaultAddress(geo.streetLine))
+					{
+						var curStreet = String(streetInput.value || '').trim();
+						if (curStreet === '' || options.forceStreet)
+						{
+							streetInput.value = geo.streetLine;
+							mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', geo.streetLine);
+						}
+					}
+				}
+
+				return true;
+			} catch(eSyncGeo) {}
+			return false;
+		};
+
 		mfBuyerAddress.getSavedDeliveryLocationText = function(){
 			var prop = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
 			if (!prop)
@@ -1577,6 +2488,85 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			} catch(eNomPre) {}
 			return mfBuyerAddress.getSavedDeliveryLocationText();
 		};
+
+		// Для видимого поля Nominatim — только реальный выбор пользователя / Nominatim JSON, не дефолт Bitrix «Санкт-Петербург».
+		mfBuyerAddress.getNominatimInputPrefill = function(){
+			try {
+				if (ctx.__mfNominatimDisplayLine && String(ctx.__mfNominatimDisplayLine).trim() !== '')
+				{
+					var dispLine = String(ctx.__mfNominatimDisplayLine).trim();
+					if (!mfBuyerAddress.isGenericLocationDefault(dispLine))
+						return dispLine;
+				}
+			} catch(eDisp) {}
+			try {
+				var form = BX('bx-soa-order-form');
+				var jEl = form ? form.querySelector('input[name="MF_NOMINATIM_JSON"]') : null;
+				var j = jEl ? String(jEl.value || '').trim() : '';
+				if (!j && ctx.__mfNominatimJsonLast)
+					j = String(ctx.__mfNominatimJsonLast).trim();
+				if (j)
+				{
+					var parsed = JSON.parse(j);
+					if (parsed && parsed.display_name)
+						return String(parsed.display_name).trim();
+				}
+			} catch(eJson) {}
+			try {
+				var mc = mfEdost.getMfCheckout();
+				var nomPre = mc && mc.LAST_ORDER_NOMINATIM_JSON ? String(mc.LAST_ORDER_NOMINATIM_JSON).trim() : '';
+				if (nomPre)
+				{
+					var parsedPre = JSON.parse(nomPre);
+					if (parsedPre && parsedPre.display_name)
+						return String(parsedPre.display_name).trim();
+				}
+			} catch(eLast) {}
+			return '';
+		};
+
+		mfBuyerAddress.isGenericLocationDefault = function(text){
+			text = String(text || '').trim();
+			if (text === '')
+				return true;
+			var fbCity = String(mfEdost.PICKUP_LOCATION_TEXT || 'Санкт-Петербург').trim();
+			if (text === fbCity || text === 'Санкт-Петербург' || text === 'Москва')
+				return true;
+			try {
+				var bitrixDefault = String(mfBuyerAddress.getLocationText() || '').trim();
+				if (bitrixDefault && text === bitrixDefault)
+					return true;
+			} catch(eBitrix) {}
+			return false;
+		};
+
+		mfBuyerAddress.syncNominatimInputValue = function(){
+			try {
+				var wrapNom = document.getElementById('mf-nominatim-wrap');
+				if (!wrapNom)
+					return;
+				var nomInp = wrapNom.querySelector('input[type="text"]');
+				if (!nomInp)
+					return;
+
+				var pre = mfBuyerAddress.getNominatimInputPrefill();
+				var cur = String(nomInp.value || '').trim();
+
+				// Не перебивать, пока пользователь набирает запрос и ещё не выбрал адрес.
+				if (document.activeElement === nomInp && !pre && !ctx.__mfNominatimActive)
+					return;
+
+				if (pre)
+				{
+					nomInp.value = pre;
+					return;
+				}
+				if (ctx.__mfNominatimActive && cur)
+					return;
+				if (!ctx.__mfNominatimActive)
+					nomInp.value = '';
+			} catch(eNomSync) {}
+		};
 		mfBuyerAddress.hideLegacyRows = function(){
 			var customLocationProp = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
 			var customAddressProp = mfBuyerAddress.getPropByCode('DELIVERY_ADDRESS');
@@ -1590,10 +2580,25 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				for (var i = 0; i < props.length; i++)
 				{
 					var code = String(props[i].CODE || '');
+					var name = String(props[i].NAME || '').trim();
 					var row = props[i].ID ? ctx.getRowByPropId(props[i].ID) : null;
 					if (!row)
 						continue;
-					if ((code === 'ADDRESS' || code === 'ZIP' || code === 'CITY')
+					if (name === 'Адрес доставки')
+					{
+						BX.addClass(row, 'mf-checkout-hide-legacy-address');
+						BX.hide(row);
+						continue;
+					}
+					if ((code === 'ADDRESS' || code === 'FULL_ADDRESS' || code === 'DELIVERY_ADDR')
+						&& parseInt(props[i].ID, 10) !== parseInt(customAddressProp.ID, 10)
+						&& parseInt(props[i].ID, 10) !== parseInt(customLocationProp.ID, 10))
+					{
+						BX.addClass(row, 'mf-checkout-hide-legacy-address');
+						BX.hide(row);
+						continue;
+					}
+					if ((code === 'ZIP' || code === 'CITY')
 						&& (!customZipProp || parseInt(props[i].ID, 10) !== parseInt(customZipProp.ID, 10))
 						&& parseInt(props[i].ID, 10) !== parseInt(customAddressProp.ID, 10)
 						&& parseInt(props[i].ID, 10) !== parseInt(customLocationProp.ID, 10))
@@ -1664,6 +2669,18 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 		mfBuyerAddress.sync = function(){
 			try {
+				var mfEsync = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				var isDeliveryMode = mfEsync && typeof mfEsync.isPickupMode === 'function' && !mfEsync.isPickupMode();
+				if (isDeliveryMode)
+				{
+					var streetProbe = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
+					var streetEmpty = !streetProbe || streetProbe === false || String(streetProbe.value || '').trim() === '';
+					mfBuyerAddress.syncDeliveryGeoToBuyerFields({
+						syncStreet: streetEmpty,
+						forceStreet: streetEmpty
+					});
+				}
+
 				var locationInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
 				var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
 				var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
@@ -1671,7 +2688,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 				if (locationInput && locationInput !== false)
 				{
-					if (!ctx.__mfNominatimActive)
+					var isDeliveryModeLoc = isDeliveryMode;
+					var hasGeoLoc = isDeliveryModeLoc && String(locationInput.value || '').trim() !== ''
+						&& !mfBuyerAddress.isGenericLocationDefault(String(locationInput.value || '').trim());
+					if (!ctx.__mfNominatimActive && !hasGeoLoc)
 					{
 						if (locationText)
 						{
@@ -1686,6 +2706,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 								locationInput.value = '';
 								mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', '');
 							}
+							else if (isDeliveryModeLoc && mfBuyerAddress.isPickupDefaultAddress(String(locationInput.value || '')))
+							{
+								locationInput.value = '';
+								mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', '');
+							}
 						}
 						locationInput.readOnly = true;
 						locationInput.setAttribute('readonly', 'readonly');
@@ -1695,11 +2720,19 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 				if (streetInput && streetInput !== false)
 				{
+					var isDeliveryModeStreet = isDeliveryMode;
 					var streetVal = mfBuyerAddress.getPropValueByCode('DELIVERY_ADDRESS');
+					if (isDeliveryMode && mfBuyerAddress.isPickupDefaultAddress(streetVal))
+						streetVal = '';
 					if (streetVal !== '')
 					{
 						streetInput.value = streetVal;
 						mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', streetVal);
+					}
+					else if (isDeliveryMode && mfBuyerAddress.isPickupDefaultAddress(String(streetInput.value || '')))
+					{
+						streetInput.value = '';
+						mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', '');
 					}
 					streetInput.setAttribute('placeholder', 'Улица, дом, квартира');
 				}
@@ -1712,6 +2745,16 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						BX.bind(zipInput, 'input', function(){
 							ctx.__mfBuyerZipChangedManually = true;
 						});
+					}
+
+					if (isDeliveryMode)
+					{
+						var geoZip = mfBuyerAddress.getDeliveryGeoFromSelection();
+						if (geoZip && geoZip.zip && (!ctx.__mfBuyerZipChangedManually || String(zipInput.value || '').trim() === ''))
+						{
+							zipInput.value = geoZip.zip;
+							mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ZIP', geoZip.zip);
+						}
 					}
 
 					var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
@@ -1737,26 +2780,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 
 				mfBuyerAddress.hideLegacyRows();
+				mfBuyerAddress.syncLegacyDeliveryAddressProperty();
 				mfBuyerAddress.syncBitrixLocationVisibility(ctx);
 
 				try {
-					var wrapNom = document.getElementById('mf-nominatim-wrap');
-					if (wrapNom && !ctx.__mfNominatimActive)
-					{
-						var nomInp = wrapNom.querySelector('input[type="text"]');
-						if (nomInp)
-						{
-							var pre = mfBuyerAddress.getLocationPrefill();
-							if (pre)
-								nomInp.value = pre;
-							else
-							{
-								var bitrixDefaultNom = String(mfBuyerAddress.getLocationText() || '').trim();
-								if (bitrixDefaultNom && String(nomInp.value || '').trim() === bitrixDefaultNom)
-									nomInp.value = '';
-							}
-						}
-					}
+					mfBuyerAddress.syncNominatimInputValue();
 				} catch(eNomPre) {}
 			} catch(e) {}
 		};
@@ -1810,14 +2838,33 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			return (anchorRow && anchorRow.parentNode) ? anchorRow : null;
 		};
 
+		mfBuyerAddress.dedupeNominatimWrap = function(){
+			try {
+				var wraps = document.querySelectorAll('#mf-nominatim-wrap');
+				for (var wi = 1; wi < wraps.length; wi++)
+					BX.remove(wraps[wi]);
+			} catch(eDedupe) {}
+		};
+
 		mfBuyerAddress.installNominatim = function(ctx){
-			var delActive = BX('bx-soa-delivery');
-			if (delActive && delActive.querySelector('#mf-nominatim-wrap'))
+			mfBuyerAddress.dedupeNominatimWrap();
+			if (document.getElementById('mf-nominatim-wrap'))
+			{
+				try { mfEdost.mountDeliveryUi(); } catch(eMountExist) {}
+				try { mfBuyerAddress.syncNominatimInputValue(); } catch(eNomExist) {}
 				return;
+			}
+
+			if (ctx.__mfNominatimInstalling)
+				return;
+			ctx.__mfNominatimInstalling = true;
 
 			var searchUrl = String(mfEdost.getMfCheckout().NOMINATIM_SEARCH_URL || '');
 			if (!searchUrl)
+			{
+				ctx.__mfNominatimInstalling = false;
 				return;
+			}
 
 			var formatLocationLine = function(addr, displayName){
 				if (!addr || typeof addr !== 'object')
@@ -1886,14 +2933,23 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				return base ? base.trim() : '';
 			};
 
-			// Вставляем ПЕРЕД полем Bitrix «Местоположение», иначе пользователь ищет Майами во внутреннем справочнике (там часто нет зарубежных городов).
+			// Вставляем в панель «Доставка» перед списком тарифов eDost.
+			var panel = mfEdost.ensureDeliveryPanel && mfEdost.ensureDeliveryPanel();
+			var insertBeforeEl = null;
+			if (panel)
+				insertBeforeEl = panel.querySelector('#mf-edost-box') || panel.querySelector('#mf-edost-list');
+
 			var anchorRow = mfBuyerAddress.findDeliveryLocationAnchor(ctx);
-			if (!anchorRow || anchorRow.parentNode.querySelector('#mf-nominatim-wrap'))
+			if (!insertBeforeEl && !anchorRow)
 			{
+				ctx.__mfNominatimInstalling = false;
 				var retries = ctx.__mfNomAnchorRetries = (ctx.__mfNomAnchorRetries || 0) + 1;
-				if (retries <= 12 && !(delActive && delActive.querySelector('#mf-nominatim-wrap')))
+				if (retries <= 12 && !document.getElementById('mf-nominatim-wrap'))
 				{
+					var retryGen = ctx.__mfNomInstallGen = (ctx.__mfNomInstallGen || 0) + 1;
 					setTimeout(function(){
+						if (retryGen !== (ctx.__mfNomInstallGen || 0))
+							return;
 						try { mfBuyerAddress.installNominatim(ctx); } catch (eR) {}
 					}, retries * 200);
 				}
@@ -1901,15 +2957,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			}
 			ctx.__mfNomAnchorRetries = 0;
 
-			var wrap = BX.create('DIV', {attrs: {id: 'mf-nominatim-wrap', className: 'mf-nominatim-wrap'}, style: {marginBottom: '14px', padding: '12px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e8e8e8', position: 'relative', zIndex: '10'}});
-			var lbl = BX.create('DIV', {text: 'Адрес доставки', style: {fontWeight: '600', marginBottom: '6px', fontSize: '14px'}});
-			var hint = BX.create('DIV', {
-				text: 'Начните вводить город, улицу или страну (Майами, Berlin, Санкт-Петербург…).',
-				style: {fontSize: '12px', opacity: '0.9', marginBottom: '8px', lineHeight: '1.45'}
-			});
+			var wrap = BX.create('DIV', {attrs: {id: 'mf-nominatim-wrap', className: 'mf-nominatim-wrap'}});
 			var inp = BX.create('INPUT', {
-				props: {type: 'text', autocomplete: 'off', placeholder: 'Введите населенный пункт'},
-				style: {width: '100%', padding: '8px 10px', border: '1px solid #d9d9d9', borderRadius: '4px', boxSizing: 'border-box', background: '#fff'}
+				props: {type: 'text', autocomplete: 'off', placeholder: 'Введите адрес', className: 'form-control'},
+				attrs: {class: 'form-control mf-nominatim-wrap__input'}
 			});
 			var errBox = BX.create('DIV', {attrs: {id: 'mf-nominatim-err'}, style: {display: 'none', color: '#842029', fontSize: '12px', marginTop: '6px'}});
 			var list = BX.create('DIV', {
@@ -1930,12 +2981,22 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					boxShadow: '0 8px 24px rgba(0,0,0,.12)'
 				}
 			});
-			wrap.appendChild(lbl);
-			wrap.appendChild(hint);
 			wrap.appendChild(inp);
 			wrap.appendChild(errBox);
 			wrap.appendChild(list);
-			anchorRow.parentNode.insertBefore(wrap, anchorRow);
+			if (panel && insertBeforeEl)
+				panel.insertBefore(wrap, insertBeforeEl);
+			else if (anchorRow && anchorRow.parentNode)
+				anchorRow.parentNode.insertBefore(wrap, anchorRow);
+			else
+			{
+				ctx.__mfNominatimInstalling = false;
+				return;
+			}
+
+			ctx.__mfNominatimInstalling = false;
+			try { mfEdost.mountDeliveryUi(); } catch(eMountNom) {}
+			try { mfBuyerAddress.syncNominatimInputValue(); } catch(eNomInit) {}
 			try {
 				mfBuyerAddress.hideBitrixLocationSelector(ctx);
 			} catch(eHAfterNom) {}
@@ -2069,41 +3130,28 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 									try {
 										inp.value = String(it.display_name || cityRu || '');
 									} catch(eInp) {}
-									var locInput = mfBuyerAddress.getInputByCode('DELIVERY_LOCATION_TEXT');
-									if (locInput && locInput !== false)
-									{
-										locInput.value = formatLocationLine(addr, it.display_name);
-										locInput.readOnly = true;
-									}
-									var streetInput = mfBuyerAddress.getInputByCode('DELIVERY_ADDRESS');
-									if (streetInput && streetInput !== false)
-										streetInput.value = formatStreetLine(addr);
-									var zipInput = mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
-									var zipDigits = '';
-									if (addr.postcode)
-										zipDigits = String(addr.postcode).replace(/\D+/g, '');
-									if (zipInput && zipInput !== false && zipDigits)
-										zipInput.value = zipDigits;
-
 									try {
-										if (locInput && locInput !== false)
-											mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_LOCATION_TEXT', locInput.value);
-										if (streetInput && streetInput !== false)
-											mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ADDRESS', streetInput.value);
-										if (zipInput && zipInput !== false)
-											mfBuyerAddress.syncOrderPropInputsByCode('DELIVERY_ZIP', zipInput.value);
-									} catch(eSyncP) {}
+										ctx.__mfDeliveryLocationLine = mfBuyerAddress.formatLocationLineFromAddr(addr, it.display_name);
+										if (addr.postcode)
+											ctx.__mfDeliveryZipLast = String(addr.postcode).replace(/\D+/g, '');
+									} catch(eStoreGeo) {}
+									try {
+										mfBuyerAddress.syncDeliveryGeoToBuyerFields({forceZip: true, forceStreet: true});
+									} catch(eSyncGeoPick) {}
+									var zipDigits = String(ctx.__mfDeliveryZipLast || '').replace(/\D+/g, '');
 
 									var fb = mfEdost.getFallbackLocationCode();
 									if (BX.type.isNotEmptyString(fb))
 										mfEdost.applyBitrixOrderLocationCode(fb, {sendRefresh: false});
 
 									var runFetch = function(){
+										if (mfEdost.isPickupMode())
+											return;
 										var locForFetch = '';
 										try {
 											locForFetch = String(mfEdost.getCurrentLocationCode() || '');
 										} catch(eG) {}
-										if (BX.type.isNotEmptyString(locForFetch) || mfEdost.hasDestinationSignal())
+										if (mfEdost.hasUserDeliveryDestination())
 										{
 											mfEdost.fetchOffers(locForFetch, zipDigits, {allowInactive: true});
 										}
@@ -2112,6 +3160,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 										} catch(eUg) {}
 									};
 									setTimeout(runFetch, 50);
+									setTimeout(function(){
+										try {
+											if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncNominatimInputValue === 'function')
+												ctx.__mfBuyerAddress.syncNominatimInputValue();
+										} catch(eNomAfterPick) {}
+									}, 300);
 								});
 								list.appendChild(line);
 							})(resp.items[i]);
@@ -2140,11 +3194,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 			try {
 				if (!ctx.__mfNominatimActive && inp)
-				{
-					var preFill = mfBuyerAddress.getLocationPrefill();
-					if (preFill)
-						inp.value = preFill;
-				}
+					mfBuyerAddress.syncNominatimInputValue();
 			} catch(ePreFill) {}
 		};
 
@@ -2244,6 +3294,11 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							control.bindEvent('after-select-real-value', function(){
 								try {
 									if (!ctx.BXCallAllowed) return;
+									if (
+										ctx.__mfNominatimActive
+										|| (ctx.__mfNominatimJsonLast && mfEdost.getDeliveryMode() === mfEdost.DELIVERY_MODE_DELIVERY)
+									)
+										return;
 									ctx.BXCallAllowed = false;
 									ctx.__mfNominatimActive = false;
 									try {
@@ -2398,6 +3453,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 		try {
 			mfBuyerAddress.installNominatim(ctx);
+			mfBuyerAddress.dedupeNominatimWrap();
 		} catch(eNom) {}
 
 		try {
@@ -2444,6 +3500,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 			}
 
 			// Pull offers on each refresh using current LOCATION/ZIP values.
+			mfEdost.restoreLastOrderPreload();
+
 			var locInit = mfEdost.getEffectiveLocationCode();
 			var zipInit = '';
 			try {
@@ -2454,34 +3512,34 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						zipInit = String(zInp0.value || '').replace(/\D+/g, '');
 				}
 			} catch(eZip0) {}
-			// У гостя до открытия шага «Доставка» раньше не вызывался fetchOffers (allowInactive только у авторизованных),
-			// поэтому после выбора адреса («Адрес доставки» / Nominatim) тарифы eDost не подгружались.
-			if (BX.type.isNotEmptyString(String(locInit || '')))
+
+			if (!mfEdost.isPickupMode())
 			{
-				mfEdost.fetchOffers(locInit, zipInit, {allowInactive: true});
-			}
-			else if (mfEdost.hasDestinationSignal())
-			{
-				mfEdost.fetchOffers(locInit, zipInit, {allowInactive: true});
-			}
-			else if (mfEdost.isDeliveryActive && mfEdost.isDeliveryActive())
-			{
-				mfEdost.fetchOffers(locInit, zipInit, {allowInactive: mfEdost.isAuthorized()});
-			}
-			if (!mfEdost.hasDestinationSignal())
-			{
-				try { mfEdost.clearManagerDeliveryFallback(); } catch(eMf0) {}
-				var mcSkip = mfEdost.getMfCheckout();
-				if (!(mcSkip && mcSkip.LAST_ORDER_EDOST && mcSkip.LAST_ORDER_EDOST.ID))
+				if (mfEdost.hasUserDeliveryDestination())
 				{
-					mfEdost.clearSelection();
+					mfEdost.fetchOffers(locInit, zipInit, {allowInactive: true});
+				}
+				else if (mfEdost.isDeliveryActive && mfEdost.isDeliveryActive())
+				{
+					mfEdost.renderOffers([]);
 				}
 			}
 			else
 			{
-				mfEdost.restoreLastOrderPreload();
+				mfEdost.syncPickupTariffFields();
+			}
+
+			if (!mfEdost.hasUserDeliveryDestination())
+			{
+				try { mfEdost.clearManagerDeliveryFallback(); } catch(eMf0) {}
+				var mcSkip = mfEdost.getMfCheckout();
+				if (!mfEdost.isPickupMode() && !(mcSkip && mcSkip.LAST_ORDER_EDOST && mcSkip.LAST_ORDER_EDOST.ID))
+				{
+					mfEdost.clearSelection();
+				}
 			}
 			mfEdost.updateGate(locInit);
+			mfEdost.syncPickupAddressVisibility();
 			mfEdost.applyDeliverySummary();
 			mfEdost.applyTotalDeliveryLine();
 			try { mfEdost.installSummaryObserver(); } catch(eObserver) {}

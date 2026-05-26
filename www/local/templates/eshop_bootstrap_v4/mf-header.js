@@ -17,6 +17,10 @@
     var nav = qs('.mf-nav');
     var nh = nav ? (nav.offsetHeight || 0) : 0;
     document.documentElement.style.setProperty('--mf-nav-h', nh + 'px');
+
+    var legend = qs('.mf-delivery-spb-legend');
+    var lh = legend ? (legend.offsetHeight || 0) : 0;
+    document.documentElement.style.setProperty('--mf-delivery-spb-legend-h', lh + 'px');
   }
 
   function initFooterAccordion() {

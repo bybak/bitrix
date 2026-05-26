@@ -333,6 +333,10 @@ else
 		|| (($arParams['MF_ORDER_MAKE_SIGNATURE'] ?? 'N') === 'Y');
 	$hideDelivery = empty($arResult['DELIVERY']) && !$mfVirtualDelivery;
 	$mfCheckoutBoot = ['FALLBACK_LOCATION_CODE' => ''];
+	if (function_exists('mf_checkout_pickup_delivery_config'))
+	{
+		$mfCheckoutBoot['PICKUP'] = mf_checkout_pickup_delivery_config();
+	}
 	if ($mfVirtualDelivery && function_exists('mf_checkout_resolve_fallback_location_code'))
 	{
 		$mfCheckoutBoot['FALLBACK_LOCATION_CODE'] = (string)mf_checkout_resolve_fallback_location_code();
@@ -351,6 +355,27 @@ else
 	if (!empty($preloadBoot['MF_EDOST_TO_CITY']))
 	{
 		$mfCheckoutBoot['LAST_ORDER_EDOST_TO_CITY'] = (string)$preloadBoot['MF_EDOST_TO_CITY'];
+	}
+	if (function_exists('mf_checkout_resolve_delivery_mode'))
+	{
+		$reqBoot = Main\Application::getInstance()->getContext()->getRequest();
+		$mfCheckoutBoot['DELIVERY_MODE'] = mf_checkout_resolve_delivery_mode(
+			(string)$reqBoot->getPost('MF_DELIVERY_MODE'),
+			(string)$reqBoot->getPost('MF_EDOST_TARIF_ID'),
+			trim((string)$reqBoot->getPost('MF_EDOST_TARIF_COMPANY'))
+		);
+	}
+	if (!empty($preloadBoot['MF_DELIVERY_MODE']))
+	{
+		$mfCheckoutBoot['LAST_ORDER_DELIVERY_MODE'] = (string)$preloadBoot['MF_DELIVERY_MODE'];
+	}
+	elseif (!empty($preloadBoot['MF_EDOST']['ID']) && function_exists('mf_checkout_resolve_delivery_mode'))
+	{
+		$mfCheckoutBoot['LAST_ORDER_DELIVERY_MODE'] = mf_checkout_resolve_delivery_mode(
+			null,
+			(string)$preloadBoot['MF_EDOST']['ID'],
+			trim((string)($preloadBoot['MF_EDOST']['COMPANY'] ?? ''))
+		);
 	}
 	?>
 	<form action="<?=POST_FORM_ACTION_URI?>" method="POST" name="ORDER_FORM" class="bx-soa-wrapper mb-4<?=$themeClass?>" id="bx-soa-order-form" enctype="multipart/form-data">

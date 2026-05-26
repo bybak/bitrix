@@ -52,6 +52,12 @@ if (!function_exists('mf_analogs_ensure_hl'))
 	 */
 	function mf_analogs_ensure_hl(): array
 	{
+		static $cached = null;
+		if (is_array($cached))
+		{
+			return $cached;
+		}
+
 		if (!class_exists(Loader::class) || !Loader::includeModule('highloadblock'))
 		{
 			throw new \RuntimeException('Module highloadblock is not available.');
@@ -115,12 +121,14 @@ if (!function_exists('mf_analogs_ensure_hl'))
 		$entity = \Bitrix\Highloadblock\HighloadBlockTable::compileEntity($hl);
 		$dataClass = $entity->getDataClass();
 
-		return [
+		$cached = [
 			'HL_ID' => $hlId,
 			'TABLE' => $tableName,
 			'ENTITY_ID' => $entityId,
 			'DATA_CLASS' => $dataClass,
 		];
+
+		return $cached;
 	}
 }
 
@@ -131,6 +139,12 @@ if (!function_exists('mf_analogs_ensure_hl_meta'))
 	 */
 	function mf_analogs_ensure_hl_meta(): array
 	{
+		static $cached = null;
+		if (is_array($cached))
+		{
+			return $cached;
+		}
+
 		if (!class_exists(Loader::class) || !Loader::includeModule('highloadblock'))
 		{
 			throw new \RuntimeException('Module highloadblock is not available.');
@@ -193,12 +207,14 @@ if (!function_exists('mf_analogs_ensure_hl_meta'))
 		$entity = \Bitrix\Highloadblock\HighloadBlockTable::compileEntity($hl);
 		$dataClass = $entity->getDataClass();
 
-		return [
+		$cached = [
 			'HL_ID' => $hlId,
 			'TABLE' => $tableName,
 			'ENTITY_ID' => $entityId,
 			'DATA_CLASS' => $dataClass,
 		];
+
+		return $cached;
 	}
 }
 
@@ -779,11 +795,43 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 		}
 
 		$allCandidateIds = [];
+		$stockMap = [];
 		foreach ($productIds as $pid)
 		{
 			$ids = array_map('intval', array_keys($related[$pid] ?? []));
 			$ids = array_values(array_filter($ids, static fn($x) => $x > 0 && $x !== $pid));
-			if (function_exists('mf_analogs_sort_ids_stock_priority') && $ids !== [])
+			foreach ($ids as $id)
+			{
+				$allCandidateIds[$id] = true;
+			}
+		}
+		if ($allCandidateIds !== [] && function_exists('mf_catalog_batch_products_have_stock'))
+		{
+			$stockMap = mf_catalog_batch_products_have_stock(array_keys($allCandidateIds));
+		}
+
+		foreach ($productIds as $pid)
+		{
+			$ids = array_map('intval', array_keys($related[$pid] ?? []));
+			$ids = array_values(array_filter($ids, static fn($x) => $x > 0 && $x !== $pid));
+			if ($ids !== [] && $stockMap !== [])
+			{
+				$in = [];
+				$out = [];
+				foreach ($ids as $id)
+				{
+					if (!empty($stockMap[$id]))
+					{
+						$in[] = $id;
+					}
+					else
+					{
+						$out[] = $id;
+					}
+				}
+				$ids = array_merge($in, $out);
+			}
+			elseif ($ids !== [] && function_exists('mf_analogs_sort_ids_stock_priority'))
 			{
 				$ids = mf_analogs_sort_ids_stock_priority($ids);
 			}
@@ -792,15 +840,6 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 				$ids = array_slice($ids, 0, $limitPerProduct);
 			}
 			$result[$pid] = $ids;
-			foreach ($ids as $id)
-			{
-				$allCandidateIds[$id] = true;
-			}
-		}
-
-		if ($allCandidateIds !== [] && function_exists('mf_catalog_warm_products'))
-		{
-			mf_catalog_warm_products(array_merge($productIds, array_keys($allCandidateIds)));
 		}
 
 		return $result;

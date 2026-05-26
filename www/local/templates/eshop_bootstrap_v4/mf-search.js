@@ -387,6 +387,8 @@
     var idSet = {};
     ids.forEach(function (id) { idSet[String(id)] = 1; });
     return mfPostJson(MF_ANALOGS_URL, ids, { limit: '8' }).then(function (resp) {
+      var statusBar = document.getElementById('mf-search-analogs-status');
+      if (statusBar && statusBar.parentNode) statusBar.remove();
       if (!resp || !resp.ok || !resp.blocks) {
         ids.forEach(mfRemoveAnalogPending);
         return;
@@ -395,6 +397,22 @@
     }).catch(function () {
       ids.forEach(mfRemoveAnalogPending);
     });
+  }
+
+  function mfRunPromisePool(taskFns, concurrency) {
+    concurrency = Math.max(1, concurrency || 2);
+    if (!taskFns.length) return Promise.resolve();
+    var index = 0;
+    function worker() {
+      if (index >= taskFns.length) return Promise.resolve();
+      var fn = taskFns[index++];
+      return Promise.resolve().then(fn).then(worker);
+    }
+    var workers = [];
+    for (var i = 0; i < Math.min(concurrency, taskFns.length); i++) {
+      workers.push(worker());
+    }
+    return Promise.all(workers);
   }
 
   function mfLoadSearchAnalogs() {
@@ -412,28 +430,19 @@
     if (!ids.length) return Promise.resolve();
 
     var statusBar = mfEnsureAnalogsStatusBar();
-    var chunkSize = 6;
+    var chunkSize = 20;
     var chunks = [];
     for (var i = 0; i < ids.length; i += chunkSize) {
       chunks.push(ids.slice(i, i + chunkSize));
     }
 
-    var chain = Promise.resolve();
-    chunks.forEach(function (chunk, idx) {
-      chain = chain.then(function () {
-        return mfLoadSearchAnalogsChunk(chunk).then(function () {
-          if (idx === 0 && statusBar) {
-            statusBar.remove();
-          }
-          if (idx === 0) {
-            return mfLoadSearchStores();
-          }
-          return null;
-        });
-      });
+    var taskFns = chunks.map(function (chunk) {
+      return function () {
+        return mfLoadSearchAnalogsChunk(chunk);
+      };
     });
 
-    return chain.then(function () {
+    return mfRunPromisePool(taskFns, 2).then(function () {
       if (statusBar && statusBar.parentNode) statusBar.remove();
       return mfLoadSearchStores();
     }).then(function () {

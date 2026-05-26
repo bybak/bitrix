@@ -3634,6 +3634,33 @@ if (!function_exists('mf_on_order_before_saved'))
 					$order->setField('COMMENTS', $comments);
 				}
 
+				if (
+					$tid === 'pickup'
+					|| (function_exists('mf_checkout_is_pickup_tariff') && mf_checkout_is_pickup_tariff($tid, trim((string)$req->getPost('MF_EDOST_TARIF_COMPANY'))))
+				)
+				{
+					$shipmentCollection = $order->getShipmentCollection();
+					if ($shipmentCollection)
+					{
+						foreach ($shipmentCollection as $shipment)
+						{
+							if (!$shipment || $shipment->isSystem())
+							{
+								continue;
+							}
+							try
+							{
+								$shipment->setField('CUSTOM_PRICE_DELIVERY', 'Y');
+								$shipment->setField('BASE_PRICE_DELIVERY', 0.0);
+								$shipment->setField('PRICE_DELIVERY', 0.0);
+							}
+							catch (\Throwable $eShipPickup)
+							{
+							}
+						}
+					}
+				}
+
 				if ($tid !== '')
 				{
 					$company = trim((string)$req->getPost('MF_EDOST_TARIF_COMPANY'));

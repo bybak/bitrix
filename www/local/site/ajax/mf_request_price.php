@@ -49,6 +49,22 @@ try
 
 	$productName = preg_replace('~\s+~u', ' ', $productName ?? '');
 	$productUrl = preg_replace('~[\r\n]+~', '', $productUrl ?? '');
+	if ($productUrl !== '' && class_exists(\Mf\SiteMail\Renderer::class))
+	{
+		$productUrl = \Mf\SiteMail\Renderer::absoluteUrl($productUrl);
+	}
+	elseif ($productId > 0 && $productUrl === '' && \Bitrix\Main\Loader::includeModule('iblock'))
+	{
+		$rsEl = \CIBlockElement::GetByID($productId);
+		if ($el = $rsEl->GetNext(false, false))
+		{
+			$detailUrl = trim((string)($el['DETAIL_PAGE_URL'] ?? ''));
+			if ($detailUrl !== '' && class_exists(\Mf\SiteMail\Renderer::class))
+			{
+				$productUrl = \Mf\SiteMail\Renderer::absoluteUrl($detailUrl);
+			}
+		}
+	}
 	$name = preg_replace('~\s+~u', ' ', $name ?? '');
 	$email = preg_replace('~[\r\n]+~', '', $email ?? '');
 

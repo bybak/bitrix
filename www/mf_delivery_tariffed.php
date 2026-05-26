@@ -254,6 +254,27 @@ final class Edost
 	}
 
 	/**
+	 * Наценка на тариф eDost в checkout: (расчётная стоимость + 50 ₽) × 1,15,
+	 * затем округление вверх до 10 ₽ (mf_round_price).
+	 */
+	public static function applyCheckoutMarkup(float $rawPrice): float
+	{
+		if (!is_finite($rawPrice) || $rawPrice <= 0)
+		{
+			return max(0.0, $rawPrice);
+		}
+
+		$marked = ($rawPrice + 50.0) * 1.15;
+
+		if (function_exists('mf_round_price'))
+		{
+			return mf_round_price($marked);
+		}
+
+		return (float)(ceil($marked / 10.0) * 10.0);
+	}
+
+	/**
 	 * @param array{ln?:float,wd?:float,hg?:float}|null $dimensionsM
 	 *
 	 * @return array{ok:bool, stat?:int, warning?:int, error?:string, offers?:array<int, array{id:string,price:float,days_from:int,days_to:int,company:string,name:string,strah:int}>}
@@ -340,6 +361,7 @@ final class Edost
 		{
 			$id = trim((string)($tarif->id ?? ''));
 			$price = (float)str_replace(',', '.', (string)($tarif->price ?? '0'));
+			$price = self::applyCheckoutMarkup($price);
 			$dayRaw = trim((string)($tarif->day ?? ''));
 			[$dFrom, $dTo] = self::parseDaysRange($dayRaw);
 			$company = trim((string)($tarif->company ?? ''));

@@ -243,11 +243,121 @@
 .mf-order #bx-soa-delivery .bx-soa-pp-list{
   display: none !important;
 }
-.mf-order #bx-soa-delivery:not(.bx-selected) #mf-edost-box{
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-delivery-mode,
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-delivery-panel,
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-nominatim-wrap,
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-edost-box,
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-edost-note,
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-edost-warning{
   display: none !important;
 }
-.mf-order #bx-soa-delivery.bx-selected #mf-edost-box{
+
+.mf-order #bx-soa-delivery:not(.bx-selected) #mf-delivery-panel{
+  display: none !important;
+}
+.mf-order #bx-soa-delivery.bx-selected #mf-delivery-panel{
   display: block;
+}
+
+/* Режим доставки: самовывоз vs eDost */
+.mf-order .mf-delivery-mode{
+  margin-bottom: 0;
+}
+.mf-order .mf-delivery-mode__option{
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.4;
+  background: #fff;
+}
+.mf-order .mf-delivery-mode__option:last-of-type{
+  margin-bottom: 0;
+}
+.mf-order .mf-delivery-mode__option input{
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+/* Панель под радио «Доставка»: тексты, адрес, тарифы eDost */
+.mf-order .mf-delivery-panel{
+  margin-top: 10px;
+  padding: 12px 14px 14px 22px;
+  border-left: 3px solid rgba(235,189,47,.55);
+  background: rgba(0,0,0,.025);
+  border-radius: 0 8px 8px 8px;
+}
+.mf-order #mf-edost-note{
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: .78;
+  margin-bottom: 10px;
+}
+.mf-order #mf-edost-warning{
+  margin-bottom: 10px;
+}
+.mf-order #mf-edost-warning.alert{
+  margin-bottom: 10px;
+}
+.mf-order #bx-soa-delivery.mf-delivery-mode-delivery .bx_soa_location,
+.mf-order #bx-soa-delivery-hidden .bx_soa_location{
+  display: none !important;
+}
+.mf-order .mf-nominatim-wrap{
+  position: relative;
+  z-index: 10;
+  margin-bottom: 12px;
+}
+.mf-order .mf-nominatim-wrap__input{
+  width: 100%;
+}
+.mf-order .mf-edost-box{
+  margin-top: 4px;
+}
+.mf-order .mf-edost-list{
+  margin-top: 2px;
+}
+.mf-order .mf-edost-tariff{
+  display: block;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.35;
+  background: #fff;
+  box-shadow: inset 3px 0 0 rgba(235,189,47,.35);
+}
+.mf-order .mf-edost-tariff:last-child{
+  margin-bottom: 0;
+}
+.mf-order .mf-edost-tariff input{
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.mf-order .mf-edost-tariff--custom input[type="text"]{
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.mf-order .mf-edost-tariff--empty{
+  cursor: default;
+  box-shadow: none;
+  opacity: .8;
+}
+.mf-order #mf-edost-selected{
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: .85;
+}
+
+.mf-order #bx-soa-delivery.mf-delivery-mode-pickup #mf-delivery-panel,
+.mf-order #bx-soa-delivery.mf-delivery-mode-pickup .bx_soa_location{
+  display: none !important;
 }
 
 /* Reduce default blue outlines */

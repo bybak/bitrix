@@ -1,0 +1,96 @@
+/* Фиксированная панель-легенда для колонки «Доставка» (кружки СПб) */
+body.mf-has-delivery-spb-legend{
+  --mf-delivery-spb-legend-h: 44px;
+}
+
+@media (max-width: 991.98px){
+  body.mf-has-delivery-spb-legend{
+    padding-bottom: calc(var(--mf-nav-h, 60px) + var(--mf-delivery-spb-legend-h, 44px));
+  }
+}
+
+@media (min-width: 992px){
+  body.mf-has-delivery-spb-legend{
+    padding-bottom: var(--mf-delivery-spb-legend-h, 44px);
+  }
+}
+
+.mf-delivery-spb-legend{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1003;
+  background: rgba(0, 0, 0, .85);
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+@media (max-width: 991.98px){
+  .mf-delivery-spb-legend{
+    bottom: var(--mf-nav-h, 60px);
+  }
+}
+
+.mf-delivery-spb-legend > .container{
+  max-width: none;
+  width: 100%;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.mf-delivery-spb-legend__inner{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 24px;
+  min-height: var(--mf-delivery-spb-legend-h, 44px);
+  padding: 8px 0;
+  text-align: center;
+}
+
+.mf-delivery-spb-legend__item{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mf-delivery-spb-legend__text{
+  color: rgba(255, 255, 255, .92);
+}
+
+.mf-delivery-spb-legend .mf-store-delivery-spb{
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+.mf-delivery-spb-legend .mf-store-delivery-spb--ok{
+  background: #198754;
+}
+
+.mf-delivery-spb-legend .mf-store-delivery-spb--bad{
+  background: #e67e22;
+}
+
+@media (max-width: 575.98px){
+  .mf-delivery-spb-legend__inner{
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+  }
+
+  body.mf-has-delivery-spb-legend{
+    --mf-delivery-spb-legend-h: 72px;
+  }
+}

@@ -458,19 +458,36 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 		}
 
 		$limit = max(1, min(12, (int)$limit));
-		sort($productIds, SORT_NUMERIC);
-		$cacheKey = 'v3_' . md5(implode(',', $productIds) . '|' . $limit);
+		$out = [];
+		$missing = $productIds;
+		$cache = null;
 		if (class_exists(\Bitrix\Main\Data\Cache::class))
 		{
 			$cache = \Bitrix\Main\Data\Cache::createInstance();
-			if ($cache->initCache(3600, $cacheKey, '/mf/search_analogs'))
+			$missing = [];
+			foreach ($productIds as $pid)
 			{
-				$cached = $cache->getVars();
-				if (is_array($cached))
+				$cacheKey = 'v4_p' . $pid . '_l' . $limit;
+				if ($cache->initCache(3600, $cacheKey, '/mf/search_analogs_p'))
 				{
-					return $cached;
+					$cached = $cache->getVars();
+					if (is_array($cached) && array_key_exists('html', $cached))
+					{
+						$html = (string)($cached['html'] ?? '');
+						if ($html !== '')
+						{
+							$out[$pid] = $html;
+						}
+						continue;
+					}
 				}
+				$missing[] = $pid;
 			}
+		}
+
+		if (empty($missing))
+		{
+			return $out;
 		}
 
 		$mfCatalogIblockId = 4;
@@ -485,11 +502,11 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 
 		if (function_exists('mf_analogs_related_ids_for_products') && class_exists('CIBlockElement'))
 		{
-			$mfAnalogsByProductId = mf_analogs_related_ids_for_products($productIds, $limit);
+			$mfAnalogsByProductId = mf_analogs_related_ids_for_products($missing, $limit);
 		}
 		elseif ((function_exists('mf_analogs_related_ids_for_product') || function_exists('mf_analogs_ids_for_product')) && class_exists('CIBlockElement'))
 		{
-			foreach ($productIds as $pid)
+			foreach ($missing as $pid)
 			{
 				$ids = function_exists('mf_analogs_related_ids_for_product')
 					? mf_analogs_related_ids_for_product((int)$pid, $limit)
@@ -510,12 +527,8 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 			}
 		}
 		$allAnalogIds = array_keys($allAnalogIds);
-		if (empty($allAnalogIds))
-		{
-			return [];
-		}
 
-		if (class_exists('CIBlockElement'))
+		if (!empty($allAnalogIds) && class_exists('CIBlockElement'))
 		{
 			$rsA = \CIBlockElement::GetList(
 				['NAME' => 'ASC', 'ID' => 'ASC'],
@@ -550,62 +563,65 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 			}
 		}
 
-		$out = [];
-		foreach ($productIds as $pid)
+		foreach ($missing as $pid)
 		{
 			$mfAnalogs = isset($mfAnalogsByProductId[$pid]) ? (array)$mfAnalogsByProductId[$pid] : [];
-			if (empty($mfAnalogs))
+			$html = '';
+			if (!empty($mfAnalogs))
 			{
-				continue;
+				$analogsData = [];
+				foreach ($mfAnalogs as $aid)
+				{
+					$rA = $mfAnalogRowsById[(int)$aid] ?? null;
+					if (!is_array($rA)) continue;
+					$aid2 = (int)($rA['ID'] ?? 0);
+					if ($aid2 <= 0) continue;
+					$codeA = trim((string)($rA['CODE'] ?? ''));
+					$urlA = ($codeA !== '' ? '/products/' . rawurlencode($codeA) . '/' : '');
+					if ($urlA === '') continue;
+					$nameA = (string)($rA['NAME'] ?? ('ID ' . $aid2));
+					$analogsData[] = [
+						'id' => $aid2,
+						'url' => $urlA,
+						'code' => $codeA,
+						'prefetch_row' => $rA,
+						'title_html' => htmlspecialcharsbx($nameA),
+						'brand' => trim((string)($rA['PROPERTY_MF_BRAND_VALUE'] ?? ($rA['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
+						'article' => trim((string)($rA['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
+						'oem' => trim((string)($rA['PROPERTY_OEM_VALUE'] ?? '')),
+						'is_analog' => true,
+						'lazy_stores' => true,
+					];
+				}
+				if (!empty($analogsData))
+				{
+					ob_start();
+					?>
+					<div class="mf-search-card__catalog-note">Также Вы можете заказать данный товар или его аналог в каталогах</div>
+					<div class="mf-search-card__analogs-title">Аналоги</div>
+					<div class="mf-search-analogs">
+						<?php foreach ($analogsData as $a): ?>
+							<?php mf_search_render_product_card($a); ?>
+						<?php endforeach; ?>
+					</div>
+					<?php
+					$html = (string)ob_get_clean();
+				}
 			}
 
-			$analogsData = [];
-			foreach ($mfAnalogs as $aid)
+			if ($html !== '')
 			{
-				$rA = $mfAnalogRowsById[(int)$aid] ?? null;
-				if (!is_array($rA)) continue;
-				$aid2 = (int)($rA['ID'] ?? 0);
-				if ($aid2 <= 0) continue;
-				$codeA = trim((string)($rA['CODE'] ?? ''));
-				$urlA = ($codeA !== '' ? '/products/' . rawurlencode($codeA) . '/' : '');
-				if ($urlA === '') continue;
-				$nameA = (string)($rA['NAME'] ?? ('ID ' . $aid2));
-				$analogsData[] = [
-					'id' => $aid2,
-					'url' => $urlA,
-					'code' => $codeA,
-					'prefetch_row' => $rA,
-					'title_html' => htmlspecialcharsbx($nameA),
-					'brand' => trim((string)($rA['PROPERTY_MF_BRAND_VALUE'] ?? ($rA['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''))),
-					'article' => trim((string)($rA['PROPERTY_CML2_ARTICLE_VALUE'] ?? '')),
-					'oem' => trim((string)($rA['PROPERTY_OEM_VALUE'] ?? '')),
-					'is_analog' => true,
-					'lazy_stores' => true,
-				];
-			}
-			if (empty($analogsData))
-			{
-				continue;
+				$out[(int)$pid] = $html;
 			}
 
-			ob_start();
-			?>
-			<div class="mf-search-card__catalog-note">Также Вы можете заказать данный товар или его аналог в каталогах</div>
-			<div class="mf-search-card__analogs-title">Аналоги</div>
-			<div class="mf-search-analogs">
-				<?php foreach ($analogsData as $a): ?>
-					<?php mf_search_render_product_card($a); ?>
-				<?php endforeach; ?>
-			</div>
-			<?php
-			$out[(int)$pid] = (string)ob_get_clean();
-		}
-
-		if (isset($cache) && is_object($cache))
-		{
-			if ($cache->startDataCache())
+			if ($cache instanceof \Bitrix\Main\Data\Cache)
 			{
-				$cache->endDataCache($out);
+				$cacheKey = 'v4_p' . $pid . '_l' . $limit;
+				$writeCache = \Bitrix\Main\Data\Cache::createInstance();
+				if ($writeCache->startDataCache(3600, $cacheKey, '/mf/search_analogs_p'))
+				{
+					$writeCache->endDataCache(['html' => $html]);
+				}
 			}
 		}
 

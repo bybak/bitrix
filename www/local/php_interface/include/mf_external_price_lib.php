@@ -1404,6 +1404,22 @@ if (!function_exists('mf_ep_product_weight_grams_cluster'))
 	}
 }
 
+if (!function_exists('mf_store_delivery_spb_titles'))
+{
+	/**
+	 * Тексты подсказок для индикатора доставки до склада СПб (зелёный / оранжевый круг).
+	 *
+	 * @return array{ok:string,bad:string}
+	 */
+	function mf_store_delivery_spb_titles(): array
+	{
+		return [
+			'ok' => 'Доставка до склада СПб включена',
+			'bad' => 'Доставка не включена. Доставка: 18 долларов за кг',
+		];
+	}
+}
+
 if (!function_exists('mf_store_delivery_spb_ui'))
 {
 	/**
@@ -1417,8 +1433,9 @@ if (!function_exists('mf_store_delivery_spb_ui'))
 	{
 		$storeId = (int)$storeId;
 		$productId = (int)$productId;
-		$titleOk = 'Доставка до склада СПб включена';
-		$titleNoWeight = 'Доставка не включена. Доставка: 18 долларов за кг';
+		$titles = mf_store_delivery_spb_titles();
+		$titleOk = (string)($titles['ok'] ?? '');
+		$titleNoWeight = (string)($titles['bad'] ?? '');
 		if ($storeId <= 0)
 		{
 			return ['ok' => true, 'title' => $titleOk];
@@ -1466,6 +1483,135 @@ if (!function_exists('mf_store_delivery_spb_icon_html'))
 		$t = htmlspecialcharsbx($title);
 
 		return '<span class="mf-store-delivery-spb mf-store-delivery-spb--'.$mod.'" title="'.$t.'" aria-label="'.$t.'"></span>';
+	}
+}
+
+if (!function_exists('mf_store_delivery_spb_email_html'))
+{
+	/**
+	 * Индикатор доставки до СПб для HTML-писем: кружок + расшифровка текстом.
+	 */
+	function mf_store_delivery_spb_email_html(int $storeId, int $productId = 0): string
+	{
+		$ui = mf_store_delivery_spb_ui($storeId, $productId);
+		$ok = !empty($ui['ok']);
+		$title = trim((string)($ui['title'] ?? ''));
+		if ($title === '')
+		{
+			$titles = mf_store_delivery_spb_titles();
+			$title = (string)($titles[$ok ? 'ok' : 'bad'] ?? '');
+		}
+		$color = $ok ? '#198754' : '#e67e22';
+		$t = htmlspecialcharsbx($title);
+
+		return '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:'
+			. $color
+			. ';vertical-align:middle;margin-right:6px;"></span>'
+			. '<span style="font-size:12px;line-height:1.4;color:#333;vertical-align:middle;">'
+			. $t
+			. '</span>';
+	}
+}
+
+if (!function_exists('mf_page_is_product_detail'))
+{
+	function mf_page_is_product_detail(): bool
+	{
+		global $APPLICATION;
+
+		$realFile = (string)($_SERVER['REAL_FILE_PATH'] ?? '');
+		if ($realFile !== '' && stripos($realFile, '/products/detail.php') !== false)
+		{
+			return true;
+		}
+
+		$curPage = is_object($APPLICATION) ? (string)$APPLICATION->GetCurPage(true) : '';
+		if ($curPage !== '' && stripos($curPage, '/products/detail.php') !== false)
+		{
+			return true;
+		}
+
+		$prefix = rtrim((string)SITE_DIR, '/') . '/products/';
+		if ($curPage === '' || strpos($curPage, $prefix) !== 0)
+		{
+			return false;
+		}
+
+		$rest = trim(substr($curPage, strlen($prefix)), '/');
+		if ($rest === '' || $rest === 'index.php')
+		{
+			return false;
+		}
+		if (stripos($rest, 'category/') === 0 || $rest === 'category')
+		{
+			return false;
+		}
+		if (stripos($rest, 'section.php') !== false)
+		{
+			return false;
+		}
+
+		return (bool)preg_match('#^[^/]+/?$#u', $rest);
+	}
+}
+
+if (!function_exists('mf_page_shows_delivery_spb_legend'))
+{
+	function mf_page_shows_delivery_spb_legend(): bool
+	{
+		global $APPLICATION;
+		if (!is_object($APPLICATION))
+		{
+			return false;
+		}
+
+		$curPage = (string)$APPLICATION->GetCurPage(true);
+		if ($curPage === '')
+		{
+			return false;
+		}
+
+		if (strpos($curPage, SITE_DIR . 'search/') === 0)
+		{
+			return true;
+		}
+
+		$cartPath = SITE_DIR . 'personal/cart/';
+		if ($curPage === rtrim($cartPath, '/') || strpos($curPage, $cartPath) === 0)
+		{
+			return true;
+		}
+
+		return mf_page_is_product_detail();
+	}
+}
+
+if (!function_exists('mf_store_delivery_spb_legend_html'))
+{
+	/**
+	 * Фиксированная панель-легенда для колонки «Доставка» (кружки СПб).
+	 */
+	function mf_store_delivery_spb_legend_html(): string
+	{
+		$titles = mf_store_delivery_spb_titles();
+		$titleOk = htmlspecialcharsbx((string)($titles['ok'] ?? ''));
+		$titleBad = htmlspecialcharsbx((string)($titles['bad'] ?? ''));
+
+		return ''
+			. '<div class="mf-delivery-spb-legend" role="note" aria-label="Обозначения доставки">'
+			. '<div class="container">'
+			. '<div class="mf-delivery-spb-legend__inner">'
+			. '<div class="mf-delivery-spb-legend__item">'
+			. '<span class="mf-store-delivery-spb mf-store-delivery-spb--ok" aria-hidden="true"></span>'
+			. '<span class="mf-delivery-spb-legend__text">' . $titleOk . '</span>'
+			. '</div>'
+			. '<div class="mf-delivery-spb-legend__item">'
+			. '<span class="mf-store-delivery-spb mf-store-delivery-spb--bad" aria-hidden="true"></span>'
+			. '<span class="mf-delivery-spb-legend__text">' . $titleBad . '</span>'
+			. '</div>'
+			. '</div>'
+			. '</div>'
+			. '</div>';
 	}
 }
 

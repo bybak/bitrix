@@ -1,8 +1,9 @@
 <?php
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/prolog_before.php");
 
-use Bitrix\Main\Mail\Mail;
 use Bitrix\Main\Web\Json;
+
+require_once $_SERVER['DOCUMENT_ROOT'] . '/include/mf_form.php';
 
 function mf_is_ajax_request(): bool
 {
@@ -30,7 +31,6 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST")
 $lastname = trim((string)($_POST["lastname"] ?? ""));
 if ($lastname !== "")
 {
-	// Honeypot triggered: pretend success
 	if (mf_is_ajax_request())
 	{
 		mf_json(["ok" => true]);
@@ -39,21 +39,27 @@ if ($lastname !== "")
 }
 
 $fields = [
-	"fio" => trim((string)($_POST["fio"] ?? "")),
-	"phone" => trim((string)($_POST["phone"] ?? "")),
-	"email" => trim((string)($_POST["email"] ?? "")),
-	"field1" => trim((string)($_POST["field1"] ?? "")),
-	"field2" => trim((string)($_POST["field2"] ?? "")),
-	"field3" => trim((string)($_POST["field3"] ?? "")),
-	"field6" => trim((string)($_POST["field6"] ?? "")),
-	"field4" => trim((string)($_POST["field4"] ?? "")),
-	"field5" => trim((string)($_POST["field5"] ?? "")),
+	"fio" => "Имя",
+	"phone" => "Телефон",
+	"email" => "E-mail",
+	"field1" => "VIN номер",
+	"field2" => "Марка",
+	"field3" => "Модель",
+	"field6" => "Объём двигателя",
+	"field4" => "Модельный год",
+	"field5" => "Заявка",
 ];
 
+$values = [];
+foreach ($fields as $name => $_label)
+{
+	$values[$name] = trim((string)($_POST[$name] ?? ""));
+}
+
 $errors = [];
-if ($fields["fio"] === "") $errors[] = "Укажите имя.";
-if ($fields["phone"] === "") $errors[] = "Укажите телефон.";
-if ($fields["email"] === "") $errors[] = "Укажите e-mail.";
+if ($values["fio"] === "") $errors[] = "Укажите имя.";
+if ($values["phone"] === "") $errors[] = "Укажите телефон.";
+if ($values["email"] === "") $errors[] = "Укажите e-mail.";
 
 if (!empty($errors))
 {
@@ -64,71 +70,37 @@ if (!empty($errors))
 	LocalRedirect("/?lead_form=error#lead-form");
 }
 
-$emailTo = function_exists("mf_mail_admin_inbox") ? mf_mail_admin_inbox() : "";
-if ($emailTo === "" && class_exists("COption"))
+$recipient = mf_form_resolve_recipient("");
+$subject = mf_form_normalize_mail_subject("Заявка с сайта (Оставьте заявку)");
+
+$dataRows = [
+	["Дата", date("Y-m-d H:i:s")],
+	["Страница", mf_form_resolve_page_url()],
+];
+foreach ($fields as $name => $label)
 {
-	$emailTo = trim((string)COption::GetOptionString("main", "email_from", ""));
-}
-if ($emailTo === "" || !filter_var($emailTo, FILTER_VALIDATE_EMAIL))
-{
-	$emailTo = "andrey@motor-force.ru";
+	$value = trim((string)($values[$name] ?? ""));
+	if ($value === "")
+	{
+		continue;
+	}
+	$dataRows[] = [$label, $value];
 }
 
-$subject = "Заявка с сайта (Оставьте заявку)";
-$lines = [];
-$lines[] = "Заявка с сайта";
-$lines[] = "Форма: lead_form";
-$lines[] = "Дата: ".date("Y-m-d H:i:s");
-$lines[] = "---";
-$lines[] = "Имя: ".$fields["fio"];
-$lines[] = "Телефон: ".$fields["phone"];
-$lines[] = "E-mail: ".$fields["email"];
-$lines[] = "VIN Номер: ".$fields["field1"];
-$lines[] = "Марка: ".$fields["field2"];
-$lines[] = "Модель: ".$fields["field3"];
-$lines[] = "Объем двигателя: ".$fields["field6"];
-$lines[] = "Модельный год: ".$fields["field4"];
-$lines[] = "Заявка: ".$fields["field5"];
-$body = implode("\n", $lines)."\n";
+$header = ["From" => mf_form_resolve_from($recipient)];
+if (filter_var($values["email"], FILTER_VALIDATE_EMAIL))
+{
+	$header["Reply-To"] = $values["email"];
+}
 
-$sent = false;
-if (class_exists(Mail::class))
-{
-	$from = function_exists("mf_mail_default_from") ? mf_mail_default_from() : "";
-	if ($from === "" || !filter_var($from, FILTER_VALIDATE_EMAIL))
-	{
-		$from = $emailTo;
-	}
-	$header = [
-		"From" => $from,
-	];
-	if (filter_var($fields["email"], FILTER_VALIDATE_EMAIL))
-	{
-		$header["Reply-To"] = $fields["email"];
-	}
-	$sent = (bool)Mail::send([
-		"TO" => $emailTo,
-		"SUBJECT" => $subject,
-		"BODY" => $body,
-		"CHARSET" => "UTF-8",
-		"CONTENT_TYPE" => "text",
-		"HEADER" => $header,
-	]);
-}
-else
-{
-	$fromHdr = function_exists("mf_mail_default_from") ? mf_mail_default_from() : "";
-	$h = "Content-Type: text/plain; charset=UTF-8\r\n";
-	if ($fromHdr !== "" && filter_var($fromHdr, FILTER_VALIDATE_EMAIL))
-	{
-		$h .= "From: " . $fromHdr . "\r\n";
-	}
-	if (filter_var($fields["email"], FILTER_VALIDATE_EMAIL))
-	{
-		$h .= "Reply-To: " . $fields["email"] . "\r\n";
-	}
-	$sent = @mail($emailTo, $subject, $body, $h);
-}
+$sent = mf_form_send_html_mail(
+	$recipient,
+	$subject,
+	"Заявка с сайта",
+	"Оставьте заявку — форма на главной странице",
+	$dataRows,
+	$header
+);
 
 if (mf_is_ajax_request())
 {
@@ -139,4 +111,3 @@ if (mf_is_ajax_request())
 }
 
 LocalRedirect($sent ? "/?lead_form=ok#lead-form" : "/?lead_form=error#lead-form");
-

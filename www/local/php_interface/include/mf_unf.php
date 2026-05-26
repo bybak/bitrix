@@ -2301,7 +2301,11 @@ final class Payload
 				$out['price'] = (float)\str_replace(',', '.', $priceRaw);
 			}
 
-			if ($tarifId === 'custom' || $company === 'Свой вариант')
+			if ($tarifId === 'pickup' || $company === 'Самовывоз')
+			{
+				$out['name'] = $tariff !== '' ? ('Самовывоз — ' . $tariff) : 'Самовывоз';
+			}
+			elseif ($tarifId === 'custom' || $company === 'Свой вариант')
 			{
 				$out['name'] = $tariff !== '' ? $tariff : 'Свой вариант';
 			}

@@ -2017,13 +2017,18 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					var virtual = f && (f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') || f.querySelector('#mf-edost-box'));
 					if (mfVirtualEdost || virtual)
 					{
-						var tidEl = f ? f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
-						var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
-						if (!tid)
+						var modeEl = f ? f.querySelector('input[name="MF_DELIVERY_MODE"]') : null;
+						var deliveryMode = modeEl ? BX.util.trim(String(modeEl.value || '')) : '';
+						if (deliveryMode !== 'pickup')
 						{
-							this.showError(this.deliveryBlockNode, 'Выберите способ доставки (тариф eDost), чтобы перейти дальше.', true);
-							this.animateScrollTo(this.deliveryBlockNode, 400, 20);
-							return BX.PreventDefault(event);
+							var tidEl = f ? f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
+							var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
+							if (!tid)
+							{
+								this.showError(this.deliveryBlockNode, 'Выберите способ доставки (тариф eDost), чтобы перейти дальше.', true);
+								this.animateScrollTo(this.deliveryBlockNode, 400, 20);
+								return BX.PreventDefault(event);
+							}
 						}
 					}
 				}
@@ -2384,6 +2389,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			BX.addClass(node, 'bx-step-completed');
 			BX.removeClass(node, 'bx-selected');
+			node.setAttribute('data-visited', 'true');
 
 			objHeight = node.offsetHeight;
 			node.style.height = objHeightOrig + 'px';
@@ -2728,8 +2734,26 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (mfB && typeof mfB.syncPickupFromSelectedStore === 'function')
 					mfB.syncPickupFromSelectedStore();
+				if (mfE && typeof mfE.isPickupMode === 'function' && !mfE.isPickupMode()
+					&& mfB && typeof mfB.syncDeliveryGeoToBuyerFields === 'function')
+				{
+					var streetProbe = mfB.getInputByCode('DELIVERY_ADDRESS');
+					var streetEmpty = !streetProbe || streetProbe === false || String(streetProbe.value || '').trim() === '';
+					mfB.syncDeliveryGeoToBuyerFields({
+						forceZip: true,
+						syncStreet: streetEmpty,
+						forceStreet: streetEmpty
+					});
+				}
 				if (mfB && typeof mfB.sync === 'function')
 					mfB.sync();
+				if (mfB && typeof mfB.syncLegacyDeliveryAddressProperty === 'function')
+					mfB.syncLegacyDeliveryAddressProperty();
+				if (mfE && typeof mfE.isPickupMode === 'function' && mfE.isPickupMode()
+					&& mfB && typeof mfB.syncMotorForcePickupAddress === 'function')
+				{
+					mfB.syncMotorForcePickupAddress();
+				}
 				if (mfE && typeof mfE.ensureFields === 'function')
 					mfE.ensureFields();
 				if (mfE && typeof mfE.ensureBitrixLocationPropertyFilled === 'function')
@@ -2750,6 +2774,11 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 				if (mfE)
 				{
+					if (typeof mfE.isPickupMode === 'function' && mfE.isPickupMode())
+					{
+						return true;
+					}
+
 					if (typeof mfE.getEffectiveLocationCode === 'function'
 						&& BX.type.isNotEmptyString(String(mfE.getEffectiveLocationCode() || '').trim()))
 					{
@@ -6868,6 +6897,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					{
 						BX.saleOrderAjax.__mfEdost.applyTotalDeliveryLine();
 					}
+					if (typeof BX.saleOrderAjax.__mfEdost.cleanupFadeDeliveryUi === 'function')
+					{
+						BX.saleOrderAjax.__mfEdost.cleanupFadeDeliveryUi();
+					}
 				}
 			}
 			catch (e)
@@ -7941,6 +7974,27 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 						BX.removeClass(this.propsBlockNode, 'bx-step-error');
 				}
 			}
+
+			if (activeNodeMode)
+			{
+				try {
+					var mfBGeo = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+					if (mfBGeo && typeof mfBGeo.syncDeliveryGeoToBuyerFields === 'function')
+					{
+						var streetProbe = mfBGeo.getInputByCode('DELIVERY_ADDRESS');
+						var streetEmpty = !streetProbe || streetProbe === false || String(streetProbe.value || '').trim() === '';
+						mfBGeo.syncDeliveryGeoToBuyerFields({
+							forceZip: true,
+							syncStreet: streetEmpty,
+							forceStreet: streetEmpty
+						});
+					}
+					if (mfBGeo && typeof mfBGeo.syncLegacyDeliveryAddressProperty === 'function')
+						mfBGeo.syncLegacyDeliveryAddressProperty();
+					if (mfBGeo && typeof mfBGeo.sync === 'function')
+						mfBGeo.sync();
+				} catch(eMfPropsGeo) {}
+			}
 		},
 
 		editFadePropsBlock: function()
@@ -8782,11 +8836,36 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 			// Motor-Force: ПВЗ — подставляем адрес пункта в DELIVERY_* до проверки (onBeforeSendRequest приходит позже).
 			try {
-				if (BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress && typeof BX.saleOrderAjax.__mfBuyerAddress.syncPickupFromSelectedStore === 'function')
-					BX.saleOrderAjax.__mfBuyerAddress.syncPickupFromSelectedStore();
-				if (BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress && typeof BX.saleOrderAjax.__mfBuyerAddress.sync === 'function')
-					BX.saleOrderAjax.__mfBuyerAddress.sync();
+				var mfBPrep = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+				var mfEPrep = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				if (mfBPrep && typeof mfBPrep.syncPickupFromSelectedStore === 'function')
+					mfBPrep.syncPickupFromSelectedStore();
+				if (mfEPrep && typeof mfEPrep.isPickupMode === 'function' && !mfEPrep.isPickupMode()
+					&& mfBPrep && typeof mfBPrep.syncDeliveryGeoToBuyerFields === 'function')
+				{
+					var streetProbe = mfBPrep.getInputByCode('DELIVERY_ADDRESS');
+					var streetEmpty = !streetProbe || streetProbe === false || String(streetProbe.value || '').trim() === '';
+					mfBPrep.syncDeliveryGeoToBuyerFields({
+						forceZip: true,
+						syncStreet: streetEmpty,
+						forceStreet: streetEmpty
+					});
+				}
+				if (mfBPrep && typeof mfBPrep.sync === 'function')
+					mfBPrep.sync();
+				if (mfBPrep && typeof mfBPrep.syncLegacyDeliveryAddressProperty === 'function')
+					mfBPrep.syncLegacyDeliveryAddressProperty();
 			} catch (eMfPvzProps) {}
+
+			try {
+				var mfEdSync = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				var mfBSync = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+				if (mfEdSync && typeof mfEdSync.isPickupMode === 'function' && mfEdSync.isPickupMode()
+					&& mfBSync && typeof mfBSync.syncMotorForcePickupAddress === 'function')
+				{
+					mfBSync.syncMotorForcePickupAddress();
+				}
+			} catch (eMfPickupSync) {}
 
 			var props = this.orderBlockNode.querySelectorAll('.bx-soa-customer-field[data-property-id-row]'),
 				propsErrors = [],
@@ -8803,12 +8882,37 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				if (BX.hasClass(props[i], 'mf-checkout-hide-location'))
 					continue;
 
+				if (BX.hasClass(props[i], 'mf-checkout-hide-legacy-address'))
+					continue;
+
 				propContainer = props[i].querySelector('.soa-property-container');
 				if (propContainer)
 				{
 					arProperty = this.validation.properties[id];
 					if (!arProperty)
 						continue;
+
+					try {
+						var mfEdPickup = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+						var mfBLegacy = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+						if (this.isMfCustomCheckout()
+							&& mfBLegacy
+							&& typeof mfBLegacy.isLegacyDeliveryAddressProperty === 'function'
+							&& mfBLegacy.isLegacyDeliveryAddressProperty(arProperty))
+						{
+							continue;
+						}
+						if (
+							mfEdPickup
+							&& typeof mfEdPickup.isPickupMode === 'function'
+							&& mfEdPickup.isPickupMode()
+							&& typeof mfEdPickup.isDeliveryAddressProperty === 'function'
+							&& mfEdPickup.isDeliveryAddressProperty(arProperty)
+						)
+						{
+							continue;
+						}
+					} catch (eMfPickupVal) {}
 
 					// Motor-Force: LOCATION в «Покупателе» часто без this.locations[id] (excludeLocation не цепляет).
 					// UI sls пустой, а адрес уже в hidden ORDER_PROP_* или в DELIVERY_LOCATION_TEXT — не считать ошибкой.
@@ -8832,13 +8936,42 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					{
 						try {
 							var mfbAddr = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
-							if (mfbAddr && typeof mfbAddr.getPropValueByCode === 'function')
+							if (mfbAddr && typeof mfbAddr.getInputByCode === 'function')
 							{
-								var addrVal = mfbAddr.getPropValueByCode('DELIVERY_ADDRESS');
-								if (addrVal && String(addrVal).trim() !== '')
+								var addrInp = mfbAddr.getInputByCode('DELIVERY_ADDRESS');
+								var curAddr = addrInp && addrInp !== false ? String(addrInp.value || '').trim() : '';
+								if (!curAddr && typeof mfbAddr.getPropValueByCode === 'function')
+									curAddr = String(mfbAddr.getPropValueByCode('DELIVERY_ADDRESS') || '').trim();
+								if (curAddr)
 									continue;
 							}
 						} catch (eMfAddrSk) {}
+					}
+
+					if (String(arProperty.CODE || '').toUpperCase() === 'DELIVERY_LOCATION_TEXT')
+					{
+						try {
+							var mfbLoc = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+							if (mfbLoc && typeof mfbLoc.getInputByCode === 'function')
+							{
+								var locInp = mfbLoc.getInputByCode('DELIVERY_LOCATION_TEXT');
+								if (locInp && locInp !== false && String(locInp.value || '').trim() !== '')
+									continue;
+							}
+						} catch (eMfLocTxt) {}
+					}
+
+					if (String(arProperty.CODE || '').toUpperCase() === 'DELIVERY_ZIP')
+					{
+						try {
+							var mfbZip = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+							if (mfbZip && typeof mfbZip.getInputByCode === 'function')
+							{
+								var zipInp = mfbZip.getInputByCode('DELIVERY_ZIP');
+								if (zipInp && zipInp !== false && String(zipInp.value || '').trim() !== '')
+									continue;
+							}
+						} catch (eMfZipSk) {}
 					}
 
 					data = this.getValidationData(arProperty, propContainer);

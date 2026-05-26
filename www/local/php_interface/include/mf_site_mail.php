@@ -155,6 +155,27 @@ final class Renderer
 		return 'https://' . self::SITE_HOST;
 	}
 
+	public static function absoluteUrl(string $url): string
+	{
+		$url = trim($url);
+		if ($url === '' || $url === '—')
+		{
+			return $url;
+		}
+		if (preg_match('~^https?://~i', $url))
+		{
+			return $url;
+		}
+
+		$base = rtrim(self::siteUrl(), '/');
+		if ($url[0] !== '/')
+		{
+			$url = '/' . $url;
+		}
+
+		return $base . $url;
+	}
+
 	/** @param list<array{0:string,1:string}> $rows */
 	private static function kvTable(array $rows): string
 	{

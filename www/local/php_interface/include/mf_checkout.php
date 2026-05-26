@@ -1341,6 +1341,81 @@ if (!function_exists('mf_checkout_on_order_properties'))
 			return;
 		}
 
+		$deliveryMode = function_exists('mf_checkout_resolve_delivery_mode')
+			? mf_checkout_resolve_delivery_mode(
+				(string)$request->getPost('MF_DELIVERY_MODE'),
+				(string)$request->getPost('MF_EDOST_TARIF_ID'),
+				(string)$request->getPost('MF_EDOST_TARIF_COMPANY')
+			)
+			: 'pickup';
+
+		if ($deliveryMode === 'pickup' && function_exists('mf_checkout_pickup_delivery_config'))
+		{
+			$pickup = mf_checkout_pickup_delivery_config();
+			$personTypeId = (int)($arUserResult['PERSON_TYPE_ID'] ?? 0);
+			if ($personTypeId <= 0)
+			{
+				return;
+			}
+
+			$locText = trim((string)($pickup['LOCATION_TEXT'] ?? 'Санкт-Петербург'));
+			$fullAddr = trim((string)($pickup['NAME'] ?? ''));
+			$combined = $fullAddr !== '' ? $fullAddr : $locText;
+
+			$dbPickup = \CSaleOrderProps::GetList(
+				['SORT' => 'ASC'],
+				['PERSON_TYPE_ID' => $personTypeId, 'ACTIVE' => 'Y'],
+				false,
+				false,
+				['ID', 'CODE', 'NAME', 'TYPE', 'UTIL', 'IS_LOCATION', 'IS_ADDRESS', 'IS_ZIP']
+			);
+			while ($row = $dbPickup->Fetch())
+			{
+				if (($row['UTIL'] ?? 'N') === 'Y')
+				{
+					continue;
+				}
+				$pid = (int)($row['ID'] ?? 0);
+				if ($pid <= 0)
+				{
+					continue;
+				}
+
+				$code = strtoupper(trim((string)($row['CODE'] ?? '')));
+				$name = trim((string)($row['NAME'] ?? ''));
+				$type = strtoupper((string)($row['TYPE'] ?? ''));
+
+				if ($code === 'DELIVERY_LOCATION_TEXT')
+				{
+					$arUserResult['ORDER_PROP'][$pid] = $locText;
+					continue;
+				}
+				if ($code === 'DELIVERY_ADDRESS')
+				{
+					$arUserResult['ORDER_PROP'][$pid] = $fullAddr;
+					continue;
+				}
+				if ($code === 'DELIVERY_ZIP')
+				{
+					continue;
+				}
+				if ($type === 'LOCATION' || ($row['IS_LOCATION'] ?? 'N') === 'Y')
+				{
+					continue;
+				}
+
+				$isLegacyAddress = ($name === 'Адрес доставки')
+					|| in_array($code, ['ADDRESS', 'FULL_ADDRESS', 'DELIVERY_ADDR', 'CITY'], true)
+					|| ($row['IS_ADDRESS'] ?? 'N') === 'Y';
+				if ($isLegacyAddress && $combined !== '')
+				{
+					$arUserResult['ORDER_PROP'][$pid] = $combined;
+				}
+			}
+
+			return;
+		}
+
 		$personTypeId = (int)($arUserResult['PERSON_TYPE_ID'] ?? 0);
 		if ($personTypeId <= 0)
 		{
@@ -1560,6 +1635,64 @@ if (!function_exists('mf_checkout_default_edost_offer'))
 		{
 			return null;
 		}
+	}
+}
+
+if (!function_exists('mf_checkout_pickup_delivery_config'))
+{
+	function mf_checkout_pickup_delivery_config(): array
+	{
+		return [
+			'ID' => 'pickup',
+			'COMPANY' => 'Самовывоз',
+			'NAME' => 'Санкт-Петербург, ул. Салова, д. 57, к. 1 Литера Ч',
+			'PRICE' => '0',
+			'LABEL' => 'Самовывоз (Санкт-Петербург, ул. Салова, д. 57, к. 1 Литера Ч) — стоимость 0 ₽',
+			'LOCATION_TEXT' => 'Санкт-Петербург',
+		];
+	}
+}
+
+if (!function_exists('mf_checkout_is_pickup_tariff'))
+{
+	function mf_checkout_is_pickup_tariff(string $tariffId, string $company = ''): bool
+	{
+		$tariffId = trim($tariffId);
+		if ($tariffId === 'pickup')
+		{
+			return true;
+		}
+
+		return mb_strtolower(trim($company)) === 'самовывоз';
+	}
+}
+
+if (!function_exists('mf_checkout_resolve_delivery_mode'))
+{
+	function mf_checkout_resolve_delivery_mode(
+		?string $modePost = null,
+		?string $tariffId = null,
+		?string $tariffCompany = null
+	): string
+	{
+		$mode = trim((string)$modePost);
+		if ($mode === 'pickup' || $mode === 'delivery')
+		{
+			return $mode;
+		}
+
+		$tid = trim((string)$tariffId);
+		if ($tid !== '' && mf_checkout_is_pickup_tariff($tid, (string)$tariffCompany))
+		{
+			return 'pickup';
+		}
+
+		if ($tid !== '')
+		{
+			return 'delivery';
+		}
+
+		return 'pickup';
 	}
 }
 
@@ -2182,6 +2315,7 @@ if (!function_exists('mf_checkout_collect_last_order_delivery_context'))
 						'NAME' => $name,
 						'PRICE' => $price,
 					];
+					$out['MF_DELIVERY_MODE'] = mf_checkout_resolve_delivery_mode(null, $tid, $company);
 				}
 			}
 		}
@@ -2353,6 +2487,7 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 				[
 					'FALLBACK_LOCATION_CODE' => $fallbackLoc,
 					'NOMINATIM_SEARCH_URL' => '/ajax/mf_nominatim_search.php',
+					'PICKUP' => mf_checkout_pickup_delivery_config(),
 				]
 			);
 
@@ -2387,11 +2522,19 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 			$request = \Bitrix\Main\Application::getInstance()->getContext()->getRequest();
 			$tidPost = trim((string)$request->getPost('MF_EDOST_TARIF_ID'));
 			$managerDeliveryPost = (trim((string)$request->getPost('MF_EDOST_MANAGER_FALLBACK')) === 'Y' && $tidPost === '');
+			$deliveryMode = function_exists('mf_checkout_resolve_delivery_mode')
+				? mf_checkout_resolve_delivery_mode(
+					(string)$request->getPost('MF_DELIVERY_MODE'),
+					$tidPost,
+					trim((string)$request->getPost('MF_EDOST_TARIF_COMPANY'))
+				)
+				: 'pickup';
 
 			$arResult['JS_DATA']['MF_CHECKOUT'] = array_merge(
 				is_array($arResult['JS_DATA']['MF_CHECKOUT'] ?? null) ? $arResult['JS_DATA']['MF_CHECKOUT'] : [],
 				[
 					'ENABLED' => true,
+					'DELIVERY_MODE' => $deliveryMode,
 					'FIZ_PERSON_TYPE_ID' => (int)($personTypes['fiz'] ?? 0),
 					'JUR_PERSON_TYPE_ID' => (int)($personTypes['jur'] ?? 0),
 					'INVOICE_PAY_SYSTEM_IDS' => $invoiceIds,
@@ -2418,6 +2561,10 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 				if (!empty($preload['MF_EDOST_TO_CITY']))
 				{
 					$arResult['JS_DATA']['MF_CHECKOUT']['LAST_ORDER_EDOST_TO_CITY'] = (string)$preload['MF_EDOST_TO_CITY'];
+				}
+				if (!empty($preload['MF_DELIVERY_MODE']))
+				{
+					$arResult['JS_DATA']['MF_CHECKOUT']['LAST_ORDER_DELIVERY_MODE'] = (string)$preload['MF_DELIVERY_MODE'];
 				}
 			}
 

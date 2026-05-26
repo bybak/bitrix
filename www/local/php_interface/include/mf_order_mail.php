@@ -395,6 +395,8 @@ final class Renderer
 				$name = self::basketItemDisplayName($item, $productId);
 				$brand = self::basketItemBrand($item, $productId);
 				$storeTitle = self::basketItemStoreTitle($item);
+				$storeId = self::basketItemStoreId($item);
+				$deliverySpbHtml = self::basketItemDeliverySpbHtml($storeId, $productId);
 				$article = self::basketItemArticle($item, $productId);
 				$productUrl = self::basketItemProductUrl($productId, $order);
 
@@ -409,6 +411,7 @@ final class Renderer
 
 				$rows .= '<tr>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . self::esc($storeTitle !== '' ? $storeTitle : '—') . '</td>'
+					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . $deliverySpbHtml . '</td>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;color:' . self::COLOR_LINK . ';">' . $nameHtml . '</td>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . self::esc($brand !== '' ? $brand : '—') . '</td>'
 					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';text-align:center;white-space:nowrap;">' . self::esc(self::qtyLabel($qty)) . '</td>'
@@ -420,7 +423,7 @@ final class Renderer
 
 		if ($rows === '')
 		{
-			$rows = '<tr><td colspan="6" style="padding:10px;text-align:center;color:#666;">Нет позиций</td></tr>';
+			$rows = '<tr><td colspan="7" style="padding:10px;text-align:center;color:#666;">Нет позиций</td></tr>';
 		}
 
 		$orderTotal = (float)$order->getPrice();
@@ -430,6 +433,7 @@ final class Renderer
 			'<table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;">'
 			. '<tr style="background:' . self::COLOR_HEAD_BG . ';font-weight:bold;">'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Склад</td>'
+			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';width:170px;">Доставка</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Наименование</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Бренд</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:center;width:90px;">Количество</td>'
@@ -438,12 +442,12 @@ final class Renderer
 			. '</tr>'
 			. $rows
 			. '<tr>'
-			. '<td colspan="5" style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">Итого:</td>'
+			. '<td colspan="6" style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">Итого:</td>'
 			. '<td style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">'
 			. self::esc(self::moneyPlain($itemsTotal, $currency)) . ' руб.'
 			. '</td></tr>'
 			. '<tr style="background:' . self::COLOR_TOTAL_BG . ';">'
-			. '<td colspan="5" style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">Всего к оплате:</td>'
+			. '<td colspan="6" style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">Всего к оплате:</td>'
 			. '<td style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">'
 			. self::esc(self::moneyPlain($payTotal, $currency)) . ' руб.'
 			. '</td></tr>'
@@ -1074,7 +1078,11 @@ final class Renderer
 			$priceRaw = trim((string)($m[3] ?? ''));
 			$tarifId = trim((string)($m[4] ?? ''));
 
-			if ($tarifId === 'custom' || mb_strtolower($company) === 'свой вариант')
+			if ($tarifId === 'pickup' || mb_strtolower($company) === 'самовывоз')
+			{
+				$label = $tariff !== '' ? ('Самовывоз — ' . $tariff) : 'Самовывоз';
+			}
+			elseif ($tarifId === 'custom' || mb_strtolower($company) === 'свой вариант')
 			{
 				$label = $tariff !== '' ? $tariff : 'Свой вариант';
 			}
@@ -1184,6 +1192,21 @@ final class Renderer
 		}
 
 		return '';
+	}
+
+	private static function basketItemStoreId(BasketItemBase $item): int
+	{
+		return (int)self::basketItemProp($item, 'MF_STORE_ID');
+	}
+
+	private static function basketItemDeliverySpbHtml(int $storeId, int $productId): string
+	{
+		if (function_exists('mf_store_delivery_spb_email_html'))
+		{
+			return mf_store_delivery_spb_email_html($storeId, $productId);
+		}
+
+		return '—';
 	}
 
 	private static function basketItemStoreTitle(BasketItemBase $item): string

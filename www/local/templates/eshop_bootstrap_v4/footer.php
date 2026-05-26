@@ -25,6 +25,13 @@
 	</div><!--end .workarea-->
 
 	<?php
+	if (function_exists('mf_page_shows_delivery_spb_legend') && mf_page_shows_delivery_spb_legend() && function_exists('mf_store_delivery_spb_legend_html'))
+	{
+		echo mf_store_delivery_spb_legend_html();
+	}
+	?>
+
+	<?php
 	$mfYearFrom = 2015;
 	$mfYearTo = (int)date('Y');
 	$mfYearLabel = ($mfYearTo > $mfYearFrom) ? ($mfYearFrom . '–' . $mfYearTo) : (string)$mfYearFrom;
