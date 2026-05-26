@@ -416,3 +416,58 @@
   color: rgba(17,24,39,.92);
 }
 
+.mf-reg-person-kind{
+  margin-bottom: 1.25rem;
+}
+.mf-reg-person-kind__title,
+.mf-reg-company-block__title{
+  font-weight: 700;
+  color: var(--mf-auth-ink);
+  margin-bottom: .65rem;
+}
+.mf-reg-person-kind__cards{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+}
+.mf-reg-person-kind__item{
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  margin: 0;
+  padding: .85rem .95rem;
+  border: 1px solid var(--mf-auth-border);
+  border-radius: 14px;
+  background: rgba(248,250,252,1);
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.mf-reg-person-kind__item:has(input:checked){
+  border-color: rgba(255,138,0,.55);
+  box-shadow: 0 0 0 3px rgba(255,138,0,.12);
+}
+.mf-reg-person-kind__item input{
+  margin: 0 0 .15rem;
+}
+.mf-reg-person-kind__item-title{
+  font-weight: 700;
+  color: var(--mf-auth-ink);
+}
+.mf-reg-person-kind__item-desc{
+  font-size: .92rem;
+  color: var(--mf-auth-ink-muted);
+  line-height: 1.35;
+}
+.mf-reg-company-block{
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--mf-auth-border);
+  border-radius: 16px;
+  background: rgba(255,255,255,.72);
+}
+@media (max-width: 767px){
+  .mf-reg-person-kind__cards{
+    grid-template-columns: 1fr;
+  }
+}
+

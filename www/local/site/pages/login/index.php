@@ -65,9 +65,10 @@ if ($isRegister && COption::GetOptionString('main', 'new_user_registration', 'N'
 	<?php
 	$APPLICATION->IncludeComponent(
 		'bitrix:main.register',
-		'',
+		'mf_register',
 		[
 			'USE_BACKURL' => 'Y',
+			'SHOW_FIELDS' => ['NAME', 'LAST_NAME'],
 		],
 		false
 	);

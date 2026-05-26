@@ -528,6 +528,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var code = String(arProperty.CODE || '').toUpperCase();
 				var name = String(arProperty.NAME || '').trim();
 				var type = String(arProperty.TYPE || '').toUpperCase();
+				var companyCodes = ['COMPANY', 'COMPANY_ADR', 'INN', 'KPP', 'OGRN', 'BANK_DETAILS', 'CONTACT_PERSON'];
+
+				if (companyCodes.indexOf(code) !== -1 || name === 'Юридический адрес' || name === 'Название компании')
+					return false;
 
 				if (type === 'LOCATION' || arProperty.IS_LOCATION === 'Y')
 					return true;
@@ -2456,21 +2460,37 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 		mfBuyerAddress.isUserEditingAddress = function(){
 			try {
-				if (ctx.__mfNominatimTyping || ctx.__mfBuyerAddressEditing)
-					return true;
 				var active = document.activeElement;
-				if (!active || typeof active.tagName === 'undefined')
-					return false;
 				var wrapNom = document.getElementById('mf-nominatim-wrap');
-				if (wrapNom && wrapNom.contains && wrapNom.contains(active))
-					return true;
-				var addrCodes = ['DELIVERY_ADDRESS', 'DELIVERY_ZIP', 'DELIVERY_LOCATION_TEXT'];
-				for (var aci = 0; aci < addrCodes.length; aci++)
+				var hasActiveAddress = false;
+				if (active && typeof active.tagName !== 'undefined')
 				{
-					var addrInp = mfBuyerAddress.getInputByCode(addrCodes[aci]);
-					if (addrInp && addrInp !== false && addrInp === active)
-						return true;
+					if (wrapNom && wrapNom.contains && wrapNom.contains(active))
+						hasActiveAddress = true;
+					var addrCodes = ['DELIVERY_ADDRESS', 'DELIVERY_ZIP', 'DELIVERY_LOCATION_TEXT'];
+					for (var aci = 0; aci < addrCodes.length; aci++)
+					{
+						var addrInp = mfBuyerAddress.getInputByCode(addrCodes[aci]);
+						if (addrInp && addrInp !== false && addrInp === active)
+						{
+							hasActiveAddress = true;
+							break;
+						}
+					}
 				}
+
+				if (!hasActiveAddress)
+				{
+					if (ctx.__mfNominatimTyping)
+						ctx.__mfNominatimTyping = false;
+					if (ctx.__mfBuyerAddressEditing)
+						ctx.__mfBuyerAddressEditing = false;
+				}
+				else if (ctx.__mfNominatimTyping || ctx.__mfBuyerAddressEditing)
+					return true;
+
+				if (hasActiveAddress)
+					return true;
 			} catch(eEditAddr) {}
 			return false;
 		};

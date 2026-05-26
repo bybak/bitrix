@@ -229,7 +229,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			action = BX.type.isNotEmptyString(action) ? action : 'refreshOrderAjax';
 
 			// Android/Samsung: не перерисовываем форму, пока пользователь вводит адрес — иначе клавиатура закрывается.
-			if (action === 'refreshOrderAjax' && this.isMfCustomCheckout() && this.mfIsAddressFieldBeingEdited())
+			// Исключения: смена типа плательщика и другие критичные refresh (оплата, профиль).
+			if (this.mfShouldDeferRefreshWhileEditingAddress(action))
 			{
 				this.__mfPendingRefreshWhileEditing = true;
 				return;
@@ -430,6 +431,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					this.deliveryCachedInfo = [];
 
 				this.result = result.order;
+				this.mfApplyInvoicePaySystemFilterForJur();
 				this.prepareLocations(result.locations);
 				this.locationsInitialized = false;
 				this.maxWaitTimeExpired = false;
@@ -2999,6 +3001,79 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			return false;
 		},
 
+		mfShouldDeferRefreshWhileEditingAddress: function(action)
+		{
+			if (action !== 'refreshOrderAjax' || !this.isMfCustomCheckout())
+				return false;
+
+			var form = BX('bx-soa-order-form');
+			if (form)
+			{
+				var resetPt = form.querySelector('input[name="MF_RESET_PERSON_TYPE_SWITCH"]');
+				if (resetPt && String(resetPt.value || '').toUpperCase() === 'Y')
+					return false;
+
+				var ptOld = form.querySelector('input[name="PERSON_TYPE_OLD"]');
+				var pt = form.querySelector('input[type=radio][name="PERSON_TYPE"]:checked')
+					|| form.querySelector('input[type=hidden][name="PERSON_TYPE"]');
+				if (ptOld && pt && String(ptOld.value || '') !== String(pt.value || ''))
+					return false;
+			}
+
+			return this.mfIsAddressFieldBeingEdited();
+		},
+
+		mfApplyInvoicePaySystemFilterForJur: function()
+		{
+			try {
+				if (!this.isMfCustomCheckout() || !this.result || !this.result.PAY_SYSTEM || !this.result.PAY_SYSTEM.length)
+					return;
+
+				var mc = this.result.MF_CHECKOUT || {};
+				var jurId = parseInt(mc.JUR_PERSON_TYPE_ID, 10) || 0;
+				var invoiceIds = mc.INVOICE_PAY_SYSTEM_IDS;
+				if (!jurId || !invoiceIds || !invoiceIds.length)
+					return;
+
+				var currentPtId = parseInt(mc.CURRENT_PERSON_TYPE_ID, 10) || 0;
+				if (currentPtId <= 0 && this.result.PERSON_TYPE && this.result.PERSON_TYPE.length)
+				{
+					for (var pi = 0; pi < this.result.PERSON_TYPE.length; pi++)
+					{
+						if (this.result.PERSON_TYPE[pi].CHECKED === 'Y')
+						{
+							currentPtId = parseInt(this.result.PERSON_TYPE[pi].ID, 10) || 0;
+							break;
+						}
+					}
+				}
+				if (currentPtId !== jurId)
+					return;
+
+				var allowed = {}, ai;
+				for (ai = 0; ai < invoiceIds.length; ai++)
+					allowed[String(invoiceIds[ai])] = true;
+
+				var filtered = [], hasChecked = false, ps, idx;
+				for (idx = 0; idx < this.result.PAY_SYSTEM.length; idx++)
+				{
+					ps = this.result.PAY_SYSTEM[idx];
+					if (!ps || !allowed[String(ps.ID)])
+						continue;
+					if (ps.CHECKED === 'Y')
+						hasChecked = true;
+					filtered.push(ps);
+				}
+				if (!filtered.length)
+					return;
+
+				if (!hasChecked)
+					filtered[0].CHECKED = 'Y';
+
+				this.result.PAY_SYSTEM = filtered;
+			} catch(eMfPs) {}
+		},
+
 		mfTriggerEdostDeliveryInit: function(delayMs)
 		{
 			var wait = (typeof delayMs === 'number') ? delayMs : 0;
@@ -3536,6 +3611,15 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 										resetSwitchInput.value = 'Y';
 									}
 
+									try {
+										if (BX.saleOrderAjax)
+										{
+											BX.saleOrderAjax.__mfNominatimTyping = false;
+											BX.saleOrderAjax.__mfBuyerAddressEditing = false;
+										}
+										ctx.__mfPendingRefreshWhileEditing = false;
+									} catch(eClrPt) {}
+
 									personTypeOldInput.value = selectedId || personType.ID;
 									selectedId = personType.ID;
 									if (personTypeInput)
@@ -3611,6 +3695,15 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 		{
 			if (!form || !form.querySelectorAll)
 				return;
+
+			try {
+				if (BX.saleOrderAjax)
+				{
+					BX.saleOrderAjax.__mfNominatimTyping = false;
+					BX.saleOrderAjax.__mfBuyerAddressEditing = false;
+				}
+				this.__mfPendingRefreshWhileEditing = false;
+			} catch(eClrFlags) {}
 
 			var i, nodes, field;
 

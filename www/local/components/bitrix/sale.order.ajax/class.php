@@ -1836,6 +1836,18 @@ class SaleOrderAjax extends \CBitrixComponent
 				{
 					$_SESSION['MF_CHECKOUT_REGISTER_SUCCESS'] = 'Y';
 
+					if (function_exists('mf_checkout_on_after_user_register'))
+					{
+						$registerFields = [
+							'USER_ID' => (int)$USER->GetID(),
+							'EMAIL' => (string)$arResult['AUTH']['NEW_EMAIL'],
+							'NAME' => (string)$request['NEW_NAME'],
+							'LAST_NAME' => (string)$request['NEW_LAST_NAME'],
+							'PHONE_NUMBER' => (string)$request['PHONE_NUMBER'],
+						];
+						mf_checkout_on_after_user_register($registerFields);
+					}
+
 					if ($this->arParams['SEND_NEW_USER_NOTIFY'] === 'Y')
 					{
 						CUser::SendUserInfo($USER->GetID(), $this->getSiteId(), Loc::getMessage('INFO_REQ'), true);

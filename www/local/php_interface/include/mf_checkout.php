@@ -9,6 +9,32 @@ if (!function_exists('mf_checkout_custom_flow_enabled'))
 	}
 }
 
+if (!function_exists('mf_checkout_company_order_prop_codes'))
+{
+	function mf_checkout_company_order_prop_codes(): array
+	{
+		return [
+			'COMPANY',
+			'COMPANY_ADR',
+			'INN',
+			'KPP',
+			'OGRN',
+			'BANK_DETAILS',
+			'CONTACT_PERSON',
+		];
+	}
+}
+
+if (!function_exists('mf_checkout_is_company_order_prop_code'))
+{
+	function mf_checkout_is_company_order_prop_code(string $code): bool
+	{
+		$code = strtoupper(trim($code));
+
+		return $code !== '' && in_array($code, mf_checkout_company_order_prop_codes(), true);
+	}
+}
+
 if (!function_exists('mf_checkout_person_type_map'))
 {
 	function mf_checkout_person_type_map(): array
@@ -969,6 +995,7 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 				'CODE' => 'COMPANY_ADR',
 				'ACTIVE' => 'Y',
 				'UTIL' => 'N',
+				'IS_ADDRESS' => 'N',
 				'ENTITY_TYPE' => 'ORDER',
 				'ENTITY_REGISTRY_TYPE' => 'ORDER',
 			],
@@ -1111,7 +1138,7 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 						$updateFields['DESCRIPTION'] = $targetDescription;
 					}
 				}
-				foreach (['IS_EMAIL', 'IS_PHONE', 'IS_PAYER'] as $fieldName)
+				foreach (['IS_EMAIL', 'IS_PHONE', 'IS_PAYER', 'IS_ADDRESS'] as $fieldName)
 				{
 					if (array_key_exists($fieldName, $fields))
 					{
@@ -1142,7 +1169,7 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 					}
 					$updates[] = $fieldName . " = '" . $sqlHelper->forSql((string)$fields[$fieldName]) . "'";
 				}
-				foreach (['IS_EMAIL', 'IS_PHONE', 'IS_PAYER', 'SETTINGS'] as $fieldName)
+				foreach (['IS_EMAIL', 'IS_PHONE', 'IS_PAYER', 'IS_ADDRESS', 'SETTINGS'] as $fieldName)
 				{
 					if (!array_key_exists($fieldName, $fields))
 					{
@@ -1162,11 +1189,63 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 					. " AND CODE = '" . $sqlHelper->forSql((string)$code) . "'"
 				);
 			}
+
+			foreach (mf_checkout_company_order_prop_codes() as $companyCode)
+			{
+				\Bitrix\Main\Application::getConnection()->queryExecute(
+					"UPDATE b_sale_order_props SET IS_ADDRESS = 'N'"
+					. " WHERE PERSON_TYPE_ID = " . (int)$jurPersonTypeId
+					. " AND CODE = '" . $sqlHelper->forSql((string)$companyCode) . "'"
+				);
+			}
 		}
 
 		try
 		{
 			\Bitrix\Main\Config\Option::set('main', 'mf_checkout_props_setup', $version);
+		}
+		catch (\Throwable $e)
+		{
+			// ignore
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_fix_company_address_flags'))
+{
+	function mf_checkout_fix_company_address_flags(): void
+	{
+		static $done = false;
+		if ($done)
+		{
+			return;
+		}
+		$done = true;
+
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return;
+		}
+
+		$personTypes = mf_checkout_person_type_map();
+		$jurPersonTypeId = (int)($personTypes['jur'] ?? 0);
+		if ($jurPersonTypeId <= 0 || !class_exists(\Bitrix\Main\Application::class))
+		{
+			return;
+		}
+
+		try
+		{
+			$sqlHelper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+			foreach (mf_checkout_company_order_prop_codes() as $companyCode)
+			{
+				\Bitrix\Main\Application::getConnection()->queryExecute(
+					"UPDATE b_sale_order_props SET IS_ADDRESS = 'N'"
+					. " WHERE PERSON_TYPE_ID = " . $jurPersonTypeId
+					. " AND CODE = '" . $sqlHelper->forSql((string)$companyCode) . "'"
+					. " AND IS_ADDRESS = 'Y'"
+				);
+			}
 		}
 		catch (\Throwable $e)
 		{
@@ -1385,6 +1464,11 @@ if (!function_exists('mf_checkout_on_order_properties'))
 				$name = trim((string)($row['NAME'] ?? ''));
 				$type = strtoupper((string)($row['TYPE'] ?? ''));
 
+				if (mf_checkout_is_company_order_prop_code($code))
+				{
+					continue;
+				}
+
 				if ($code === 'DELIVERY_LOCATION_TEXT')
 				{
 					$arUserResult['ORDER_PROP'][$pid] = $locText;
@@ -1491,6 +1575,10 @@ if (!function_exists('mf_checkout_on_order_properties'))
 			}
 			$name = trim((string)($row['NAME'] ?? ''));
 			$code = strtoupper(trim((string)($row['CODE'] ?? '')));
+			if (mf_checkout_is_company_order_prop_code($code))
+			{
+				continue;
+			}
 			$legacy = ($name === 'Адрес доставки')
 				|| ($code === 'ADDRESS')
 				|| ($code === 'FULL_ADDRESS')
@@ -2585,6 +2673,240 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 	}
 }
 
+if (!function_exists('mf_checkout_register_person_kind'))
+{
+	function mf_checkout_register_person_kind(?string $raw = null): string
+	{
+		if ($raw === null)
+		{
+			$raw = trim((string)($_REQUEST['MF_PERSON_KIND'] ?? 'fiz'));
+		}
+		else
+		{
+			$raw = trim((string)$raw);
+		}
+
+		return ($raw === 'jur') ? 'jur' : 'fiz';
+	}
+}
+
+if (!function_exists('mf_checkout_register_company_data_from_request'))
+{
+	function mf_checkout_register_company_data_from_request(?array $source = null): array
+	{
+		if ($source === null)
+		{
+			$source = is_array($_REQUEST['MF_COMPANY'] ?? null) ? $_REQUEST['MF_COMPANY'] : [];
+		}
+
+		$fields = ['COMPANY', 'COMPANY_ADR', 'INN', 'KPP', 'OGRN', 'BANK_DETAILS', 'CONTACT_PERSON', 'EMAIL', 'PHONE'];
+		$data = [];
+		foreach ($fields as $code)
+		{
+			$data[$code] = trim((string)($source[$code] ?? ''));
+		}
+
+		return $data;
+	}
+}
+
+if (!function_exists('mf_checkout_order_prop_ids_by_code'))
+{
+	function mf_checkout_order_prop_ids_by_code(int $personTypeId, array $codes): array
+	{
+		$result = [];
+		if ($personTypeId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return $result;
+		}
+		if (!class_exists('CSaleOrderProps'))
+		{
+			return $result;
+		}
+
+		$codes = array_map(static fn($code) => strtoupper(trim((string)$code)), $codes);
+		$db = \CSaleOrderProps::GetList(
+			['SORT' => 'ASC'],
+			['PERSON_TYPE_ID' => $personTypeId, 'ACTIVE' => 'Y'],
+			false,
+			false,
+			['ID', 'CODE']
+		);
+		while ($row = $db->Fetch())
+		{
+			$code = strtoupper(trim((string)($row['CODE'] ?? '')));
+			if ($code !== '' && in_array($code, $codes, true))
+			{
+				$result[$code] = (int)($row['ID'] ?? 0);
+			}
+		}
+
+		return $result;
+	}
+}
+
+if (!function_exists('mf_checkout_validate_register_company_data'))
+{
+	function mf_checkout_validate_register_company_data(array $companyData): array
+	{
+		$errors = [];
+		if ($companyData['COMPANY'] === '')
+		{
+			$errors[] = 'Укажите название компании.';
+		}
+		if ($companyData['COMPANY_ADR'] === '')
+		{
+			$errors[] = 'Укажите юридический адрес.';
+		}
+		if ($companyData['INN'] === '')
+		{
+			$errors[] = 'Укажите ИНН.';
+		}
+		elseif (!preg_match('/^\d{10}(\d{2})?$/', $companyData['INN']))
+		{
+			$errors[] = 'ИНН должен содержать 10 или 12 цифр.';
+		}
+		if ($companyData['KPP'] !== '' && !preg_match('/^\d{9}$/', $companyData['KPP']))
+		{
+			$errors[] = 'КПП должен содержать 9 цифр.';
+		}
+		if ($companyData['OGRN'] !== '' && !preg_match('/^\d{13}(\d{2})?$/', $companyData['OGRN']))
+		{
+			$errors[] = 'ОГРН / ОГРНИП должен содержать 13 или 15 цифр.';
+		}
+
+		return $errors;
+	}
+}
+
+if (!function_exists('mf_checkout_save_user_company_profile'))
+{
+	function mf_checkout_save_user_company_profile(int $userId, int $personTypeId, array $companyData, int $profileId = 0): int
+	{
+		if (
+			$userId <= 0
+			|| $personTypeId <= 0
+			|| !class_exists(\Bitrix\Main\Loader::class)
+			|| !\Bitrix\Main\Loader::includeModule('sale')
+			|| !class_exists('CSaleOrderUserProps')
+		)
+		{
+			return 0;
+		}
+
+		$propIds = mf_checkout_order_prop_ids_by_code(
+			$personTypeId,
+			['COMPANY', 'COMPANY_ADR', 'INN', 'KPP', 'OGRN', 'BANK_DETAILS', 'CONTACT_PERSON', 'EMAIL', 'PHONE']
+		);
+		if (empty($propIds))
+		{
+			return 0;
+		}
+
+		$properties = [];
+		foreach ($propIds as $code => $propId)
+		{
+			if ($propId <= 0 || !array_key_exists($code, $companyData))
+			{
+				continue;
+			}
+			$value = trim((string)$companyData[$code]);
+			if ($value !== '')
+			{
+				$properties[$propId] = $value;
+			}
+		}
+
+		if (empty($properties))
+		{
+			return 0;
+		}
+
+		$profileName = trim((string)($companyData['COMPANY'] ?? ''));
+		if ($profileName === '')
+		{
+			$profileName = 'Юридическое лицо';
+		}
+
+		$errors = [];
+		$savedProfileId = (int)\CSaleOrderUserProps::DoSaveUserProfile(
+			$userId,
+			$profileId,
+			$profileName,
+			$personTypeId,
+			$properties,
+			$errors
+		);
+
+		return $savedProfileId > 0 ? $savedProfileId : 0;
+	}
+}
+
+if (!function_exists('mf_checkout_on_before_user_register'))
+{
+	function mf_checkout_on_before_user_register(array &$arFields): bool
+	{
+		if (mf_checkout_register_person_kind() !== 'jur')
+		{
+			return true;
+		}
+
+		$companyData = mf_checkout_register_company_data_from_request();
+		$errors = mf_checkout_validate_register_company_data($companyData);
+		if (empty($errors))
+		{
+			return true;
+		}
+
+		global $APPLICATION;
+		if (is_object($APPLICATION))
+		{
+			$APPLICATION->ThrowException(implode(' ', $errors));
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_checkout_on_after_user_register'))
+{
+	function mf_checkout_on_after_user_register(array &$arFields): void
+	{
+		$userId = (int)($arFields['USER_ID'] ?? 0);
+		if ($userId <= 0 || mf_checkout_register_person_kind() !== 'jur')
+		{
+			return;
+		}
+
+		$personTypes = mf_checkout_person_type_map();
+		$jurPersonTypeId = (int)($personTypes['jur'] ?? 0);
+		if ($jurPersonTypeId <= 0)
+		{
+			return;
+		}
+
+		$companyData = mf_checkout_register_company_data_from_request();
+		if ($companyData['EMAIL'] === '' && !empty($arFields['EMAIL']))
+		{
+			$companyData['EMAIL'] = trim((string)$arFields['EMAIL']);
+		}
+		if ($companyData['PHONE'] === '' && !empty($arFields['PHONE_NUMBER']))
+		{
+			$companyData['PHONE'] = trim((string)$arFields['PHONE_NUMBER']);
+		}
+		if ($companyData['CONTACT_PERSON'] === '')
+		{
+			$nameParts = array_filter([
+				trim((string)($arFields['LAST_NAME'] ?? '')),
+				trim((string)($arFields['NAME'] ?? '')),
+			]);
+			$companyData['CONTACT_PERSON'] = trim(implode(' ', $nameParts));
+		}
+
+		mf_checkout_save_user_company_profile($userId, $jurPersonTypeId, $companyData);
+	}
+}
+
 if (!function_exists('mf_checkout_bootstrap_log'))
 {
 	function mf_checkout_bootstrap_log(string $step, \Throwable $e): void
@@ -2649,6 +2971,15 @@ if (!function_exists('mf_checkout_bootstrap'))
 
 		try
 		{
+			mf_checkout_fix_company_address_flags();
+		}
+		catch (\Throwable $e)
+		{
+			mf_checkout_bootstrap_log('company_address_flags', $e);
+		}
+
+		try
+		{
 			mf_checkout_ensure_confirm_channel_prop();
 		}
 		catch (\Throwable $e)
@@ -2674,6 +3005,8 @@ if (!function_exists('mf_checkout_bootstrap'))
 		$em->addEventHandler('sale', 'OnSaleComponentOrderUserResult', 'mf_checkout_on_order_user_result');
 		$em->addEventHandler('sale', 'OnSaleComponentOrderJsData', 'mf_checkout_on_order_js_data');
 		$em->addEventHandler('sale', 'OnSaleComponentOrderProperties', 'mf_checkout_on_order_properties');
+		$em->addEventHandler('main', 'OnBeforeUserRegister', 'mf_checkout_on_before_user_register');
+		$em->addEventHandler('main', 'OnAfterUserRegister', 'mf_checkout_on_after_user_register');
 	}
 }
 
