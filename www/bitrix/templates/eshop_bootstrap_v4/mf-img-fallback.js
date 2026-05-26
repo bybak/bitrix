@@ -45,6 +45,14 @@
       img.setAttribute('alt', '');
       img.setAttribute('aria-hidden', 'true');
     } catch (e3) {}
+
+    var cartWrap = img.closest ? img.closest('.basket-item-block-image') : null;
+    if (cartWrap) {
+      cartWrap.classList.add('basket-item-block-image--placeholder');
+      img.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==');
+      return;
+    }
+
     if ((img.getAttribute('src') || '') !== PLACEHOLDER) {
       img.setAttribute('src', PLACEHOLDER);
     }

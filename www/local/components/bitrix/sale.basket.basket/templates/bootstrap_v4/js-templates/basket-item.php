@@ -88,7 +88,12 @@ $mfPlaceholder = function_exists('mf_mf_placeholder_img_url')
 							{{/DETAIL_PAGE_URL}}
 
 							<img class="basket-item-image{{#IMAGE_IS_PLACEHOLDER}} mf-img--placeholder{{/IMAGE_IS_PLACEHOLDER}}" alt="" aria-hidden="true"
-								src="{{{IMAGE_URL}}}{{^IMAGE_URL}}<?=htmlspecialcharsbx($mfPlaceholder)?>{{/IMAGE_URL}}">
+								{{#IMAGE_IS_PLACEHOLDER}}
+								src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+								{{/IMAGE_IS_PLACEHOLDER}}
+								{{^IMAGE_IS_PLACEHOLDER}}
+								src="{{{IMAGE_URL}}}{{^IMAGE_URL}}<?=htmlspecialcharsbx($mfPlaceholder)?>{{/IMAGE_URL}}"
+								{{/IMAGE_IS_PLACEHOLDER}}>
 
 							{{#SHOW_LABEL}}
 								<div class="basket-item-label-text basket-item-label-big <?=$labelPositionClass?>">

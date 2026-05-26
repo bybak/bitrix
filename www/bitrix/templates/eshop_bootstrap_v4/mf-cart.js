@@ -40,6 +40,11 @@
       // Placeholder/no-photo уже выставлен PHP — не подменяем на mf-img (иначе 404 и alt-текст).
       if (isBasketImagePlaceholder(cur)) {
         if (img.classList) img.classList.add('mf-img--placeholder');
+        var block = img.closest ? img.closest('.basket-item-block-image') : null;
+        if (block && block.classList) block.classList.add('basket-item-block-image--placeholder');
+        if (/mf-no-photo\.svg/i.test(cur)) {
+          img.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==');
+        }
         if (img.dataset) img.dataset.mfImgFallback = '1';
         continue;
       }
