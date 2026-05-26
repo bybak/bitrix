@@ -3000,7 +3000,7 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 
 			$spb = function_exists('mf_store_delivery_spb_ui')
 				? mf_store_delivery_spb_ui($storeId, $productId)
-				: ['ok' => true, 'title' => 'Доставка до склада СПб включена'];
+				: ['ok' => true, 'title' => 'Доставка до склада СПБ включена'];
 
 			$out[] = [
 				'store_id' => $storeId,

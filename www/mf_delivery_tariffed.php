@@ -797,7 +797,7 @@ final class Tariffed extends Base
 		$zipDigits = preg_replace('~\\D+~', '', $zip);
 		$zipInt = (int)$zipDigits;
 
-		// Зона по индексу: СПб / Москва / РФ (прочее).
+		// Зона по индексу: СПБ / Москва / РФ (прочее).
 		$zone = 'RU';
 		if ($zipInt >= 190000 && $zipInt <= 199999)
 		{
@@ -1213,7 +1213,7 @@ final class Tariffed extends Base
 					],
 					'USE_ZONES' => [
 						'TYPE' => 'ENUM',
-						'NAME' => 'Использовать зонные тарифы по индексу (СПб/Москва)',
+						'NAME' => 'Использовать зонные тарифы по индексу (СПБ/Москва)',
 						'DEFAULT' => 'N',
 						'OPTIONS' => [
 							'Y' => 'Да',
@@ -1222,22 +1222,22 @@ final class Tariffed extends Base
 					],
 					'BASE_PRICE_SPB' => [
 						'TYPE' => 'NUMBER',
-						'NAME' => 'СПб: базовая стоимость (индекс 190000–199999)',
+						'NAME' => 'СПБ: базовая стоимость (индекс 190000–199999)',
 						'DEFAULT' => 0,
 					],
 					'PRICE_PER_KG_SPB' => [
 						'TYPE' => 'NUMBER',
-						'NAME' => 'СПб: стоимость за 1 кг',
+						'NAME' => 'СПБ: стоимость за 1 кг',
 						'DEFAULT' => 0,
 					],
 					'MIN_PRICE_SPB' => [
 						'TYPE' => 'NUMBER',
-						'NAME' => 'СПб: минимальная стоимость',
+						'NAME' => 'СПБ: минимальная стоимость',
 						'DEFAULT' => 0,
 					],
 					'FREE_FROM_SUM_SPB' => [
 						'TYPE' => 'NUMBER',
-						'NAME' => 'СПб: бесплатно от суммы заказа',
+						'NAME' => 'СПБ: бесплатно от суммы заказа',
 						'DEFAULT' => 0,
 					],
 					'BASE_PRICE_MSK' => [

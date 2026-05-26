@@ -179,8 +179,8 @@
         var label = String(opt.title || ('Склад #' + String(opt.store_id || '')));
         if (opt.price_fmt) label += ' • ' + String(opt.price_fmt);
         if (opt.delivery_term) label += ' • ' + String(opt.delivery_term);
-        if (opt.delivery_spb_ok === false) label += ' • СПб \u2717';
-        else if (opt.delivery_spb_ok === true) label += ' • СПб \u2713';
+        if (opt.delivery_spb_ok === false) label += ' • СПБ \u2717';
+        else if (opt.delivery_spb_ok === true) label += ' • СПБ \u2713';
         html += '<option value="' + BX.util.htmlspecialchars(String(opt.store_id || '')) + '"' + (selected ? ' selected' : '') + '>' + BX.util.htmlspecialchars(label) + '</option>';
       }
       html += '</select>';

@@ -1407,14 +1407,14 @@ if (!function_exists('mf_ep_product_weight_grams_cluster'))
 if (!function_exists('mf_store_delivery_spb_titles'))
 {
 	/**
-	 * Тексты подсказок для индикатора доставки до склада СПб (зелёный / оранжевый круг).
+	 * Тексты подсказок для индикатора доставки до склада СПБ (зелёный / оранжевый круг).
 	 *
 	 * @return array{ok:string,bad:string}
 	 */
 	function mf_store_delivery_spb_titles(): array
 	{
 		return [
-			'ok' => 'Доставка до склада СПб включена',
+			'ok' => 'Доставка до склада СПБ включена',
 			'bad' => 'Доставка не включена. Доставка: 18 долларов за кг',
 		];
 	}
@@ -1423,7 +1423,7 @@ if (!function_exists('mf_store_delivery_spb_titles'))
 if (!function_exists('mf_store_delivery_spb_ui'))
 {
 	/**
-	 * Индикатор «доставка до склада СПб» для строки склада.
+	 * Индикатор «доставка до склада СПБ» для строки склада.
 	 * Красный (не ок) только если: внешний склад, на складе включён учёт веса (UF), и у товара вес 0 / не задан.
 	 * Во всех остальных случаях — зелёный (включая внешний склад без учёта веса или без productId).
 	 *
@@ -1489,7 +1489,7 @@ if (!function_exists('mf_store_delivery_spb_icon_html'))
 if (!function_exists('mf_store_delivery_spb_email_html'))
 {
 	/**
-	 * Индикатор доставки до СПб для HTML-писем: кружок + расшифровка текстом.
+	 * Индикатор доставки до СПБ для HTML-писем: кружок + расшифровка текстом.
 	 */
 	function mf_store_delivery_spb_email_html(int $storeId, int $productId = 0): string
 	{
@@ -1589,7 +1589,7 @@ if (!function_exists('mf_page_shows_delivery_spb_legend'))
 if (!function_exists('mf_store_delivery_spb_legend_html'))
 {
 	/**
-	 * Фиксированная панель-легенда для колонки «Доставка» (кружки СПб).
+	 * Фиксированная панель-легенда для колонки «Доставка» (кружки СПБ).
 	 */
 	function mf_store_delivery_spb_legend_html(): string
 	{
