@@ -127,13 +127,20 @@ final class Handlers
 		$body = Renderer::renderAdminNewOrder($order);
 		$subject = self::sanitizeSubject('Заказ: №' . $display);
 
+		$header = ['From' => $from, 'X-MF-SMTP-Profile' => 'robot'];
+		$customerEmail = self::customerEmail($order);
+		if ($customerEmail !== '')
+		{
+			$header['Reply-To'] = $customerEmail;
+		}
+
 		$params = [
 			'TO' => $to,
 			'SUBJECT' => $subject,
 			'BODY' => $body,
 			'CHARSET' => 'UTF-8',
 			'CONTENT_TYPE' => 'html',
-			'HEADER' => ['From' => $from, 'X-MF-SMTP-Profile' => 'robot'],
+			'HEADER' => $header,
 		];
 
 		if (!class_exists(Mail::class) || !Mail::send($params))
@@ -151,5 +158,44 @@ final class Handlers
 		$s = preg_replace('~[\r\n]+~u', ' ', $s) ?? $s;
 
 		return trim(preg_replace('~\s+~u', ' ', $s) ?? $s);
+	}
+
+	private static function customerEmail(Order $order): string
+	{
+		try
+		{
+			$pc = $order->getPropertyCollection();
+			if ($pc !== null)
+			{
+				$prop = $pc->getUserEmail();
+				if ($prop !== null)
+				{
+					$email = trim((string)$prop->getValue());
+					if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+					{
+						return $email;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		$uid = (int)$order->getUserId();
+		if ($uid > 0 && class_exists(\CUser::class))
+		{
+			$user = \CUser::GetByID($uid)->Fetch();
+			if (is_array($user))
+			{
+				$email = trim((string)($user['EMAIL'] ?? ''));
+				if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+				{
+					return $email;
+				}
+			}
+		}
+
+		return '';
 	}
 }
