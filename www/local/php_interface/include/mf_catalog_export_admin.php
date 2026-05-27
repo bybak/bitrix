@@ -49,6 +49,87 @@ require_once __DIR__ . '/mf_ce_brand_choices_inc.php';
 $iblockId = 4;
 
 require_once __DIR__ . '/mf_catalog_export_xlsx_cell.php';
+require_once __DIR__ . '/mf_catalog_import_job_lib.php';
+require_once __DIR__ . '/mf_catalog_import_job_worker_inc.php';
+
+// JSON-поллинг без тяжёлой инициализации страницы.
+if ((string)($_GET['mf_catalog_job_poll'] ?? '') === '1')
+{
+	$jobPollId = (int)($_GET['job'] ?? 0);
+	$tokenPoll = preg_replace('~[^a-f0-9]~', '', (string)($_GET['token'] ?? ''));
+	header('Content-Type: application/json; charset=utf-8');
+	if (!is_object($USER) || !$USER->IsAdmin() || $jobPollId <= 0 || strlen($tokenPoll) !== 32)
+	{
+		echo json_encode(['ok' => false, 'error' => 'Доступ запрещён.'], JSON_UNESCAPED_UNICODE);
+		die;
+	}
+	$rowP = mf_catalog_import_job_get($jobPollId);
+	if (
+		!$rowP
+		|| (int)($rowP['UF_USER_ID'] ?? 0) !== (int)$USER->GetID()
+		|| (string)($rowP['UF_TOKEN'] ?? '') !== $tokenPoll
+	)
+	{
+		echo json_encode(['ok' => false, 'error' => 'Задание не найдено.'], JSON_UNESCAPED_UNICODE);
+		die;
+	}
+	$stP = (string)($rowP['UF_STATUS'] ?? '');
+	$outP = [
+		'ok' => true,
+		'status' => $stP,
+		'rows_done' => (int)($rowP['UF_ROWS_DONE'] ?? 0),
+		'rows_total' => (int)($rowP['UF_ROWS_TOTAL'] ?? 0),
+		'progress_pct' => array_key_exists('UF_PROGRESS_PCT', $rowP) && $rowP['UF_PROGRESS_PCT'] !== null && $rowP['UF_PROGRESS_PCT'] !== ''
+			? max(0, min(100, (int)$rowP['UF_PROGRESS_PCT']))
+			: null,
+		'progress_note' => trim((string)($rowP['UF_PROGRESS_NOTE'] ?? '')),
+		'progress_at' => trim((string)($rowP['UF_PROGRESS_AT'] ?? '')),
+	];
+	if ($stP === 'running' && !empty($rowP['UF_PROGRESS_AT']))
+	{
+		$ts = strtotime((string)$rowP['UF_PROGRESS_AT']);
+		if ($ts > 0 && (time() - $ts) > 600)
+		{
+			$outP['stale_hint'] = 'Прогресс не обновлялся более 10 минут — вероятно, PHP был остановлен (таймаут FPM, OOM). См. mf_catalog_import.log.';
+		}
+	}
+	if ($stP === 'done' && !empty($rowP['UF_RESULT_JSON']))
+	{
+		$decoded = json_decode((string)$rowP['UF_RESULT_JSON'], true);
+		$outP['stats'] = is_array($decoded) ? $decoded : null;
+	}
+	if ($stP === 'failed' && !empty($rowP['UF_ERROR_TEXT']))
+	{
+		$outP['error'] = (string)$rowP['UF_ERROR_TEXT'];
+	}
+	echo json_encode($outP, JSON_UNESCAPED_UNICODE);
+	die;
+}
+
+if ((string)($_GET['mf_catalog_job_nudge'] ?? '') === '1')
+{
+	$nudgeId = (int)($_GET['job'] ?? 0);
+	$nudgeTok = preg_replace('~[^a-f0-9]~', '', (string)($_GET['token'] ?? ''));
+	if (!is_object($USER) || !$USER->IsAdmin() || $nudgeId <= 0 || strlen($nudgeTok) !== 32)
+	{
+		header('Content-Type: text/plain; charset=utf-8');
+		echo '0';
+		die;
+	}
+	mf_ci_catalog_import_job_run_or_die($nudgeId, false);
+	die;
+}
+
+if (
+	$_SERVER['REQUEST_METHOD'] === 'POST'
+	&& (string)($_POST['mf_catalog_job_run'] ?? '') === 'Y'
+	&& is_object($USER)
+	&& $USER->IsAdmin()
+)
+{
+	mf_ci_catalog_import_job_run_or_die((int)($_POST['job'] ?? 0), true);
+	die;
+}
 
 function mf_ce_esc(string $s): string
 {
@@ -669,37 +750,18 @@ function mf_ce_import_apply_row(int $iblockId, array $row, int $lineNum, array &
 }
 
 /**
- * @return array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, skipped_brand:int, errors:list<string>}
+ * Проверка заголовка CSV и индекс колонок.
+ *
+ * @return array{ok:bool, idx?:array<string,int>, error?:string}
  */
-function mf_ce_run_csv_import(int $iblockId, string $absolutePath): array
+function mf_ce_csv_parse_header_index($fp): array
 {
-	$stats = [
-		'updated' => 0,
-		'skipped' => 0,
-		'skipped_redirect' => 0,
-		'skipped_no_id' => 0,
-		'skipped_brand' => 0,
-		'errors' => [],
-	];
-
 	$expected = mf_ce_export_headers();
-	$fp = fopen($absolutePath, 'rb');
-	if ($fp === false)
-	{
-		$stats['errors'][] = 'Не удалось открыть файл.';
-
-		return $stats;
-	}
-
 	$headerRow = mf_ce_fgetcsv_row($fp);
 	if ($headerRow === null || $headerRow === false)
 	{
-		fclose($fp);
-		$stats['errors'][] = 'Пустой файл или нет строки заголовка.';
-
-		return $stats;
+		return ['ok' => false, 'error' => 'Пустой файл или нет строки заголовка.'];
 	}
-
 	$headerRow[0] = isset($headerRow[0]) ? mf_ce_strip_utf8_bom((string)$headerRow[0]) : '';
 	$headers = array_map(static fn($c) => trim((string)$c), $headerRow);
 	$idx = [];
@@ -710,17 +772,96 @@ function mf_ce_run_csv_import(int $iblockId, string $absolutePath): array
 			$idx[$label] = $i;
 		}
 	}
-
 	foreach ($expected as $col)
 	{
 		if (!isset($idx[$col]))
 		{
-			fclose($fp);
-			$stats['errors'][] = 'В заголовке CSV нет колонки «' . $col . '». Используйте файл выгрузки без изменения заголовков.';
-
-			return $stats;
+			return [
+				'ok' => false,
+				'error' => 'В заголовке CSV нет колонки «' . $col . '». Используйте файл выгрузки без изменения заголовков.',
+			];
 		}
 	}
+
+	return ['ok' => true, 'idx' => $idx];
+}
+
+/**
+ * @return array{ok:bool, total:int, error?:string}
+ */
+function mf_ce_csv_count_data_rows(string $absolutePath): array
+{
+	$fp = fopen($absolutePath, 'rb');
+	if ($fp === false)
+	{
+		return ['ok' => false, 'total' => 0, 'error' => 'Не удалось открыть файл.'];
+	}
+	$hdr = mf_ce_csv_parse_header_index($fp);
+	if (empty($hdr['ok']))
+	{
+		fclose($fp);
+
+		return ['ok' => false, 'total' => 0, 'error' => (string)($hdr['error'] ?? 'Ошибка заголовка')];
+	}
+	$total = 0;
+	while (($cells = mf_ce_fgetcsv_row($fp)) !== false)
+	{
+		if (!is_array($cells))
+		{
+			continue;
+		}
+		foreach ($cells as $c)
+		{
+			if (trim((string)$c) !== '')
+			{
+				$total++;
+				break;
+			}
+		}
+	}
+	fclose($fp);
+
+	return ['ok' => true, 'total' => $total];
+}
+
+/**
+ * @param array{job_id?:int, rows_total?:int} $options
+ * @return array{updated:int, skipped:int, skipped_redirect:int, skipped_no_id:int, skipped_brand:int, rows_processed?:int, errors:list<string>}
+ */
+function mf_ce_run_csv_import(int $iblockId, string $absolutePath, array $options = []): array
+{
+	$stats = [
+		'updated' => 0,
+		'skipped' => 0,
+		'skipped_redirect' => 0,
+		'skipped_no_id' => 0,
+		'skipped_brand' => 0,
+		'rows_processed' => 0,
+		'errors' => [],
+	];
+
+	$jobId = (int)($options['job_id'] ?? 0);
+	$rowsTotal = max(0, (int)($options['rows_total'] ?? 0));
+
+	$expected = mf_ce_export_headers();
+	$fp = fopen($absolutePath, 'rb');
+	if ($fp === false)
+	{
+		$stats['errors'][] = 'Не удалось открыть файл.';
+
+		return $stats;
+	}
+
+	$hdr = mf_ce_csv_parse_header_index($fp);
+	if (empty($hdr['ok']))
+	{
+		fclose($fp);
+		$stats['errors'][] = (string)($hdr['error'] ?? 'Ошибка заголовка CSV.');
+
+		return $stats;
+	}
+	/** @var array<string, int> $idx */
+	$idx = $hdr['idx'] ?? [];
 
 	$lineNum = 1;
 	while (($cells = mf_ce_fgetcsv_row($fp)) !== false)
@@ -753,6 +894,36 @@ function mf_ce_run_csv_import(int $iblockId, string $absolutePath): array
 		}
 
 		mf_ce_import_apply_row($iblockId, $row, $lineNum, $stats);
+		$stats['rows_processed']++;
+
+		if ($jobId > 0 && (
+			$stats['rows_processed'] === 1
+			|| ($rowsTotal > 0 && $stats['rows_processed'] === $rowsTotal)
+			|| ($stats['rows_processed'] % 10) === 0
+		))
+		{
+			if (function_exists('mf_catalog_import_job_update'))
+			{
+				mf_catalog_import_job_update($jobId, [
+					'UF_ROWS_DONE' => $stats['rows_processed'],
+					'UF_ROWS_TOTAL' => $rowsTotal > 0 ? $rowsTotal : null,
+				]);
+			}
+			if (function_exists('mf_catalog_import_job_progress_apply'))
+			{
+				$tot = $rowsTotal > 0 ? $rowsTotal : max($stats['rows_processed'], 1);
+				$remaining = max(0, $tot - $stats['rows_processed']);
+				$pct = (int)round(100.0 * $stats['rows_processed'] / $tot);
+				$note = 'Обновлено ' . (int)$stats['updated']
+					. ' товаров, обработано ' . $stats['rows_processed'] . ' из ' . $tot
+					. ', осталось ~' . $remaining;
+				mf_catalog_import_job_progress_apply($jobId, $pct, $note);
+			}
+		}
+		if ($stats['rows_processed'] > 0 && ($stats['rows_processed'] % 200) === 0 && function_exists('mf_ci_bootstrap_long_import'))
+		{
+			mf_ci_bootstrap_long_import();
+		}
 	}
 
 	fclose($fp);
@@ -1045,58 +1216,118 @@ function mf_ce_output_xlsx(string $filename, array $headers, iterable $rows): vo
 }
 
 $mfCeImportReport = null;
+$mfCeImportError = null;
+$mfCeViewJob = null;
 
-// ——— Import CSV (тот же формат, что выгрузка) ———
+if (isset($_GET['catalog_import_job']))
+{
+	$vji = (int)($_GET['catalog_import_job'] ?? 0);
+	$vjt = preg_replace('~[^a-f0-9]~', '', (string)($_GET['token'] ?? ''));
+	if ($vji > 0 && strlen($vjt) === 32 && is_object($USER) && (int)$USER->GetID() > 0)
+	{
+		$vjr = mf_catalog_import_job_get($vji);
+		if (
+			$vjr
+			&& (int)($vjr['UF_USER_ID'] ?? 0) === (int)$USER->GetID()
+			&& (string)($vjr['UF_TOKEN'] ?? '') === $vjt
+		)
+		{
+			$mfCeViewJob = $vjr;
+		}
+	}
+}
+
+// ——— Import CSV (фоновое задание + прогресс) ———
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['mf_catalog_import_do'] ?? '') === 'Y')
 {
 	if (!check_bitrix_sessid())
 	{
-		require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
-		\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Неверная сессия (sessid).']);
-		require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
-
-		return;
-	}
-
-	if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE)
-	{
-		session_write_close();
-	}
-
-	$file = $_FILES['mf_catalog_csv'] ?? null;
-	if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK)
-	{
-		$err = is_array($file) ? (int)($file['error'] ?? 0) : UPLOAD_ERR_NO_FILE;
-		$mfCeImportReport = [
-			'ok' => false,
-			'message' => $err === UPLOAD_ERR_NO_FILE
-				? 'Выберите CSV-файл.'
-				: ('Ошибка загрузки файла (код ' . $err . ').'),
-		];
+		$mfCeImportError = 'Неверная сессия (sessid). Обновите страницу.';
 	}
 	else
 	{
-		$tmp = (string)($file['tmp_name'] ?? '');
-		$origName = (string)($file['name'] ?? '');
-		$ext = mb_strtolower((string)pathinfo($origName, PATHINFO_EXTENSION));
-		if ($ext !== 'csv')
+		if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE)
 		{
-			$mfCeImportReport = ['ok' => false, 'message' => 'Допустим только формат .csv (как при выгрузке).'];
+			session_write_close();
 		}
-		elseif ($tmp === '' || !is_uploaded_file($tmp))
+
+		$file = $_FILES['mf_catalog_csv'] ?? null;
+		if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK)
 		{
-			$mfCeImportReport = ['ok' => false, 'message' => 'Некорректный временный файл загрузки.'];
+			$err = is_array($file) ? (int)($file['error'] ?? 0) : UPLOAD_ERR_NO_FILE;
+			$mfCeImportError = $err === UPLOAD_ERR_NO_FILE
+				? 'Выберите CSV-файл.'
+				: ('Ошибка загрузки файла (код ' . $err . ').');
 		}
 		else
 		{
-			try
+			$tmp = (string)($file['tmp_name'] ?? '');
+			$origName = (string)($file['name'] ?? '');
+			$ext = mb_strtolower((string)pathinfo($origName, PATHINFO_EXTENSION));
+			if ($ext !== 'csv')
 			{
-				$mfCeImportReport = ['ok' => true, 'stats' => mf_ce_run_csv_import($iblockId, $tmp)];
+				$mfCeImportError = 'Допустим только формат .csv (как при выгрузке).';
 			}
-			catch (Throwable $e)
+			elseif ($tmp === '' || !is_uploaded_file($tmp))
 			{
-				$mfCeImportReport = ['ok' => false, 'message' => $e->getMessage()];
+				$mfCeImportError = 'Некорректный временный файл загрузки.';
+			}
+			elseif (!mf_catalog_import_job_ensure_table())
+			{
+				$mfCeImportError = 'Не удалось создать таблицу фоновых заданий (MySQL). Проверьте права к БД.';
+			}
+			else
+			{
+				$jobToken = bin2hex(random_bytes(16));
+				$relJobPath = 'upload/mf_catalog_import/jobs/' . $jobToken . '.csv';
+				$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT']), '/\\');
+				$absJobDir = $docRoot . '/upload/mf_catalog_import/jobs';
+				$absJobPath = $docRoot . '/' . $relJobPath;
+				if (!is_dir($absJobDir) && !@mkdir($absJobDir, 0755, true) && !is_dir($absJobDir))
+				{
+					$mfCeImportError = 'Не удалось создать каталог upload/mf_catalog_import/jobs/.';
+				}
+				elseif (!@move_uploaded_file($tmp, $absJobPath))
+				{
+					$mfCeImportError = 'Не удалось сохранить CSV на сервере.';
+					if (is_dir($absJobDir) && !is_writable($absJobDir))
+					{
+						$mfCeImportError .= ' Каталог недоступен для записи от имени PHP (владелец/chmod пула php-fpm).';
+					}
+				}
+				else
+				{
+					$importUserId = (int)$USER->GetID();
+					$newJobId = mf_catalog_import_job_insert([
+						'UF_TOKEN' => $jobToken,
+						'UF_USER_ID' => $importUserId,
+						'UF_STATUS' => 'pending',
+						'UF_FILE_PATH' => $relJobPath,
+						'UF_ORIG_NAME' => $origName,
+						'UF_FILE_SIZE' => (int)@filesize($absJobPath),
+						'UF_IBLOCK_ID' => $iblockId,
+						'UF_ROWS_TOTAL' => 0,
+						'UF_ROWS_DONE' => 0,
+					]);
+					if ($newJobId <= 0)
+					{
+						@unlink($absJobPath);
+						$mfCeImportError = 'Не удалось создать задание импорта.';
+					}
+					else
+					{
+						$q = [
+							'catalog_import_job' => $newJobId,
+							'token' => $jobToken,
+						];
+						if (defined('LANGUAGE_ID') && (string)LANGUAGE_ID !== '')
+						{
+							$q['lang'] = (string)LANGUAGE_ID;
+						}
+						LocalRedirect($APPLICATION->GetCurPage() . '?' . http_build_query($q));
+					}
+				}
 			}
 		}
 	}
@@ -1248,6 +1479,41 @@ $APPLICATION->SetTitle('Выгрузка и загрузка каталога (C
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 
+$mfCeShowJobPanel = false;
+$mfCeJobIdForJs = 0;
+$mfCeJobTokenForJs = '';
+if (is_array($mfCeViewJob) && (int)($mfCeViewJob['ID'] ?? 0) > 0)
+{
+	$mfCeViewJob = mf_catalog_import_job_get((int)$mfCeViewJob['ID']) ?? $mfCeViewJob;
+	$jst0 = (string)($mfCeViewJob['UF_STATUS'] ?? '');
+	if ($jst0 === 'done' && !empty($mfCeViewJob['UF_RESULT_JSON']))
+	{
+		$decSt = json_decode((string)$mfCeViewJob['UF_RESULT_JSON'], true);
+		if (is_array($decSt))
+		{
+			$mfCeImportReport = ['ok' => true, 'stats' => $decSt];
+		}
+	}
+	elseif ($jst0 === 'failed' && $mfCeImportError === null && !empty($mfCeViewJob['UF_ERROR_TEXT']))
+	{
+		$mfCeImportError = (string)$mfCeViewJob['UF_ERROR_TEXT'];
+	}
+	$mfCeShowJobPanel = in_array($jst0, ['pending', 'running'], true);
+	$mfCeJobIdForJs = (int)$mfCeViewJob['ID'];
+	$mfCeJobTokenForJs = (string)($mfCeViewJob['UF_TOKEN'] ?? '');
+}
+
+$mfCePageClean = (string)($APPLICATION->GetCurPage() ?? '');
+$mfCeQClean = [
+	'lang' => (defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru'),
+];
+$mfCeNewUploadUrl = $mfCePageClean . (strpos($mfCePageClean, '?') !== false ? '&' : '?') . http_build_query($mfCeQClean);
+
+if ($mfCeImportError !== null && $mfCeImportError !== '')
+{
+	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => mf_ce_esc($mfCeImportError)]);
+}
+
 if (is_array($mfCeImportReport))
 {
 	if (empty($mfCeImportReport['ok']))
@@ -1341,6 +1607,111 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 <hr style="margin:28px 0;border:none;border-top:1px solid #e0e0e0" />
 
 <h2 class="adm-detail-title">Загрузка CSV (обновление по id)</h2>
+<?php
+if ($mfCeShowJobPanel && $mfCeJobIdForJs > 0 && $mfCeJobTokenForJs !== '')
+{
+	$sessCe = (string)bitrix_sessid();
+	$langQ = (defined('LANGUAGE_ID') && (string)LANGUAGE_ID !== '') ? '&lang=' . rawurlencode((string)LANGUAGE_ID) : '';
+	$pollUrl0 = $mfCePageClean . (strpos($mfCePageClean, '?') !== false ? '&' : '?')
+		. 'mf_catalog_job_poll=1&job=' . $mfCeJobIdForJs . '&token=' . rawurlencode($mfCeJobTokenForJs) . $langQ;
+	$nudgeUrl0 = $mfCePageClean . (strpos($mfCePageClean, '?') !== false ? '&' : '?')
+		. 'mf_catalog_job_nudge=1&job=' . $mfCeJobIdForJs . '&token=' . rawurlencode($mfCeJobTokenForJs) . $langQ;
+	?>
+	<div class="adm-info-message" id="mf_ce_job_panel" style="max-width:900px;margin-bottom:16px">
+		<iframe src="<?= mf_ce_esc($nudgeUrl0) ?>" style="width:0;height:0;border:0;position:absolute;left:-9999px" tabindex="-1" title=""></iframe>
+		<div id="mf_ce_job_text">Подготовка импорта…</div>
+		<div style="height:10px;background:#e8e8e8;border-radius:4px;margin:10px 0;overflow:hidden">
+			<div id="mf_ce_job_bar" style="height:100%;width:0;background:#1d54a8;transition:width .2s"></div>
+		</div>
+		<p style="margin:0 0 8px 0;font-size:12px;color:#666">
+			Импорт выполняется в фоне без лимита времени PHP. В подписи — сколько товаров уже обновлено и сколько строк осталось обработать. Опрос — примерно раз в <strong>1,2&nbsp;с</strong>.
+		</p>
+		<a href="<?= mf_ce_esc($mfCeNewUploadUrl) ?>">Новая загрузка (без ожидания)</a>
+	</div>
+	<script>
+	(function () {
+		var jobId = <?= (int)$mfCeJobIdForJs ?>;
+		var token = <?= json_encode($mfCeJobTokenForJs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var sess = <?= json_encode($sessCe, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var pollUrl = <?= json_encode($pollUrl0, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var runUrl = <?= json_encode($mfCePageClean, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+		var started = false;
+		function setBar(pct) {
+			var b = document.getElementById('mf_ce_job_bar');
+			if (b) { b.style.width = Math.max(0, Math.min(100, pct)) + '%'; }
+		}
+		function setText(t) {
+			var x = document.getElementById('mf_ce_job_text');
+			if (x) { x.textContent = t; }
+		}
+		function startRun() {
+			if (started) { return; }
+			started = true;
+			var fd = new FormData();
+			fd.append('mf_catalog_job_run', 'Y');
+			fd.append('job', String(jobId));
+			fd.append('token', token);
+			fd.append('sessid', sess);
+			fetch(runUrl, { method: 'POST', body: fd, credentials: 'same-origin' }).catch(function () {});
+		}
+		function poll() {
+			fetch(pollUrl, { credentials: 'same-origin' })
+				.then(function (r) { return r.json(); })
+				.then(function (d) {
+					if (!d || d.ok === false) {
+						setText('Не удалось получить статус. Обновите страницу.');
+						return;
+					}
+					var st = d.status || '';
+					var done = parseInt(d.rows_done, 10) || 0;
+					var tot = parseInt(d.rows_total, 10) || 0;
+					var ppRaw = d.progress_pct;
+					var pctDb = ppRaw !== undefined && ppRaw !== null ? parseInt(ppRaw, 10) : NaN;
+					var pct = !isFinite(pctDb) ? NaN : Math.max(0, Math.min(100, pctDb));
+					if (!isFinite(pct) && tot > 0) {
+						pct = Math.round(100 * done / tot);
+					}
+					setBar(isFinite(pct) ? pct : (st === 'done' ? 100 : 0));
+					var note = (typeof d.progress_note === 'string' && d.progress_note.trim() !== '')
+						? d.progress_note.trim()
+						: 'Обновление товаров…';
+					if (d.stale_hint) {
+						note += '. ' + d.stale_hint;
+					} else if (d.progress_at) {
+						note += ' (обновлено ' + d.progress_at + ')';
+					}
+					if (st === 'pending' || st === 'running') {
+						setText(note + (tot > 0 ? (' — строк ' + done + ' / ' + tot) : ''));
+						if (st === 'pending') { startRun(); }
+						setTimeout(poll, 1200);
+						return;
+					}
+					if (st === 'done') {
+						setBar(100);
+						setText('Готово. Идёт обновление страницы…');
+						location.reload();
+						return;
+					}
+					if (st === 'failed') {
+						setBar(0);
+						setText('Ошибка: ' + (d.error || 'неизвестно'));
+						return;
+					}
+					setText('Статус: ' + st);
+					setTimeout(poll, 1200);
+				})
+				.catch(function () {
+					setText('Ошибка сети при опросе статуса.');
+					setTimeout(poll, 2500);
+				});
+		}
+		startRun();
+		poll();
+	})();
+	</script>
+	<?php
+}
+?>
 <form method="post" enctype="multipart/form-data" action="<?= mf_ce_esc((string)$APPLICATION->GetCurPage()) ?>?lang=<?= mf_ce_esc($langUi) ?>">
 	<?= bitrix_sessid_post() ?>
 	<input type="hidden" name="mf_catalog_import_do" value="Y" />
@@ -1352,6 +1723,7 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 		Свойство <strong>MF_UNIQ_KEY</strong> и нормализованный артикул <strong>MF_ARTICLE_NORM</strong> пересчитываются из колонок «Артикул» и «Бренд» по тем же правилам, что и импорт остатков с <strong>--brand-dict=Y</strong>: подключается <code>mf_brand_dict.php</code> (канон бренда, список пропуска), затем нормализация как в <code>mf_update_supplier_stock.php</code>.
 		Колонка «Фото»: непустое значение задаёт множественное свойство <strong>MF_EXT_IMAGES</strong> — все URL из ячейки, разделённые в выгрузке через « | » (один URL без разделителя тоже сохраняется); пустая ячейка — внешние URL из свойства не меняем.
 		«Раздел товара»: цепочка <strong>Родитель =&gt; Дочерний =&gt; …</strong> (как в выгрузке; для старых CSV допускается « / ») или одно имя раздела — подбирается активный раздел; если цепочка не найдена, остальные поля строки всё равно сохраняются, привязку к разделу не меняем.
+		Большие файлы обрабатываются <strong>в фоне</strong> с индикатором прогресса (как импорт внешних прайсов): таймауты PHP снимаются, сессия не блокирует другие вкладки.
 	</p>
 
 	<table class="adm-detail-content-table edit-table" style="max-width:920px">
