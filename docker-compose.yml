@@ -55,6 +55,7 @@ services:
       MF_UNF_TAXATION: "Не облагается (без НДС)"
       BITRIX_REDIS_HOST: redis
       BITRIX_REDIS_PORT: "6379"
+      MF_MOTOR_FORCE_IMG_HOST: ${MF_MOTOR_FORCE_IMG_HOST:-/mf-img}
     volumes:
       - ./www:/var/www/html
       # Подмена без пересборки образа; важно для clear_env / getenv из .env в PHP-FPM

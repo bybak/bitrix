@@ -45,26 +45,17 @@ unset($_mfProductSearchCard);
 // We intentionally generate URLs deterministically (no downloads into Bitrix).
 if (!defined('MF_MOTOR_FORCE_IMG_HOST'))
 {
-	// Default:
-	// - local dev: proxy images through this site (avoids browser HSTS / TLS issues)
-	// - other envs: use the real image host
-	$env = trim((string)getenv('MF_MOTOR_FORCE_IMG_HOST'));
+	// Приоритет: .env / docker (getenv, $_SERVER, $_ENV).
+	$env = trim((string)(getenv('MF_MOTOR_FORCE_IMG_HOST') ?: ($_SERVER['MF_MOTOR_FORCE_IMG_HOST'] ?? $_ENV['MF_MOTOR_FORCE_IMG_HOST'] ?? '')));
 	if ($env !== '')
 	{
 		define('MF_MOTOR_FORCE_IMG_HOST', $env);
 	}
 	else
 	{
-		$httpHost = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
-		$isLocal =
-			$httpHost === 'localhost'
-			|| str_starts_with($httpHost, 'localhost:')
-			|| $httpHost === '127.0.0.1'
-			|| str_starts_with($httpHost, '127.0.0.1:')
-			|| str_ends_with($httpHost, '.local')
-			|| str_ends_with($httpHost, '.test');
-
-		define('MF_MOTOR_FORCE_IMG_HOST', $isLocal ? '/mf-img' : 'img-motor-force.ru');
+		// По умолчанию — прокси /mf-img (валидный SSL основного домена).
+		// Прямой img-motor-force.ru ломает HTTPS (самоподписанный сертификат).
+		define('MF_MOTOR_FORCE_IMG_HOST', '/mf-img');
 	}
 }
 
