@@ -2052,11 +2052,25 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 						var deliveryMode = modeEl ? BX.util.trim(String(modeEl.value || '')) : '';
 						if (deliveryMode !== 'pickup')
 						{
+							var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+							if (mfE && typeof mfE.syncSelectionWithOffers === 'function')
+								mfE.syncSelectionWithOffers(mfE.offers || [], {force: true, showWarning: true});
+
 							var tidEl = f ? f.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 							var tid = tidEl ? BX.util.trim(String(tidEl.value || '')) : '';
 							if (!tid)
 							{
 								this.showError(this.deliveryBlockNode, 'Выберите способ доставки (тариф eDost), чтобы перейти дальше.', true);
+								this.animateScrollTo(this.deliveryBlockNode, 400, 20);
+								return BX.PreventDefault(event);
+							}
+							if (mfE && mfE._managerDeliveryFallback)
+							{
+								// Оформление без тарифа — разрешено.
+							}
+							else if (mfE && typeof mfE.isSelectedTariffAvailable === 'function' && !mfE.isSelectedTariffAvailable())
+							{
+								this.showError(this.deliveryBlockNode, 'Ранее выбранный способ доставки недоступен для текущего состава заказа. Выберите другой вариант.', true);
 								this.animateScrollTo(this.deliveryBlockNode, 400, 20);
 								return BX.PreventDefault(event);
 							}
@@ -2815,8 +2829,47 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					mfE.ensureFields();
 				if (mfE && typeof mfE.ensureBitrixLocationPropertyFilled === 'function')
 					mfE.ensureBitrixLocationPropertyFilled({sendRefresh: false});
+				if (mfE && typeof mfE.syncSelectionWithOffers === 'function'
+					&& typeof mfE.isPickupMode === 'function' && !mfE.isPickupMode())
+				{
+					mfE.syncSelectionWithOffers(mfE.offers || [], {force: true, showWarning: false});
+				}
 			}
 			catch (ePrep) {}
+		},
+
+		mfGetEdostDeliveryErrors: function()
+		{
+			var errors = [];
+			if (!this.isMfCustomCheckout())
+				return errors;
+
+			try
+			{
+				var form = BX('bx-soa-order-form');
+				var modeEl = form ? form.querySelector('input[name="MF_DELIVERY_MODE"]') : null;
+				var deliveryMode = modeEl ? BX.util.trim(String(modeEl.value || '')) : '';
+				if (deliveryMode === 'pickup')
+					return errors;
+
+				var mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				if (!mfE)
+					return errors;
+
+				if (typeof mfE.syncSelectionWithOffers === 'function')
+					mfE.syncSelectionWithOffers(mfE.offers || [], {force: true, showWarning: true});
+
+				if (mfE._managerDeliveryFallback)
+					return errors;
+
+				if (typeof mfE.isSelectedTariffAvailable === 'function' && !mfE.isSelectedTariffAvailable())
+				{
+					errors.push('Выберите способ доставки (тариф eDost), чтобы продолжить.');
+				}
+			}
+			catch (eEdostVal) {}
+
+			return errors;
 		},
 
 		mfIsDeliveryLocationSatisfied: function()
@@ -8984,7 +9037,16 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				BX.addClass(this.propsBlockNode, 'bx-step-error');
 			}
 
-			return !(regionErrors.length + propsErrors.length);
+			var edostErrors = this.mfGetEdostDeliveryErrors();
+			if (edostErrors.length)
+			{
+				this.showError(this.deliveryBlockNode, edostErrors, true);
+				BX.addClass(this.deliveryBlockNode, 'bx-step-error');
+				if (!navigated)
+					this.animateScrollTo(this.deliveryBlockNode, 800, 50);
+			}
+
+			return !(regionErrors.length + propsErrors.length + edostErrors.length);
 		},
 
 		isValidRegionBlock: function()

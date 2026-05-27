@@ -1070,9 +1070,94 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							if (String(offers[i].id) === wantId)
 								return offers[i];
 						}
+						// Сохранённый тариф недоступен для текущей корзины — не подставляем другой автоматически.
+						return null;
 					}
 				} catch(ePick) {}
 				return mfEdost.isAuthorized() ? offers[0] : null;
+			};
+
+			mfEdost.findOfferById = function(offers, id){
+				if (!offers || !offers.length || id == null || String(id) === '')
+					return null;
+				var want = String(id);
+				for (var i = 0; i < offers.length; i++)
+				{
+					if (String(offers[i].id || '') === want)
+						return offers[i];
+				}
+				return null;
+			};
+
+			mfEdost.getSelectedTariffId = function(){
+				try {
+					var form = BX('bx-soa-order-form');
+					var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
+					return idEl ? String(idEl.value || '').trim() : '';
+				} catch(eTid) {}
+				return String(mfEdost.selectedId || '').trim();
+			};
+
+			mfEdost.isSelectedTariffAvailable = function(offers){
+				if (mfEdost.isPickupMode())
+					return true;
+				if (mfEdost._managerDeliveryFallback)
+					return true;
+
+				var tid = mfEdost.getSelectedTariffId();
+				if (!tid)
+					return false;
+				if (tid === 'custom' || mfEdost.isPickupId(tid))
+					return true;
+
+				if (!mfEdost._edostCalculated)
+					return false;
+
+				offers = offers || mfEdost.offers || [];
+				if (!offers.length)
+					return false;
+
+				return !!mfEdost.findOfferById(offers, tid);
+			};
+
+			mfEdost.syncSelectionWithOffers = function(offers, options){
+				options = options || {};
+				if (mfEdost.isPickupMode())
+					return true;
+				if (mfEdost._managerDeliveryFallback)
+					return true;
+
+				offers = offers || mfEdost.offers || [];
+				var selectedId = mfEdost.getUiSelectedTariffId();
+				if (!selectedId || selectedId === 'custom' || mfEdost.isPickupId(selectedId))
+					return true;
+
+				if (!options.force && !mfEdost._edostCalculated)
+					return true;
+
+				var match = mfEdost.findOfferById(offers, selectedId);
+				if (match)
+				{
+					mfEdost.setSelected(match);
+					return true;
+				}
+
+				mfEdost.clearSelection();
+				if (options.showWarning !== false)
+				{
+					try {
+						var del = BX('bx-soa-delivery');
+						var warn = del ? del.querySelector('#mf-edost-warning') : null;
+						if (warn)
+						{
+							warn.style.display = '';
+							warn.className = 'alert alert-warning';
+							warn.textContent = 'Ранее выбранный способ доставки недоступен для текущего состава заказа. Выберите другой вариант.';
+						}
+					} catch(eWarnSel) {}
+				}
+				try { mfEdost.updateGate(mfEdost.getEffectiveLocationCode()); } catch(eGateSel) {}
+				return false;
 			};
 
 			mfEdost.restoreLastOrderPreload = function(){
@@ -1360,12 +1445,13 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var form = BX('bx-soa-order-form');
 				var idEl = form ? form.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 				var hasTariff = idEl && BX.type.isNotEmptyString(idEl.value);
+				var hasValidTariff = hasTariff && mfEdost.isSelectedTariffAvailable();
 				var eff = mfEdost.getEffectiveLocationCode();
 				var hasLoc = mfEdost.isPickupMode()
 					? true
 					: mfEdost.hasUserDeliveryDestination();
 				var canProceedDelivery = mfEdost.isPickupMode()
-					|| (hasLoc && (hasTariff || mfEdost._managerDeliveryFallback));
+					|| (hasLoc && (hasValidTariff || mfEdost._managerDeliveryFallback));
 				var nextBtn = del.querySelector('.bx-soa-more-btn button.pull-right.btn.btn-primary, .bx-soa-more-btn button.btn.btn-primary');
 				if (nextBtn)
 				{
@@ -1394,6 +1480,12 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						warn.style.display = '';
 						warn.className = 'alert alert-warning';
 						warn.textContent = 'Выберите местоположение, чтобы увидеть варианты доставки.';
+					}
+					else if (!hasValidTariff && hasTariff && mfEdost._edostCalculated)
+					{
+						warn.style.display = '';
+						warn.className = 'alert alert-warning';
+						warn.textContent = 'Ранее выбранный способ доставки недоступен для текущего состава заказа. Выберите другой вариант.';
 					}
 					else if (!hasTariff && mfEdost._managerDeliveryFallback)
 					{
@@ -1524,6 +1616,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					var root = BX('bx-soa-order') || document;
 					var sel = root && root.querySelector ? root.querySelector('#mf-edost-selected') : null;
 					if (sel) sel.textContent = '';
+					if (root && root.querySelectorAll)
+					{
+						var radios = root.querySelectorAll('input[type="radio"][name="MF_EDOST_TARIF_UI"]');
+						for (var ri = 0; ri < radios.length; ri++)
+						{
+							try { radios[ri].checked = false; } catch(eRad) {}
+						}
+					}
 				} catch(e) {}
 				try { mfEdost.syncPickupAddressVisibility(); } catch(ePickupClr) {}
 				try { mfEdost.applyDeliverySummary(); } catch(e2) {}
@@ -1880,6 +1980,10 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						text: 'Нет доступных способов доставки для выбранного адреса.'
 					}));
 					mfEdost.appendCustomOptionIfReady(list, selectedId);
+					if (mfEdost._edostCalculated && !mfEdost._managerDeliveryFallback)
+					{
+						try { mfEdost.syncSelectionWithOffers([], {force: true, showWarning: false}); } catch(eEmptySel) {}
+					}
 					return;
 				}
 
@@ -1910,23 +2014,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 
 				mfEdost.appendCustomOptionIfReady(list, selectedId);
 
-				// Restore full offer object (days_from/days_to) for summary lines after re-render.
 				try {
-					if (selectedId && selectedId !== 'custom' && !mfEdost.isPickupId(selectedId))
-					{
-						for (var si = 0; si < offers.length; si++)
-						{
-							if (String(offers[si].id || '') === String(selectedId))
-							{
-								mfEdost.setSelected(offers[si]);
-								break;
-							}
-						}
-					}
-					else if (selectedId)
-					{
-						mfEdost.applyDeliverySummary();
-					}
+					mfEdost.syncSelectionWithOffers(offers, {force: mfEdost._edostCalculated, showWarning: true});
 				} catch(eSyncOffer) {}
 
 				// If selection exists, ensure it is checked after re-render.
@@ -1984,6 +2073,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					mfEdost.renderOffers(mfEdost.offers || []);
 					mfEdost.hideBitrixDeliveryCards();
 					try {
+						mfEdost.syncSelectionWithOffers(mfEdost.offers || [], {force: true, showWarning: true});
 						var formCached = BX('bx-soa-order-form');
 						var idElCached = formCached ? formCached.querySelector('input[type="hidden"][name="MF_EDOST_TARIF_ID"]') : null;
 						var hasSelectedCached = !!(idElCached && BX.type.isNotEmptyString(String(idElCached.value || '')));
