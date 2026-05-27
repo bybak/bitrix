@@ -159,7 +159,42 @@ final class Edost
 	}
 
 	/**
+	 * Вес одной позиции (граммы): сначала актуальный вес из каталога, иначе WEIGHT в корзине.
+	 */
+	public static function basketItemWeightGrams(object $item): float
+	{
+		$productId = method_exists($item, 'getProductId') ? (int)$item->getProductId() : 0;
+		if ($productId > 0)
+		{
+			if (function_exists('mf_ep_product_weight_grams_cluster'))
+			{
+				$catalogW = (int)mf_ep_product_weight_grams_cluster($productId);
+				if ($catalogW > 0)
+				{
+					return (float)$catalogW;
+				}
+			}
+			elseif (\Bitrix\Main\Loader::includeModule('catalog') && class_exists(\CCatalogProduct::class))
+			{
+				$row = \CCatalogProduct::GetByID($productId);
+				if (is_array($row) && isset($row['WEIGHT']) && (float)$row['WEIGHT'] > 0)
+				{
+					return (float)$row['WEIGHT'];
+				}
+			}
+		}
+
+		if (method_exists($item, 'getWeight'))
+		{
+			return max(0.0, (float)$item->getWeight());
+		}
+
+		return 0.0;
+	}
+
+	/**
 	 * Суммарный вес корзины для eDost: только позиции с WEIGHT &gt; 0 (г × кол-во).
+	 * Вес берётся из каталога (b_catalog_product), а не только из сохранённой строки корзины.
 	 * Если таких нет — {@see defaultParcelWeightKg()} (по умолчанию 1 кг).
 	 *
 	 * @param iterable<mixed> $basketItems элементы корзины / отгрузки с getWeight(), getQuantity()
@@ -170,11 +205,11 @@ final class Edost
 
 		foreach ($basketItems as $item)
 		{
-			if (!is_object($item) || !method_exists($item, 'getWeight'))
+			if (!is_object($item))
 			{
 				continue;
 			}
-			$w = (float)$item->getWeight();
+			$w = self::basketItemWeightGrams($item);
 			if ($w <= 0)
 			{
 				continue;

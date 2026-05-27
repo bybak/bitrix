@@ -3472,6 +3472,15 @@ if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 		}
 		mf_basket_set_props($item, $props);
 
+		if (function_exists('mf_ep_product_weight_grams_cluster'))
+		{
+			$catalogWeight = (int)mf_ep_product_weight_grams_cluster($productId);
+			if ($catalogWeight > 0)
+			{
+				$item->setField('WEIGHT', $catalogWeight);
+			}
+		}
+
 		// Не выставляем CUSTOM_PRICE=Y: в sale позиции с «ручной» ценой не участвуют в правилах корзины
 		// и купонах (Discount\Actions::filterBasketForAction). Цена со склада задаётся через PRICE/BASE_PRICE.
 		$item->setField('CUSTOM_PRICE', 'N');

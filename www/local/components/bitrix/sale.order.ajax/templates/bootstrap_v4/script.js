@@ -146,6 +146,26 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 							mfE.restoreLastOrderPreload();
 						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.applySavedDeliveryFieldsToInputs === 'function')
 							ctx.__mfBuyerAddress.applySavedDeliveryFieldsToInputs();
+						if (mfE)
+						{
+							mfE._lastKey = '';
+							mfE._edostCalculated = false;
+							if (typeof mfE.fetchOffers === 'function' && typeof mfE.hasUserDeliveryDestination === 'function'
+								&& mfE.hasUserDeliveryDestination() && typeof mfE.getEffectiveLocationCode === 'function')
+							{
+								var locRef = mfE.getEffectiveLocationCode();
+								var zipRef = '';
+								try {
+									if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.getInputByCode === 'function')
+									{
+										var zInpRef = ctx.__mfBuyerAddress.getInputByCode('DELIVERY_ZIP');
+										if (zInpRef && zInpRef !== false)
+											zipRef = String(zInpRef.value || '').replace(/\D+/g, '');
+									}
+								} catch(eZipRef) {}
+								mfE.fetchOffers(locRef, zipRef, {allowInactive: true});
+							}
+						}
 						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.syncDeliveryGeoToBuyerFields === 'function')
 							ctx.__mfBuyerAddress.syncDeliveryGeoToBuyerFields({forceZip: true});
 						if (ctx.__mfBuyerAddress && typeof ctx.__mfBuyerAddress.sync === 'function')
@@ -1948,7 +1968,15 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (!BX.type.isNotEmptyString(locationCode) && !BX.type.isNotEmptyString(edostCity) && !BX.type.isNotEmptyString(nomJsonPeek))
 					return;
 
-				var key = (locationCode || '__geo__') + '|' + zipDigits + '|' + edostCity;
+				var basketWeightKey = '';
+				try {
+					var total = BX.Sale && BX.Sale.OrderAjaxComponent && BX.Sale.OrderAjaxComponent.result
+						? BX.Sale.OrderAjaxComponent.result.TOTAL
+						: null;
+					if (total && typeof total.ORDER_WEIGHT !== 'undefined')
+						basketWeightKey = String(total.ORDER_WEIGHT || '0');
+				} catch(eBw) {}
+				var key = (locationCode || '__geo__') + '|' + zipDigits + '|' + edostCity + '|' + basketWeightKey;
 				// If form was re-rendered, we may need to re-render offers even without refetch.
 				if (!mfEdost._inFlight && mfEdost._lastKey === key && mfEdost._edostCalculated)
 				{

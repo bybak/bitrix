@@ -262,18 +262,18 @@ if (is_file($mfSearchRenderLib))
 						if (function_exists('mf_search_render_product_card'))
 						{
 							mf_search_render_product_card([
-								'id' => $mfItemId,
-								'url' => $href,
-								'code' => $mfCode,
-								'prefetch_row' => is_array($mfRow) ? $mfRow : null,
-								'title_html' => $mfTitleHtml,
-								'brand' => $mfBrand,
-								'article' => $mfArticle,
-								'oem' => $mfOem,
-								'is_analog' => false,
+							'id' => $mfItemId,
+							'url' => $href,
+							'code' => $mfCode,
+							'prefetch_row' => is_array($mfRow) ? $mfRow : null,
+							'title_html' => $mfTitleHtml,
+							'brand' => $mfBrand,
+							'article' => $mfArticle,
+							'oem' => $mfOem,
+							'is_analog' => false,
 								'lazy_stores' => true,
 								'lazy_analogs' => true,
-							]);
+						]);
 						}
 						?>
 					<?php endforeach; ?>
