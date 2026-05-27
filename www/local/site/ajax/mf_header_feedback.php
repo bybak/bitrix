@@ -119,7 +119,9 @@ try
 		throw new RuntimeException(implode("\n", $errors));
 	}
 
-	$from = trim((string)getenv('MF_SMTP_FROM'));
+	$from = function_exists('mf_mail_default_from_admin')
+		? mf_mail_default_from_admin()
+		: trim((string)getenv('MF_SMTP_FROM_ROBOT'));
 	if ($from === '')
 	{
 		$from = trim((string)Option::get('main', 'email_from', ''));
@@ -171,7 +173,7 @@ try
 		);
 	}
 
-	$header = ['From' => $from];
+	$header = ['From' => $from, 'X-MF-SMTP-Profile' => 'robot'];
 	if ($formType === 'write_us' && filter_var($email, FILTER_VALIDATE_EMAIL))
 	{
 		$header['Reply-To'] = $email;

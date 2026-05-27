@@ -103,7 +103,9 @@ try
 		throw new RuntimeException(implode("\n", $errors));
 	}
 
-	$from = trim((string)getenv('MF_SMTP_FROM'));
+	$from = function_exists('mf_mail_default_from_admin')
+		? mf_mail_default_from_admin()
+		: trim((string)getenv('MF_SMTP_FROM_ROBOT'));
 	if ($from === '')
 	{
 		$from = trim((string)Option::get('main', 'email_from', ''));
@@ -140,6 +142,7 @@ try
 	// Один основной получатель в To, остальные — Bcc.
 	$header = [
 		'From' => $from,
+		'X-MF-SMTP-Profile' => 'robot',
 	];
 	if (filter_var($email, FILTER_VALIDATE_EMAIL))
 	{

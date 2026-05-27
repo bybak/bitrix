@@ -75,7 +75,17 @@ final class Config
 		{
 			return trim((string)$env);
 		}
-		return trim((string)Option::get('mf.c2c', 'email_from', ''));
+		$opt = trim((string)Option::get('mf.c2c', 'email_from', ''));
+		if ($opt !== '')
+		{
+			return $opt;
+		}
+		if (function_exists('mf_mail_default_from_client'))
+		{
+			return mf_mail_default_from_client();
+		}
+
+		return '';
 	}
 
 	/**

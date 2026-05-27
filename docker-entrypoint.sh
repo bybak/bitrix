@@ -18,11 +18,12 @@ done
 # Supported env:
 # - MF_SMTP_HOST
 # - MF_SMTP_PORT (default 587)
-# - MF_SMTP_USER
-# - MF_SMTP_PASS
-# - MF_SMTP_FROM (envelope-from)
-# - MF_SMTP_EHLO_DOMAIN (optional; EHLO/Message-ID domain; default: part after @ in MF_SMTP_FROM)
 # - MF_SMTP_TLS ("1"/"0", default 1)
+# - MF_SMTP_EHLO_DOMAIN (optional; EHLO/Message-ID domain)
+# Профили отправителя (Mail.ru: From = user SMTP):
+# - MF_SMTP_USER_ANDREY / MF_SMTP_PASS_ANDREY / MF_SMTP_FROM_ANDREY — письма клиентам
+# - MF_SMTP_USER_ROBOT / MF_SMTP_PASS_ROBOT / MF_SMTP_FROM_ROBOT — письма администратору
+# Legacy (один ящик): MF_SMTP_USER, MF_SMTP_PASS, MF_SMTP_FROM
 #
 # Уведомление о новом заказе (mf_order_notify.php):
 # - MF_ORDER_NOTIFY_EMAIL (default andrey@motor-force.ru if unset)
@@ -36,51 +37,74 @@ done
 if [ "${MF_SMTP_HOST:-}" != "" ]; then
   PORT="${MF_SMTP_PORT:-587}"
   TLS="${MF_SMTP_TLS:-1}"
-  FROM="${MF_SMTP_FROM:-}"
+
+  ANDREY_USER="${MF_SMTP_USER_ANDREY:-${MF_SMTP_USER:-}}"
+  ANDREY_PASS="${MF_SMTP_PASS_ANDREY:-${MF_SMTP_PASS:-}}"
+  ANDREY_FROM="${MF_SMTP_FROM_ANDREY:-${MF_SMTP_FROM:-}}"
+  ROBOT_USER="${MF_SMTP_USER_ROBOT:-}"
+  ROBOT_PASS="${MF_SMTP_PASS_ROBOT:-}"
+  ROBOT_FROM="${MF_SMTP_FROM_ROBOT:-}"
 
   # www-data home in this image is /var/www
   HOME_DIR="${HOME:-/var/www}"
   CONF="${HOME_DIR}/.msmtprc"
 
+  EHLO_DOMAIN="${MF_SMTP_EHLO_DOMAIN:-}"
+  if [ -z "${EHLO_DOMAIN}" ] && [ -n "${ANDREY_FROM}" ]; then
+    EHLO_DOMAIN="${ANDREY_FROM#*@}"
+  fi
+  if [ -z "${EHLO_DOMAIN}" ] && [ -n "${ROBOT_FROM}" ]; then
+    EHLO_DOMAIN="${ROBOT_FROM#*@}"
+  fi
+  if [ -z "${EHLO_DOMAIN}" ]; then
+    EHLO_DOMAIN="motor-force.ru"
+  fi
+
   {
     echo "defaults"
     echo "logfile /tmp/msmtp.log"
-    echo "account default"
     echo "host ${MF_SMTP_HOST}"
     echo "port ${PORT}"
-
     if [ "${TLS}" = "0" ] || [ "${TLS}" = "false" ]; then
       echo "tls off"
     else
       echo "tls on"
       echo "tls_starttls on"
     fi
+    echo "domain ${EHLO_DOMAIN}"
 
-    if [ "${MF_SMTP_USER:-}" != "" ]; then
+    if [ -n "${ANDREY_USER}" ]; then
+      echo "account andrey"
       echo "auth on"
-      echo "user ${MF_SMTP_USER}"
+      echo "user ${ANDREY_USER}"
+      if [ -n "${ANDREY_PASS}" ]; then
+        echo "password ${ANDREY_PASS}"
+      fi
+      if [ -n "${ANDREY_FROM}" ]; then
+        echo "from ${ANDREY_FROM}"
+      fi
+    fi
+
+    if [ -n "${ROBOT_USER}" ]; then
+      echo "account robot"
+      echo "auth on"
+      echo "user ${ROBOT_USER}"
+      if [ -n "${ROBOT_PASS}" ]; then
+        echo "password ${ROBOT_PASS}"
+      fi
+      if [ -n "${ROBOT_FROM}" ]; then
+        echo "from ${ROBOT_FROM}"
+      fi
+    fi
+
+    if [ -n "${ANDREY_USER}" ]; then
+      echo "account default : andrey"
+    elif [ -n "${ROBOT_USER}" ]; then
+      echo "account default : robot"
     else
+      echo "account default"
       echo "auth off"
     fi
-
-    if [ "${MF_SMTP_PASS:-}" != "" ]; then
-      echo "password ${MF_SMTP_PASS}"
-    fi
-
-    if [ "${FROM}" != "" ]; then
-      echo "from ${FROM}"
-    fi
-
-    # Mail.ru / Gmail: EHLO с docker-hostname часто даёт «550 invalid headers».
-    # Берём MF_SMTP_EHLO_DOMAIN или домен из MF_SMTP_FROM, иначе motor-force.ru.
-    EHLO_DOMAIN="${MF_SMTP_EHLO_DOMAIN:-}"
-    if [ -z "${EHLO_DOMAIN}" ] && [ -n "${FROM}" ]; then
-      EHLO_DOMAIN="${FROM#*@}"
-    fi
-    if [ -z "${EHLO_DOMAIN}" ]; then
-      EHLO_DOMAIN="motor-force.ru"
-    fi
-    echo "domain ${EHLO_DOMAIN}"
   } > "${CONF}"
 
   chmod 600 "${CONF}" || true

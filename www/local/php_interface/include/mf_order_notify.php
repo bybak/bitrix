@@ -101,9 +101,13 @@ final class Handlers
 			return;
 		}
 
-		$from = function_exists('mf_mail_default_from')
-			? mf_mail_default_from()
-			: trim((string)getenv('MF_SMTP_FROM'));
+		$from = function_exists('mf_mail_default_from_admin')
+			? mf_mail_default_from_admin()
+			: (function_exists('mf_mail_default_from') ? mf_mail_default_from() : '');
+		if ($from === '')
+		{
+			$from = trim((string)getenv('MF_SMTP_FROM_ROBOT'));
+		}
 		if ($from === '')
 		{
 			$from = trim((string)Option::get('main', 'email_from', ''));
@@ -111,7 +115,7 @@ final class Handlers
 		if ($from === '' || !filter_var($from, FILTER_VALIDATE_EMAIL))
 		{
 			Debug::writeToFile(
-				date('c') . ' order notify: нет валидного From (MF_SMTP_FROM / main.email_from)',
+				date('c') . ' order notify: нет валидного From (MF_SMTP_FROM_ROBOT / main.email_from)',
 				'',
 				'mf_order_notify.log'
 			);
@@ -129,7 +133,7 @@ final class Handlers
 			'BODY' => $body,
 			'CHARSET' => 'UTF-8',
 			'CONTENT_TYPE' => 'html',
-			'HEADER' => ['From' => $from],
+			'HEADER' => ['From' => $from, 'X-MF-SMTP-Profile' => 'robot'],
 		];
 
 		if (!class_exists(Mail::class) || !Mail::send($params))

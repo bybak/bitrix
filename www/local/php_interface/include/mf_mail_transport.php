@@ -16,7 +16,9 @@ if (!function_exists('mf_mail_ini_sendmail_from'))
 			return;
 		}
 		$done = true;
-		$from = trim((string)getenv('MF_SMTP_FROM'));
+		$from = function_exists('mf_mail_default_from_client')
+			? mf_mail_default_from_client()
+			: trim((string)getenv('MF_SMTP_FROM_ANDREY'));
 		if ($from !== '' && filter_var($from, FILTER_VALIDATE_EMAIL))
 		{
 			@ini_set('sendmail_from', $from);
@@ -31,12 +33,45 @@ if (trim((string)getenv('MF_SMTP_HOST')) !== '' && !defined('BX_MS_SMTP'))
 	define('BX_MS_SMTP', true);
 }
 
-if (!function_exists('mf_mail_default_from'))
+if (!function_exists('mf_mail_env_email'))
 {
-	function mf_mail_default_from(): string
+	function mf_mail_env_email(string $name): string
 	{
-		$from = trim((string)getenv('MF_SMTP_FROM'));
-		if ($from !== '' && filter_var($from, FILTER_VALIDATE_EMAIL))
+		$val = trim((string)getenv($name));
+
+		return ($val !== '' && filter_var($val, FILTER_VALIDATE_EMAIL)) ? $val : '';
+	}
+}
+
+if (!function_exists('mf_mail_smtp_profile_ids'))
+{
+	/** @return list<string> */
+	function mf_mail_smtp_profile_ids(): array
+	{
+		return ['andrey', 'robot'];
+	}
+}
+
+if (!function_exists('mf_mail_smtp_msmtp_account'))
+{
+	function mf_mail_smtp_msmtp_account(string $profileId): string
+	{
+		return $profileId === 'robot' ? 'robot' : 'andrey';
+	}
+}
+
+if (!function_exists('mf_mail_default_from_client'))
+{
+	/** From для писем клиентам (andrey@). */
+	function mf_mail_default_from_client(): string
+	{
+		$from = mf_mail_env_email('MF_SMTP_FROM_ANDREY');
+		if ($from !== '')
+		{
+			return $from;
+		}
+		$from = mf_mail_env_email('MF_SMTP_FROM');
+		if ($from !== '')
 		{
 			return $from;
 		}
@@ -59,11 +94,225 @@ if (!function_exists('mf_mail_default_from'))
 	}
 }
 
+if (!function_exists('mf_mail_default_from_admin'))
+{
+	/** From для писем администратору (robot@). */
+	function mf_mail_default_from_admin(): string
+	{
+		$from = mf_mail_env_email('MF_SMTP_FROM_ROBOT');
+		if ($from !== '')
+		{
+			return $from;
+		}
+
+		return mf_mail_default_from_client();
+	}
+}
+
+if (!function_exists('mf_mail_default_from'))
+{
+	function mf_mail_default_from(): string
+	{
+		return mf_mail_default_from_client();
+	}
+}
+
+if (!function_exists('mf_mail_set_active_smtp_profile'))
+{
+	function mf_mail_set_active_smtp_profile(string $profileId): void
+	{
+		$GLOBALS['MF_MAIL_ACTIVE_SMTP_PROFILE'] = ($profileId === 'robot') ? 'robot' : 'andrey';
+	}
+}
+
+if (!function_exists('mf_mail_get_active_smtp_profile'))
+{
+	function mf_mail_get_active_smtp_profile(): string
+	{
+		$cur = (string)($GLOBALS['MF_MAIL_ACTIVE_SMTP_PROFILE'] ?? '');
+
+		return $cur === 'robot' ? 'robot' : 'andrey';
+	}
+}
+
+if (!function_exists('mf_mail_profile_from'))
+{
+	function mf_mail_profile_from(string $profileId): string
+	{
+		if ($profileId === 'robot')
+		{
+			return mf_mail_default_from_admin();
+		}
+
+		return mf_mail_default_from_client();
+	}
+}
+
+if (!function_exists('mf_mail_admin_recipient_emails'))
+{
+	/**
+	 * @return string[]
+	 */
+	function mf_mail_admin_recipient_emails(): array
+	{
+		$raw = [
+			getenv('MF_ORDER_NOTIFY_EMAIL'),
+			getenv('MF_C2C_BCC'),
+			'andrey@motor-force.ru',
+		];
+		$out = [];
+		$seen = [];
+		foreach ($raw as $item)
+		{
+			$email = strtolower(trim((string)$item));
+			if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || isset($seen[$email]))
+			{
+				continue;
+			}
+			$seen[$email] = true;
+			$out[] = $email;
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_mail_is_admin_only_recipients'))
+{
+	function mf_mail_is_admin_only_recipients(array $recipientEmails): bool
+	{
+		if ($recipientEmails === [])
+		{
+			return false;
+		}
+		$admin = array_flip(mf_mail_admin_recipient_emails());
+		foreach ($recipientEmails as $email)
+		{
+			$key = strtolower(trim((string)$email));
+			if ($key === '' || !isset($admin[$key]))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+}
+
+if (!function_exists('mf_mail_resolve_smtp_profile'))
+{
+	/**
+	 * @param array<string, mixed> $mail
+	 */
+	function mf_mail_resolve_smtp_profile(array $mail): string
+	{
+		$hdr = isset($mail['HEADER']) && is_array($mail['HEADER']) ? $mail['HEADER'] : [];
+		foreach ($hdr as $name => $value)
+		{
+			if (strtolower((string)$name) !== 'x-mf-smtp-profile')
+			{
+				continue;
+			}
+			$marker = strtolower(trim((string)$value));
+			if (in_array($marker, ['admin', 'robot'], true))
+			{
+				return 'robot';
+			}
+			if (in_array($marker, ['client', 'andrey', 'customer'], true))
+			{
+				return 'andrey';
+			}
+		}
+
+		$rcpts = mf_mail_collect_recipient_emails($mail);
+
+		return mf_mail_is_admin_only_recipients($rcpts) ? 'robot' : 'andrey';
+	}
+}
+
+if (!function_exists('mf_mail_mark_smtp_profile'))
+{
+	/**
+	 * @param array<string, mixed> $mail
+	 *
+	 * @return array<string, mixed>
+	 */
+	function mf_mail_mark_smtp_profile(array $mail, string $profileId): array
+	{
+		$profileId = ($profileId === 'robot') ? 'robot' : 'andrey';
+		$hdr = isset($mail['HEADER']) && is_array($mail['HEADER']) ? $mail['HEADER'] : [];
+		$hdr['X-MF-SMTP-Profile'] = $profileId;
+		$mail['HEADER'] = $hdr;
+
+		return $mail;
+	}
+}
+
+if (!function_exists('mf_mail_strip_internal_headers'))
+{
+	/**
+	 * @param array<string, mixed> $hdr
+	 *
+	 * @return array<string, mixed>
+	 */
+	function mf_mail_strip_internal_headers(array $hdr): array
+	{
+		foreach (array_keys($hdr) as $name)
+		{
+			if (strtolower((string)$name) === 'x-mf-smtp-profile')
+			{
+				unset($hdr[$name]);
+			}
+		}
+
+		return $hdr;
+	}
+}
+
+if (!function_exists('mf_mail_apply_smtp_profile'))
+{
+	/**
+	 * @param array<string, mixed> $mail
+	 *
+	 * @return array<string, mixed>
+	 */
+	function mf_mail_apply_smtp_profile(array $mail): array
+	{
+		$profileId = mf_mail_resolve_smtp_profile($mail);
+		mf_mail_set_active_smtp_profile($profileId);
+
+		$smtpFrom = mf_mail_profile_from($profileId);
+		$smtpHost = trim((string)getenv('MF_SMTP_HOST'));
+		if ($smtpHost !== '' && $smtpFrom !== '')
+		{
+			$h = isset($mail['HEADER']) && is_array($mail['HEADER']) ? $mail['HEADER'] : [];
+			foreach (array_keys($h) as $kn)
+			{
+				$l = strtolower((string)$kn);
+				if (in_array($l, ['sender', 'return-path', 'errors-to'], true))
+				{
+					unset($h[$kn]);
+				}
+			}
+			$h['From'] = $smtpFrom;
+			$h = mf_mail_strip_internal_headers($h);
+			$mail['HEADER'] = $h;
+		}
+		else
+		{
+			$hdr = isset($mail['HEADER']) && is_array($mail['HEADER']) ? $mail['HEADER'] : [];
+			$mail['HEADER'] = mf_mail_strip_internal_headers($hdr);
+		}
+
+		return $mail;
+	}
+}
+
 if (!function_exists('mf_mail_admin_inbox'))
 {
 	function mf_mail_admin_inbox(): string
 	{
-		foreach ([getenv('MF_ORDER_NOTIFY_EMAIL'), getenv('MF_SMTP_FROM')] as $raw)
+		foreach ([getenv('MF_ORDER_NOTIFY_EMAIL')] as $raw)
 		{
 			$t = trim((string)$raw);
 			if ($t !== '' && filter_var($t, FILTER_VALIDATE_EMAIL))
@@ -214,8 +463,10 @@ if (!function_exists('mf_mail_fixup_additional_headers_string'))
 		{
 			return $headers;
 		}
-		$smtpFrom = trim((string)getenv('MF_SMTP_FROM'));
 		$smtpHost = trim((string)getenv('MF_SMTP_HOST'));
+		$smtpFrom = function_exists('mf_mail_profile_from')
+			? mf_mail_profile_from(mf_mail_get_active_smtp_profile())
+			: trim((string)getenv('MF_SMTP_FROM_ANDREY'));
 		if ($smtpHost !== '' && $smtpFrom !== '' && filter_var($smtpFrom, FILTER_VALIDATE_EMAIL))
 		{
 			// Mail.ru: «From» в DATA должен совпадать с пользователем SMTP; иначе 550 (часто только на внешние домены, напр. Gmail).
@@ -391,24 +642,7 @@ if (!function_exists('mf_mail_sanitize_outgoing_params'))
 			unset($out['TRACK_READ'], $out['TRACK_CLICK']);
 		}
 
-		$smtpFrom = trim((string)getenv('MF_SMTP_FROM'));
-		$smtpHost = trim((string)getenv('MF_SMTP_HOST'));
-		if ($smtpHost !== '' && $smtpFrom !== '' && filter_var($smtpFrom, FILTER_VALIDATE_EMAIL))
-		{
-			$h = isset($out['HEADER']) && is_array($out['HEADER']) ? $out['HEADER'] : [];
-			foreach (array_keys($h) as $kn)
-			{
-				$l = strtolower((string)$kn);
-				if (in_array($l, ['sender', 'return-path', 'errors-to'], true))
-				{
-					unset($h[$kn]);
-				}
-			}
-			$h['From'] = $smtpFrom;
-			$out['HEADER'] = $h;
-		}
-
-		return $out;
+		return mf_mail_apply_smtp_profile($out);
 	}
 }
 
@@ -433,12 +667,33 @@ if (!function_exists('mf_mail_register_transport_handlers'))
 					return;
 				}
 				$cur = (string)($args->additional_parameters ?? '');
-				if ($cur === '')
+				$profileId = function_exists('mf_mail_get_active_smtp_profile')
+					? mf_mail_get_active_smtp_profile()
+					: 'andrey';
+				$from = function_exists('mf_mail_profile_from')
+					? mf_mail_profile_from($profileId)
+					: mf_mail_default_from_client();
+				$msmtpAccount = function_exists('mf_mail_smtp_msmtp_account')
+					? mf_mail_smtp_msmtp_account($profileId)
+					: 'andrey';
+				if ($from !== '')
 				{
-					$from = mf_mail_default_from();
+					$params = trim('-f' . $from . ' -a ' . $msmtpAccount);
+					if ($cur === '')
+					{
+						$args->additional_parameters = $params;
+					}
+					elseif (!str_contains($cur, '-a '))
+					{
+						$args->additional_parameters = trim($cur . ' ' . $params);
+					}
+				}
+				elseif ($cur === '' && function_exists('mf_mail_default_from_client'))
+				{
+					$from = mf_mail_default_from_client();
 					if ($from !== '')
 					{
-						$args->additional_parameters = '-f' . $from;
+						$args->additional_parameters = '-f' . $from . ' -a andrey';
 					}
 				}
 				if (isset($args->additional_headers))

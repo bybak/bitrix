@@ -143,7 +143,11 @@ if (!function_exists('mf_form_resolve_from'))
 	function mf_form_resolve_from(string $fallbackTo): string
 	{
 		$from = '';
-		if (function_exists('mf_mail_default_from'))
+		if (function_exists('mf_mail_default_from_admin'))
+		{
+			$from = trim((string)mf_mail_default_from_admin());
+		}
+		elseif (function_exists('mf_mail_default_from'))
 		{
 			$from = trim((string)mf_mail_default_from());
 		}
@@ -153,7 +157,7 @@ if (!function_exists('mf_form_resolve_from'))
 		}
 		if ($from === '' && function_exists('getenv'))
 		{
-			$from = trim((string)getenv('MF_SMTP_FROM'));
+			$from = trim((string)getenv('MF_SMTP_FROM_ROBOT'));
 		}
 		if ($from === '' || !filter_var($from, FILTER_VALIDATE_EMAIL))
 		{
@@ -322,7 +326,10 @@ if (!function_exists('mf_handle_static_form'))
 			$dataRows[] = [(string)$label, $value];
 		}
 
-		$header = ['From' => mf_form_resolve_from($recipient)];
+		$header = [
+			'From' => mf_form_resolve_from($recipient),
+			'X-MF-SMTP-Profile' => 'robot',
+		];
 		$replyTo = mf_form_find_reply_to_email($fields, $result['values']);
 		if ($replyTo !== '')
 		{
