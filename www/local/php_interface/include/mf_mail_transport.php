@@ -94,6 +94,64 @@ if (!function_exists('mf_mail_default_from_client'))
 	}
 }
 
+if (!function_exists('mf_mail_from_display_name'))
+{
+	function mf_mail_from_display_name(): string
+	{
+		$name = trim((string)getenv('MF_SMTP_FROM_NAME'));
+
+		return $name !== '' ? $name : 'Motor-Force.ru';
+	}
+}
+
+if (!function_exists('mf_mail_from_email_only'))
+{
+	function mf_mail_from_email_only(string $fromHeader): string
+	{
+		$fromHeader = trim($fromHeader);
+		if ($fromHeader === '')
+		{
+			return '';
+		}
+		if (preg_match('/<([^>]+@[^>]+)>/', $fromHeader, $m))
+		{
+			return trim((string)$m[1]);
+		}
+
+		return $fromHeader;
+	}
+}
+
+if (!function_exists('mf_mail_format_from'))
+{
+	function mf_mail_format_from(string $email, ?string $displayName = null): string
+	{
+		$email = trim($email);
+		if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL))
+		{
+			return '';
+		}
+		$displayName = trim((string)($displayName ?? mf_mail_from_display_name()));
+		if ($displayName === '')
+		{
+			return $email;
+		}
+		$displayName = preg_replace('/[\r\n"]/', '', $displayName) ?? $displayName;
+
+		return $displayName . ' <' . $email . '>';
+	}
+}
+
+if (!function_exists('mf_mail_default_from_client_header'))
+{
+	function mf_mail_default_from_client_header(): string
+	{
+		$email = mf_mail_default_from_client();
+
+		return $email !== '' ? mf_mail_format_from($email) : '';
+	}
+}
+
 if (!function_exists('mf_mail_default_from_admin'))
 {
 	/** From для писем администратору (robot@). */
@@ -397,7 +455,10 @@ if (!function_exists('mf_mail_apply_smtp_profile'))
 					unset($h[$kn]);
 				}
 			}
-			$h['From'] = $smtpFrom;
+			$fromHeader = function_exists('mf_mail_format_from')
+				? mf_mail_format_from($smtpFrom)
+				: $smtpFrom;
+			$h['From'] = $fromHeader !== '' ? $fromHeader : $smtpFrom;
 			if ($profileId === 'andrey')
 			{
 				$h['Reply-To'] = $smtpFrom;
@@ -618,10 +679,13 @@ if (!function_exists('mf_mail_fixup_additional_headers_string'))
 		$smtpFrom = function_exists('mf_mail_profile_from')
 			? mf_mail_profile_from($profileId)
 			: trim((string)getenv('MF_SMTP_FROM_ANDREY'));
-		if ($smtpHost !== '' && $smtpFrom !== '' && filter_var($smtpFrom, FILTER_VALIDATE_EMAIL))
+		if ($smtpHost !== '' && $smtpFrom !== '' && filter_var(mf_mail_from_email_only($smtpFrom), FILTER_VALIDATE_EMAIL))
 		{
+			$fromHeader = function_exists('mf_mail_format_from')
+				? mf_mail_format_from($smtpFrom)
+				: $smtpFrom;
 			// Mail.ru: «From» в DATA должен совпадать с пользователем SMTP; иначе 550 (часто только на внешние домены, напр. Gmail).
-			$headers = preg_replace('~^From:\s*[^\r\n]+~mi', 'From: ' . $smtpFrom, $headers, 1) ?? $headers;
+			$headers = preg_replace('~^From:\s*[^\r\n]+~mi', 'From: ' . $fromHeader, $headers, 1) ?? $headers;
 			$headers = preg_replace('~^(?i)(Sender|Return-Path|Errors-To):\s*[^\r\n]+\R?~m', '', $headers) ?? $headers;
 		}
 		$headers = preg_replace('~^X-Priority:\s*3\s*\([^)]*\)\s*(\R|$)~mi', 'X-Priority: 3$1', $headers) ?? $headers;
@@ -829,12 +893,15 @@ if (!function_exists('mf_mail_register_transport_handlers'))
 				$from = function_exists('mf_mail_profile_from')
 					? mf_mail_profile_from($profileId)
 					: mf_mail_default_from_client();
+				$fromEmail = function_exists('mf_mail_from_email_only')
+					? mf_mail_from_email_only($from)
+					: $from;
 				$msmtpAccount = function_exists('mf_mail_smtp_msmtp_account')
 					? mf_mail_smtp_msmtp_account($profileId)
 					: 'andrey';
-				if ($from !== '')
+				if ($fromEmail !== '')
 				{
-					$args->additional_parameters = '-f' . $from . ' -a ' . $msmtpAccount;
+					$args->additional_parameters = '-f' . $fromEmail . ' -a ' . $msmtpAccount;
 				}
 				if (isset($args->additional_headers))
 				{

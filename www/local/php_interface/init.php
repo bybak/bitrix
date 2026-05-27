@@ -3812,6 +3812,12 @@ if (is_file($mfCatalogVisibilityInclude))
 	}
 }
 
+$mfCatalogSortInclude = __DIR__ . '/include/mf_catalog_sort.php';
+if (is_file($mfCatalogSortInclude))
+{
+	require_once $mfCatalogSortInclude;
+}
+
 // --- External price CSV (admin + weight surcharge helpers) -----------------
 $mfExtPriceLib = __DIR__ . '/include/mf_external_price_lib.php';
 if (is_file($mfExtPriceLib))

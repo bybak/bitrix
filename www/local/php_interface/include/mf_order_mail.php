@@ -13,7 +13,7 @@ use Bitrix\Sale\Shipment;
 final class Bootstrap
 {
 	private static bool $inited = false;
-	private const MAIL_TEMPLATES_VERSION = '2';
+	private const MAIL_TEMPLATES_VERSION = '3';
 
 	public static function init(): void
 	{
@@ -57,7 +57,7 @@ final class Bootstrap
 
 		$templates = [
 			'SALE_NEW_ORDER' => [
-				'SUBJECT' => 'Заказ: №#MF_ORDER_DISPLAY#',
+				'SUBJECT' => 'Заказ: #MF_ORDER_DISPLAY# на motor-force.ru',
 				'MESSAGE' => '#MF_ORDER_MAIL_BODY#',
 			],
 			'SALE_STATUS_CHANGED_N' => [
@@ -175,7 +175,9 @@ final class Handlers
 		if ($clientFrom !== '')
 		{
 			$fields['SALE_EMAIL'] = $clientFrom;
-			$fields['=From'] = $clientFrom;
+			$fields['=From'] = function_exists('mf_mail_default_from_client_header')
+				? mf_mail_default_from_client_header()
+				: $clientFrom;
 			$fields['=Reply-To'] = $clientFrom;
 			$fields['=X-MF-SMTP-Profile'] = 'andrey';
 		}
@@ -445,7 +447,7 @@ final class Renderer
 			'<table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;">'
 			. '<tr style="background:' . self::COLOR_HEAD_BG . ';font-weight:bold;">'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Склад</td>'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';width:170px;">Доставка</td>'
+			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';width:210px;">Доставка</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Наименование</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Бренд</td>'
 			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:center;width:90px;">Количество</td>'
@@ -1305,6 +1307,10 @@ final class Renderer
 
 	private static function basketItemDeliverySpbHtml(int $storeId, int $productId): string
 	{
+		if (function_exists('mf_store_delivery_email_cell_html'))
+		{
+			return mf_store_delivery_email_cell_html($storeId, $productId);
+		}
 		if (function_exists('mf_store_delivery_spb_email_html'))
 		{
 			return mf_store_delivery_spb_email_html($storeId, $productId);

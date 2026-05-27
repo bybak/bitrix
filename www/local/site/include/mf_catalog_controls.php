@@ -67,7 +67,7 @@ $buildUrl = function(array $add) use ($basePath, $qs): string
 };
 
 $sortOptions = [
-	'default' => 'Без сортировки',
+	'default' => 'По умолчанию',
 	'name_asc' => 'По названию (А‑Я)',
 	'name_desc' => 'По названию (Я‑А)',
 	'price_asc' => 'По цене (сначала дешевле)',

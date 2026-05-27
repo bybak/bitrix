@@ -125,7 +125,7 @@ final class Handlers
 
 		$display = Renderer::orderDisplayNumber($order);
 		$body = Renderer::renderAdminNewOrder($order);
-		$subject = self::sanitizeSubject('Заказ: №' . $display);
+		$subject = self::sanitizeSubject('Заказ: ' . $display . ' на motor-force.ru');
 
 		$header = ['From' => $from, 'X-MF-SMTP-Profile' => 'robot'];
 		$customerEmail = self::customerEmail($order);

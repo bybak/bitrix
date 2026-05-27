@@ -232,6 +232,9 @@ $arParams = array(
 
 	// Hide redirect-elements from lists
 	"FILTER_NAME" => "mfCatalogFilter",
+
+	// Режим сортировки для result_modifier (наличие / цена / имя)
+	"MF_SORT_MODE" => $mfSort,
     
     // SEO
     "SET_TITLE" => "Y",

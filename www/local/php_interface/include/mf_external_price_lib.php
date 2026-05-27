@@ -1513,6 +1513,31 @@ if (!function_exists('mf_store_delivery_spb_email_html'))
 	}
 }
 
+if (!function_exists('mf_store_delivery_email_cell_html'))
+{
+	/**
+	 * Колонка «Доставка» в письмах: индикатор СПБ + срок доставки по складу.
+	 */
+	function mf_store_delivery_email_cell_html(int $storeId, int $productId = 0): string
+	{
+		$html = mf_store_delivery_spb_email_html($storeId, $productId);
+		$term = '';
+		if ($storeId > 0 && function_exists('mf_store_delivery_term'))
+		{
+			$term = trim((string)mf_store_delivery_term($storeId));
+		}
+		if ($term !== '' && $term !== '—')
+		{
+			$html .= '<div style="margin-top:6px;font-size:12px;line-height:1.45;color:#555;">'
+				. '<span style="color:#888;">Сроки доставки:</span> '
+				. htmlspecialcharsbx($term)
+				. '</div>';
+		}
+
+		return $html;
+	}
+}
+
 if (!function_exists('mf_page_is_product_detail'))
 {
 	function mf_page_is_product_detail(): bool
