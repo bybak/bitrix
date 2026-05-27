@@ -113,6 +113,10 @@ if ($isPersonal)
 		'<link rel="stylesheet" href="' . htmlspecialcharsbx($mfAssetVer(SITE_TEMPLATE_PATH . '/mf-personal.css')) . '">',
 		true
 	);
+	$APPLICATION->AddHeadString(
+		'<link rel="stylesheet" href="' . htmlspecialcharsbx($mfAssetVer(SITE_TEMPLATE_PATH . '/mf-auth.css')) . '">',
+		true
+	);
 }
 if ($isAuth || $isLogin)
 {

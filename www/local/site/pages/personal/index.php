@@ -10,8 +10,9 @@ $mfClientType = 'Не указан';
 $mfDiscountPercent = 0;
 $mfDiscountSize = '0%';
 $mfUserSystemId = '—';
+$mfIsAuthorized = is_object($USER) && $USER->IsAuthorized();
 
-if (is_object($USER) && $USER->IsAuthorized())
+if ($mfIsAuthorized)
 {
 	$userId = (int)$USER->GetID();
 
@@ -84,11 +85,16 @@ if (is_object($USER) && $USER->IsAuthorized())
 			<div class="mf-personal-actions">
 				<a class="mf-personal-action mf-personal-action_primary" href="/personal/orders/">Мои заказы</a>
 				<a class="mf-personal-action" href="/personal/cart/">Корзина</a>
+				<?php if ($mfIsAuthorized): ?>
 				<a class="mf-personal-action" href="/?logout=yes&<?=bitrix_sessid_get()?>">Выйти</a>
+				<?php else: ?>
+				<a class="mf-personal-action" href="/login/?backurl=<?=rawurlencode('/personal/orders/')?>">Войти</a>
+				<?php endif; ?>
 			</div>
 		</div>
 	</section>
 
+	<?php if ($mfIsAuthorized): ?>
 	<section class="mf-personal-summary">
 		<div class="mf-personal-summary-card">
 			<div class="mf-personal-summary-label">Статус клиента</div>
@@ -109,6 +115,7 @@ if (is_object($USER) && $USER->IsAuthorized())
 			<div class="mf-personal-summary-value"><?=htmlspecialcharsbx($mfUserSystemId)?></div>
 		</div>
 	</section>
+	<?php endif; ?>
 
 	<section class="mf-personal-body">
 <?$APPLICATION->IncludeComponent(

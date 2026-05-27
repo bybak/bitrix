@@ -147,6 +147,59 @@ if (!function_exists('mf_checkout_invoice_pay_system_ids'))
 	}
 }
 
+if (!function_exists('mf_checkout_should_hide_order_online_pay_ui'))
+{
+	/**
+	 * Юрлицо + безнал (выставление счёта): в ЛК не показываем «Оплатить» / «назад».
+	 */
+	function mf_checkout_should_hide_order_online_pay_ui(int $personTypeId, array $payment): bool
+	{
+		if ($personTypeId <= 0)
+		{
+			return false;
+		}
+
+		$personTypes = mf_checkout_person_type_map();
+		$jurPersonTypeId = (int)($personTypes['jur'] ?? 0);
+		if ($jurPersonTypeId <= 0 || $personTypeId !== $jurPersonTypeId)
+		{
+			return false;
+		}
+
+		$paySystemId = (int)($payment['PAY_SYSTEM_ID'] ?? 0);
+		if ($paySystemId > 0)
+		{
+			$invoiceIds = mf_checkout_invoice_pay_system_ids();
+			if (in_array($paySystemId, $invoiceIds, true))
+			{
+				return true;
+			}
+		}
+
+		$actionFile = mb_strtolower(trim((string)($payment['ACTION_FILE'] ?? '')));
+		if ($actionFile === 'bill')
+		{
+			return true;
+		}
+
+		$paySystemName = mb_strtolower(trim((string)($payment['PAY_SYSTEM_NAME'] ?? '')));
+		if (
+			$paySystemName !== ''
+			&& (
+				mb_strpos($paySystemName, 'безнал') !== false
+				|| mb_strpos($paySystemName, 'счёт') !== false
+				|| mb_strpos($paySystemName, 'счет') !== false
+				|| mb_strpos($paySystemName, 'выставлен') !== false
+			)
+		)
+		{
+			return true;
+		}
+
+		return false;
+	}
+}
+
 if (!function_exists('mf_checkout_apply_pay_system_filter'))
 {
 	function mf_checkout_apply_pay_system_filter(array &$paySystems, array $allowedIds): void

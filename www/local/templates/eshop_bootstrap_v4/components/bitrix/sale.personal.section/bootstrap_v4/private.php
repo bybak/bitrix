@@ -81,20 +81,16 @@ if (!$USER->IsAuthorized() || $arResult['SHOW_LOGIN_FORM'] === 'Y')
 	}
 
 	?>
-	<div class="row">
+	<div class="mf-personal-auth-gate">
 		<?
 		if ($arParams['USE_PRIVATE_PAGE_TO_AUTH'] !== 'Y')
 		{
 			?>
-			<div class="col-md-8 offset-md-2 col-lg-6 offset-lg-3">
-				<div class="alert alert-danger"><?=GetMessage("SPS_ACCESS_DENIED")?></div>
-			</div>
+			<div class="alert alert-info mf-auth-alert"><?=GetMessage("SPS_ACCESS_DENIED")?></div>
 			<?
 		}
 		?>
-		<div class="col-md-8 offset-md-2 col-lg-6 offset-lg-3">
-			<?=$authForm?>
-		</div>
+		<?=$authForm?>
 	</div>
 	<?
 }
