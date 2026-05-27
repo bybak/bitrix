@@ -50,6 +50,7 @@ if (!function_exists('mf_catalog_listing_sort_meta'))
 	 */
 	function mf_catalog_listing_sort_meta(int $productId, array $item = []): array
 	{
+		$inStock = mf_catalog_listing_in_stock($productId);
 		$hasPrice = mf_catalog_listing_has_display_price($productId);
 		$price = PHP_FLOAT_MAX;
 		if ($hasPrice && function_exists('mf_catalog_listing_display_price'))
@@ -62,7 +63,7 @@ if (!function_exists('mf_catalog_listing_sort_meta'))
 		}
 
 		return [
-			'in_stock' => mf_catalog_listing_in_stock($productId),
+			'in_stock' => $inStock,
 			'has_price' => $hasPrice,
 			'price' => $price,
 			'name' => trim((string)($item['NAME'] ?? '')),
@@ -84,33 +85,26 @@ if (!function_exists('mf_catalog_listing_compare_items'))
 		$metaA = mf_catalog_listing_sort_meta($pidA, $a);
 		$metaB = mf_catalog_listing_sort_meta($pidB, $b);
 
+		// 1) В наличии, затем «Под заказ» — для любого режима сортировки.
 		if ($metaA['in_stock'] !== $metaB['in_stock'])
 		{
 			return $metaA['in_stock'] ? -1 : 1;
 		}
 
-		if ($metaA['has_price'] !== $metaB['has_price'])
-		{
-			return $metaA['has_price'] ? -1 : 1;
-		}
-
 		switch ($mode)
 		{
 			case 'price_asc':
-				if ($metaA['has_price'] && $metaB['has_price'])
-				{
-					$cmp = $metaA['price'] <=> $metaB['price'];
-					if ($cmp !== 0)
-					{
-						return $cmp;
-					}
-				}
-				break;
-
 			case 'price_desc':
+				// 2) Внутри группы: сначала с ценой, «Запросить цену» — в конце группы.
+				if ($metaA['has_price'] !== $metaB['has_price'])
+				{
+					return $metaA['has_price'] ? -1 : 1;
+				}
 				if ($metaA['has_price'] && $metaB['has_price'])
 				{
-					$cmp = $metaB['price'] <=> $metaA['price'];
+					$cmp = $mode === 'price_desc'
+						? ($metaB['price'] <=> $metaA['price'])
+						: ($metaA['price'] <=> $metaB['price']);
 					if ($cmp !== 0)
 					{
 						return $cmp;
@@ -168,6 +162,23 @@ if (!function_exists('mf_catalog_sort_section_items'))
 		if (!in_array($mode, ['default', 'name_asc', 'name_desc', 'price_asc', 'price_desc'], true))
 		{
 			$mode = 'default';
+		}
+
+		if (function_exists('mf_catalog_warm_products'))
+		{
+			$ids = [];
+			foreach ($items as $item)
+			{
+				$id = (int)($item['ID'] ?? 0);
+				if ($id > 0)
+				{
+					$ids[] = $id;
+				}
+			}
+			if ($ids !== [])
+			{
+				mf_catalog_warm_products($ids);
+			}
 		}
 
 		usort(

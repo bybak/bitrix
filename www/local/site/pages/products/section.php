@@ -235,6 +235,7 @@ $arParams = array(
 
 	// Режим сортировки для result_modifier (наличие / цена / имя)
 	"MF_SORT_MODE" => $mfSort,
+	"MF_CATALOG_SORT_VERSION" => "2",
     
     // SEO
     "SET_TITLE" => "Y",

@@ -455,7 +455,7 @@ if (!function_exists('mf_mail_apply_smtp_profile'))
 					unset($h[$kn]);
 				}
 			}
-			$fromHeader = function_exists('mf_mail_format_from')
+			$fromHeader = ($profileId === 'andrey' && function_exists('mf_mail_format_from'))
 				? mf_mail_format_from($smtpFrom)
 				: $smtpFrom;
 			$h['From'] = $fromHeader !== '' ? $fromHeader : $smtpFrom;
@@ -681,7 +681,7 @@ if (!function_exists('mf_mail_fixup_additional_headers_string'))
 			: trim((string)getenv('MF_SMTP_FROM_ANDREY'));
 		if ($smtpHost !== '' && $smtpFrom !== '' && filter_var(mf_mail_from_email_only($smtpFrom), FILTER_VALIDATE_EMAIL))
 		{
-			$fromHeader = function_exists('mf_mail_format_from')
+			$fromHeader = ($profileId === 'andrey' && function_exists('mf_mail_format_from'))
 				? mf_mail_format_from($smtpFrom)
 				: $smtpFrom;
 			// Mail.ru: «From» в DATA должен совпадать с пользователем SMTP; иначе 550 (часто только на внешние домены, напр. Gmail).
