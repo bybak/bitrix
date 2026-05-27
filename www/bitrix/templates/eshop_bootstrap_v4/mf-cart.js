@@ -66,9 +66,9 @@
 
       var hn = (window.location && window.location.hostname ? String(window.location.hostname).toLowerCase() : '');
       var isLocal = hn === 'localhost' || hn === '127.0.0.1' || /\.local$/.test(hn) || /\.test$/.test(hn);
-      var base = isLocal
-        ? '/mf-img'
-        : (window.location && window.location.protocol === 'https:' ? 'https://' : 'http://') + 'img-motor-force.ru';
+      var isHttps = !!(window.location && window.location.protocol === 'https:');
+      // На HTTPS проксируем через /mf-img (валидный SSL основного домена).
+      var base = isLocal || isHttps ? '/mf-img' : 'http://img-motor-force.ru';
       var target = base + '/products/' + code + '/0001.jpg';
       if (cur !== target) {
         img.setAttribute('src', target);
