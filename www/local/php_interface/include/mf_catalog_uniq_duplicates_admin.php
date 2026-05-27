@@ -76,7 +76,7 @@ $lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 $curAdminPage = (string)$APPLICATION->GetCurPage();
 $baseQs = $curAdminPage . '?lang=' . rawurlencode($lang);
 
-$perPage = max(5, min(100, (int)($_REQUEST['per_page'] ?? 20)));
+$perPage = max(5, min(500, (int)($_REQUEST['per_page'] ?? 20)));
 $page = max(1, (int)($_REQUEST['page'] ?? 1));
 $activeOnly = (string)($_REQUEST['active_only'] ?? 'Y') !== 'N';
 $includeRedirect = (string)($_REQUEST['include_redirect'] ?? '') === 'Y';
@@ -295,7 +295,7 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 	</label>
 	<label>На странице
 		<select name="per_page">
-			<?php foreach ([10, 20, 50, 100] as $n): ?>
+			<?php foreach ([10, 20, 50, 100, 200, 500] as $n): ?>
 				<option value="<?= $n ?>"<?= $perPage === $n ? ' selected' : '' ?>><?= $n ?></option>
 			<?php endforeach; ?>
 		</select>
