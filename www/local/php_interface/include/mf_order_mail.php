@@ -260,6 +260,7 @@ final class Renderer
 	private const COLOR_BORDER = '#dddddd';
 	private const COLOR_HEAD_BG = '#f3f3f3';
 	private const COLOR_TOTAL_BG = '#fff8dc';
+	private const DELIVERY_PRELIMINARY_NOTE = 'Стоимость доставки предварительная. Точная сумма будет рассчитана после упаковки заказа и оплачивается при получении.';
 
 	public static function orderDisplayNumber(Order $order): string
 	{
@@ -491,6 +492,7 @@ final class Renderer
 		}
 
 		$deliveryName = self::deliveryLabel($order);
+		$deliveryCellHtml = self::deliveryMailCellHtml($order);
 		$confirm = self::prop($props, 'MF_CONFIRM_CHANNEL');
 		$comment = trim((string)$order->getField('USER_DESCRIPTION'));
 		$statusName = self::orderStatusLabel($order);
@@ -526,10 +528,17 @@ final class Renderer
 			{
 				continue;
 			}
-			$valueHtml = self::esc($value);
-			if ($label === 'E-mail')
+			if ($label === 'Способ доставки' && $deliveryCellHtml !== '')
+			{
+				$valueHtml = $deliveryCellHtml;
+			}
+			elseif ($label === 'E-mail')
 			{
 				$valueHtml = '<a href="mailto:' . self::esc($value) . '" style="color:' . self::COLOR_LINK . ';">' . self::esc($value) . '</a>';
+			}
+			else
+			{
+				$valueHtml = self::esc($value);
 			}
 			$body .= '<tr>'
 				. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';width:45%;color:#555;vertical-align:top;">'
@@ -1009,10 +1018,10 @@ final class Renderer
 
 	private static function deliveryLabel(Order $order): string
 	{
-		$edost = self::parseEdostDelivery((string)$order->getField('COMMENTS'));
-		if ($edost !== '')
+		$parsed = self::parseEdostDeliveryData((string)$order->getField('COMMENTS'));
+		if ($parsed !== null)
 		{
-			return $edost;
+			return (string)$parsed['label'];
 		}
 
 		$name = '';
@@ -1039,6 +1048,127 @@ final class Renderer
 		}
 
 		return $name;
+	}
+
+	private static function deliveryMailCellHtml(Order $order): string
+	{
+		$parsed = self::parseEdostDeliveryData((string)$order->getField('COMMENTS'));
+		if ($parsed === null)
+		{
+			return '';
+		}
+
+		$html = self::esc((string)$parsed['label']);
+		if (!empty($parsed['show_note']))
+		{
+			$html .= '<br><span style="display:inline-block;margin-top:8px;padding:8px 10px;border-radius:6px;background:#fef3c7;border:1px solid #f59e0b;color:#b45309;font-size:13px;line-height:1.45;">'
+				. self::esc(self::DELIVERY_PRELIMINARY_NOTE)
+				. '</span>';
+		}
+
+		return $html;
+	}
+
+	/**
+	 * @return array{label: string, tarif_id: string, show_note: bool}|null
+	 */
+	private static function parseEdostDeliveryData(string $comments): ?array
+	{
+		$comments = trim($comments);
+		if ($comments === '')
+		{
+			return null;
+		}
+
+		if (preg_match(
+			'~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*(?:([0-9]+(?:[.,][0-9]+)?)\s*₽|оплата при получении)(?:\s*(\([0-9]+(?:–[0-9]+)?\s*дн\.\)))?\s*\(tarif_id=([^)]+)\)~mu',
+			$comments,
+			$m
+		))
+		{
+			$company = trim((string)$m[1]);
+			$tariff = trim((string)$m[2]);
+			$priceRaw = trim((string)($m[3] ?? ''));
+			$daysSuffix = trim((string)($m[4] ?? ''));
+			$tarifId = trim((string)($m[5] ?? ''));
+
+			if ($tarifId === 'pickup' || mb_strtolower($company) === 'самовывоз')
+			{
+				$label = $tariff !== '' ? ('Самовывоз — ' . $tariff) : 'Самовывоз';
+			}
+			elseif ($tarifId === 'custom' || mb_strtolower($company) === 'свой вариант')
+			{
+				$label = $tariff !== '' ? $tariff : 'Свой вариант';
+			}
+			else
+			{
+				$label = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
+			}
+
+			if ($priceRaw !== '')
+			{
+				$label .= ' — ' . str_replace('.', ',', $priceRaw) . ' ₽';
+			}
+			if ($daysSuffix !== '')
+			{
+				$label .= ' ' . $daysSuffix;
+			}
+
+			$showNote = !self::isPickupTarifId($tarifId, $company);
+
+			return [
+				'label' => $label,
+				'tarif_id' => $tarifId,
+				'show_note' => $showNote,
+			];
+		}
+
+		if (preg_match(
+			'~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*([0-9]+(?:[.,][0-9]+)?)\s*₽(?:\s*(\([0-9]+(?:–[0-9]+)?\s*дн\.\)))?~u',
+			$comments,
+			$m
+		))
+		{
+			$company = trim((string)$m[1]);
+			$tariff = trim((string)$m[2]);
+			$price = str_replace('.', ',', (string)$m[3]);
+			$daysSuffix = trim((string)($m[4] ?? ''));
+			$label = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
+			$label .= ' — ' . $price . ' ₽';
+			if ($daysSuffix !== '')
+			{
+				$label .= ' ' . $daysSuffix;
+			}
+
+			return [
+				'label' => $label,
+				'tarif_id' => '',
+				'show_note' => !self::isPickupTarifId('', $company),
+			];
+		}
+
+		return null;
+	}
+
+	private static function isPickupTarifId(string $tarifId, string $company = ''): bool
+	{
+		if ($tarifId === 'pickup')
+		{
+			return true;
+		}
+		if (function_exists('mf_checkout_is_pickup_tariff'))
+		{
+			return mf_checkout_is_pickup_tariff($tarifId, $company);
+		}
+
+		return mb_strtolower(trim($company)) === 'самовывоз';
+	}
+
+	private static function parseEdostDelivery(string $comments): string
+	{
+		$parsed = self::parseEdostDeliveryData($comments);
+
+		return $parsed !== null ? (string)$parsed['label'] : '';
 	}
 
 	private static function isTechnicalDeliveryName(string $name): bool
@@ -1070,59 +1200,6 @@ final class Renderer
 					return $name;
 				}
 			}
-		}
-
-		return '';
-	}
-
-	private static function parseEdostDelivery(string $comments): string
-	{
-		$comments = trim($comments);
-		if ($comments === '')
-		{
-			return '';
-		}
-
-		if (preg_match(
-			'~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*(?:([0-9]+(?:[.,][0-9]+)?)\s*₽|оплата при получении)\s*\(tarif_id=([^)]+)\)~mu',
-			$comments,
-			$m
-		))
-		{
-			$company = trim((string)$m[1]);
-			$tariff = trim((string)$m[2]);
-			$priceRaw = trim((string)($m[3] ?? ''));
-			$tarifId = trim((string)($m[4] ?? ''));
-
-			if ($tarifId === 'pickup' || mb_strtolower($company) === 'самовывоз')
-			{
-				$label = $tariff !== '' ? ('Самовывоз — ' . $tariff) : 'Самовывоз';
-			}
-			elseif ($tarifId === 'custom' || mb_strtolower($company) === 'свой вариант')
-			{
-				$label = $tariff !== '' ? $tariff : 'Свой вариант';
-			}
-			else
-			{
-				$label = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
-			}
-
-			if ($priceRaw !== '')
-			{
-				$label .= ' — ' . str_replace('.', ',', $priceRaw) . ' ₽';
-			}
-
-			return $label;
-		}
-
-		if (preg_match('~Доставка \(eDost[^:]*:\s*(.+?)\s*—\s*(.+?)\s*—\s*([0-9]+(?:[.,][0-9]+)?)\s*₽~u', $comments, $m))
-		{
-			$company = trim((string)$m[1]);
-			$tariff = trim((string)$m[2]);
-			$price = str_replace('.', ',', (string)$m[3]);
-			$label = $company !== '' ? ($company . ' — ' . $tariff) : $tariff;
-
-			return $label . ' — ' . $price . ' ₽';
 		}
 
 		return '';

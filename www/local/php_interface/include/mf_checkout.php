@@ -1625,6 +1625,237 @@ if (!function_exists('mf_checkout_order_prop_scalar'))
 	}
 }
 
+if (!function_exists('mf_checkout_apply_mf_delivery_post_to_user_result'))
+{
+	/**
+	 * Подставляет адрес доставки из скрытых MF_DELIVERY_* (надёжнее ORDER_PROP после AJAX-перерисовки).
+	 */
+	function mf_checkout_apply_mf_delivery_post_to_user_result(array &$arUserResult, $request, int $personTypeId): void
+	{
+		if ($personTypeId <= 0 || !isset($arUserResult['ORDER_PROP']) || !is_array($arUserResult['ORDER_PROP']))
+		{
+			return;
+		}
+		if (!is_object($request) || !method_exists($request, 'getPost'))
+		{
+			return;
+		}
+		if (!class_exists('CSaleOrderProps'))
+		{
+			return;
+		}
+
+		$map = [
+			'MF_DELIVERY_LOCATION_TEXT' => 'DELIVERY_LOCATION_TEXT',
+			'MF_DELIVERY_ADDRESS' => 'DELIVERY_ADDRESS',
+			'MF_DELIVERY_ZIP' => 'DELIVERY_ZIP',
+		];
+
+		$propIds = mf_checkout_order_prop_ids_by_code(
+			$personTypeId,
+			['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP']
+		);
+
+		foreach ($map as $postKey => $code)
+		{
+			$val = '';
+			if ($request->getPost($postKey) !== null)
+			{
+				$val = trim((string)$request->getPost($postKey));
+			}
+			$propId = (int)($propIds[$code] ?? 0);
+			if ($val === '' && $propId > 0 && $request->getPost('ORDER_PROP_' . $propId) !== null)
+			{
+				$val = trim((string)$request->getPost('ORDER_PROP_' . $propId));
+			}
+			if ($val === '')
+			{
+				continue;
+			}
+			if ($code === 'DELIVERY_ZIP' && !preg_match('/^\d{5,6}$/u', $val))
+			{
+				continue;
+			}
+
+			if ($propId <= 0)
+			{
+				$row = \CSaleOrderProps::GetList(
+					[],
+					['PERSON_TYPE_ID' => $personTypeId, 'CODE' => $code],
+					false,
+					false,
+					['ID']
+				)->Fetch();
+				if (!is_array($row))
+				{
+					continue;
+				}
+				$propId = (int)($row['ID'] ?? 0);
+			}
+			if ($propId <= 0)
+			{
+				continue;
+			}
+			$arUserResult['ORDER_PROP'][$propId] = $val;
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_apply_mf_delivery_post_to_order'))
+{
+	function mf_checkout_apply_mf_delivery_post_to_order(\Bitrix\Sale\PropertyValueCollection $propCollection, $request): void
+	{
+		if (!is_object($request) || !method_exists($request, 'getPost'))
+		{
+			return;
+		}
+
+		$map = [
+			'MF_DELIVERY_LOCATION_TEXT' => 'DELIVERY_LOCATION_TEXT',
+			'MF_DELIVERY_ADDRESS' => 'DELIVERY_ADDRESS',
+			'MF_DELIVERY_ZIP' => 'DELIVERY_ZIP',
+		];
+
+		$personTypeId = (int)$request->getPost('PERSON_TYPE');
+		if ($personTypeId <= 0)
+		{
+			foreach ($propCollection as $propValue)
+			{
+				if (!is_object($propValue) || !method_exists($propValue, 'getProperty'))
+				{
+					continue;
+				}
+				$prop = $propValue->getProperty();
+				if ($prop && method_exists($prop, 'getPersonTypeId'))
+				{
+					$personTypeId = (int)$prop->getPersonTypeId();
+					if ($personTypeId > 0)
+					{
+						break;
+					}
+				}
+			}
+		}
+		$propIds = $personTypeId > 0
+			? mf_checkout_order_prop_ids_by_code($personTypeId, ['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP'])
+			: [];
+
+		foreach ($map as $postKey => $code)
+		{
+			$val = '';
+			if ($request->getPost($postKey) !== null)
+			{
+				$val = trim((string)$request->getPost($postKey));
+			}
+			$propId = (int)($propIds[$code] ?? 0);
+			if ($val === '' && $propId > 0 && $request->getPost('ORDER_PROP_' . $propId) !== null)
+			{
+				$val = trim((string)$request->getPost('ORDER_PROP_' . $propId));
+			}
+			if ($val === '')
+			{
+				continue;
+			}
+			if ($code === 'DELIVERY_ZIP' && !preg_match('/^\d{5,6}$/u', $val))
+			{
+				continue;
+			}
+
+			$p = mf_sale_order_prop_value_by_code($propCollection, $code);
+			if ($p && method_exists($p, 'setValue'))
+			{
+				$p->setValue($val);
+			}
+		}
+	}
+}
+
+if (!function_exists('mf_checkout_get_profile_delivery_fields'))
+{
+	function mf_checkout_get_profile_delivery_fields(int $personTypeId, int $profileId): array
+	{
+		$out = [
+			'DELIVERY_LOCATION_TEXT' => '',
+			'DELIVERY_ADDRESS' => '',
+			'DELIVERY_ZIP' => '',
+		];
+		if ($personTypeId <= 0 || $profileId <= 0)
+		{
+			return $out;
+		}
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return $out;
+		}
+		if (!class_exists(\Bitrix\Sale\OrderUserProperties::class))
+		{
+			return $out;
+		}
+
+		$propIds = mf_checkout_order_prop_ids_by_code(
+			$personTypeId,
+			['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP']
+		);
+		$profileValues = \Bitrix\Sale\OrderUserProperties::getProfileValues($profileId);
+		if (!is_array($profileValues))
+		{
+			return $out;
+		}
+
+		foreach ($propIds as $code => $pid)
+		{
+			$val = trim((string)($profileValues[$pid] ?? ''));
+			if ($val === '')
+			{
+				continue;
+			}
+			if ($code === 'DELIVERY_ZIP' && !preg_match('/^\d{5,6}$/u', $val))
+			{
+				continue;
+			}
+			$out[$code] = $val;
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_checkout_restore_delivery_fields_from_profile'))
+{
+	function mf_checkout_restore_delivery_fields_from_profile(array &$arUserResult, int $personTypeId, int $profileId): void
+	{
+		if ($personTypeId <= 0 || $profileId <= 0 || !isset($arUserResult['ORDER_PROP']) || !is_array($arUserResult['ORDER_PROP']))
+		{
+			return;
+		}
+
+		$fromProfile = mf_checkout_get_profile_delivery_fields($personTypeId, $profileId);
+		$propIds = mf_checkout_order_prop_ids_by_code(
+			$personTypeId,
+			['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP']
+		);
+
+		foreach ($propIds as $code => $pid)
+		{
+			if ($pid <= 0)
+			{
+				continue;
+			}
+			$cur = trim((string)mf_checkout_order_prop_scalar($arUserResult, $pid));
+			if ($cur !== '')
+			{
+				continue;
+			}
+			$val = trim((string)($fromProfile[$code] ?? ''));
+			if ($val === '')
+			{
+				continue;
+			}
+			$arUserResult['ORDER_PROP'][$pid] = $val;
+		}
+	}
+}
+
 if (!function_exists('mf_checkout_on_order_properties'))
 {
 	/**
@@ -1646,6 +1877,18 @@ if (!function_exists('mf_checkout_on_order_properties'))
 			return;
 		}
 
+		$personTypeId = (int)($arUserResult['PERSON_TYPE_ID'] ?? 0);
+		if ($personTypeId > 0 && function_exists('mf_checkout_apply_mf_delivery_post_to_user_result'))
+		{
+			mf_checkout_apply_mf_delivery_post_to_user_result($arUserResult, $request, $personTypeId);
+		}
+
+		$profileId = (int)($arUserResult['PROFILE_ID'] ?? 0);
+		if ($personTypeId > 0 && $profileId > 0 && function_exists('mf_checkout_restore_delivery_fields_from_profile'))
+		{
+			mf_checkout_restore_delivery_fields_from_profile($arUserResult, $personTypeId, $profileId);
+		}
+
 		$deliveryMode = function_exists('mf_checkout_resolve_delivery_mode')
 			? mf_checkout_resolve_delivery_mode(
 				(string)$request->getPost('MF_DELIVERY_MODE'),
@@ -1653,6 +1896,17 @@ if (!function_exists('mf_checkout_on_order_properties'))
 				(string)$request->getPost('MF_EDOST_TARIF_COMPANY')
 			)
 			: 'pickup';
+
+		$mfStreetPost = trim((string)$request->getPost('MF_DELIVERY_ADDRESS'));
+		$mfLocPost = trim((string)$request->getPost('MF_DELIVERY_LOCATION_TEXT'));
+		$mfModePost = trim((string)$request->getPost('MF_DELIVERY_MODE'));
+		if (
+			$deliveryMode === 'pickup'
+			&& ($mfModePost === 'delivery' || $mfStreetPost !== '' || $mfLocPost !== '')
+		)
+		{
+			$deliveryMode = 'delivery';
+		}
 
 		if ($deliveryMode === 'pickup' && function_exists('mf_checkout_pickup_delivery_config'))
 		{
@@ -1697,12 +1951,36 @@ if (!function_exists('mf_checkout_on_order_properties'))
 
 				if ($code === 'DELIVERY_LOCATION_TEXT')
 				{
-					$arUserResult['ORDER_PROP'][$pid] = $locText;
+					if ($mfLocPost !== '')
+					{
+						$arUserResult['ORDER_PROP'][$pid] = $mfLocPost;
+					}
+					else
+					{
+						$existingLoc = trim(mf_checkout_order_prop_scalar($arUserResult, $pid));
+						if ($existingLoc !== '' && $existingLoc !== $locText)
+						{
+							continue;
+						}
+						$arUserResult['ORDER_PROP'][$pid] = $locText;
+					}
 					continue;
 				}
 				if ($code === 'DELIVERY_ADDRESS')
 				{
-					$arUserResult['ORDER_PROP'][$pid] = $fullAddr;
+					if ($mfStreetPost !== '')
+					{
+						$arUserResult['ORDER_PROP'][$pid] = $mfStreetPost;
+					}
+					else
+					{
+						$existingStreet = trim(mf_checkout_order_prop_scalar($arUserResult, $pid));
+						if ($existingStreet !== '' && $existingStreet !== $fullAddr && $existingStreet !== $combined)
+						{
+							continue;
+						}
+						$arUserResult['ORDER_PROP'][$pid] = $fullAddr;
+					}
 					continue;
 				}
 				if ($code === 'DELIVERY_ZIP')
@@ -1729,6 +2007,11 @@ if (!function_exists('mf_checkout_on_order_properties'))
 				{
 					$arUserResult['ORDER_PROP'][$pid] = $combined;
 				}
+			}
+
+			if ($personTypeId > 0 && function_exists('mf_checkout_apply_mf_delivery_post_to_user_result'))
+			{
+				mf_checkout_apply_mf_delivery_post_to_user_result($arUserResult, $request, $personTypeId);
 			}
 
 			return;
@@ -1781,6 +2064,10 @@ if (!function_exists('mf_checkout_on_order_properties'))
 		}
 		if ($combined === '')
 		{
+			if ($personTypeId > 0 && function_exists('mf_checkout_apply_mf_delivery_post_to_user_result'))
+			{
+				mf_checkout_apply_mf_delivery_post_to_user_result($arUserResult, $request, $personTypeId);
+			}
 			return;
 		}
 
@@ -1821,11 +2108,17 @@ if (!function_exists('mf_checkout_on_order_properties'))
 			{
 				continue;
 			}
-			if (mf_checkout_order_prop_scalar($arUserResult, $pid) !== '')
+			$curLegacy = mf_checkout_order_prop_scalar($arUserResult, $pid);
+			if ($street === '' && $curLegacy !== '')
 			{
 				continue;
 			}
 			$arUserResult['ORDER_PROP'][$pid] = $combined;
+		}
+
+		if ($personTypeId > 0 && function_exists('mf_checkout_apply_mf_delivery_post_to_user_result'))
+		{
+			mf_checkout_apply_mf_delivery_post_to_user_result($arUserResult, $request, $personTypeId);
 		}
 	}
 }
@@ -1979,6 +2272,33 @@ if (!function_exists('mf_checkout_is_pickup_tariff'))
 		}
 
 		return mb_strtolower(trim($company)) === 'самовывоз';
+	}
+}
+
+if (!function_exists('mf_format_tariff_days_suffix'))
+{
+	function mf_format_tariff_days_suffix($daysFrom, $daysTo): string
+	{
+		$df = (int)$daysFrom;
+		$dt = (int)$daysTo;
+		if ($df <= 0 && $dt <= 0)
+		{
+			return '';
+		}
+		if ($df <= 0)
+		{
+			$df = $dt;
+		}
+		if ($dt <= 0)
+		{
+			$dt = $df;
+		}
+		if ($df === $dt)
+		{
+			return ' (' . $df . ' дн.)';
+		}
+
+		return ' (' . $df . '–' . $dt . ' дн.)';
 	}
 }
 
@@ -2845,13 +3165,92 @@ if (!function_exists('mf_checkout_on_order_js_data'))
 				)
 				: 'pickup';
 
+			$fizPersonTypeId = (int)($personTypes['fiz'] ?? 0);
+			$jurPersonTypeId = (int)($personTypes['jur'] ?? 0);
+			$deliveryPropIdsByPerson = [];
+			if ($fizPersonTypeId > 0)
+			{
+				$deliveryPropIdsByPerson[(string)$fizPersonTypeId] = mf_checkout_order_prop_ids_by_code(
+					$fizPersonTypeId,
+					['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP']
+				);
+			}
+			if ($jurPersonTypeId > 0)
+			{
+				$deliveryPropIdsByPerson[(string)$jurPersonTypeId] = mf_checkout_order_prop_ids_by_code(
+					$jurPersonTypeId,
+					['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP']
+				);
+			}
+
+			$profileId = 0;
+			$userProfiles = $arResult['JS_DATA']['USER_PROFILES'] ?? [];
+			if (is_array($userProfiles))
+			{
+				foreach ($userProfiles as $profileRow)
+				{
+					if (!is_array($profileRow))
+					{
+						continue;
+					}
+					if (($profileRow['CHECKED'] ?? 'N') === 'Y')
+					{
+						$profileId = (int)($profileRow['ID'] ?? 0);
+						break;
+					}
+				}
+			}
+
+			$savedDeliveryFields = [];
+			$orderPropList = $arResult['JS_DATA']['ORDER_PROP']['properties'] ?? [];
+			if (is_array($orderPropList))
+			{
+				foreach ($orderPropList as $propRow)
+				{
+					if (!is_array($propRow))
+					{
+						continue;
+					}
+					$propCode = strtoupper(trim((string)($propRow['CODE'] ?? '')));
+					if (!in_array($propCode, ['DELIVERY_LOCATION_TEXT', 'DELIVERY_ADDRESS', 'DELIVERY_ZIP'], true))
+					{
+						continue;
+					}
+					$propVal = $propRow['VALUE'] ?? '';
+					if (is_array($propVal))
+					{
+						$propVal = implode(', ', array_map('strval', $propVal));
+					}
+					$propVal = trim((string)$propVal);
+					if ($propVal !== '')
+					{
+						$savedDeliveryFields[$propCode] = $propVal;
+					}
+				}
+			}
+			if ($currentPersonTypeId > 0 && $profileId > 0)
+			{
+				$fromProfile = mf_checkout_get_profile_delivery_fields($currentPersonTypeId, $profileId);
+				foreach ($fromProfile as $fieldCode => $fieldVal)
+				{
+					$fieldVal = trim((string)$fieldVal);
+					if ($fieldVal !== '' && empty($savedDeliveryFields[$fieldCode]))
+					{
+						$savedDeliveryFields[$fieldCode] = $fieldVal;
+					}
+				}
+			}
+
 			$arResult['JS_DATA']['MF_CHECKOUT'] = array_merge(
 				is_array($arResult['JS_DATA']['MF_CHECKOUT'] ?? null) ? $arResult['JS_DATA']['MF_CHECKOUT'] : [],
 				[
 					'ENABLED' => true,
 					'DELIVERY_MODE' => $deliveryMode,
-					'FIZ_PERSON_TYPE_ID' => (int)($personTypes['fiz'] ?? 0),
-					'JUR_PERSON_TYPE_ID' => (int)($personTypes['jur'] ?? 0),
+					'FIZ_PERSON_TYPE_ID' => $fizPersonTypeId,
+					'JUR_PERSON_TYPE_ID' => $jurPersonTypeId,
+					'DELIVERY_PROP_IDS_BY_PERSON' => $deliveryPropIdsByPerson,
+					'DELIVERY_PROP_IDS' => $deliveryPropIdsByPerson[(string)$currentPersonTypeId] ?? ($deliveryPropIdsByPerson[(string)$fizPersonTypeId] ?? []),
+					'SAVED_DELIVERY_FIELDS' => $savedDeliveryFields,
 					'INVOICE_PAY_SYSTEM_IDS' => $invoiceIds,
 					'CURRENT_PERSON_TYPE_ID' => $currentPersonTypeId,
 					'LOGIN_HREF' => '/login/?login=yes&backurl=' . $orderBackEnc,

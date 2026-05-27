@@ -3601,6 +3601,52 @@ if (!function_exists('mf_on_order_before_saved'))
 							$p2->setValue(trim((string)$req->getPost('MF_EDOST_TO_CITY')));
 						}
 					}
+
+					$pZipSave = mf_sale_order_prop_value_by_code($propCol, 'DELIVERY_ZIP');
+					if ($pZipSave && method_exists($pZipSave, 'getValue') && method_exists($pZipSave, 'setValue'))
+					{
+						$zipVal = trim((string)$pZipSave->getValue());
+						if ($zipVal !== '' && !preg_match('/^\d{5,6}$/u', $zipVal))
+						{
+							$pZipSave->setValue('');
+						}
+					}
+
+					$deliveryModeSave = function_exists('mf_checkout_resolve_delivery_mode')
+						? mf_checkout_resolve_delivery_mode(
+							(string)$req->getPost('MF_DELIVERY_MODE'),
+							(string)$req->getPost('MF_EDOST_TARIF_ID'),
+							trim((string)$req->getPost('MF_EDOST_TARIF_COMPANY'))
+						)
+						: 'delivery';
+					$mfStreetSave = trim((string)$req->getPost('MF_DELIVERY_ADDRESS'));
+					if ($deliveryModeSave !== 'pickup')
+					{
+						$pAddrSave = mf_sale_order_prop_value_by_code($propCol, 'DELIVERY_ADDRESS');
+						if ($pAddrSave && method_exists($pAddrSave, 'getValue') && method_exists($pAddrSave, 'setValue')
+							&& function_exists('mf_checkout_pickup_delivery_config'))
+						{
+							$pickupCfg = mf_checkout_pickup_delivery_config();
+							$pickupName = trim((string)($pickupCfg['NAME'] ?? ''));
+							$addrVal = trim((string)$pAddrSave->getValue());
+							if ($pickupName !== '' && $addrVal === $pickupName)
+							{
+								if ($mfStreetSave !== '')
+								{
+									$pAddrSave->setValue($mfStreetSave);
+								}
+								else
+								{
+									$pAddrSave->setValue('');
+								}
+							}
+						}
+					}
+
+					if (function_exists('mf_checkout_apply_mf_delivery_post_to_order'))
+					{
+						mf_checkout_apply_mf_delivery_post_to_order($propCol, $req);
+					}
 				}
 
 				$managerFb = (trim((string)$req->getPost('MF_EDOST_MANAGER_FALLBACK')) === 'Y');
@@ -3666,6 +3712,12 @@ if (!function_exists('mf_on_order_before_saved'))
 					$company = trim((string)$req->getPost('MF_EDOST_TARIF_COMPANY'));
 					$name = trim((string)$req->getPost('MF_EDOST_TARIF_NAME'));
 					$price = trim((string)$req->getPost('MF_EDOST_TARIF_PRICE'));
+					$daysSuffix = function_exists('mf_format_tariff_days_suffix')
+						? mf_format_tariff_days_suffix(
+							$req->getPost('MF_EDOST_TARIF_DAYS_FROM'),
+							$req->getPost('MF_EDOST_TARIF_DAYS_TO')
+						)
+						: '';
 
 					$comments = (string)$order->getField('COMMENTS');
 					$comments = preg_replace('~\\n?Доставка: стоимость будет рассчитана менеджером[^\\n]*~u', '', $comments);
@@ -3675,6 +3727,7 @@ if (!function_exists('mf_on_order_before_saved'))
 						. ($company !== '' ? ($company . ' — ') : '')
 						. ($name !== '' ? $name : ('тариф ' . $tid))
 						. ' — ' . ($price !== '' ? ($price . ' ₽') : 'оплата при получении')
+						. $daysSuffix
 						. ' (tarif_id=' . $tid . ')';
 
 					$comments = preg_replace('~^Доставка \\(eDost, справочно, не входит в Итого\\):.*$~mu', '', $comments);

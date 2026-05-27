@@ -230,11 +230,12 @@ $mfParseEdostFromComments = static function(string $comments): ?array
 	{
 		return null;
 	}
-	if (!preg_match('/Доставка\s*\(eDost[^:]*:\s*(.+?)\s*\(tarif_id=\d+\)/us', $comments, $matches))
+	if (!preg_match('/Доставка\s*\(eDost[^:]*:\s*(.+?)\s*\(tarif_id=([^)]+)\)/us', $comments, $matches))
 	{
 		return null;
 	}
 	$inner = trim((string)($matches[1] ?? ''));
+	$tarifId = trim((string)($matches[2] ?? ''));
 	if ($inner === '')
 	{
 		return null;
@@ -243,6 +244,7 @@ $mfParseEdostFromComments = static function(string $comments): ?array
 
 	return [
 		'full' => $display,
+		'tarif_id' => $tarifId,
 	];
 };
 
@@ -401,6 +403,7 @@ else
 
 			$deliveryStatusText = 'Не указан';
 			$deliveryServiceFull = 'Не указана';
+			$showEdostDeliveryNote = false;
 			if ($primaryShipment)
 			{
 				$deliveryStatusText = trim((string)($primaryShipment['DELIVERY_STATUS_NAME'] ?? ''));
@@ -414,6 +417,14 @@ else
 				if ($edostDelivery && !empty($edostDelivery['full']))
 				{
 					$deliveryServiceFull = (string)$edostDelivery['full'];
+					$edostTarifId = (string)($edostDelivery['tarif_id'] ?? '');
+					if (
+						$edostTarifId !== 'pickup'
+						&& !(function_exists('mf_checkout_is_pickup_tariff') && mf_checkout_is_pickup_tariff($edostTarifId))
+					)
+					{
+						$showEdostDeliveryNote = true;
+					}
 				}
 				else
 				{
@@ -539,6 +550,9 @@ else
 								<div class="mf-order-card-value"><?=htmlspecialcharsbx($deliveryStatusText)?></div>
 								<div class="mf-order-card-meta">
 									<div>Служба доставки: <strong><?=htmlspecialcharsbx($deliveryServiceFull)?></strong></div>
+									<?php if ($showEdostDeliveryNote): ?>
+										<div class="mf-order-delivery-note">Стоимость доставки предварительная. Точная сумма будет рассчитана после упаковки заказа и оплачивается при получении.</div>
+									<?php endif; ?>
 								</div>
 							</div>
 						</div>

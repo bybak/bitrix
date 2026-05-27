@@ -280,6 +280,12 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					form.querySelector('input[type=hidden][name=sessid]').value = BX.bitrix_sessid();
 				}
 
+				try {
+					var mfBSave = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
+					if (mfBSave && typeof mfBSave.forceCommitDeliveryFieldsToPost === 'function')
+						mfBSave.forceCommitDeliveryFieldsToPost();
+				} catch (eMfSaveCommit) {}
+
 				BX.ajax.submitAjax(
 					BX('bx-soa-order-form'),
 					{
@@ -2772,6 +2778,13 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				var mfB = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress,
 					mfE = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
 
+				if (mfB && typeof mfB.ensurePersistFields === 'function')
+					mfB.ensurePersistFields();
+				if (mfB && typeof mfB.forceCommitDeliveryFieldsToPost === 'function')
+					mfB.forceCommitDeliveryFieldsToPost();
+				else if (mfB && typeof mfB.flushVisibleAddressFieldsToHidden === 'function')
+					mfB.flushVisibleAddressFieldsToHidden();
+
 				if (mfB && typeof mfB.syncPickupFromSelectedStore === 'function')
 					mfB.syncPickupFromSelectedStore();
 				if (mfE && typeof mfE.isPickupMode === 'function' && !mfE.isPickupMode()
@@ -2787,6 +2800,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				}
 				if (mfB && typeof mfB.sync === 'function')
 					mfB.sync();
+				if (mfB && typeof mfB.forceCommitDeliveryFieldsToPost === 'function')
+					mfB.forceCommitDeliveryFieldsToPost();
+				else if (mfB && typeof mfB.flushVisibleAddressFieldsToHidden === 'function')
+					mfB.flushVisibleAddressFieldsToHidden();
 				if (mfB && typeof mfB.syncLegacyDeliveryAddressProperty === 'function')
 					mfB.syncLegacyDeliveryAddressProperty();
 				if (mfE && typeof mfE.isPickupMode === 'function' && mfE.isPickupMode()
@@ -7177,10 +7194,16 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			var mfEd = (typeof BX !== 'undefined' && BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost) ? BX.saleOrderAjax.__mfEdost : null;
 			var managerFb = !!(mfEd && mfEd._managerDeliveryFallback);
 
+			var edostDaysSuffix = '';
+			if (mfEd && typeof mfEd.getSelectedTariffDaysSuffix === 'function')
+				edostDaysSuffix = mfEd.getSelectedTariffDaysSuffix();
+			else if (mfEd && typeof mfEd.formatTariffDaysSuffix === 'function' && mfEd.selected)
+				edostDaysSuffix = mfEd.formatTariffDaysSuffix(mfEd.selected.days_from, mfEd.selected.days_to);
+
 			if (edostId !== '' && edostName !== '')
 			{
 				name = (edostCompany ? (edostCompany + ' — ') : '') + edostName;
-				displayPriceText = edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении';
+				displayPriceText = (edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении') + edostDaysSuffix;
 			}
 			else if (edostId !== '' && edostName === '' && mfEd && mfEd.selected && mfEd.selected.name)
 			{
@@ -7189,8 +7212,10 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				edostPrice = (typeof mfEd.selected.price !== 'undefined' && mfEd.selected.price !== null && mfEd.selected.price !== '')
 					? String(mfEd.selected.price)
 					: edostPrice;
+				if (!edostDaysSuffix && typeof mfEd.formatTariffDaysSuffix === 'function')
+					edostDaysSuffix = mfEd.formatTariffDaysSuffix(mfEd.selected.days_from, mfEd.selected.days_to);
 				name = (edostCompany ? (edostCompany + ' — ') : '') + edostName;
-				displayPriceText = edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении';
+				displayPriceText = (edostPrice !== '' ? (edostPrice + ' ₽') : 'При получении') + edostDaysSuffix;
 			}
 			else if (mfCheckoutEnabled && managerFb)
 			{
@@ -8145,6 +8170,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					}
 					else if (mfBGeo)
 					{
+						if (typeof mfBGeo.applySavedDeliveryFieldsToInputs === 'function')
+							mfBGeo.applySavedDeliveryFieldsToInputs();
 						if (typeof mfBGeo.syncDeliveryGeoToBuyerFields === 'function')
 						{
 							var streetProbe = mfBGeo.getInputByCode('DELIVERY_ADDRESS');
@@ -9005,6 +9032,8 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			try {
 				var mfBPrep = BX.saleOrderAjax && BX.saleOrderAjax.__mfBuyerAddress;
 				var mfEPrep = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				if (mfBPrep && typeof mfBPrep.flushVisibleAddressFieldsToHidden === 'function')
+					mfBPrep.flushVisibleAddressFieldsToHidden();
 				if (mfBPrep && typeof mfBPrep.syncPickupFromSelectedStore === 'function')
 					mfBPrep.syncPickupFromSelectedStore();
 				if (mfEPrep && typeof mfEPrep.isPickupMode === 'function' && !mfEPrep.isPickupMode()

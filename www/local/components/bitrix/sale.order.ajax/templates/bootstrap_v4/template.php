@@ -377,6 +377,54 @@ else
 			trim((string)($preloadBoot['MF_EDOST']['COMPANY'] ?? ''))
 		);
 	}
+	$jsMfCheckout = is_array($arResult['JS_DATA']['MF_CHECKOUT'] ?? null) ? $arResult['JS_DATA']['MF_CHECKOUT'] : [];
+	if (!empty($jsMfCheckout['SAVED_DELIVERY_FIELDS']) && is_array($jsMfCheckout['SAVED_DELIVERY_FIELDS']))
+	{
+		$mfCheckoutBoot['SAVED_DELIVERY_FIELDS'] = $jsMfCheckout['SAVED_DELIVERY_FIELDS'];
+	}
+	elseif (function_exists('mf_checkout_get_profile_delivery_fields') && is_object($USER) && $USER->IsAuthorized())
+	{
+		$bootPersonTypeId = 0;
+		$bootProfileId = 0;
+		if (!empty($arResult['JS_DATA']['PERSON_TYPE']) && is_array($arResult['JS_DATA']['PERSON_TYPE']))
+		{
+			foreach ($arResult['JS_DATA']['PERSON_TYPE'] as $bootPersonType)
+			{
+				if (!is_array($bootPersonType))
+				{
+					continue;
+				}
+				if (($bootPersonType['CHECKED'] ?? 'N') === 'Y')
+				{
+					$bootPersonTypeId = (int)($bootPersonType['ID'] ?? 0);
+					break;
+				}
+			}
+		}
+		if (!empty($arResult['JS_DATA']['USER_PROFILES']) && is_array($arResult['JS_DATA']['USER_PROFILES']))
+		{
+			foreach ($arResult['JS_DATA']['USER_PROFILES'] as $bootProfile)
+			{
+				if (!is_array($bootProfile))
+				{
+					continue;
+				}
+				if (($bootProfile['CHECKED'] ?? 'N') === 'Y')
+				{
+					$bootProfileId = (int)($bootProfile['ID'] ?? 0);
+					break;
+				}
+			}
+		}
+		if ($bootPersonTypeId > 0 && $bootProfileId > 0)
+		{
+			$bootSavedFields = mf_checkout_get_profile_delivery_fields($bootPersonTypeId, $bootProfileId);
+			if (!empty(array_filter($bootSavedFields)))
+			{
+				$mfCheckoutBoot['SAVED_DELIVERY_FIELDS'] = $bootSavedFields;
+			}
+		}
+	}
 	?>
 	<form action="<?=POST_FORM_ACTION_URI?>" method="POST" name="ORDER_FORM" class="bx-soa-wrapper mb-4<?=$themeClass?>" id="bx-soa-order-form" enctype="multipart/form-data">
 		<?php

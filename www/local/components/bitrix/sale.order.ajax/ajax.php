@@ -100,13 +100,36 @@ try
 			'location_type',
 			'RECENT_DELIVERY_VALUE',
 			'ZIP_PROPERTY_CHANGED',
-			'ORDER_PROP_6',  // person type 1 location
-			'ORDER_PROP_4',  // person type 1 zip
-			'ORDER_PROP_5',  // person type 1 city (alt)
-			'ORDER_PROP_18', // person type 2 location
-			'ORDER_PROP_16', // person type 2 zip
-			'ORDER_PROP_17', // person type 2 city (alt)
+			'ORDER_PROP_6',
+			'ORDER_PROP_4',
+			'ORDER_PROP_5',
+			'ORDER_PROP_22',
+			'ORDER_PROP_23',
+			'ORDER_PROP_24',
+			'ORDER_PROP_18',
+			'ORDER_PROP_16',
+			'ORDER_PROP_17',
+			'ORDER_PROP_25',
+			'ORDER_PROP_26',
+			'ORDER_PROP_27',
+			'MF_DELIVERY_MODE',
+			'MF_DELIVERY_ADDRESS',
+			'MF_DELIVERY_LOCATION_TEXT',
+			'MF_DELIVERY_ZIP',
+			'MF_EDOST_TARIF_ID',
 		]);
+
+		if ($action === 'saveOrderAjax')
+		{
+			$postKeys = array_keys($interesting);
+			foreach ($postKeys as $pk)
+			{
+				if ($request->getPost($pk) !== null)
+				{
+					$interesting[$pk] = $request->getPost($pk);
+				}
+			}
+		}
 
 		$line = date('c') . ' action=' . $action . ' ' . json_encode($interesting, JSON_UNESCAPED_UNICODE) . PHP_EOL;
 		@file_put_contents($_SERVER['DOCUMENT_ROOT'] . '/.tmp_order_make_loc.log', $line, FILE_APPEND);

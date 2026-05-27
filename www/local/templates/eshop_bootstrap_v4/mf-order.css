@@ -310,10 +310,16 @@
   border-radius: 0 8px 8px 8px;
 }
 .mf-order #mf-edost-note{
-  font-size: 12px;
-  line-height: 1.45;
-  opacity: .78;
-  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 800;
+  color: #b45309;
+  opacity: 1;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, .14);
+  border: 1px solid rgba(245, 158, 11, .35);
 }
 .mf-order #mf-edost-warning{
   margin-bottom: 10px;
