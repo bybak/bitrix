@@ -27,7 +27,8 @@
  *   --collisions-export=/path.csv — куда сохранить все коллизии (если не указан при их наличии — файл в sys_get_temp_dir с меткой времени)
  */
 
-$_SERVER['DOCUMENT_ROOT'] = dirname(__DIR__);
+// …/local/site/tools/ → три уровня вверх до корня сайта (/var/www/html).
+$_SERVER['DOCUMENT_ROOT'] = dirname(__DIR__, 3);
 define('NO_KEEP_STATISTIC', true);
 define('NOT_CHECK_PERMISSIONS', true);
 define('BX_NO_ACCELERATOR_RESET', true);
