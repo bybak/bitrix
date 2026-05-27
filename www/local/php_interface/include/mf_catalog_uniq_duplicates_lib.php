@@ -72,28 +72,188 @@ if (!function_exists('mf_cud_parse_element_ids'))
 if (!function_exists('mf_cud_iblock_property_meta'))
 {
 	/**
-	 * @return array{version: int, uniq_prop_id: int, redirect_prop_id: int}
+	 * @return array{
+	 *   version: int,
+	 *   uniq_prop_id: int,
+	 *   redirect_prop_id: int,
+	 *   canonical_prop_id: int,
+	 *   article_norm_prop_id: int,
+	 *   cml2_article_prop_id: int,
+	 *   brand_norm_prop_id: int,
+	 *   brand_prop_id: int
+	 * }
 	 */
 	function mf_cud_iblock_property_meta(int $iblockId): array
 	{
-		$meta = ['version' => 1, 'uniq_prop_id' => 0, 'redirect_prop_id' => 0];
+		$meta = [
+			'version' => 1,
+			'uniq_prop_id' => 0,
+			'redirect_prop_id' => 0,
+			'canonical_prop_id' => 0,
+			'article_norm_prop_id' => 0,
+			'cml2_article_prop_id' => 0,
+			'brand_norm_prop_id' => 0,
+			'brand_prop_id' => 0,
+		];
 		$ibRow = \CIBlock::GetByID($iblockId)->Fetch();
 		if ($ibRow)
 		{
 			$meta['version'] = (int)($ibRow['VERSION'] ?? 1);
 		}
-		$uniq = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => 'MF_UNIQ_KEY'])->Fetch();
-		if ($uniq)
+		$codeMap = [
+			'MF_UNIQ_KEY' => 'uniq_prop_id',
+			'MF_IS_REDIRECT' => 'redirect_prop_id',
+			'MF_CANONICAL_CODE' => 'canonical_prop_id',
+			'MF_ARTICLE_NORM' => 'article_norm_prop_id',
+			'CML2_ARTICLE' => 'cml2_article_prop_id',
+			'MF_BRAND_NORM' => 'brand_norm_prop_id',
+			'MF_BRAND' => 'brand_prop_id',
+		];
+		foreach ($codeMap as $code => $metaKey)
 		{
-			$meta['uniq_prop_id'] = (int)$uniq['ID'];
-		}
-		$redir = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => 'MF_IS_REDIRECT'])->Fetch();
-		if ($redir)
-		{
-			$meta['redirect_prop_id'] = (int)$redir['ID'];
+			$p = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => $code])->Fetch();
+			if ($p)
+			{
+				$meta[$metaKey] = (int)$p['ID'];
+			}
 		}
 
 		return $meta;
+	}
+}
+
+if (!function_exists('mf_cud_sql_norm_article_brand_key_expr'))
+{
+	/**
+	 * Ключ группы как makeUniqKey: артикул (MF_ARTICLE_NORM иначе CML2_ARTICLE) + '_' + бренд (MF_BRAND_NORM иначе MF_BRAND).
+	 *
+	 * @param 'v1_join'|'v2_s' $mode
+	 */
+	function mf_cud_sql_norm_article_brand_key_expr(array $meta, string $mode = 'v2_s'): string
+	{
+		$unknownBrand = 'UNKNOWNBRAND';
+		if ($mode === 'v2_s')
+		{
+			$artNorm = (int)$meta['article_norm_prop_id'];
+			$cml2 = (int)$meta['cml2_article_prop_id'];
+			$brandNorm = (int)$meta['brand_norm_prop_id'];
+			$brand = (int)$meta['brand_prop_id'];
+			$artExpr = "''";
+			if ($artNorm > 0 && $cml2 > 0)
+			{
+				$artExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$artNorm}), ''), NULLIF(TRIM(s.PROPERTY_{$cml2}), ''), '')";
+			}
+			elseif ($artNorm > 0)
+			{
+				$artExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$artNorm}), ''), '')";
+			}
+			elseif ($cml2 > 0)
+			{
+				$artExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$cml2}), ''), '')";
+			}
+			$brandExpr = "'{$unknownBrand}'";
+			if ($brandNorm > 0 && $brand > 0)
+			{
+				$brandExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$brandNorm}), ''), NULLIF(TRIM(s.PROPERTY_{$brand}), ''), '{$unknownBrand}')";
+			}
+			elseif ($brandNorm > 0)
+			{
+				$brandExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$brandNorm}), ''), '{$unknownBrand}')";
+			}
+			elseif ($brand > 0)
+			{
+				$brandExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$brand}), ''), '{$unknownBrand}')";
+			}
+
+			return "CONCAT(TRIM({$artExpr}), '_', TRIM({$brandExpr}))";
+		}
+
+		$artExpr = "''";
+		if ((int)$meta['article_norm_prop_id'] > 0 && (int)$meta['cml2_article_prop_id'] > 0)
+		{
+			$artExpr = "COALESCE(NULLIF(TRIM(pan.VALUE), ''), NULLIF(TRIM(pc2.VALUE), ''), '')";
+		}
+		elseif ((int)$meta['article_norm_prop_id'] > 0)
+		{
+			$artExpr = "COALESCE(NULLIF(TRIM(pan.VALUE), ''), '')";
+		}
+		elseif ((int)$meta['cml2_article_prop_id'] > 0)
+		{
+			$artExpr = "COALESCE(NULLIF(TRIM(pc2.VALUE), ''), '')";
+		}
+		$brandExpr = "'{$unknownBrand}'";
+		if ((int)$meta['brand_norm_prop_id'] > 0 && (int)$meta['brand_prop_id'] > 0)
+		{
+			$brandExpr = "COALESCE(NULLIF(TRIM(pbn.VALUE), ''), NULLIF(TRIM(pb.VALUE), ''), '{$unknownBrand}')";
+		}
+		elseif ((int)$meta['brand_norm_prop_id'] > 0)
+		{
+			$brandExpr = "COALESCE(NULLIF(TRIM(pbn.VALUE), ''), '{$unknownBrand}')";
+		}
+		elseif ((int)$meta['brand_prop_id'] > 0)
+		{
+			$brandExpr = "COALESCE(NULLIF(TRIM(pb.VALUE), ''), '{$unknownBrand}')";
+		}
+
+		return "CONCAT(TRIM({$artExpr}), '_', TRIM({$brandExpr}))";
+	}
+}
+
+if (!function_exists('mf_cud_sql_norm_article_nonempty_sql'))
+{
+	/** Условие: есть непустой артикул (норм или CML2). */
+	function mf_cud_sql_norm_article_nonempty_sql(array $meta, string $mode = 'v2_s'): string
+	{
+		if ($mode === 'v2_s')
+		{
+			$parts = [];
+			if ((int)$meta['article_norm_prop_id'] > 0)
+			{
+				$id = (int)$meta['article_norm_prop_id'];
+				$parts[] = "(s.PROPERTY_{$id} IS NOT NULL AND TRIM(s.PROPERTY_{$id}) <> '')";
+			}
+			if ((int)$meta['cml2_article_prop_id'] > 0)
+			{
+				$id = (int)$meta['cml2_article_prop_id'];
+				$parts[] = "(s.PROPERTY_{$id} IS NOT NULL AND TRIM(s.PROPERTY_{$id}) <> '')";
+			}
+
+			return $parts === [] ? '1=0' : '(' . implode(' OR ', $parts) . ')';
+		}
+
+		$parts = [];
+		if ((int)$meta['article_norm_prop_id'] > 0)
+		{
+			$parts[] = "(pan.VALUE IS NOT NULL AND TRIM(pan.VALUE) <> '')";
+		}
+		if ((int)$meta['cml2_article_prop_id'] > 0)
+		{
+			$parts[] = "(pc2.VALUE IS NOT NULL AND TRIM(pc2.VALUE) <> '')";
+		}
+
+		return $parts === [] ? '1=0' : '(' . implode(' OR ', $parts) . ')';
+	}
+}
+
+if (!function_exists('mf_cud_normalize_group_by'))
+{
+	function mf_cud_normalize_group_by(string $raw): string
+	{
+		$raw = mb_strtolower(trim($raw));
+		if ($raw === 'element_code' || $raw === 'code' || $raw === 'symbolic_code')
+		{
+			return 'element_code';
+		}
+		if (
+			$raw === 'article_brand_norm'
+			|| $raw === 'norm_article_brand'
+			|| $raw === 'article_brand'
+		)
+		{
+			return 'article_brand_norm';
+		}
+
+		return 'uniq_key';
 	}
 }
 
@@ -110,8 +270,9 @@ if (!function_exists('mf_cud_count_duplicate_groups'))
 if (!function_exists('mf_cud_fetch_duplicate_groups'))
 {
 	/**
-	 * @param array{active_only?: bool, include_redirect?: bool, include_empty_keys?: bool, min_count?: int} $opts
-	 * @return array{total: int, rows: list<array{uniq_key: string, cnt: int, element_ids: list<int>}>}
+	 * @param array{active_only?: bool, include_redirect?: bool, include_empty_keys?: bool, min_count?: int, group_by?: string} $opts
+	 *   group_by: uniq_key | element_code | article_brand_norm (MF_ARTICLE_NORM/CML2 + MF_BRAND_NORM/MF_BRAND)
+	 * @return array{total: int, rows: list<array{uniq_key: string, group_by: string, cnt: int, element_ids: list<int>}>}
 	 */
 	function mf_cud_fetch_duplicate_groups(int $iblockId, array $opts = [], int $limit = 50, int $offset = 0, bool $countOnly = false): array
 	{
@@ -120,6 +281,7 @@ if (!function_exists('mf_cud_fetch_duplicate_groups'))
 		$includeRedirect = !empty($opts['include_redirect']);
 		$includeEmpty = !empty($opts['include_empty_keys']);
 		$minCount = max(2, (int)($opts['min_count'] ?? 2));
+		$groupBy = mf_cud_normalize_group_by((string)($opts['group_by'] ?? 'uniq_key'));
 
 		$empty = ['total' => 0, 'rows' => []];
 		if ($iblockId <= 0)
@@ -128,13 +290,6 @@ if (!function_exists('mf_cud_fetch_duplicate_groups'))
 		}
 
 		$meta = mf_cud_iblock_property_meta($iblockId);
-		if ($meta['uniq_prop_id'] <= 0)
-		{
-			return $empty;
-		}
-
-		$version = (int)$meta['version'];
-		$uniqPropId = (int)$meta['uniq_prop_id'];
 
 		$eConds = ['e.IBLOCK_ID = ' . $iblockId];
 		if ($activeOnly)
@@ -154,19 +309,105 @@ LEFT JOIN b_iblock_element_property redir
 			$redirSql = 'AND (redir.VALUE IS NULL OR redir.VALUE <> \'Y\')';
 		}
 
-		$emptySqlV1 = '';
-		$emptySqlV2 = '';
-		if (!$includeEmpty)
-		{
-			$emptySqlV1 = 'AND (p.VALUE IS NOT NULL AND p.VALUE <> \'\')';
-			$emptySqlV2 = 'AND (s.PROPERTY_' . $uniqPropId . ' IS NOT NULL AND s.PROPERTY_' . $uniqPropId . ' <> \'\')';
-		}
-
 		$innerSql = '';
-		if ($version === 2)
+		if ($groupBy === 'element_code')
 		{
-			$col = 's.PROPERTY_' . $uniqPropId;
+			$emptyCodeSql = $includeEmpty ? '' : "AND (e.CODE IS NOT NULL AND TRIM(e.CODE) <> '')";
 			$innerSql = "
+SELECT TRIM(e.CODE) AS uniq_key,
+       COUNT(*) AS cnt_elements,
+       GROUP_CONCAT(e.ID ORDER BY e.ID SEPARATOR ',') AS element_ids
+FROM b_iblock_element e
+{$redirJoin}
+WHERE {$eWhere}
+{$redirSql}
+{$emptyCodeSql}
+GROUP BY TRIM(e.CODE)
+HAVING COUNT(*) >= {$minCount} AND uniq_key <> ''";
+		}
+		elseif ($groupBy === 'article_brand_norm')
+		{
+			$hasArticle = (int)$meta['article_norm_prop_id'] > 0 || (int)$meta['cml2_article_prop_id'] > 0;
+			if (!$hasArticle)
+			{
+				return $empty;
+			}
+			$keyExpr = mf_cud_sql_norm_article_brand_key_expr($meta, (int)$meta['version'] === 2 ? 'v2_s' : 'v1_join');
+			$articleSql = $includeEmpty ? '' : 'AND ' . mf_cud_sql_norm_article_nonempty_sql(
+				$meta,
+				(int)$meta['version'] === 2 ? 'v2_s' : 'v1_join'
+			);
+			if ((int)$meta['version'] === 2)
+			{
+				$innerSql = "
+SELECT {$keyExpr} AS uniq_key,
+       COUNT(*) AS cnt_elements,
+       GROUP_CONCAT(s.IBLOCK_ELEMENT_ID ORDER BY s.IBLOCK_ELEMENT_ID SEPARATOR ',') AS element_ids
+FROM b_iblock_element_prop_s{$iblockId} s
+INNER JOIN b_iblock_element e ON e.ID = s.IBLOCK_ELEMENT_ID
+{$redirJoin}
+WHERE {$eWhere}
+{$redirSql}
+{$articleSql}
+GROUP BY {$keyExpr}
+HAVING COUNT(*) >= {$minCount} AND uniq_key <> '' AND uniq_key <> '_UNKNOWNBRAND'";
+			}
+			else
+			{
+				$joins = '';
+				if ((int)$meta['article_norm_prop_id'] > 0)
+				{
+					$pid = (int)$meta['article_norm_prop_id'];
+					$joins .= "\nLEFT JOIN b_iblock_element_property pan ON pan.IBLOCK_ELEMENT_ID = e.ID AND pan.IBLOCK_PROPERTY_ID = {$pid}";
+				}
+				if ((int)$meta['cml2_article_prop_id'] > 0)
+				{
+					$pid = (int)$meta['cml2_article_prop_id'];
+					$joins .= "\nLEFT JOIN b_iblock_element_property pc2 ON pc2.IBLOCK_ELEMENT_ID = e.ID AND pc2.IBLOCK_PROPERTY_ID = {$pid}";
+				}
+				if ((int)$meta['brand_norm_prop_id'] > 0)
+				{
+					$pid = (int)$meta['brand_norm_prop_id'];
+					$joins .= "\nLEFT JOIN b_iblock_element_property pbn ON pbn.IBLOCK_ELEMENT_ID = e.ID AND pbn.IBLOCK_PROPERTY_ID = {$pid}";
+				}
+				if ((int)$meta['brand_prop_id'] > 0)
+				{
+					$pid = (int)$meta['brand_prop_id'];
+					$joins .= "\nLEFT JOIN b_iblock_element_property pb ON pb.IBLOCK_ELEMENT_ID = e.ID AND pb.IBLOCK_PROPERTY_ID = {$pid}";
+				}
+				$innerSql = "
+SELECT {$keyExpr} AS uniq_key,
+       COUNT(DISTINCT e.ID) AS cnt_elements,
+       GROUP_CONCAT(DISTINCT e.ID ORDER BY e.ID SEPARATOR ',') AS element_ids
+FROM b_iblock_element e
+{$joins}
+{$redirJoin}
+WHERE {$eWhere}
+{$redirSql}
+{$articleSql}
+GROUP BY {$keyExpr}
+HAVING COUNT(DISTINCT e.ID) >= {$minCount} AND uniq_key <> '' AND uniq_key <> '_UNKNOWNBRAND'";
+			}
+		}
+		else
+		{
+			$groupPropId = (int)$meta['uniq_prop_id'];
+			if ($groupPropId <= 0)
+			{
+				return $empty;
+			}
+			$version = (int)$meta['version'];
+			$emptySqlV1 = '';
+			$emptySqlV2 = '';
+			if (!$includeEmpty)
+			{
+				$emptySqlV1 = 'AND (p.VALUE IS NOT NULL AND p.VALUE <> \'\')';
+				$emptySqlV2 = 'AND (s.PROPERTY_' . $groupPropId . ' IS NOT NULL AND s.PROPERTY_' . $groupPropId . " <> '')";
+			}
+			if ($version === 2)
+			{
+				$col = 's.PROPERTY_' . $groupPropId;
+				$innerSql = "
 SELECT {$col} AS uniq_key,
        COUNT(*) AS cnt_elements,
        GROUP_CONCAT(s.IBLOCK_ELEMENT_ID ORDER BY s.IBLOCK_ELEMENT_ID SEPARATOR ',') AS element_ids
@@ -178,22 +419,23 @@ WHERE {$eWhere}
 {$emptySqlV2}
 GROUP BY {$col}
 HAVING COUNT(*) >= {$minCount}";
-		}
-		else
-		{
-			$innerSql = "
+			}
+			else
+			{
+				$innerSql = "
 SELECT p.VALUE AS uniq_key,
        COUNT(DISTINCT p.IBLOCK_ELEMENT_ID) AS cnt_elements,
        GROUP_CONCAT(DISTINCT p.IBLOCK_ELEMENT_ID ORDER BY p.IBLOCK_ELEMENT_ID SEPARATOR ',') AS element_ids
 FROM b_iblock_element_property p
 INNER JOIN b_iblock_element e ON e.ID = p.IBLOCK_ELEMENT_ID
 {$redirJoin}
-WHERE p.IBLOCK_PROPERTY_ID = {$uniqPropId}
+WHERE p.IBLOCK_PROPERTY_ID = {$groupPropId}
   AND {$eWhere}
 {$redirSql}
 {$emptySqlV1}
 GROUP BY p.VALUE
 HAVING COUNT(DISTINCT p.IBLOCK_ELEMENT_ID) >= {$minCount}";
+			}
 		}
 
 		$conn = Application::getConnection();
@@ -238,11 +480,12 @@ HAVING COUNT(DISTINCT p.IBLOCK_ELEMENT_ID) >= {$minCount}";
 			}
 			$rows[] = [
 				'uniq_key' => $key,
+				'group_by' => $groupBy,
 				'cnt' => $cntSql,
 				'cnt_found' => $cntFound,
 				'cnt_missing' => $cntMissing,
 				'element_ids' => $ids,
-				'group_key' => mf_cud_group_key($key),
+				'group_key' => mf_cud_group_key($groupBy . ':' . $key),
 			];
 		}
 
@@ -428,6 +671,7 @@ if (!function_exists('mf_cud_fetch_elements_detail'))
 			'TIMESTAMP_X',
 			'PROPERTY_MF_UNIQ_KEY',
 			'PROPERTY_MF_BRAND',
+			'PROPERTY_MF_BRAND_NORM',
 			'PROPERTY_MF_ARTICLE_NORM',
 			'PROPERTY_CML2_ARTICLE',
 			'PROPERTY_MF_IS_REDIRECT',
@@ -467,7 +711,11 @@ if (!function_exists('mf_cud_fetch_elements_detail'))
 					$article = trim((string)($f['PROPERTY_CML2_ARTICLE_VALUE'] ?? ''));
 				}
 				$status = ((int)($f['IBLOCK_ID'] ?? 0) === $iblockId) ? 'product' : 'sku';
-				$brand = trim((string)($f['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+				$brand = trim((string)($f['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
+				if ($brand === '')
+				{
+					$brand = trim((string)($f['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+				}
 				$articleNorm = mf_cud_normalize_article($article);
 				$brandNorm = $brand !== '' ? mf_cud_normalize_brand($brand) : '';
 				$uniqKey = trim((string)($f['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
@@ -702,8 +950,10 @@ if (!function_exists('mf_cud_suggest_keep_id'))
 	/**
 	 * @param array<int, array<string, mixed>> $details keyed by id
 	 */
-	function mf_cud_suggest_keep_id(array $details): int
+	function mf_cud_suggest_keep_id(array $details, string $groupValue = '', string $groupBy = 'uniq_key'): int
 	{
+		$groupBy = mf_cud_normalize_group_by($groupBy);
+		$groupValue = trim($groupValue);
 		$candidates = [];
 		foreach ($details as $id => $row)
 		{
@@ -721,9 +971,15 @@ if (!function_exists('mf_cud_suggest_keep_id'))
 			{
 				continue;
 			}
+			$code = trim((string)($row['code'] ?? ''));
+			$ownsSlug = $groupBy === 'element_code'
+				&& $groupValue !== ''
+				&& $code !== ''
+				&& mb_strtolower($code) === mb_strtolower($groupValue);
 			$candidates[] = [
 				'id' => $id,
 				'redirect' => !empty($row['is_redirect']),
+				'owns_slug' => $ownsSlug,
 			];
 		}
 		if ($candidates === [])
@@ -731,6 +987,10 @@ if (!function_exists('mf_cud_suggest_keep_id'))
 			return 0;
 		}
 		usort($candidates, static function ($a, $b) {
+			if ($a['owns_slug'] !== $b['owns_slug'])
+			{
+				return $b['owns_slug'] <=> $a['owns_slug'];
+			}
 			if ($a['redirect'] !== $b['redirect'])
 			{
 				return $a['redirect'] <=> $b['redirect'];

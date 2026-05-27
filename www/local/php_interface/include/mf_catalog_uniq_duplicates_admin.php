@@ -81,11 +81,15 @@ $page = max(1, (int)($_REQUEST['page'] ?? 1));
 $activeOnly = (string)($_REQUEST['active_only'] ?? 'Y') !== 'N';
 $includeRedirect = (string)($_REQUEST['include_redirect'] ?? '') === 'Y';
 $includeEmpty = (string)($_REQUEST['include_empty'] ?? '') === 'Y';
+$groupBy = function_exists('mf_cud_normalize_group_by')
+	? mf_cud_normalize_group_by((string)($_REQUEST['group_by'] ?? 'uniq_key'))
+	: 'uniq_key';
 
 $opts = [
 	'active_only' => $activeOnly,
 	'include_redirect' => $includeRedirect,
 	'include_empty_keys' => $includeEmpty,
+	'group_by' => $groupBy,
 ];
 
 $filterQs = http_build_query([
@@ -94,9 +98,26 @@ $filterQs = http_build_query([
 	'active_only' => $activeOnly ? 'Y' : 'N',
 	'include_redirect' => $includeRedirect ? 'Y' : 'N',
 	'include_empty' => $includeEmpty ? 'Y' : 'N',
+	'group_by' => $groupBy,
 ]);
 
-$APPLICATION->SetTitle('Дубликаты каталога (артикул + бренд)');
+$mfCudGroupByLabel = match ($groupBy) {
+	'element_code' => 'символьный код (CODE → /products/…/)',
+	'article_brand_norm' => 'норм. артикул + норм. бренд',
+	default => 'MF_UNIQ_KEY (свойство)',
+};
+$mfCudEmptyCheckboxLabel = match ($groupBy) {
+	'element_code' => 'Пустой символьный код (CODE)',
+	'article_brand_norm' => 'Пустой артикул (норм / CML2)',
+	default => 'Пустой MF_UNIQ_KEY',
+};
+$mfCudGroupFieldLabel = match ($groupBy) {
+	'element_code' => 'Символьный код (CODE)',
+	'article_brand_norm' => 'Ключ (артикул_норм + бренд_норм)',
+	default => 'MF_UNIQ_KEY',
+};
+
+$APPLICATION->SetTitle('Дубликаты каталога — ' . $mfCudGroupByLabel);
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 
@@ -241,10 +262,19 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 
 ?>
 <p class="adm-info-message" style="max-width:960px;">
-	Группы с одинаковым <strong>MF_UNIQ_KEY</strong> (нормализованный артикул + бренд).
-	Отметьте галочкой товары на удаление; по умолчанию предлагается оставить один элемент каталога (не редирект, минимальный ID).
-	Строки «Нет в БД» — в <code>b_iblock_element</code> карточки нет, остался только хвост в <code>prop_s</code> / свойствах; отметьте галочкой для <strong>очистки хвоста</strong> (не <code>CIBlockElement::Delete</code>).
-	Удаление через <code>CIBlockElement::Delete</code> (как в «Удаление товаров CSV»).
+	Группы с одинаковым <strong><?= mf_cud_h($mfCudGroupFieldLabel) ?></strong><?= match ($groupBy) {
+		'element_code' => ' — несколько карточек с одним ЧПУ <code>/products/{code}/</code>.',
+		'article_brand_norm' => ' — из <code>MF_ARTICLE_NORM</code> (или CML2_ARTICLE) и <code>MF_BRAND_NORM</code> (или MF_BRAND), как при расчёте ключа. Находит пары с <em>разным</em> сохранённым MF_UNIQ_KEY (битый ключ).',
+		default => ' — по сохранённому свойству MF_UNIQ_KEY.',
+	} ?>
+	Отметьте галочкой товары на удаление; по умолчанию оставляется одна карточка (не редирект<?= $groupBy === 'element_code' ? ', у которой CODE совпадает с группой' : '' ?>, минимальный ID).
+	<?= $groupBy === 'element_code'
+		? 'Редирект с <em>другим</em> CODE, но тем же товаром — режим «норм. артикул + бренд» или «Включая редиректы» + MF_UNIQ_KEY. '
+		: ($groupBy === 'article_brand_norm'
+			? 'Для массового исправления MF_UNIQ_KEY: <code>php tools/mf_catalog_fix_uniq_key.php --apply --include-redirect=Y</code>. '
+			: '') ?>
+	Строки «Нет в БД» — хвост в свойствах; очистка без <code>CIBlockElement::Delete</code>.
+	Удаление карточек — <code>CIBlockElement::Delete</code> (как в «Удаление товаров CSV»).
 </p>
 <p class="adm-info-message" style="max-width:960px;background:#fff8e6;">
 	<strong>Не находите товар в поиске админки?</strong> Строка поиска в шапке ищет по <em>индексу названий</em>, а не по числовому ID.
@@ -256,6 +286,13 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 
 <form method="get" action="<?= mf_cud_h($curAdminPage) ?>" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
 	<input type="hidden" name="lang" value="<?= mf_cud_h($lang) ?>" />
+	<label>Группировать по
+		<select name="group_by">
+			<option value="uniq_key"<?= $groupBy === 'uniq_key' ? ' selected' : '' ?>>MF_UNIQ_KEY (в свойстве)</option>
+			<option value="article_brand_norm"<?= $groupBy === 'article_brand_norm' ? ' selected' : '' ?>>Норм. артикул + норм. бренд</option>
+			<option value="element_code"<?= $groupBy === 'element_code' ? ' selected' : '' ?>>Символьный код (CODE / URL)</option>
+		</select>
+	</label>
 	<label>На странице
 		<select name="per_page">
 			<?php foreach ([10, 20, 50, 100] as $n): ?>
@@ -265,7 +302,7 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 	</label>
 	<label><input type="checkbox" name="active_only" value="Y"<?= $activeOnly ? ' checked' : '' ?> /> Только активные</label>
 	<label><input type="checkbox" name="include_redirect" value="Y"<?= $includeRedirect ? ' checked' : '' ?> /> Включая редиректы</label>
-	<label><input type="checkbox" name="include_empty" value="Y"<?= $includeEmpty ? ' checked' : '' ?> /> Пустой MF_UNIQ_KEY</label>
+	<label><input type="checkbox" name="include_empty" value="Y"<?= $includeEmpty ? ' checked' : '' ?> /> <?= mf_cud_h($mfCudEmptyCheckboxLabel) ?></label>
 	<button type="submit" class="adm-btn">Применить фильтр</button>
 </form>
 
@@ -282,7 +319,11 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 </p>
 
 <?php if ($groups === []): ?>
-	<p style="color:#666;">Дубликатов не найдено (или нет свойства MF_UNIQ_KEY).</p>
+	<p style="color:#666;">Дубликатов не найдено<?= match ($groupBy) {
+		'element_code' => ' (нет двух и более элементов с одинаковым CODE).',
+		'article_brand_norm' => ' (нет двух и более с одной парой артикул+бренд или нет свойств артикула/бренда).',
+		default => ' (или нет свойства MF_UNIQ_KEY).',
+	} ?></p>
 <?php else: ?>
 <form method="post" action="<?= mf_cud_h($baseQs . '&' . $filterQs . '&page=' . $page) ?>">
 	<?= bitrix_sessid_post() ?>
@@ -301,8 +342,8 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 				$grpDetails[$id] = $details[$id];
 			}
 		}
-		$keepId = mf_cud_suggest_keep_id($grpDetails);
-		$groupCorruptHint = function_exists('mf_cud_uniq_key_looks_corrupt')
+		$keepId = mf_cud_suggest_keep_id($grpDetails, $uniqKey, $groupBy);
+		$groupCorruptHint = $groupBy === 'uniq_key' && function_exists('mf_cud_uniq_key_looks_corrupt')
 			? mf_cud_uniq_key_looks_corrupt($uniqKey)
 			: '';
 		$cntProduct = 0;
@@ -328,12 +369,17 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 		?>
 		<div style="margin:20px 0;padding:12px;border:1px solid #dce1e5;background:#fafbfc;max-width:1200px;">
 			<div style="margin-bottom:8px;">
-				<strong>MF_UNIQ_KEY:</strong> <code><?= mf_cud_h($uniqKey) ?></code>
+				<strong><?= mf_cud_h($mfCudGroupFieldLabel) ?>:</strong> <code><?= mf_cud_h($uniqKey) ?></code>
+				<?php if ($groupBy === 'element_code' && $uniqKey !== ''): ?>
+					<span style="margin-left:8px;font-size:12px;"><a href="/products/<?= mf_cud_h(rawurlencode($uniqKey)) ?>/" target="_blank" rel="noopener">/products/<?= mf_cud_h($uniqKey) ?>/</a></span>
+				<?php endif; ?>
 				<span style="color:#666;margin-left:8px;">
 					(в SQL: <?= (int)$g['cnt'] ?>, в БД: <?= (int)($g['cnt_found'] ?? $cntProduct) ?><?= $cntMissing > 0 ? ', только хвост ID: ' . (int)$cntMissing : '' ?>, товаров IB<?= (int)$iblockId ?>: <?= (int)$cntProduct ?>)
 				</span>
 				<?php if ($groupCorruptHint !== ''): ?>
-					<div style="margin-top:6px;color:#a04000;font-size:12px;">⚠ <?= mf_cud_h($groupCorruptHint) ?> Пересчёт ключей: <code>php local/site/tools/mf_catalog_fix_uniq_key.php --apply</code> (сначала без <code>--apply</code>).</div>
+					<div style="margin-top:6px;color:#a04000;font-size:12px;">⚠ <?= mf_cud_h($groupCorruptHint) ?> Пересчёт ключей: <code>php tools/mf_catalog_fix_uniq_key.php --apply</code> (сначала без <code>--apply</code>).</div>
+				<?php elseif ($groupBy === 'article_brand_norm'): ?>
+					<div style="margin-top:6px;color:#666;font-size:12px;">Сверьте колонку «MF_UNIQ_KEY в карточке»: если отличается от ключа группы — свойство нужно пересчитать.</div>
 				<?php endif; ?>
 			</div>
 			<table class="internal" style="width:100%;">
@@ -346,6 +392,9 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 					<td>ЧПУ (CODE)</td>
 					<td>Артикул</td>
 					<td>Бренд</td>
+					<?php if ($groupBy === 'article_brand_norm'): ?>
+						<td>MF_UNIQ_KEY в карточке</td>
+					<?php endif; ?>
 					<td>Активен</td>
 					<td>Редирект</td>
 					<td>Остатки</td>
@@ -400,6 +449,16 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 						<td style="font-size:11px;"><?= is_array($d) && (string)($d['code'] ?? '') !== '' ? mf_cud_h((string)$d['code']) : '—' ?><?= is_array($d) && !empty($d['canonical_code']) ? '<br><span style="color:#666;">→ ' . mf_cud_h((string)$d['canonical_code']) . '</span>' : '' ?></td>
 						<td><?= is_array($d) && (string)$d['article'] !== '' ? mf_cud_h((string)$d['article']) : '—' ?></td>
 						<td><?= is_array($d) && (string)$d['brand'] !== '' ? mf_cud_h((string)$d['brand']) : '—' ?></td>
+						<?php if ($groupBy === 'article_brand_norm'): ?>
+							<?php
+							$storedUk = is_array($d) ? trim((string)($d['uniq_key'] ?? '')) : '';
+							$ukMismatch = $storedUk !== '' && $storedUk !== $uniqKey;
+							?>
+							<td style="font-size:11px;<?= $ukMismatch ? 'color:#a04000;font-weight:600;' : '' ?>">
+								<?= $storedUk !== '' ? mf_cud_h($storedUk) : '—' ?>
+								<?= $ukMismatch ? '<br><span style="font-weight:normal;">≠ группа</span>' : '' ?>
+							</td>
+						<?php endif; ?>
 						<td><?= is_array($d) && (string)$d['active'] !== '' ? mf_cud_h((string)$d['active']) : '—' ?></td>
 						<td><?= (is_array($d) && !empty($d['is_redirect'])) ? 'Y' : '—' ?></td>
 						<td style="font-size:11px;max-width:220px;">
