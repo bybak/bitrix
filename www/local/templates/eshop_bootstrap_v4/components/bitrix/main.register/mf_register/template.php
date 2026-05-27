@@ -117,6 +117,10 @@ if (!empty($arResult['BACKURL']))
 			<label class="mf-auth-label" for="mfRegCompanyAdr"><span class="mf-auth-req">*</span><?=GetMessage('MF_REG_COMPANY_ADR')?></label>
 			<input id="mfRegCompanyAdr" class="form-control mf-auth-input" type="text" name="MF_COMPANY[COMPANY_ADR]" maxlength="255" value="<?=htmlspecialcharsbx($company['COMPANY_ADR'] ?? '')?>" />
 		</div>
+		<div class="form-group mf-auth-group">
+			<label class="mf-auth-label" for="mfRegFactAddress"><span class="mf-auth-req">*</span><?=GetMessage('MF_REG_FACT_ADDRESS')?></label>
+			<input id="mfRegFactAddress" class="form-control mf-auth-input" type="text" name="MF_COMPANY[FACT_ADDRESS]" maxlength="255" value="<?=htmlspecialcharsbx($company['FACT_ADDRESS'] ?? '')?>" />
+		</div>
 		<div class="form-row">
 			<div class="form-group col-md-6 mf-auth-group">
 				<label class="mf-auth-label" for="mfRegInn"><span class="mf-auth-req">*</span><?=GetMessage('MF_REG_INN')?></label>
@@ -130,6 +134,20 @@ if (!empty($arResult['BACKURL']))
 		<div class="form-group mf-auth-group">
 			<label class="mf-auth-label" for="mfRegOgrn"><?=GetMessage('MF_REG_OGRN')?></label>
 			<input id="mfRegOgrn" class="form-control mf-auth-input" type="text" name="MF_COMPANY[OGRN]" maxlength="15" inputmode="numeric" value="<?=htmlspecialcharsbx($company['OGRN'] ?? '')?>" />
+		</div>
+		<div class="form-row">
+			<div class="form-group col-md-4 mf-auth-group">
+				<label class="mf-auth-label" for="mfRegBik"><span class="mf-auth-req">*</span><?=GetMessage('MF_REG_BIK')?></label>
+				<input id="mfRegBik" class="form-control mf-auth-input" type="text" name="MF_COMPANY[BIK]" maxlength="9" inputmode="numeric" value="<?=htmlspecialcharsbx($company['BIK'] ?? '')?>" />
+			</div>
+			<div class="form-group col-md-4 mf-auth-group">
+				<label class="mf-auth-label" for="mfRegRs"><span class="mf-auth-req">*</span><?=GetMessage('MF_REG_RS')?></label>
+				<input id="mfRegRs" class="form-control mf-auth-input" type="text" name="MF_COMPANY[RS]" maxlength="20" inputmode="numeric" value="<?=htmlspecialcharsbx($company['RS'] ?? '')?>" />
+			</div>
+			<div class="form-group col-md-4 mf-auth-group">
+				<label class="mf-auth-label" for="mfRegKs"><span class="mf-auth-req">*</span><?=GetMessage('MF_REG_KS')?></label>
+				<input id="mfRegKs" class="form-control mf-auth-input" type="text" name="MF_COMPANY[KS]" maxlength="20" inputmode="numeric" value="<?=htmlspecialcharsbx($company['KS'] ?? '')?>" />
+			</div>
 		</div>
 		<div class="form-group mf-auth-group">
 			<label class="mf-auth-label" for="mfRegBank"><?=GetMessage('MF_REG_BANK_DETAILS')?></label>
@@ -264,7 +282,19 @@ if (!empty($arResult['BACKURL']))
 		for (var j = 0; j < requiredCompanyFields.length; j++) {
 			var field = requiredCompanyFields[j];
 			var name = field.getAttribute('name') || '';
-			var required = isJur && (name.indexOf('[COMPANY]') > -1 || name.indexOf('[COMPANY_ADR]') > -1 || name.indexOf('[INN]') > -1);
+			var requiredNames = [
+				'[COMPANY]', '[COMPANY_ADR]', '[FACT_ADDRESS]', '[INN]',
+				'[BIK]', '[RS]', '[KS]'
+			];
+			var required = false;
+			if (isJur) {
+				for (var ri = 0; ri < requiredNames.length; ri++) {
+					if (name.indexOf(requiredNames[ri]) > -1) {
+						required = true;
+						break;
+					}
+				}
+			}
 			field.required = required;
 		}
 	}

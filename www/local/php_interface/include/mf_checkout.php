@@ -16,9 +16,13 @@ if (!function_exists('mf_checkout_company_order_prop_codes'))
 		return [
 			'COMPANY',
 			'COMPANY_ADR',
+			'FACT_ADDRESS',
 			'INN',
 			'KPP',
 			'OGRN',
+			'BIK',
+			'RS',
+			'KS',
 			'BANK_DETAILS',
 			'CONTACT_PERSON',
 		];
@@ -191,7 +195,7 @@ if (!function_exists('mf_checkout_props_version'))
 {
 	function mf_checkout_props_version(): string
 	{
-		return '2026-05-19-02';
+		return '2026-05-19-03';
 	}
 }
 
@@ -999,6 +1003,21 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 				'ENTITY_TYPE' => 'ORDER',
 				'ENTITY_REGISTRY_TYPE' => 'ORDER',
 			],
+			'FACT_ADDRESS' => [
+				'PERSON_TYPE_ID' => $jurPersonTypeId,
+				'NAME' => 'Фактический адрес',
+				'TYPE' => 'STRING',
+				'REQUIRED' => 'Y',
+				'SORT' => 215,
+				'USER_PROPS' => 'Y',
+				'PROPS_GROUP_ID' => 3,
+				'CODE' => 'FACT_ADDRESS',
+				'ACTIVE' => 'Y',
+				'UTIL' => 'N',
+				'IS_ADDRESS' => 'N',
+				'ENTITY_TYPE' => 'ORDER',
+				'ENTITY_REGISTRY_TYPE' => 'ORDER',
+			],
 			'INN' => [
 				'PERSON_TYPE_ID' => $jurPersonTypeId,
 				'NAME' => 'ИНН',
@@ -1038,6 +1057,48 @@ if (!function_exists('mf_checkout_ensure_company_order_props'))
 				'USER_PROPS' => 'Y',
 				'PROPS_GROUP_ID' => 3,
 				'CODE' => 'OGRN',
+				'ACTIVE' => 'Y',
+				'UTIL' => 'N',
+				'ENTITY_TYPE' => 'ORDER',
+				'ENTITY_REGISTRY_TYPE' => 'ORDER',
+			],
+			'BIK' => [
+				'PERSON_TYPE_ID' => $jurPersonTypeId,
+				'NAME' => 'БИК',
+				'TYPE' => 'STRING',
+				'REQUIRED' => 'Y',
+				'SORT' => 237,
+				'USER_PROPS' => 'Y',
+				'PROPS_GROUP_ID' => 3,
+				'CODE' => 'BIK',
+				'ACTIVE' => 'Y',
+				'UTIL' => 'N',
+				'ENTITY_TYPE' => 'ORDER',
+				'ENTITY_REGISTRY_TYPE' => 'ORDER',
+			],
+			'RS' => [
+				'PERSON_TYPE_ID' => $jurPersonTypeId,
+				'NAME' => 'Расчетный счет',
+				'TYPE' => 'STRING',
+				'REQUIRED' => 'Y',
+				'SORT' => 238,
+				'USER_PROPS' => 'Y',
+				'PROPS_GROUP_ID' => 3,
+				'CODE' => 'RS',
+				'ACTIVE' => 'Y',
+				'UTIL' => 'N',
+				'ENTITY_TYPE' => 'ORDER',
+				'ENTITY_REGISTRY_TYPE' => 'ORDER',
+			],
+			'KS' => [
+				'PERSON_TYPE_ID' => $jurPersonTypeId,
+				'NAME' => 'Корр. счет',
+				'TYPE' => 'STRING',
+				'REQUIRED' => 'Y',
+				'SORT' => 239,
+				'USER_PROPS' => 'Y',
+				'PROPS_GROUP_ID' => 3,
+				'CODE' => 'KS',
 				'ACTIVE' => 'Y',
 				'UTIL' => 'N',
 				'ENTITY_TYPE' => 'ORDER',
@@ -1254,6 +1315,111 @@ if (!function_exists('mf_checkout_fix_company_address_flags'))
 	}
 }
 
+if (!function_exists('mf_checkout_hide_jur_fax_prop'))
+{
+	function mf_checkout_hide_jur_fax_prop(): void
+	{
+		static $done = false;
+		if ($done)
+		{
+			return;
+		}
+		$done = true;
+
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return;
+		}
+		if (!class_exists('CSaleOrderProps'))
+		{
+			return;
+		}
+
+		$personTypes = mf_checkout_person_type_map();
+		$jurPersonTypeId = (int)($personTypes['jur'] ?? 0);
+		if ($jurPersonTypeId <= 0)
+		{
+			return;
+		}
+
+		$filter = ['PERSON_TYPE_ID' => $jurPersonTypeId, 'CODE' => 'FAX'];
+		$db = \CSaleOrderProps::GetList(
+			['ID' => 'ASC'],
+			$filter,
+			false,
+			false,
+			['ID', 'CODE', 'NAME', 'ACTIVE', 'REQUIRED', 'UTIL']
+		);
+		while ($row = $db->Fetch())
+		{
+			$propId = (int)($row['ID'] ?? 0);
+			if ($propId <= 0)
+			{
+				continue;
+			}
+			if (
+				($row['ACTIVE'] ?? 'Y') === 'N'
+				&& ($row['REQUIRED'] ?? 'N') === 'N'
+				&& ($row['UTIL'] ?? 'N') === 'Y'
+			)
+			{
+				continue;
+			}
+			\CSaleOrderProps::Update($propId, [
+				'ACTIVE' => 'N',
+				'REQUIRED' => 'N',
+				'UTIL' => 'Y',
+			]);
+		}
+
+		$dbByName = \CSaleOrderProps::GetList(
+			['ID' => 'ASC'],
+			['PERSON_TYPE_ID' => $jurPersonTypeId, 'NAME' => 'Факс'],
+			false,
+			false,
+			['ID', 'ACTIVE', 'REQUIRED', 'UTIL']
+		);
+		while ($row = $dbByName->Fetch())
+		{
+			$propId = (int)($row['ID'] ?? 0);
+			if ($propId <= 0)
+			{
+				continue;
+			}
+			if (
+				($row['ACTIVE'] ?? 'Y') === 'N'
+				&& ($row['REQUIRED'] ?? 'N') === 'N'
+				&& ($row['UTIL'] ?? 'N') === 'Y'
+			)
+			{
+				continue;
+			}
+			\CSaleOrderProps::Update($propId, [
+				'ACTIVE' => 'N',
+				'REQUIRED' => 'N',
+				'UTIL' => 'Y',
+			]);
+		}
+
+		if (class_exists(\Bitrix\Main\Application::class))
+		{
+			try
+			{
+				$sqlHelper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+				\Bitrix\Main\Application::getConnection()->queryExecute(
+					"UPDATE b_sale_order_props SET ACTIVE = 'N', REQUIRED = 'N', UTIL = 'Y'"
+					. " WHERE PERSON_TYPE_ID = " . $jurPersonTypeId
+					. " AND (CODE = 'FAX' OR NAME = '" . $sqlHelper->forSql('Факс') . "')"
+				);
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+	}
+}
+
 if (!function_exists('mf_checkout_on_order_user_result'))
 {
 	function mf_checkout_on_order_user_result(array &$arUserResult, \Bitrix\Main\HttpRequest $request, array &$arParams): void
@@ -1363,7 +1529,14 @@ if (!function_exists('mf_checkout_on_order_user_result'))
 			{
 				$toCity = trim((string)$request->getPost('mf_edost_to_city'));
 			}
-			if ($edostTid === '' && $nom === '' && $toCity === '')
+			$deliveryMode = function_exists('mf_checkout_resolve_delivery_mode')
+				? mf_checkout_resolve_delivery_mode(
+					(string)$request->getPost('MF_DELIVERY_MODE'),
+					$edostTid,
+					(string)$request->getPost('MF_EDOST_TARIF_COMPANY')
+				)
+				: 'pickup';
+			if ($edostTid === '' && $nom === '' && $toCity === '' && $deliveryMode !== 'pickup')
 			{
 				return;
 			}
@@ -1485,6 +1658,14 @@ if (!function_exists('mf_checkout_on_order_properties'))
 				}
 				if ($type === 'LOCATION' || ($row['IS_LOCATION'] ?? 'N') === 'Y')
 				{
+					if (mf_checkout_order_prop_scalar($arUserResult, $pid) === '')
+					{
+						$fbLoc = mf_checkout_resolve_fallback_location_code();
+						if ($fbLoc !== '')
+						{
+							$arUserResult['ORDER_PROP'][$pid] = $fbLoc;
+						}
+					}
 					continue;
 				}
 
@@ -2699,7 +2880,10 @@ if (!function_exists('mf_checkout_register_company_data_from_request'))
 			$source = is_array($_REQUEST['MF_COMPANY'] ?? null) ? $_REQUEST['MF_COMPANY'] : [];
 		}
 
-		$fields = ['COMPANY', 'COMPANY_ADR', 'INN', 'KPP', 'OGRN', 'BANK_DETAILS', 'CONTACT_PERSON', 'EMAIL', 'PHONE'];
+		$fields = [
+			'COMPANY', 'COMPANY_ADR', 'FACT_ADDRESS', 'INN', 'KPP', 'OGRN',
+			'BIK', 'RS', 'KS', 'BANK_DETAILS', 'CONTACT_PERSON', 'EMAIL', 'PHONE',
+		];
 		$data = [];
 		foreach ($fields as $code)
 		{
@@ -2758,6 +2942,10 @@ if (!function_exists('mf_checkout_validate_register_company_data'))
 		{
 			$errors[] = 'Укажите юридический адрес.';
 		}
+		if ($companyData['FACT_ADDRESS'] === '')
+		{
+			$errors[] = 'Укажите фактический адрес.';
+		}
 		if ($companyData['INN'] === '')
 		{
 			$errors[] = 'Укажите ИНН.';
@@ -2773,6 +2961,30 @@ if (!function_exists('mf_checkout_validate_register_company_data'))
 		if ($companyData['OGRN'] !== '' && !preg_match('/^\d{13}(\d{2})?$/', $companyData['OGRN']))
 		{
 			$errors[] = 'ОГРН / ОГРНИП должен содержать 13 или 15 цифр.';
+		}
+		if ($companyData['BIK'] === '')
+		{
+			$errors[] = 'Укажите БИК.';
+		}
+		elseif (!preg_match('/^\d{9}$/', $companyData['BIK']))
+		{
+			$errors[] = 'БИК должен содержать 9 цифр.';
+		}
+		if ($companyData['RS'] === '')
+		{
+			$errors[] = 'Укажите расчетный счет.';
+		}
+		elseif (!preg_match('/^\d{20}$/', $companyData['RS']))
+		{
+			$errors[] = 'Расчетный счет должен содержать 20 цифр.';
+		}
+		if ($companyData['KS'] === '')
+		{
+			$errors[] = 'Укажите корр. счет.';
+		}
+		elseif (!preg_match('/^\d{20}$/', $companyData['KS']))
+		{
+			$errors[] = 'Корр. счет должен содержать 20 цифр.';
 		}
 
 		return $errors;
@@ -2796,7 +3008,10 @@ if (!function_exists('mf_checkout_save_user_company_profile'))
 
 		$propIds = mf_checkout_order_prop_ids_by_code(
 			$personTypeId,
-			['COMPANY', 'COMPANY_ADR', 'INN', 'KPP', 'OGRN', 'BANK_DETAILS', 'CONTACT_PERSON', 'EMAIL', 'PHONE']
+			[
+				'COMPANY', 'COMPANY_ADR', 'FACT_ADDRESS', 'INN', 'KPP', 'OGRN',
+				'BIK', 'RS', 'KS', 'BANK_DETAILS', 'CONTACT_PERSON', 'EMAIL', 'PHONE',
+			]
 		);
 		if (empty($propIds))
 		{
@@ -2976,6 +3191,15 @@ if (!function_exists('mf_checkout_bootstrap'))
 		catch (\Throwable $e)
 		{
 			mf_checkout_bootstrap_log('company_address_flags', $e);
+		}
+
+		try
+		{
+			mf_checkout_hide_jur_fax_prop();
+		}
+		catch (\Throwable $e)
+		{
+			mf_checkout_bootstrap_log('hide_jur_fax_prop', $e);
 		}
 
 		try

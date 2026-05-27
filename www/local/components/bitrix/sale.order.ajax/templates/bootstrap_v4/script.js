@@ -528,9 +528,9 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				var code = String(arProperty.CODE || '').toUpperCase();
 				var name = String(arProperty.NAME || '').trim();
 				var type = String(arProperty.TYPE || '').toUpperCase();
-				var companyCodes = ['COMPANY', 'COMPANY_ADR', 'INN', 'KPP', 'OGRN', 'BANK_DETAILS', 'CONTACT_PERSON'];
+				var companyCodes = ['COMPANY', 'COMPANY_ADR', 'FACT_ADDRESS', 'INN', 'KPP', 'OGRN', 'BIK', 'RS', 'KS', 'BANK_DETAILS', 'CONTACT_PERSON'];
 
-				if (companyCodes.indexOf(code) !== -1 || name === 'Юридический адрес' || name === 'Название компании')
+				if (companyCodes.indexOf(code) !== -1 || name === 'Юридический адрес' || name === 'Фактический адрес' || name === 'Название компании')
 					return false;
 
 				if (type === 'LOCATION' || arProperty.IS_LOCATION === 'Y')
@@ -2274,6 +2274,8 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 						continue;
 					mfBuyerAddress.syncOrderPropInputsByPropId(props[i].ID, combined);
 				}
+				if (typeof mfE.ensureBitrixLocationPropertyFilled === 'function')
+					mfE.ensureBitrixLocationPropertyFilled({sendRefresh: false});
 			} catch(ePickupSync) {}
 		};
 
@@ -2705,6 +2707,34 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 					nomInp.value = '';
 			} catch(eNomSync) {}
 		};
+		mfBuyerAddress.hideJurFaxRow = function(){
+			try {
+				var result = window.BX && BX.Sale && BX.Sale.OrderAjaxComponent ? BX.Sale.OrderAjaxComponent.result : null;
+				var mfCheckout = result && result.MF_CHECKOUT ? result.MF_CHECKOUT : null;
+				var jurId = mfCheckout ? parseInt(mfCheckout.JUR_PERSON_TYPE_ID, 10) : 0;
+				var currentId = mfCheckout ? parseInt(mfCheckout.CURRENT_PERSON_TYPE_ID, 10) : 0;
+				if (jurId <= 0 || currentId !== jurId)
+					return;
+
+				var props = result && result.ORDER_PROP && result.ORDER_PROP.properties ? result.ORDER_PROP.properties : [];
+				for (var i = 0; i < props.length; i++)
+				{
+					if (!props[i] || !props[i].ID)
+						continue;
+					var code = String(props[i].CODE || '').toUpperCase();
+					var name = String(props[i].NAME || '').trim();
+					if (code !== 'FAX' && name !== 'Факс')
+						continue;
+					var row = ctx.getRowByPropId(props[i].ID);
+					if (row)
+					{
+						BX.addClass(row, 'mf-checkout-hide-jur-fax');
+						BX.hide(row);
+					}
+				}
+			} catch(eHideFax) {}
+		};
+
 		mfBuyerAddress.hideLegacyRows = function(){
 			var customLocationProp = mfBuyerAddress.getPropByCode('DELIVERY_LOCATION_TEXT');
 			var customAddressProp = mfBuyerAddress.getPropByCode('DELIVERY_ADDRESS');
@@ -2814,8 +2844,14 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 		// иначе пользователь не видит ни селектора, ни ошибки валидации (класс .mf-checkout-hide-location переживает locationsCompletion()).
 		mfBuyerAddress.syncBitrixLocationVisibility = function(ctx){
 			try {
-				if (document.getElementById('mf-nominatim-wrap'))
+				var mfEvis = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+				var pickupMode = mfEvis && typeof mfEvis.isPickupMode === 'function' && mfEvis.isPickupMode();
+				if (document.getElementById('mf-nominatim-wrap') || pickupMode)
+				{
 					mfBuyerAddress.hideBitrixLocationSelector(ctx);
+					if (pickupMode && mfEvis && typeof mfEvis.ensureBitrixLocationPropertyFilled === 'function')
+						mfEvis.ensureBitrixLocationPropertyFilled({sendRefresh: false});
+				}
 				else
 					mfBuyerAddress.showBitrixLocationSelector(ctx);
 			} catch(eSynLoc) {}
@@ -2828,6 +2864,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				if (typeof mfBuyerAddress.isUserEditingAddress === 'function' && mfBuyerAddress.isUserEditingAddress())
 				{
 					try { mfBuyerAddress.hideLegacyRows(); } catch(eHideLegacy) {}
+					try { mfBuyerAddress.hideJurFaxRow(); } catch(eHideFax) {}
 					try { mfBuyerAddress.syncBitrixLocationVisibility(ctx); } catch(eVisEdit) {}
 					return;
 				}
@@ -2951,6 +2988,7 @@ BX.saleOrderAjax = { // bad solution, actually, a singleton at the page
 				}
 
 				mfBuyerAddress.hideLegacyRows();
+				mfBuyerAddress.hideJurFaxRow();
 				mfBuyerAddress.syncLegacyDeliveryAddressProperty();
 				mfBuyerAddress.syncBitrixLocationVisibility(ctx);
 

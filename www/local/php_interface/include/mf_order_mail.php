@@ -459,7 +459,7 @@ final class Renderer
 	{
 		$props = self::orderPropsMap($order);
 		$personTypeId = (int)$order->getPersonTypeId();
-		$isJur = $personTypeId === 2;
+		$isJur = self::isJurPersonType($personTypeId);
 
 		$fio = $isJur
 			? self::firstNonEmpty(
@@ -498,6 +498,14 @@ final class Renderer
 
 		$rows = [
 			['ФИО', $fio],
+		];
+
+		if ($isJur)
+		{
+			$rows = array_merge($rows, self::jurCompanyRows($props));
+		}
+
+		$rows = array_merge($rows, [
 			['E-mail', self::prop($props, 'EMAIL')],
 			['Контактный телефон', self::prop($props, 'PHONE')],
 			['Город (Населённый пункт), Область, Край и т.д.', $city],
@@ -508,15 +516,7 @@ final class Renderer
 			['Способ оплаты', $paySystem],
 			['Удобный способ подтверждения заказа', $confirm],
 			['Комментарий', $comment],
-		];
-
-		if ($isJur)
-		{
-			array_splice($rows, 1, 0, [
-				['Название компании', self::prop($props, 'COMPANY')],
-				['ИНН', self::prop($props, 'INN')],
-			]);
-		}
+		]);
 
 		$body = '';
 		foreach ($rows as [$label, $value])
@@ -656,33 +656,13 @@ final class Renderer
 	private static function invoicePaymentHtml(Order $order, string $paySystemName, string $sumLabel): string
 	{
 		$name = $paySystemName !== '' ? $paySystemName : 'Безнал: выставление счёта (для юр. лиц)';
-		$props = self::orderPropsMap($order);
-		$company = self::prop($props, 'COMPANY');
-		$inn = self::prop($props, 'INN');
 
-		$html = '<div style="font-size:14px;line-height:1.6;color:#333;">'
+		return '<div style="font-size:14px;line-height:1.6;color:#333;">'
 			. '<p>Вы выбрали способ оплаты <strong>' . self::esc($name) . '</strong>.</p>'
 			. '<p>Сумма заказа: <strong>' . self::esc($sumLabel) . '</strong>.</p>'
-			. '<p>После проверки заказа менеджером мы выставим счёт на оплату и отправим его на указанный e-mail.</p>';
-
-		if ($company !== '' || $inn !== '')
-		{
-			$html .= '<p><strong>Реквизиты для выставления счёта:</strong><br>';
-			if ($company !== '')
-			{
-				$html .= 'Организация: ' . self::esc($company) . '<br>';
-			}
-			if ($inn !== '')
-			{
-				$html .= 'ИНН: ' . self::esc($inn);
-			}
-			$html .= '</p>';
-		}
-
-		$html .= '<p>Если потребуются дополнительные документы (КПП, юридический адрес и т.д.), менеджер свяжется с вами.</p>'
+			. '<p>После проверки заказа менеджером мы выставим счёт на оплату и отправим его на указанный e-mail.</p>'
+			. '<p>Если потребуются дополнительные документы (КПП, юридический адрес и т.д.), менеджер свяжется с вами.</p>'
 			. '</div>';
-
-		return $html;
 	}
 
 	private static function paykeeperPayLink(Payment $payment): string
@@ -983,6 +963,42 @@ final class Renderer
 		}
 
 		return $out;
+	}
+
+	/** @param array<string, string> $props */
+	private static function jurCompanyRows(array $props): array
+	{
+		return [
+			['Название компании', self::prop($props, 'COMPANY')],
+			['Юридический адрес', self::prop($props, 'COMPANY_ADR')],
+			['Фактический адрес', self::prop($props, 'FACT_ADDRESS')],
+			['ИНН', self::prop($props, 'INN')],
+			['КПП', self::prop($props, 'KPP')],
+			['ОГРН / ОГРНИП', self::prop($props, 'OGRN')],
+			['БИК', self::prop($props, 'BIK')],
+			['Расчетный счет', self::prop($props, 'RS')],
+			['Корр. счет', self::prop($props, 'KS')],
+			['Банковские реквизиты', self::prop($props, 'BANK_DETAILS')],
+		];
+	}
+
+	private static function isJurPersonType(int $personTypeId): bool
+	{
+		if ($personTypeId <= 0)
+		{
+			return false;
+		}
+		if (function_exists('mf_checkout_person_type_map'))
+		{
+			$map = mf_checkout_person_type_map();
+			$jurId = (int)($map['jur'] ?? 0);
+			if ($jurId > 0)
+			{
+				return $personTypeId === $jurId;
+			}
+		}
+
+		return $personTypeId === 2;
 	}
 
 	/** @param array<string, string> $props */

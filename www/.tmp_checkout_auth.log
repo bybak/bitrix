@@ -519,3 +519,11 @@
 2026-05-26T20:23:25+03:00 initDelivery {"user_id":10,"person_type_id":2,"delivery_id":8,"buyer_store":0,"delivery_count":1}
 2026-05-26T20:23:44+03:00 initUserProfiles {"user_id":10,"person_type_id":2,"request_method":"POST","profile_id":68,"profile_change":"N","profiles_count":1}
 2026-05-26T20:23:44+03:00 initDelivery {"user_id":10,"person_type_id":2,"delivery_id":8,"buyer_store":0,"delivery_count":1}
+2026-05-27T10:57:35+03:00 initUserProfiles {"user_id":11,"person_type_id":1,"request_method":"GET","profile_id":0,"profile_change":"","profiles_count":0}
+2026-05-27T10:57:35+03:00 initDelivery {"user_id":11,"person_type_id":1,"delivery_id":8,"buyer_store":0,"delivery_count":1}
+2026-05-27T10:58:02+03:00 initUserProfiles {"user_id":11,"person_type_id":1,"request_method":"POST","profile_id":0,"profile_change":"N","profiles_count":0}
+2026-05-27T10:58:02+03:00 initDelivery {"user_id":11,"person_type_id":1,"delivery_id":8,"buyer_store":0,"delivery_count":1}
+2026-05-27T10:58:33+03:00 initUserProfiles {"user_id":10,"person_type_id":2,"request_method":"GET","profile_id":68,"profile_change":"","profiles_count":1}
+2026-05-27T10:58:33+03:00 initDelivery {"user_id":10,"person_type_id":2,"delivery_id":8,"buyer_store":0,"delivery_count":1}
+2026-05-27T10:59:06+03:00 initUserProfiles {"user_id":10,"person_type_id":2,"request_method":"POST","profile_id":68,"profile_change":"N","profiles_count":1}
+2026-05-27T10:59:06+03:00 initDelivery {"user_id":10,"person_type_id":2,"delivery_id":8,"buyer_store":0,"delivery_count":1}

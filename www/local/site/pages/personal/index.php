@@ -7,6 +7,7 @@ global $USER;
 
 $mfClientStatus = 'Не указан';
 $mfClientType = 'Не указан';
+$mfDiscountPercent = 0;
 $mfDiscountSize = '0%';
 $mfUserSystemId = '—';
 
@@ -68,6 +69,7 @@ if (is_object($USER) && $USER->IsAuthorized())
 
 		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
 		{
+			$mfDiscountPercent = 10;
 			$mfDiscountSize = '10%';
 		}
 	}
@@ -96,10 +98,12 @@ if (is_object($USER) && $USER->IsAuthorized())
 			<div class="mf-personal-summary-label">Тип клиента</div>
 			<div class="mf-personal-summary-value"><?=$mfClientType?></div>
 		</div>
+		<?php if ($mfDiscountPercent > 0): ?>
 		<div class="mf-personal-summary-card">
 			<div class="mf-personal-summary-label">Размер скидки</div>
 			<div class="mf-personal-summary-value"><?=$mfDiscountSize?></div>
 		</div>
+		<?php endif; ?>
 		<div class="mf-personal-summary-card">
 			<div class="mf-personal-summary-label">ID в системе</div>
 			<div class="mf-personal-summary-value"><?=htmlspecialcharsbx($mfUserSystemId)?></div>

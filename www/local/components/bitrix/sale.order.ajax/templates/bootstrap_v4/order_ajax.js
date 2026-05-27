@@ -9052,6 +9052,9 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				if (BX.hasClass(props[i], 'mf-checkout-hide-legacy-address'))
 					continue;
 
+				if (BX.hasClass(props[i], 'mf-checkout-hide-jur-fax'))
+					continue;
+
 				propContainer = props[i].querySelector('.soa-property-container');
 				if (propContainer)
 				{
@@ -9083,9 +9086,17 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 
 					// Motor-Force: LOCATION в «Покупателе» часто без this.locations[id] (excludeLocation не цепляет).
 					// UI sls пустой, а адрес уже в hidden ORDER_PROP_* или в DELIVERY_LOCATION_TEXT — не считать ошибкой.
-					if (String(arProperty.TYPE || '').toUpperCase() === 'LOCATION')
+					if (String(arProperty.TYPE || '').toUpperCase() === 'LOCATION' || arProperty.IS_LOCATION === 'Y')
 					{
 						try {
+							var mfEdLocPk = BX.saleOrderAjax && BX.saleOrderAjax.__mfEdost;
+							if (mfEdLocPk && typeof mfEdLocPk.isPickupMode === 'function' && mfEdLocPk.isPickupMode())
+							{
+								if (typeof mfEdLocPk.ensureBitrixLocationPropertyFilled === 'function')
+									mfEdLocPk.ensureBitrixLocationPropertyFilled({sendRefresh: false});
+								if (this.mfIsDeliveryLocationSatisfied && this.mfIsDeliveryLocationSatisfied())
+									continue;
+							}
 							var hidSk = this.orderBlockNode.querySelector('input[type="hidden"][name="ORDER_PROP_' + id + '"]');
 							if (hidSk && String(hidSk.value || '').trim() !== '')
 								continue;
