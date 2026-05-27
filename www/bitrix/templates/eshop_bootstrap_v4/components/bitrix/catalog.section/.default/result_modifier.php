@@ -71,13 +71,3 @@ if (function_exists('mf_catalog_listing_display_price'))
 	}
 	unset($arItem);
 }
-
-$mfSortMode = trim((string)($arParams['MF_SORT_MODE'] ?? 'default'));
-if (!in_array($mfSortMode, ['default', 'name_asc', 'name_desc', 'price_asc', 'price_desc'], true))
-{
-	$mfSortMode = 'default';
-}
-if (function_exists('mf_catalog_sort_section_items'))
-{
-	mf_catalog_sort_section_items($arResult['ITEMS'], $mfSortMode);
-}

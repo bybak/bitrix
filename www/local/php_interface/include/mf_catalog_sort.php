@@ -110,6 +110,11 @@ if (!function_exists('mf_catalog_listing_compare_items'))
 						return $cmp;
 					}
 				}
+				$cmp = strcasecmp($metaA['name'], $metaB['name']);
+				if ($cmp !== 0)
+				{
+					return $cmp;
+				}
 				break;
 
 			case 'name_desc':
@@ -187,5 +192,105 @@ if (!function_exists('mf_catalog_sort_section_items'))
 				return mf_catalog_listing_compare_items($a, $b, $mode);
 			}
 		);
+	}
+}
+
+if (!function_exists('mf_catalog_section_sorted_product_ids'))
+{
+	/**
+	 * Полный порядок ID товаров раздела для catalog.section (CUSTOM_ELEMENT_SORT).
+	 *
+	 * @param array<string, mixed> $extraFilter
+	 *
+	 * @return list<int>
+	 */
+	function mf_catalog_section_sorted_product_ids(
+		int $sectionId,
+		int $iblockId,
+		array $extraFilter,
+		string $mode = 'default'
+	): array
+	{
+		$sectionId = (int)$sectionId;
+		$iblockId = (int)$iblockId;
+		if ($sectionId <= 0 || $iblockId <= 0)
+		{
+			return [];
+		}
+
+		$mode = trim($mode);
+		if (!in_array($mode, ['default', 'name_asc', 'name_desc', 'price_asc', 'price_desc'], true))
+		{
+			$mode = 'default';
+		}
+
+		$cacheVersion = '3';
+		$cacheKey = md5(json_encode([$cacheVersion, $sectionId, $iblockId, $extraFilter, $mode], JSON_UNESCAPED_UNICODE));
+		$cacheDir = '/mf_catalog_sort';
+		$cacheTtl = 600;
+
+		if (class_exists(\Bitrix\Main\Data\Cache::class))
+		{
+			$cache = \Bitrix\Main\Data\Cache::createInstance();
+			if ($cache->initCache($cacheTtl, $cacheKey, $cacheDir))
+			{
+				$vars = $cache->getVars();
+
+				return is_array($vars) ? array_values(array_map('intval', $vars)) : [];
+			}
+		}
+
+		if (!class_exists(\CIBlockElement::class))
+		{
+			return [];
+		}
+
+		$filter = array_merge(
+			[
+				'IBLOCK_ID' => $iblockId,
+				'SECTION_ID' => $sectionId,
+				'INCLUDE_SUBSECTIONS' => 'Y',
+				'ACTIVE' => 'Y',
+				'ACTIVE_DATE' => 'Y',
+			],
+			$extraFilter
+		);
+
+		$items = [];
+		$rs = \CIBlockElement::GetList(
+			['ID' => 'ASC'],
+			$filter,
+			false,
+			false,
+			['ID', 'NAME', 'SORT']
+		);
+		while ($row = $rs->Fetch())
+		{
+			$id = (int)($row['ID'] ?? 0);
+			if ($id <= 0)
+			{
+				continue;
+			}
+			$items[] = [
+				'ID' => $id,
+				'NAME' => (string)($row['NAME'] ?? ''),
+				'SORT' => (int)($row['SORT'] ?? 500),
+			];
+		}
+
+		if ($items === [])
+		{
+			return [];
+		}
+
+		mf_catalog_sort_section_items($items, $mode);
+		$ids = array_values(array_map(static fn(array $item): int => (int)$item['ID'], $items));
+
+		if (isset($cache) && $cache->startDataCache())
+		{
+			$cache->endDataCache($ids);
+		}
+
+		return $ids;
 	}
 }

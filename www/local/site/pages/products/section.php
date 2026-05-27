@@ -169,6 +169,17 @@ switch ($mfSort)
 		break;
 }
 
+$mfCatalogSortedIds = [];
+if (function_exists('mf_catalog_section_sorted_product_ids'))
+{
+	$mfCatalogSortedIds = mf_catalog_section_sorted_product_ids(
+		(int)$SECTION_ID,
+		(int)$IBLOCK_ID,
+		$GLOBALS['mfCatalogFilter'] ?? [],
+		$mfSort
+	);
+}
+
 $arParams = array(
     "IBLOCK_TYPE" => "catalog",
     "IBLOCK_ID" => $IBLOCK_ID,
@@ -235,7 +246,8 @@ $arParams = array(
 
 	// Режим сортировки для result_modifier (наличие / цена / имя)
 	"MF_SORT_MODE" => $mfSort,
-	"MF_CATALOG_SORT_VERSION" => "2",
+	"MF_CATALOG_SORT_VERSION" => "3",
+	"CUSTOM_ELEMENT_SORT" => $mfCatalogSortedIds !== [] ? ["ID" => $mfCatalogSortedIds] : [],
     
     // SEO
     "SET_TITLE" => "Y",
