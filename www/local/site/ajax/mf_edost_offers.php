@@ -59,18 +59,14 @@ try
 	$fuserId = Fuser::getId();
 	$basket = Basket::loadItemsForFUser($fuserId, $siteId);
 
-	$weightGrams = 0.0;
 	$sum = 0.0;
 	foreach ($basket as $item)
 	{
 		/** @var \Bitrix\Sale\BasketItem $item */
-		$q = (float)$item->getQuantity();
-		$w = (float)$item->getWeight(); // grams per item
-		$weightGrams += max(0.0, $w) * max(0.0, $q);
 		$sum += (float)$item->getFinalPrice();
 	}
 
-	$weightKg = $weightGrams > 0 ? ($weightGrams / 1000.0) : 0.001;
+	$weightKg = \MF\Delivery\Edost::parcelWeightKgFromBasketItems($basket);
 	$insurance = \MF\Delivery\Edost::insuranceRubForBasketSum($sum);
 	$dimensionsM = \MF\Delivery\Edost::parcelDimensionsMFromBasketItems($basket);
 

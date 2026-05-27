@@ -1897,16 +1897,9 @@ if (!function_exists('mf_checkout_default_edost_offer'))
 			$fuserId = \Bitrix\Sale\Fuser::getId();
 			$basket = \Bitrix\Sale\Basket::loadItemsForFUser($fuserId, $siteId);
 
-			$weightGrams = 0.0;
-			foreach ($basket as $item)
-			{
-				$q = (float)$item->getQuantity();
-				$w = (float)$item->getWeight();
-				$weightGrams += max(0.0, $w) * max(0.0, $q);
-			}
-
-			$weightKg = $weightGrams > 0 ? ($weightGrams / 1000.0) : 0.001;
-			$resp = \MF\Delivery\Edost::calculate($toCity, $weightKg, 0.0, '');
+			$weightKg = \MF\Delivery\Edost::parcelWeightKgFromBasketItems($basket);
+			$dimensionsM = \MF\Delivery\Edost::parcelDimensionsMFromBasketItems($basket);
+			$resp = \MF\Delivery\Edost::calculate($toCity, $weightKg, 0.0, '', $dimensionsM);
 			if (!is_array($resp) || !($resp['ok'] ?? false) || empty($resp['offers']) || !is_array($resp['offers']))
 			{
 				return null;

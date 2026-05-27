@@ -129,11 +129,23 @@ final class Edost
 	 *
 	 * @return array{ln: float, wd: float, hg: float}|null
 	 */
+	/** Минимальный вес посылки для eDost, если в корзине нет позиций с весом (кг). Env: MF_EDOST_PARCEL_MIN_WEIGHT_KG */
+	public static function defaultParcelWeightKg(): float
+	{
+		$kg = (float)(getenv('MF_EDOST_PARCEL_MIN_WEIGHT_KG') ?: 1);
+		if ($kg <= 0)
+		{
+			$kg = 1.0;
+		}
+
+		return $kg;
+	}
+
 	public static function defaultParcelDimensionsM(): ?array
 	{
-		$lCm = (float)(getenv('MF_EDOST_PARCEL_L_CM') ?: 30);
-		$wCm = (float)(getenv('MF_EDOST_PARCEL_W_CM') ?: 20);
-		$hCm = (float)(getenv('MF_EDOST_PARCEL_H_CM') ?: 10);
+		$lCm = (float)(getenv('MF_EDOST_PARCEL_L_CM') ?: 27);
+		$wCm = (float)(getenv('MF_EDOST_PARCEL_W_CM') ?: 17);
+		$hCm = (float)(getenv('MF_EDOST_PARCEL_H_CM') ?: 5);
 		if ($lCm <= 0 || $wCm <= 0 || $hCm <= 0)
 		{
 			return null;
@@ -147,6 +159,42 @@ final class Edost
 	}
 
 	/**
+	 * Суммарный вес корзины для eDost: только позиции с WEIGHT &gt; 0 (г × кол-во).
+	 * Если таких нет — {@see defaultParcelWeightKg()} (по умолчанию 1 кг).
+	 *
+	 * @param iterable<mixed> $basketItems элементы корзины / отгрузки с getWeight(), getQuantity()
+	 */
+	public static function parcelWeightKgFromBasketItems(iterable $basketItems): float
+	{
+		$weightGrams = 0.0;
+
+		foreach ($basketItems as $item)
+		{
+			if (!is_object($item) || !method_exists($item, 'getWeight'))
+			{
+				continue;
+			}
+			$w = (float)$item->getWeight();
+			if ($w <= 0)
+			{
+				continue;
+			}
+			$q = method_exists($item, 'getQuantity') ? max(0.0, (float)$item->getQuantity()) : 1.0;
+			$weightGrams += $w * $q;
+		}
+
+		if ($weightGrams > 0)
+		{
+			return round($weightGrams / 1000.0, 3);
+		}
+
+		return self::defaultParcelWeightKg();
+	}
+
+	/**
+	 * Габариты посылки: по позициям с DIMENSIONS — max(длина), max(ширина), max(высота).
+	 * Позиции без габаритов пропускаются. Если ни одной — {@see defaultParcelDimensionsM()} (27×17×5 см).
+	 *
 	 * @param iterable<mixed> $basketItems
 	 *
 	 * @return array{ln: float, wd: float, hg: float}|null
@@ -155,7 +203,7 @@ final class Edost
 	{
 		$maxL = 0.0;
 		$maxW = 0.0;
-		$sumH = 0.0;
+		$maxH = 0.0;
 		$has = false;
 
 		foreach ($basketItems as $item)
@@ -178,10 +226,9 @@ final class Edost
 				continue;
 			}
 			$has = true;
-			$qty = method_exists($item, 'getQuantity') ? max(1.0, (float)$item->getQuantity()) : 1.0;
 			$maxL = max($maxL, $l);
 			$maxW = max($maxW, $w);
-			$sumH += max(0.0, $h) * $qty;
+			$maxH = max($maxH, $h);
 		}
 
 		if (!$has)
@@ -193,8 +240,40 @@ final class Edost
 		return [
 			'ln' => round(max(1.0, $maxL) / 1000, 3),
 			'wd' => round(max(1.0, $maxW) / 1000, 3),
-			'hg' => round(max(1.0, $sumH) / 1000, 3),
+			'hg' => round(max(1.0, $maxH) / 1000, 3),
 		];
+	}
+
+	/**
+	 * @return list<\Bitrix\Sale\BasketItem|\Bitrix\Sale\ShipmentItem|\Bitrix\Sale\BasketItemBase|object>
+	 */
+	public static function collectBasketLikeItemsFromShipment(\Bitrix\Sale\Shipment $shipment): array
+	{
+		$out = [];
+		try
+		{
+			$coll = $shipment->getShipmentItemCollection();
+			if ($coll)
+			{
+				foreach ($coll as $shipmentItem)
+				{
+					if (!is_object($shipmentItem) || !method_exists($shipmentItem, 'getBasketItem'))
+					{
+						continue;
+					}
+					$basketItem = $shipmentItem->getBasketItem();
+					if ($basketItem)
+					{
+						$out[] = $basketItem;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		return $out;
 	}
 
 	/**
@@ -777,8 +856,9 @@ final class Tariffed extends Base
 		$useZones = (string)($config['USE_ZONES'] ?? 'N');
 		$useEdost = (string)($config['EDOST_ENABLED'] ?? 'N');
 
-		$weight = (float)$shipment->getWeight(); // grams in Bitrix
-		$weightKg = $weight > 0 ? ($weight / 1000.0) : 0.0;
+		$basketLikeItems = Edost::collectBasketLikeItemsFromShipment($shipment);
+		$weightKg = Edost::parcelWeightKgFromBasketItems($basketLikeItems);
+		$dimensionsM = Edost::parcelDimensionsMFromBasketItems($basketLikeItems);
 
 		$order = $shipment->getCollection()->getOrder();
 		$orderSum = (float)$order->getPrice();
@@ -889,12 +969,22 @@ final class Tariffed extends Base
 				$cacheTtl = 0;
 			}
 
+			$dimKey = '';
+			if (is_array($dimensionsM))
+			{
+				$dimKey = implode('x', [
+					(string)round((float)($dimensionsM['ln'] ?? 0), 3),
+					(string)round((float)($dimensionsM['wd'] ?? 0), 3),
+					(string)round((float)($dimensionsM['hg'] ?? 0), 3),
+				]);
+			}
 			$cacheKey = implode('|', [
-				'v1',
+				'v2',
 				mb_strtolower($toCity),
 				(string)$zipDigits,
 				(string)round($weightKg, 3),
 				(string)round($insurance, 2),
+				$dimKey,
 			]);
 			$cacheDir = 'mf/edost';
 
@@ -920,14 +1010,14 @@ final class Tariffed extends Base
 				}
 				elseif ($cache->startDataCache())
 				{
-					$resp = Edost::calculate($toCity, max(0.001, $weightKg), $insurance, (string)$zipDigits);
+					$resp = Edost::calculate($toCity, $weightKg, $insurance, (string)$zipDigits, $dimensionsM);
 					$offers = (is_array($resp) && ($resp['ok'] ?? false) && isset($resp['offers']) && is_array($resp['offers'])) ? $resp['offers'] : [];
 					$cache->endDataCache(['offers' => $offers]);
 				}
 			}
 			elseif ($offers === null)
 			{
-				$resp = Edost::calculate($toCity, max(0.001, $weightKg), $insurance, (string)$zipDigits);
+				$resp = Edost::calculate($toCity, $weightKg, $insurance, (string)$zipDigits, $dimensionsM);
 				$offers = (is_array($resp) && ($resp['ok'] ?? false) && isset($resp['offers']) && is_array($resp['offers'])) ? $resp['offers'] : [];
 			}
 

@@ -78,7 +78,7 @@ try
 	$resp = \MF\Delivery\Edost::calculateForDestination(
 		$dest['settlement'],
 		$dest['region'],
-		1.0,
+		\MF\Delivery\Edost::defaultParcelWeightKg(),
 		\MF\Delivery\Edost::insuranceRubForBasketSum(1000.0),
 		$dest['zip'],
 		\MF\Delivery\Edost::defaultParcelDimensionsM()
