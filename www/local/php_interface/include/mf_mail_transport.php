@@ -199,6 +199,55 @@ if (!function_exists('mf_mail_is_admin_only_recipients'))
 	}
 }
 
+if (!function_exists('mf_mail_client_order_event_names'))
+{
+	/** @return list<string> */
+	function mf_mail_client_order_event_names(): array
+	{
+		return [
+			'SALE_NEW_ORDER',
+			'SALE_STATUS_CHANGED_N',
+			'SALE_STATUS_CHANGED_F',
+			'SALE_STATUS_CHANGED_P',
+		];
+	}
+}
+
+if (!function_exists('mf_mail_header_value'))
+{
+	function mf_mail_header_value(array $hdr, string $name): string
+	{
+		$want = strtolower($name);
+		foreach ($hdr as $k => $v)
+		{
+			if (strtolower((string)$k) === $want)
+			{
+				return trim((string)$v);
+			}
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_mail_is_client_order_mail'))
+{
+	/**
+	 * @param array<string, mixed> $mail
+	 */
+	function mf_mail_is_client_order_mail(array $mail): bool
+	{
+		$hdr = isset($mail['HEADER']) && is_array($mail['HEADER']) ? $mail['HEADER'] : [];
+		$eventName = strtoupper(mf_mail_header_value($hdr, 'X-EVENT_NAME'));
+		if ($eventName === '')
+		{
+			$eventName = strtoupper(mf_mail_header_value($hdr, 'X-EVENT-NAME'));
+		}
+
+		return $eventName !== '' && in_array($eventName, mf_mail_client_order_event_names(), true);
+	}
+}
+
 if (!function_exists('mf_mail_resolve_smtp_profile'))
 {
 	/**
@@ -206,6 +255,11 @@ if (!function_exists('mf_mail_resolve_smtp_profile'))
 	 */
 	function mf_mail_resolve_smtp_profile(array $mail): string
 	{
+		if (mf_mail_is_client_order_mail($mail))
+		{
+			return 'andrey';
+		}
+
 		$hdr = isset($mail['HEADER']) && is_array($mail['HEADER']) ? $mail['HEADER'] : [];
 		foreach ($hdr as $name => $value)
 		{
@@ -227,6 +281,11 @@ if (!function_exists('mf_mail_resolve_smtp_profile'))
 		$rcpts = function_exists('mf_mail_collect_delivery_recipients')
 			? mf_mail_collect_delivery_recipients($mail)
 			: mf_mail_collect_recipient_emails($mail);
+
+		if ($rcpts !== [] && mf_mail_targets_external_inbox($rcpts))
+		{
+			return 'andrey';
+		}
 
 		return mf_mail_is_admin_only_recipients($rcpts) ? 'robot' : 'andrey';
 	}
@@ -650,7 +709,7 @@ if (!function_exists('mf_mail_sanitize_outgoing_params'))
 
 		$admin = mf_mail_admin_inbox();
 		$toList = mf_mail_normalize_recipient_list(isset($out['TO']) ? (string)$out['TO'] : '');
-		if ($toList === [])
+		if ($toList === [] && !mf_mail_is_client_order_mail($out))
 		{
 			$toList = [$admin];
 		}
@@ -802,7 +861,10 @@ if (!function_exists('mf_mail_register_transport_handlers'))
 					return null;
 				}
 
-				return mf_mail_sanitize_outgoing_params($mail);
+				return new \Bitrix\Main\EventResult(
+					\Bitrix\Main\EventResult::SUCCESS,
+					mf_mail_sanitize_outgoing_params($mail)
+				);
 			},
 			false,
 			100000

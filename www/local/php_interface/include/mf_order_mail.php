@@ -174,8 +174,10 @@ final class Handlers
 			: '';
 		if ($clientFrom !== '')
 		{
+			$fields['SALE_EMAIL'] = $clientFrom;
 			$fields['=From'] = $clientFrom;
 			$fields['=Reply-To'] = $clientFrom;
+			$fields['=X-MF-SMTP-Profile'] = 'andrey';
 		}
 
 		$body = trim((string)($fields['MF_ORDER_MAIL_BODY'] ?? ''));
