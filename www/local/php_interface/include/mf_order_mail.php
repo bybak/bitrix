@@ -169,6 +169,15 @@ final class Handlers
 			return;
 		}
 
+		$clientFrom = function_exists('mf_mail_default_from_client')
+			? mf_mail_default_from_client()
+			: '';
+		if ($clientFrom !== '')
+		{
+			$fields['=From'] = $clientFrom;
+			$fields['=Reply-To'] = $clientFrom;
+		}
+
 		$body = trim((string)($fields['MF_ORDER_MAIL_BODY'] ?? ''));
 		if ($body === '')
 		{

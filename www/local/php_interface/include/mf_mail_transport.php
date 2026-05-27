@@ -224,9 +224,53 @@ if (!function_exists('mf_mail_resolve_smtp_profile'))
 			}
 		}
 
-		$rcpts = mf_mail_collect_recipient_emails($mail);
+		$rcpts = function_exists('mf_mail_collect_delivery_recipients')
+			? mf_mail_collect_delivery_recipients($mail)
+			: mf_mail_collect_recipient_emails($mail);
 
 		return mf_mail_is_admin_only_recipients($rcpts) ? 'robot' : 'andrey';
+	}
+}
+
+if (!function_exists('mf_mail_parse_headers_string'))
+{
+	/**
+	 * @return array<string, string>
+	 */
+	function mf_mail_parse_headers_string(string $headers): array
+	{
+		if ($headers === '')
+		{
+			return [];
+		}
+		$out = [];
+		foreach (preg_split('/\r\n|\n|\r/', $headers) as $line)
+		{
+			if (preg_match('/^([^:\s]+)\s*:\s*(.*)$/', (string)$line, $m))
+			{
+				$name = trim((string)$m[1]);
+				$value = trim((string)$m[2]);
+				if ($name !== '')
+				{
+					$out[$name] = $value;
+				}
+			}
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_mail_resolve_smtp_profile_from_php_mail'))
+{
+	function mf_mail_resolve_smtp_profile_from_php_mail(string $to, string $headersStr): string
+	{
+		$mail = [
+			'TO' => $to,
+			'HEADER' => mf_mail_parse_headers_string($headersStr),
+		];
+
+		return mf_mail_resolve_smtp_profile($mail);
 	}
 }
 
@@ -295,6 +339,10 @@ if (!function_exists('mf_mail_apply_smtp_profile'))
 				}
 			}
 			$h['From'] = $smtpFrom;
+			if ($profileId === 'andrey')
+			{
+				$h['Reply-To'] = $smtpFrom;
+			}
 			$h = mf_mail_strip_internal_headers($h);
 			$mail['HEADER'] = $h;
 		}
@@ -363,6 +411,43 @@ if (!function_exists('mf_mail_collect_recipient_emails'))
 				}
 				$lk = strtolower((string)$k);
 				if (!in_array($lk, ['cc', 'bcc', 'to', 'reply-to'], true))
+				{
+					continue;
+				}
+				$raw = array_merge($raw, mf_mail_normalize_recipient_list($v));
+			}
+		}
+
+		return array_values(array_unique($raw));
+	}
+}
+
+if (!function_exists('mf_mail_collect_delivery_recipients'))
+{
+	/**
+	 * Получатели доставки (To/Cc/Bcc), без Reply-To — для выбора SMTP-профиля.
+	 *
+	 * @param array<string, mixed> $mail
+	 *
+	 * @return string[]
+	 */
+	function mf_mail_collect_delivery_recipients(array $mail): array
+	{
+		$raw = [];
+		if (isset($mail['TO']))
+		{
+			$raw = array_merge($raw, mf_mail_normalize_recipient_list((string)$mail['TO']));
+		}
+		if (isset($mail['HEADER']) && is_array($mail['HEADER']))
+		{
+			foreach ($mail['HEADER'] as $k => $v)
+			{
+				if (!is_string($v))
+				{
+					continue;
+				}
+				$lk = strtolower((string)$k);
+				if (!in_array($lk, ['cc', 'bcc', 'to'], true))
 				{
 					continue;
 				}
@@ -457,15 +542,22 @@ if (!function_exists('mf_mail_fixup_additional_headers_string'))
 	/**
 	 * Последняя линия до mail(): правки, которые другие обработчики могли вернуть в строку заголовков.
 	 */
-	function mf_mail_fixup_additional_headers_string(string $headers): string
+	function mf_mail_fixup_additional_headers_string(string $headers, string $to = ''): string
 	{
 		if ($headers === '')
 		{
 			return $headers;
 		}
 		$smtpHost = trim((string)getenv('MF_SMTP_HOST'));
+		$profileId = function_exists('mf_mail_resolve_smtp_profile_from_php_mail')
+			? mf_mail_resolve_smtp_profile_from_php_mail($to, $headers)
+			: (function_exists('mf_mail_get_active_smtp_profile') ? mf_mail_get_active_smtp_profile() : 'andrey');
+		if (function_exists('mf_mail_set_active_smtp_profile'))
+		{
+			mf_mail_set_active_smtp_profile($profileId);
+		}
 		$smtpFrom = function_exists('mf_mail_profile_from')
-			? mf_mail_profile_from(mf_mail_get_active_smtp_profile())
+			? mf_mail_profile_from($profileId)
 			: trim((string)getenv('MF_SMTP_FROM_ANDREY'));
 		if ($smtpHost !== '' && $smtpFrom !== '' && filter_var($smtpFrom, FILTER_VALIDATE_EMAIL))
 		{
@@ -666,10 +758,15 @@ if (!function_exists('mf_mail_register_transport_handlers'))
 				{
 					return;
 				}
-				$cur = (string)($args->additional_parameters ?? '');
-				$profileId = function_exists('mf_mail_get_active_smtp_profile')
-					? mf_mail_get_active_smtp_profile()
+				$to = (string)($args->to ?? '');
+				$headersStr = isset($args->additional_headers) ? (string)$args->additional_headers : '';
+				$profileId = function_exists('mf_mail_resolve_smtp_profile_from_php_mail')
+					? mf_mail_resolve_smtp_profile_from_php_mail($to, $headersStr)
 					: 'andrey';
+				if (function_exists('mf_mail_set_active_smtp_profile'))
+				{
+					mf_mail_set_active_smtp_profile($profileId);
+				}
 				$from = function_exists('mf_mail_profile_from')
 					? mf_mail_profile_from($profileId)
 					: mf_mail_default_from_client();
@@ -678,27 +775,11 @@ if (!function_exists('mf_mail_register_transport_handlers'))
 					: 'andrey';
 				if ($from !== '')
 				{
-					$params = trim('-f' . $from . ' -a ' . $msmtpAccount);
-					if ($cur === '')
-					{
-						$args->additional_parameters = $params;
-					}
-					elseif (!str_contains($cur, '-a '))
-					{
-						$args->additional_parameters = trim($cur . ' ' . $params);
-					}
-				}
-				elseif ($cur === '' && function_exists('mf_mail_default_from_client'))
-				{
-					$from = mf_mail_default_from_client();
-					if ($from !== '')
-					{
-						$args->additional_parameters = '-f' . $from . ' -a andrey';
-					}
+					$args->additional_parameters = '-f' . $from . ' -a ' . $msmtpAccount;
 				}
 				if (isset($args->additional_headers))
 				{
-					$args->additional_headers = mf_mail_fixup_additional_headers_string((string)$args->additional_headers);
+					$args->additional_headers = mf_mail_fixup_additional_headers_string($headersStr, $to);
 				}
 				if (trim((string)getenv('MF_MAIL_DEBUG_HEADERS')) === '1' && isset($args->additional_headers))
 				{
