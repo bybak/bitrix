@@ -1,5 +1,30 @@
 <?php
 $arUrlRewrite=array (
+  // SEO: sitemap.xml и части карты сайта
+  14 =>
+  array (
+    'CONDITION' => '#^/sitemap-pages\\.xml$#',
+    'RULE' => '',
+    'ID' => NULL,
+    'PATH' => '/sitemap/index.php',
+    'SORT' => 48,
+  ),
+  15 =>
+  array (
+    'CONDITION' => '#^/sitemap-products-(\\d+)\\.xml$#',
+    'RULE' => 'page=$1',
+    'ID' => NULL,
+    'PATH' => '/sitemap/index.php',
+    'SORT' => 49,
+  ),
+  16 =>
+  array (
+    'CONDITION' => '#^/sitemap\\.xml$#',
+    'RULE' => '',
+    'ID' => NULL,
+    'PATH' => '/sitemap/index.php',
+    'SORT' => 50,
+  ),
   // Персональный раздел (SEF-компонент sale.personal.section)
   // Важно: правило должно быть выше остальных "общих" обработчиков, чтобы /personal/* не давало 404.
   1000 =>

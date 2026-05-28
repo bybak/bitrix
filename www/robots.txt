@@ -1,0 +1,29 @@
+User-agent: *
+Disallow: /bitrix/
+Disallow: /local/
+Disallow: /upload/
+Disallow: /search/
+Allow: /search/map/
+Disallow: /personal/
+Disallow: /auth/
+Disallow: /login/
+Disallow: /*?print=
+Disallow: /*&print=
+Disallow: /*register=yes
+Disallow: /*forgot_password=yes
+Disallow: /*change_password=yes
+Disallow: /*login=yes
+Disallow: /*logout=yes
+Disallow: /*auth=yes
+Disallow: /*backurl=*
+Disallow: /*BACKURL=*
+Disallow: /*back_url=*
+Disallow: /*BACK_URL=*
+Disallow: /*back_url_admin=*
+Disallow: /*index.php$
+
+User-agent: Yandex
+Clean-param: sort&view&PAGEN_1&set_filter&arrFilter&clear_cache&clear_cache_session
+
+Host: https://motor-force.ru
+Sitemap: https://motor-force.ru/sitemap.xml
