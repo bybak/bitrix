@@ -14,8 +14,11 @@ def _resolve_kzt_php_script(cfg: dict[str, Any]) -> Path | None:
 	if custom:
 		p = Path(str(custom)).expanduser()
 		return p if p.is_file() else None
-	# 1) www/bitrix/php_interface/ — тот же путь, что в Docker (/var/www/html/...)
+	# 1) www/local/php_interface/ — актуальный путь в проекте
 	ws = Path(__file__).resolve().parent.parent.parent.parent
+	cli = ws / "www" / "local" / "php_interface" / "mf_kzt_to_rub_cli.php"
+	if cli.is_file():
+		return cli
 	cli = ws / "www" / "bitrix" / "php_interface" / "mf_kzt_to_rub_cli.php"
 	if cli.is_file():
 		return cli
@@ -59,7 +62,10 @@ def _rub_per_kzt_from_php(cfg: dict[str, Any]) -> float | None:
 			cwd = Path(__file__).resolve().parent.parent.parent.parent
 		service = str(cfg.get("bitrix_docker_service", "php"))
 		script_in_container = str(
-			cfg.get("bitrix_kzt_script_container", "/var/www/html/bitrix/php_interface/mf_kzt_to_rub_cli.php")
+			cfg.get(
+				"bitrix_kzt_script_container",
+				"/var/www/html/local/php_interface/mf_kzt_to_rub_cli.php",
+			)
 		)
 		cmd = ["docker", "compose", "exec", "-T", service, "php", script_in_container, str(kzt_probe)]
 		try:

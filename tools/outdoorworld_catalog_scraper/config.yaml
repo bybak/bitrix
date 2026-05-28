@@ -42,9 +42,10 @@ export_encoding: "utf-8-sig"
 # Курс в stock_and_price: KZT → RUB через CCurrencyRates (скрипт mf_kzt_to_rub*), не «в базовую валюту».
 # На Mac хост `mysql` из .settings.php не резолвится — для курса из Bitrix включите и держите Docker запущенным:
 #   1) bitrix_kzt_use_docker: true — Python вызовет docker compose exec php …
-#   2) Или вручную: docker compose exec php php /var/www/html/bitrix/php_interface/mf_kzt_to_rub_cli.php 1000000
+#   2) Или вручную: docker compose exec php php /var/www/html/local/php_interface/mf_kzt_to_rub_cli.php 1000000
 bitrix_kzt_use_docker: true
-# Каталог с docker-compose.yml (пусто = на четыре уровня выше outdoorworld_scraper/export_csv.py)
+# Путь к CLI внутри контейнера php (DOCUMENT_ROOT = /var/www/html)
+bitrix_kzt_script_container: "/var/www/html/local/php_interface/mf_kzt_to_rub_cli.php"
 # bitrix_docker_compose_dir: "/abs/path/to/bitrix/www"
 # bitrix_docker_service: "php"
 # 2) Или локальный php, если БД доступна с хоста (127.0.0.1:3306): bitrix_kzt_use_docker: false

@@ -29,10 +29,10 @@
 В `.settings.php` хост БД часто **`mysql`** — с **Mac** он не резолвится. Варианты:
 
 1. **Рекомендуется:** в `config.yaml` поставить **`bitrix_kzt_use_docker: true`**, запустить контейнеры (`docker compose up -d`). Python вызовет  
-   `docker compose exec -T php php /var/www/html/bitrix/php_interface/mf_kzt_to_rub_cli.php …` из каталога с вашим `docker-compose.yml` (обычно корень репозитория, где лежат `www/` и `tools/`).
+   `docker compose exec -T php php /var/www/html/local/php_interface/mf_kzt_to_rub_cli.php …` из каталога с вашим `docker-compose.yml` (обычно корень репозитория, где лежат `www/` и `tools/`).
 
 2. Проверка вручную:  
-   `docker compose exec php php /var/www/html/bitrix/php_interface/mf_kzt_to_rub_cli.php 1000000`  
+   `docker compose exec php php /var/www/html/local/php_interface/mf_kzt_to_rub_cli.php 1000000`  
    — в ответ одна строка JSON с `rub_per_kzt`.
 
 3. Локальный `php` на Mac — только если MySQL доступен с хоста (проброс порта `3306`, в настройках хост `127.0.0.1`), и **`bitrix_kzt_use_docker: false`**.
