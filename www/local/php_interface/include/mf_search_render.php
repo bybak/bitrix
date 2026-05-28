@@ -467,7 +467,7 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 			$missing = [];
 			foreach ($productIds as $pid)
 			{
-				$cacheKey = 'v4_p' . $pid . '_l' . $limit;
+				$cacheKey = 'v5_p' . $pid . '_l' . $limit;
 				if ($cache->initCache(3600, $cacheKey, '/mf/search_analogs_p'))
 				{
 					$cached = $cache->getVars();
@@ -477,8 +477,9 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 						if ($html !== '')
 						{
 							$out[$pid] = $html;
+							continue;
 						}
-						continue;
+						// Пустой кэш не блокирует повторный расчёт (после импорта аналогов / смены канона).
 					}
 				}
 				$missing[] = $pid;
@@ -577,8 +578,7 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 					$aid2 = (int)($rA['ID'] ?? 0);
 					if ($aid2 <= 0) continue;
 					$codeA = trim((string)($rA['CODE'] ?? ''));
-					$urlA = ($codeA !== '' ? '/products/' . rawurlencode($codeA) . '/' : '');
-					if ($urlA === '') continue;
+					$urlA = ($codeA !== '' ? '/products/' . rawurlencode($codeA) . '/' : '#');
 					$nameA = (string)($rA['NAME'] ?? ('ID ' . $aid2));
 					$analogsData[] = [
 						'id' => $aid2,
@@ -614,9 +614,9 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 				$out[(int)$pid] = $html;
 			}
 
-			if ($cache instanceof \Bitrix\Main\Data\Cache)
+			if ($html !== '' && $cache instanceof \Bitrix\Main\Data\Cache)
 			{
-				$cacheKey = 'v4_p' . $pid . '_l' . $limit;
+				$cacheKey = 'v5_p' . $pid . '_l' . $limit;
 				$writeCache = \Bitrix\Main\Data\Cache::createInstance();
 				if ($writeCache->startDataCache(3600, $cacheKey, '/mf/search_analogs_p'))
 				{

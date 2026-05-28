@@ -674,19 +674,24 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
 		$limitPerProduct = max(1, min(24, (int)$limitPerProduct));
 		$result = [];
+		$lookupByCardId = [];
 		foreach ($productIds as $pid)
 		{
 			$result[$pid] = [];
+			$lookupByCardId[$pid] = function_exists('mf_analogs_primary_product_id_for_analogs')
+				? mf_analogs_primary_product_id_for_analogs($pid)
+				: $pid;
 		}
 		if ($productIds === [])
 		{
 			return $result;
 		}
 
+		$lookupIds = array_values(array_unique(array_filter(array_map('intval', $lookupByCardId))));
 		$direct = [];
-		foreach ($productIds as $pid)
+		foreach ($lookupIds as $lid)
 		{
-			$direct[$pid] = [];
+			$direct[$lid] = [];
 		}
 
 		try
@@ -694,7 +699,7 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 			$hl = mf_analogs_ensure_hl();
 			$table = (string)$hl['TABLE'];
 			$conn = Application::getConnection();
-			$in = implode(',', $productIds);
+			$in = implode(',', $lookupIds);
 			$res = $conn->query("
 				SELECT `UF_P1_ID`, `UF_P2_ID`
 				FROM `" . $table . "`
@@ -720,9 +725,9 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 		}
 
 		$related = [];
-		foreach ($productIds as $pid)
+		foreach ($lookupIds as $lid)
 		{
-			$related[$pid] = $direct[$pid] ?? [];
+			$related[$lid] = $direct[$lid] ?? [];
 		}
 
 		try
@@ -730,7 +735,7 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 			$meta = mf_analogs_ensure_hl_meta();
 			$metaTable = (string)$meta['TABLE'];
 			$conn = Application::getConnection();
-			$in = implode(',', $productIds);
+			$in = implode(',', $lookupIds);
 
 			$originalIds = [];
 			$origRes = $conn->query("
@@ -759,15 +764,15 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 					WHERE `UF_PRODUCT_ID` IN (" . $inOrig . ")
 					LIMIT 1000
 				");
-				$oidToSearchPids = [];
-				foreach ($productIds as $pid)
+				$oidToSearchLookupIds = [];
+				foreach ($lookupIds as $lid)
 				{
-					foreach (array_keys($related[$pid] ?? []) as $oid)
+					foreach (array_keys($related[$lid] ?? []) as $oid)
 					{
 						$oid = (int)$oid;
 						if ($oid > 0)
 						{
-							$oidToSearchPids[$oid][$pid] = true;
+							$oidToSearchLookupIds[$oid][$lid] = true;
 						}
 					}
 				}
@@ -779,11 +784,11 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 					{
 						continue;
 					}
-					foreach (array_keys($oidToSearchPids[$oid] ?? []) as $pid)
+					foreach (array_keys($oidToSearchLookupIds[$oid] ?? []) as $lid)
 					{
-						if ($sib !== $pid)
+						if ($sib !== $lid)
 						{
-							$related[$pid][$sib] = true;
+							$related[$lid][$sib] = true;
 						}
 					}
 				}
@@ -798,8 +803,9 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 		$stockMap = [];
 		foreach ($productIds as $pid)
 		{
-			$ids = array_map('intval', array_keys($related[$pid] ?? []));
-			$ids = array_values(array_filter($ids, static fn($x) => $x > 0 && $x !== $pid));
+			$lid = (int)($lookupByCardId[$pid] ?? $pid);
+			$ids = array_map('intval', array_keys($related[$lid] ?? []));
+			$ids = array_values(array_filter($ids, static fn($x) => $x > 0 && $x !== $pid && $x !== $lid));
 			foreach ($ids as $id)
 			{
 				$allCandidateIds[$id] = true;
@@ -1061,6 +1067,85 @@ if (!function_exists('mf_analogs_meta_images_for_product'))
 	}
 }
 
+if (!function_exists('mf_analogs_primary_product_id_for_analogs'))
+{
+	/**
+	 * Для поиска/аналогов: если элемент — редирект (MF_IS_REDIRECT), берём каноническую карточку
+	 * с тем же MF_UNIQ_KEY (не редирект). Иначе связи в HL часто «висят» на основном товаре.
+	 */
+	function mf_analogs_primary_product_id_for_analogs(int $productId, int $iblockId = 4): int
+	{
+		$productId = (int)$productId;
+		$iblockId = (int)$iblockId;
+		if ($productId <= 0 || $iblockId <= 0 || !class_exists('CIBlockElement'))
+		{
+			return $productId;
+		}
+
+		static $cache = [];
+		if (isset($cache[$productId]))
+		{
+			return $cache[$productId];
+		}
+
+		$isRedirect = false;
+		$uniqKey = '';
+		$rs = \CIBlockElement::GetProperty($iblockId, $productId, 'sort', 'asc', ['CODE' => 'MF_IS_REDIRECT']);
+		while ($p = $rs->Fetch())
+		{
+			if (mb_strtoupper(trim((string)($p['VALUE'] ?? ''))) === 'Y')
+			{
+				$isRedirect = true;
+				break;
+			}
+		}
+		$rs2 = \CIBlockElement::GetProperty($iblockId, $productId, 'sort', 'asc', ['CODE' => 'MF_UNIQ_KEY']);
+		while ($p = $rs2->Fetch())
+		{
+			$v = trim((string)($p['VALUE'] ?? ''));
+			if ($v !== '')
+			{
+				$uniqKey = $v;
+				break;
+			}
+		}
+
+		if (!$isRedirect)
+		{
+			$cache[$productId] = $productId;
+
+			return $productId;
+		}
+
+		if ($uniqKey !== '')
+		{
+			$row = \CIBlockElement::GetList(
+				['ID' => 'ASC'],
+				[
+					'IBLOCK_ID' => $iblockId,
+					'ACTIVE' => 'Y',
+					'=PROPERTY_MF_UNIQ_KEY' => $uniqKey,
+					'!PROPERTY_MF_IS_REDIRECT' => 'Y',
+				],
+				false,
+				['nTopCount' => 1],
+				['ID']
+			)->Fetch();
+			$canon = (int)($row['ID'] ?? 0);
+			if ($canon > 0)
+			{
+				$cache[$productId] = $canon;
+
+				return $canon;
+			}
+		}
+
+		$cache[$productId] = $productId;
+
+		return $productId;
+	}
+}
+
 if (!function_exists('mf_analogs_related_ids_for_product'))
 {
 	/**
@@ -1081,6 +1166,11 @@ if (!function_exists('mf_analogs_related_ids_for_product'))
 		if ($productId <= 0)
 		{
 			return [];
+		}
+
+		if (function_exists('mf_analogs_primary_product_id_for_analogs'))
+		{
+			$productId = mf_analogs_primary_product_id_for_analogs($productId);
 		}
 
 		$limit = max(1, min(200, (int)$limit));
