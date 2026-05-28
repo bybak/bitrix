@@ -135,6 +135,12 @@ if ($mfJivoInc !== '' && is_file($mfJivoInc))
 	require_once $mfJivoInc;
 	mf_jivo_print_body_script();
 }
+$mfYandexMetrikaInc = $mfDocRoot !== '' ? ($mfDocRoot . '/local/php_interface/include/mf_yandex_metrika.php') : '';
+if ($mfYandexMetrikaInc !== '' && is_file($mfYandexMetrikaInc))
+{
+	require_once $mfYandexMetrikaInc;
+	mf_yandex_metrika_print_body_script();
+}
 ?>
 </body>
 </html>
