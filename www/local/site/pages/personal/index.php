@@ -100,10 +100,12 @@ if ($mfIsAuthorized)
 			<div class="mf-personal-summary-label">Статус клиента</div>
 			<div class="mf-personal-summary-value"><?=$mfClientStatus?></div>
 		</div>
+		<?php if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale()): ?>
 		<div class="mf-personal-summary-card">
 			<div class="mf-personal-summary-label">Тип клиента</div>
-			<div class="mf-personal-summary-value"><?=$mfClientType?></div>
+			<div class="mf-personal-summary-value"><?=htmlspecialcharsbx($mfClientType)?></div>
 		</div>
+		<?php endif; ?>
 		<?php if ($mfDiscountPercent > 0): ?>
 		<div class="mf-personal-summary-card">
 			<div class="mf-personal-summary-label">Размер скидки</div>
