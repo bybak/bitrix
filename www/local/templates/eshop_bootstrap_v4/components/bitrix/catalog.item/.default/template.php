@@ -17,6 +17,7 @@ if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('
 		// - this SRC is used as an <img src> in the add-to-basket popup (JCCatalogItem)
 		// - so it must be a plain URL, NOT a CSS "url(...), url(...)" expression
 		$src1 = trim((string)mf_mf_product_img_url($code, 1));
+		$src1 = function_exists('mf_mf_normalize_img_url') ? mf_mf_normalize_img_url($src1) : $src1;
 		if ($src1 === '' && $fallback !== '')
 		{
 			$src1 = $fallback;
@@ -68,6 +69,7 @@ if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('
 			{
 				$i++;
 				$src = trim((string)mf_mf_product_img_url($code, $i));
+				$src = function_exists('mf_mf_normalize_img_url') ? mf_mf_normalize_img_url($src) : $src;
 				if ($src === '' && $fallback !== '')
 				{
 					$src = $fallback;
@@ -115,6 +117,7 @@ if (isset($arResult['ITEM']) && is_array($arResult['ITEM']) && function_exists('
 					{
 						$i++;
 						$src = trim((string)mf_mf_product_img_url($code, $i));
+				$src = function_exists('mf_mf_normalize_img_url') ? mf_mf_normalize_img_url($src) : $src;
 						if ($src === '' && $fallback !== '')
 						{
 							$src = $fallback;

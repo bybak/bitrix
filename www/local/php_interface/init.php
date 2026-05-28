@@ -93,6 +93,51 @@ if (!function_exists('mf_mf_img_host'))
 	}
 }
 
+if (!function_exists('mf_mf_normalize_img_url'))
+{
+	/**
+	 * Переписывает прямые URL img-motor-force.ru → локальный прокси /mf-img (HTTPS основного домена).
+	 * Нужно для MF_EXT_IMAGES и meta аналогов, где в БД лежат полные http(s)://img-motor-force.ru/...
+	 */
+	function mf_mf_normalize_img_url(string $url): string
+	{
+		$url = trim($url);
+		if ($url === '')
+		{
+			return '';
+		}
+
+		if (str_starts_with($url, '/mf-img/') || $url === '/mf-img')
+		{
+			return $url;
+		}
+
+		if (preg_match('#^(?:https?:)?//img-motor-force\.ru(/[^?#]*)#i', $url, $m))
+		{
+			$path = (string)($m[1] ?? '');
+			if ($path === '' || $path === '/')
+			{
+				return '';
+			}
+
+			return mf_mf_img_host() . $path;
+		}
+
+		if (preg_match('#^(?:https?:)?//img\.motor-force\.ru(/[^?#]*)#i', $url, $m))
+		{
+			$path = (string)($m[1] ?? '');
+			if ($path === '' || $path === '/')
+			{
+				return '';
+			}
+
+			return mf_mf_img_host() . $path;
+		}
+
+		return $url;
+	}
+}
+
 if (!function_exists('mf_mf_placeholder_img_url'))
 {
 	function mf_mf_placeholder_img_url(): string
@@ -191,7 +236,7 @@ if (!function_exists('mf_mf_section_img_url'))
 		{
 			return '';
 		}
-		return mf_mf_img_host() . '/sections/' . $sectionId . '.jpg';
+		return mf_mf_normalize_img_url(mf_mf_img_host() . '/sections/' . $sectionId . '.jpg');
 	}
 }
 
@@ -210,7 +255,7 @@ if (!function_exists('mf_mf_product_img_url'))
 			$num = 1;
 		}
 		$fname = str_pad((string)$num, 4, '0', STR_PAD_LEFT) . '.jpg';
-		return mf_mf_img_host() . '/products/' . rawurlencode($code) . '/' . $fname;
+		return mf_mf_normalize_img_url(mf_mf_img_host() . '/products/' . rawurlencode($code) . '/' . $fname);
 	}
 }
 
@@ -382,7 +427,7 @@ if (!function_exists('mf_mf_product_card_preview_src'))
 
 		if (!empty($urls))
 		{
-			return (string)$urls[0];
+			return mf_mf_normalize_img_url((string)$urls[0]);
 		}
 
 		if ($productId > 0 && function_exists('mf_analogs_meta_images_for_product'))
@@ -395,7 +440,7 @@ if (!function_exists('mf_mf_product_card_preview_src'))
 					$u = trim((string)$u);
 					if ($u !== '')
 					{
-						return $u;
+						return mf_mf_normalize_img_url($u);
 					}
 				}
 			}
@@ -406,7 +451,7 @@ if (!function_exists('mf_mf_product_card_preview_src'))
 			$nSlots = mf_mf_product_card_gallery_slot_count($productId, $prefetchRow, $iblockId);
 			if ($nSlots > 0)
 			{
-				return (string)mf_mf_product_img_url($code, 1);
+				return mf_mf_normalize_img_url((string)mf_mf_product_img_url($code, 1));
 			}
 		}
 

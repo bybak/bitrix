@@ -38,7 +38,14 @@ if (is_array($arResult) && function_exists('mf_mf_product_img_url'))
 		$arResult['MORE_PHOTO'] = [];
 		foreach ($extImgs as $u)
 		{
-			$arResult['MORE_PHOTO'][] = ['SRC' => (string)$u];
+			$src = function_exists('mf_mf_normalize_img_url')
+				? mf_mf_normalize_img_url((string)$u)
+				: (string)$u;
+			if ($src === '')
+			{
+				continue;
+			}
+			$arResult['MORE_PHOTO'][] = ['SRC' => $src];
 		}
 	}
 
