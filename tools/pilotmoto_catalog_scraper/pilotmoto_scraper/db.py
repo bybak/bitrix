@@ -129,11 +129,12 @@ def meta_set(conn: sqlite3.Connection, k: str, v: str) -> None:
 
 
 def is_page_done(conn: sqlite3.Connection, category_url: str, page_num: int) -> bool:
+	"""Страница считается обработанной только если на ней нашли хотя бы один товар."""
 	r = conn.execute(
-		"SELECT 1 FROM category_pages WHERE category_url=? AND page_num=? LIMIT 1",
+		"SELECT product_count FROM category_pages WHERE category_url=? AND page_num=? LIMIT 1",
 		(category_url, page_num),
 	).fetchone()
-	return r is not None
+	return r is not None and int(r[0]) > 0
 
 
 def mark_page_done(

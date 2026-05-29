@@ -190,6 +190,50 @@ def parse_max_page_pilotmoto(html: str) -> int:
 	return max(candidates) if candidates else 1
 
 
+def _canonical_product_url(base: str, href: str) -> str | None:
+	href = (href or "").strip()
+	if "/item/" not in href:
+		return None
+	purl = urljoin(base, href)
+	parsed = urlparse(purl)
+	path = parsed.path or ""
+	while "//" in path:
+		path = path.replace("//", "/")
+	if not path.endswith("/"):
+		path += "/"
+	return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+
+def _brand_from_card_specifics(card) -> str:
+	for block in card.select(".card-specifics .spec-wrapper"):
+		spans = block.find_all("span")
+		if len(spans) < 2:
+			continue
+		label = spans[0].get_text(" ", strip=True).rstrip(":").strip()
+		if label.lower() == "бренд":
+			return spans[1].get_text(" ", strip=True)
+	return ""
+
+
+def _article_from_card(card) -> str:
+	art_el = card.select_one(".card-articul")
+	if not art_el:
+		return ""
+	text = art_el.get_text(" ", strip=True).replace("\xa0", " ")
+	m = re.match(r"^арт\.?\s*:?\s*(.+)$", text, re.I)
+	return (m.group(1).strip() if m else text.strip())
+
+
+def _stock_hint_from_card(card) -> str:
+	"""На новой вёрстке остаток на листинге часто не показывают — эвристика по кнопке корзины."""
+	if card.select_one(".btn-cart-nd, button[name='add_basket']"):
+		return "В наличии"
+	text = card.get_text(" ", strip=True).replace("\xa0", " ")
+	if re.search(r"нет\s+в\s+наличии", text, re.I):
+		return "Нет в наличии"
+	return ""
+
+
 def _listing_product_from_card(
 	base: str,
 	href: str,
@@ -197,17 +241,16 @@ def _listing_product_from_card(
 	price_raw: str,
 	manufacturer: str,
 	stock_mob_raw: str,
+	*,
+	article_override: str = "",
 ) -> ListingProduct | None:
-	href = (href or "").strip()
-	if "/item/" not in href:
+	purl = _canonical_product_url(base, href)
+	if not purl:
 		return None
-	purl = urljoin(base, href)
-	if not purl.endswith("/"):
-		purl += "/"
 	slug = article_slug_from_item_href(href)
 	name_clean, article_from_title = split_name_article(name)
-	# На листинге название без «Артикул:» — приоритет артикула из URL
-	article = slug or article_from_title
+	# На листинге название без «Артикул:» — приоритет явного артикула / URL
+	article = (article_override or "").strip() or slug or article_from_title
 	return ListingProduct(
 		bx_id=_parse_item_id_from_url(href),
 		product_url=purl,
@@ -221,14 +264,40 @@ def _listing_product_from_card(
 
 def parse_listing_page(html: str, category_url: str) -> tuple[list[ListingProduct], int | None]:
 	"""
-	Товары в div.block_with_img (odd/even): бренд p.for_list.hidden_tab, остаток p.for_list.hidden_mob,
-	цена p.price, название h3.title a, ссылка на товар — как в заголовке, так и в обложке (тот же /item/…/ ).
-	Артикул — сегмент URL после /item/. Дубликаты по product_url отбрасываются.
+	Листинг pilotmoto.ru:
+	- новая вёрстка: div.card-nd (card-title, card-articul, card-price, card-specifics);
+	- старая: div.block_with_img (h3.title, p.price, p.for_list.*).
+	Артикул — из card-articul или сегмент URL после /item/. Дубликаты по product_url отбрасываются.
 	"""
 	soup = _soup(html)
 	out: list[ListingProduct] = []
 	seen_product: set[str] = set()
 	base = f"{urlparse(category_url).scheme}://{urlparse(category_url).netloc}"
+
+	for card in soup.select("div.card-nd"):
+		a_title = card.select_one(".card-title a[href*='/item/']")
+		a_img = card.select_one("a.card-image-wrapper[href*='/item/']")
+		a = a_title or a_img
+		if not a:
+			continue
+		href = (a.get("href") or "").strip()
+		raw_name = a_title.get_text(" ", strip=True) if a_title else ""
+		pr_el = card.select_one(".card-price .price-new, .card-price-for-list .price-new, .card-price .price-new")
+		price_raw = pr_el.get_text(" ", strip=True) if pr_el else ""
+		manufacturer = _brand_from_card_specifics(card)
+		stock_mob = _stock_hint_from_card(card)
+		lp = _listing_product_from_card(
+			base,
+			href,
+			raw_name,
+			price_raw,
+			manufacturer,
+			stock_mob,
+			article_override=_article_from_card(card),
+		)
+		if lp and lp.product_url not in seen_product:
+			seen_product.add(lp.product_url)
+			out.append(lp)
 
 	for div in soup.select("div.block_with_img"):
 		a_title = div.select_one("h3.title a[href*='/item/']")
@@ -258,7 +327,9 @@ def parse_listing_page(html: str, category_url: str) -> tuple[list[ListingProduc
 			out.append(lp)
 
 	if not out:
-		for a in soup.select('h3.title a[href*="/item/"]'):
+		for a in soup.select(
+			'.card-title a[href*="/item/"], h3.title a[href*="/item/"]'
+		):
 			href = (a.get("href") or "").strip()
 			raw_name = a.get_text(" ", strip=True)
 			lp = _listing_product_from_card(base, href, raw_name, "", "", "")
