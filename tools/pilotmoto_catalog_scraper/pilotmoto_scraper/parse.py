@@ -25,6 +25,9 @@ class ListingProduct:
 	article: str  # сегмент URL после /item/ (например 93311-32261-00)
 	price_raw: str
 	stock_mob_raw: str  # колонка «Наличие»: p.for_list.hidden_mob
+	# AJAX «наличие в магазинах» / «размеры и цвета» с листинга (без захода в карточку)
+	stock_modal_gid: str | None = None
+	stock_modal_id: str | None = None
 
 
 @dataclass
@@ -225,13 +228,70 @@ def _article_from_card(card) -> str:
 
 
 def _stock_hint_from_card(card) -> str:
-	"""На новой вёрстке остаток на листинге часто не показывают — эвристика по кнопке корзины."""
-	if card.select_one(".btn-cart-nd, button[name='add_basket']"):
-		return "В наличии"
+	"""Текстовый остаток с листинга (старая вёрстка hidden_mob или блок «Наличие» на плитке)."""
+	mob = card.select_one("p.for_list.hidden_mob")
+	if mob:
+		return mob.get_text(" ", strip=True)
+	for block in card.select(".card-specifics .spec-wrapper"):
+		spans = block.find_all("span")
+		if len(spans) < 2:
+			continue
+		label = spans[0].get_text(" ", strip=True).rstrip(":").strip()
+		if label.lower() == "наличие":
+			return spans[1].get_text(" ", strip=True)
 	text = card.get_text(" ", strip=True).replace("\xa0", " ")
 	if re.search(r"нет\s+в\s+наличии", text, re.I):
 		return "Нет в наличии"
 	return ""
+
+
+def _stock_modal_ids_from_card(card) -> tuple[str | None, str | None]:
+	"""
+	gid/id для ajax.php load_modal с листинга:
+	- getColorSizeTable(N) на кнопке «В корзину» → gid=N, id пустой;
+	- одиночный SKU (submit add_basket) → data-id на .card-favorite.
+	"""
+	btn = card.select_one('button[onclick*="getColorSizeTable"]')
+	if btn:
+		m = re.search(r"getColorSizeTable\((\d+)\)", btn.get("onclick") or "")
+		if m:
+			return m.group(1), ""
+	fav = card.select_one(".card-favorite")
+	if fav:
+		id_ = (fav.get("data-id") or "").strip()
+		if id_:
+			return id_, id_
+	return None, None
+
+
+def listing_modal_page_code(html: str) -> str:
+	el = _soup(html).select_one("#blockItemsNd")
+	if el and el.get("data-page"):
+		return str(el["data-page"]).strip()
+	return "002"
+
+
+def listing_stock_modal_ajax_url(
+	base_url: str,
+	gid: str,
+	id_: str,
+	page: str,
+	*,
+	kind: str = "modal_available",
+) -> str:
+	base = (base_url or "").rstrip("/")
+	ckmod = "modal_available" if kind == "modal_available" else "modal_color_size"
+	q = urlencode(
+		(
+			("mode", "load_modal"),
+			("ckmod", ckmod),
+			("gid", gid),
+			("id", id_ or ""),
+			("page", page),
+			("ld", "0"),
+		)
+	)
+	return f"{base}/ajax.php?{q}"
 
 
 def _listing_product_from_card(
@@ -286,6 +346,7 @@ def parse_listing_page(html: str, category_url: str) -> tuple[list[ListingProduc
 		price_raw = pr_el.get_text(" ", strip=True) if pr_el else ""
 		manufacturer = _brand_from_card_specifics(card)
 		stock_mob = _stock_hint_from_card(card)
+		modal_gid, modal_id = _stock_modal_ids_from_card(card)
 		lp = _listing_product_from_card(
 			base,
 			href,
@@ -295,6 +356,9 @@ def parse_listing_page(html: str, category_url: str) -> tuple[list[ListingProduc
 			stock_mob,
 			article_override=_article_from_card(card),
 		)
+		if lp:
+			lp.stock_modal_gid = modal_gid
+			lp.stock_modal_id = modal_id
 		if lp and lp.product_url not in seen_product:
 			seen_product.add(lp.product_url)
 			out.append(lp)
@@ -487,12 +551,35 @@ def sum_stock_from_modal_available_html(html: str) -> int | None:
 	if not ul:
 		return None
 	total = 0
+	found_green = False
 	for span in ul.select("span.green"):
 		t = span.get_text(" ", strip=True).replace("\xa0", " ")
 		m = re.search(r"(\d+)\s*шт", t, re.I)
 		if m:
 			total += int(m.group(1))
-	return total
+			found_green = True
+	if found_green:
+		return total
+	if ul.select("span.red"):
+		return 0
+	return None
+
+
+def sum_stock_from_color_size_modal(html: str) -> int | None:
+	"""Сумма по p.cs-qnt в модалке «Размеры и цвета» (запасной вариант, без max=1000000)."""
+	soup = _soup(html)
+	total = 0
+	found = False
+	for p in soup.select("p.cs-qnt"):
+		t = p.get_text(" ", strip=True).replace("\xa0", " ")
+		m = re.search(r"(\d+)\s*шт", t, re.I)
+		if m:
+			total += int(m.group(1))
+			found = True
+		elif re.search(r"10\s*\+", t):
+			total += 10
+			found = True
+	return total if found else None
 
 
 def resolve_stock_qty(

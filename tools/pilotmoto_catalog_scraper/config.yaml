@@ -39,7 +39,11 @@ stock_default_instock: 1
 # Остаток: сумма по магазинам из ответа ajax (как модалка «Посмотреть наличие в магазинах»). Если false — только текст «Наличие:» на карточке / JSON-LD.
 stock_modal_sum_enabled: true
 
-# Обход каждой карточки товара (дополнительные HTTP-запросы). Основные поля берутся с листинга — по умолчанию false.
+# Остаток с листинга через лёгкий ajax (модалка магазинов), без полной карточки товара.
+listing_stock_modal_enabled: true
+listing_stock_color_fallback: true
+
+# Полный обход карточки — только если нужны поля, которых нет на листинге/ajax.
 detail_enrichment: false
 
 playwright_headless: true

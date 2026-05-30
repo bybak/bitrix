@@ -71,6 +71,12 @@ def main() -> int:
 		print(f"[pilotmoto] Ошибка БД: {e}", file=sys.stderr)
 		return 1
 
+	want_detail = bool(cfg.get("detail_enrichment", False))
+	if args.with_detail:
+		want_detail = True
+	if args.skip_detail:
+		want_detail = False
+
 	if not args.export_only:
 		asyncio.run(
 			run_crawl(
@@ -78,13 +84,9 @@ def main() -> int:
 				conn,
 				progress=not args.no_progress,
 				max_categories=args.max_categories or None,
+				leave_detail_pending=want_detail,
 			)
 		)
-		want_detail = bool(cfg.get("detail_enrichment", False))
-		if args.with_detail:
-			want_detail = True
-		if args.skip_detail:
-			want_detail = False
 		if want_detail:
 			asyncio.run(
 				run_detail_enrichment(

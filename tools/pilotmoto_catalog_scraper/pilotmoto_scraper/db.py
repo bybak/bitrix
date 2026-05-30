@@ -167,8 +167,9 @@ def upsert_product(
 	price_kzt: float | None = None,
 	stock_qty: int | None = None,
 	stock_label: str = "",
+	detail_done: int = 1,
 ) -> None:
-	"""Листинг заполняет карточку целиком (detail_done=1). Повторный обход обновляет те же поля."""
+	"""Листинг: detail_done=0, если дальше планируется обход карточек для остатков."""
 	now = time.time()
 	conn.execute(
 		"""
@@ -176,7 +177,7 @@ def upsert_product(
 			product_url, bx_id, name, manufacturer, article, price_raw, price_kzt,
 			stock_qty, stock_label, stock_stack, category_url, updated_at, detail_done
 		)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(product_url) DO UPDATE SET
 			bx_id=excluded.bx_id,
 			name=excluded.name,
@@ -184,11 +185,14 @@ def upsert_product(
 			article=excluded.article,
 			price_raw=excluded.price_raw,
 			price_kzt=excluded.price_kzt,
-			stock_qty=excluded.stock_qty,
-			stock_label=excluded.stock_label,
+			stock_qty=COALESCE(excluded.stock_qty, products.stock_qty),
+			stock_label=CASE
+				WHEN NULLIF(excluded.stock_label, '') IS NOT NULL THEN excluded.stock_label
+				ELSE products.stock_label
+			END,
 			category_url=excluded.category_url,
 			updated_at=excluded.updated_at,
-			detail_done=1
+			detail_done=excluded.detail_done
 		""",
 		(
 			product_url,
@@ -203,6 +207,7 @@ def upsert_product(
 			"",
 			category_url,
 			now,
+			detail_done,
 		),
 	)
 

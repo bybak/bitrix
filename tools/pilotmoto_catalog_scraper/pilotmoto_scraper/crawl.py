@@ -13,16 +13,20 @@ from tqdm import tqdm
 from pilotmoto_scraper import db as dbmod
 from pilotmoto_scraper.export_csv import parse_kzt_from_price_raw
 from pilotmoto_scraper.parse import (
+	ListingProduct,
 	canonical_catalog_url,
 	collect_category_urls_from_html,
 	is_excluded_category,
+	listing_modal_page_code,
 	listing_page_url,
+	listing_stock_modal_ajax_url,
 	modal_available_ajax_url,
 	parse_listing_page,
 	parse_max_page_pilotmoto,
 	parse_modal_available_params,
 	parse_product_detail,
 	resolve_stock_qty,
+	sum_stock_from_color_size_modal,
 	sum_stock_from_modal_available_html,
 )
 
@@ -101,12 +105,108 @@ async def _discover_all_category_urls(
 	return sorted(seen)
 
 
+def _detail_flag_after_listing(leave_detail_pending: bool) -> int:
+	return 0 if leave_detail_pending else 1
+
+
+async def _fetch_listing_stock_qty(
+	client: httpx.AsyncClient,
+	base: str,
+	cfg: dict[str, Any],
+	p: ListingProduct,
+	page_code: str,
+	*,
+	delay: float,
+	sem: asyncio.Semaphore,
+	max_retries: int,
+	retry_delay_sec: float,
+) -> int | None:
+	if not p.stock_modal_gid:
+		return None
+	gid = p.stock_modal_gid
+	id_ = p.stock_modal_id or ""
+	try:
+		url = listing_stock_modal_ajax_url(
+			base, gid, id_, page_code, kind="modal_available"
+		)
+		html = await fetch_text(
+			client,
+			url,
+			delay=delay,
+			sem=sem,
+			max_retries=max_retries,
+			retry_delay_sec=retry_delay_sec,
+		)
+		sq = sum_stock_from_modal_available_html(html)
+		if sq is not None:
+			return sq
+		if not cfg.get("listing_stock_color_fallback", True):
+			return None
+		url_cs = listing_stock_modal_ajax_url(
+			base, gid, id_, page_code, kind="modal_color_size"
+		)
+		html_cs = await fetch_text(
+			client,
+			url_cs,
+			delay=delay,
+			sem=sem,
+			max_retries=max_retries,
+			retry_delay_sec=retry_delay_sec,
+		)
+		return sum_stock_from_color_size_modal(html_cs)
+	except _TRANSIENT_HTTP_ERRORS:
+		return None
+	except httpx.HTTPStatusError:
+		return None
+
+
+async def _enrich_listing_stocks_via_modal(
+	client: httpx.AsyncClient,
+	base: str,
+	cfg: dict[str, Any],
+	prods: list[ListingProduct],
+	page_code: str,
+	*,
+	delay: float,
+	sem: asyncio.Semaphore,
+	max_retries: int,
+	retry_delay_sec: float,
+) -> None:
+	tasks = [
+		_fetch_listing_stock_qty(
+			client,
+			base,
+			cfg,
+			p,
+			page_code,
+			delay=delay,
+			sem=sem,
+			max_retries=max_retries,
+			retry_delay_sec=retry_delay_sec,
+		)
+		for p in prods
+		if p.stock_modal_gid
+	]
+	if not tasks:
+		return
+	results = await asyncio.gather(*tasks)
+	idx = 0
+	for p in prods:
+		if not p.stock_modal_gid:
+			continue
+		sq = results[idx]
+		idx += 1
+		if sq is not None:
+			p.stock_mob_raw = f"{sq} шт."
+
+
 async def run_crawl(
 	cfg: dict[str, Any],
 	conn: Any,
 	*,
 	progress: bool = True,
 	max_categories: int | None = None,
+	leave_detail_pending: bool = False,
 ) -> None:
 	base = cfg["base_url"].rstrip("/")
 	catalog_index = base + cfg.get("catalog_path", "/catalog/")
@@ -124,6 +224,8 @@ async def run_crawl(
 	http2 = bool(cfg.get("http2", False))
 	max_retries = int(cfg.get("http_max_retries", 5))
 	retry_delay_sec = float(cfg.get("http_retry_delay_sec", 0.5))
+	dd_listing = _detail_flag_after_listing(leave_detail_pending)
+	listing_stock_modal = bool(cfg.get("listing_stock_modal_enabled", True))
 
 	async with httpx.AsyncClient(
 		headers=headers,
@@ -217,6 +319,19 @@ async def run_crawl(
 						retry_delay_sec=retry_delay_sec,
 					)
 				prods, _pagen_param = parse_listing_page(html, cat_url)
+				if listing_stock_modal and prods:
+					page_code = listing_modal_page_code(html)
+					await _enrich_listing_stocks_via_modal(
+						client,
+						base,
+						cfg,
+						prods,
+						page_code,
+						delay=delay,
+						sem=sem,
+						max_retries=max_retries,
+						retry_delay_sec=retry_delay_sec,
+					)
 				for p in prods:
 					pk = parse_kzt_from_price_raw(p.price_raw)
 					sq = resolve_stock_qty(p.stock_mob_raw, "", None, cfg)
@@ -232,6 +347,7 @@ async def run_crawl(
 						price_kzt=pk,
 						stock_qty=sq,
 						stock_label=p.stock_mob_raw,
+						detail_done=dd_listing,
 					)
 				dbmod.mark_page_done(conn, cat_url, pn, len(prods))
 				dbmod.commit_products(conn)
