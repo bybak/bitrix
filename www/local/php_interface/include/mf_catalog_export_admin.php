@@ -1556,9 +1556,10 @@ $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 @set_time_limit(300);
 @ini_set('memory_limit', '512M');
 
+$mfCeBrandCodesForSelect = ['MF_BRAND'];
 $mfCeBrandMeta = function_exists('mf_ce_load_brand_choices_meta')
-	? mf_ce_load_brand_choices_meta($iblockId, true, null)
-	: ['brands' => mf_ce_load_brand_choices($iblockId), 'source' => 'unknown', 'redis_key' => ''];
+	? mf_ce_load_brand_choices_meta($iblockId, true, $mfCeBrandCodesForSelect)
+	: ['brands' => mf_ce_load_brand_choices($iblockId, true, $mfCeBrandCodesForSelect), 'source' => 'unknown', 'redis_key' => ''];
 $mfCeBrandChoices = (array)($mfCeBrandMeta['brands'] ?? []);
 $mfCeBrandChoicesSource = (string)($mfCeBrandMeta['source'] ?? '');
 $mfCeBrandChoicesRedisKey = (string)($mfCeBrandMeta['redis_key'] ?? '');
@@ -1586,7 +1587,7 @@ $mfCeOrphansUrl = $mfCePageClean . (strpos($mfCePageClean, '?') !== false ? '&' 
 		Редиректы (MF_IS_REDIRECT) не выгружаются.
 		Долгая выгрузка больше не держит сессию заблокированной: параллельно можно открывать витрину и корзину в других вкладках.
 		XLSX — ZIP со сжатием, при тех же данных файл обычно меньше CSV; на очень больших каталогах надёжнее CSV (быстрее, меньше таймаутов).
-		По желанию ограничьте выгрузку <strong>брендом</strong> (список строится по заполненным MF_BRAND / MF_BRAND_NORM в каталоге).
+		По желанию ограничьте выгрузку <strong>брендом</strong> (список в селекте — уникальные значения свойства <code>MF_BRAND</code> у активных выгружаемых товаров).
 		Список брендов в селекте кэшируется в <strong>Redis</strong> (те же BITRIX_REDIS_* что у кэша Битрикс); обновление — кроном, скрипт <code>/mf_refresh_ce_brand_choices_cache.php</code> (см. <code>crontab/refresh_ce_brand_choices_cache_bitrix.sh</code>). Если ключа ещё нет, при открытии страницы выполняется тяжёлый SQL.
 		Список брендов в селекте кэшируется в <strong>Redis</strong> (те же BITRIX_REDIS_* что у кэша Битрикс); обновление — кроном, скрипт <code>/mf_refresh_ce_brand_choices_cache.php</code> (см. <code>crontab/refresh_ce_brand_choices_cache_bitrix.sh</code>). Если ключа ещё нет, при открытии страницы выполняется тяжёлый SQL.
 	</p>
@@ -1627,7 +1628,7 @@ $mfCeOrphansUrl = $mfCePageClean . (strpos($mfCePageClean, '?') !== false ? '&' 
 						<code>php mf_refresh_ce_brand_choices_cache.php</code> или откройте с <code>MF_CE_BRAND_CHOICES_REDIS=N</code>.</span>
 					<?php endif; ?>
 				</div>
-				<div style="margin-top:4px;color:#666;font-size:12px;">Список строится по тем же правилам, что и выгрузка с галочкой «только активные»: только <strong>активные</strong> выгружаемые элементы. Снимите галочку — в файл попадут и неактивные; тогда отбор ID по бренду тоже включает неактивные (в селекте по-прежнему только активные бренды — для редкого случая выгрузите без фильтра бренда).</div>
+				<div style="margin-top:4px;color:#666;font-size:12px;">Список — только <code>MF_BRAND</code> (без <code>MF_BRAND_NORM</code>). Фильтр выгрузки по выбранному бренду ищет совпадение в <code>MF_BRAND</code> или <code>MF_BRAND_NORM</code>. Снимите «только активные» — в файл попадут и неактивные; в селекте по-прежнему только активные бренды.</div>
 			</td>
 		</tr>
 	</table>
