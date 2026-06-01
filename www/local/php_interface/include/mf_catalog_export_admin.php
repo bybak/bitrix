@@ -131,8 +131,10 @@ if (
 	die;
 }
 
-function mf_ce_esc(string $s): string
+function mf_ce_esc(string|int|float|bool|null $s): string
 {
+	$s = trim((string)$s);
+
 	return function_exists('htmlspecialcharsbx')
 		? (string)htmlspecialcharsbx($s)
 		: htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

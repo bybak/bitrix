@@ -129,17 +129,7 @@ if (!function_exists('mf_ce_brand_choices_cache_get'))
 		{
 			return null;
 		}
-		$out = [];
-		foreach ($j as $item)
-		{
-			$s = trim((string)$item);
-			if ($s !== '')
-			{
-				$out[] = $s;
-			}
-		}
-
-		return $out;
+		return mf_ce_brand_choices_normalize_list($j);
 	}
 }
 
@@ -162,7 +152,7 @@ if (!function_exists('mf_ce_brand_choices_cache_set'))
 		{
 			$jsonFlags |= JSON_INVALID_UTF8_SUBSTITUTE;
 		}
-		$payload = json_encode(array_values($brands), $jsonFlags);
+		$payload = json_encode(mf_ce_brand_choices_normalize_list($brands), $jsonFlags);
 		if ($payload === false)
 		{
 			return false;
@@ -437,6 +427,34 @@ if (!function_exists('mf_ce_refresh_brand_choices_cache'))
 	}
 }
 
+if (!function_exists('mf_ce_brand_choices_normalize_list'))
+{
+	/**
+	 * @param array<mixed> $brands
+	 * @return list<string>
+	 */
+	function mf_ce_brand_choices_normalize_list(array $brands): array
+	{
+		$seen = [];
+		foreach ($brands as $b)
+		{
+			$s = trim((string)$b);
+			if ($s !== '')
+			{
+				$seen[$s] = true;
+			}
+		}
+		$keys = array_keys($seen);
+		if ($keys === [])
+		{
+			return [];
+		}
+		natcasesort($keys);
+
+		return array_values($keys);
+	}
+}
+
 if (!function_exists('mf_ce_brand_choices_min_sanity_count'))
 {
 	function mf_ce_brand_choices_min_sanity_count(): int
@@ -472,7 +490,7 @@ if (!function_exists('mf_ce_load_brand_choices_meta'))
 				if (count($fromDb) > count($cached) + 2)
 				{
 					return [
-						'brands' => $fromDb,
+						'brands' => mf_ce_brand_choices_normalize_list($fromDb),
 						'source' => 'database (в Redis только ' . count($cached) . ' — перечитали из БД)',
 						'redis_key' => $redisKey,
 					];
@@ -480,7 +498,7 @@ if (!function_exists('mf_ce_load_brand_choices_meta'))
 			}
 
 			return [
-				'brands' => $cached,
+				'brands' => mf_ce_brand_choices_normalize_list($cached),
 				'source' => 'redis',
 				'redis_key' => $redisKey,
 			];
