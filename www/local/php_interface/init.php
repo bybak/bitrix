@@ -4113,18 +4113,12 @@ if (!function_exists('mf_on_order_before_saved'))
 
 if (!function_exists('mf_on_order_saved_1c_sync'))
 {
-	function mf_on_order_saved_1c_sync(\Bitrix\Main\Event $event): void
+	/**
+	 * Не вызывать из OnSaleOrderSaved: CSaleBasket::Update внутри save() даёт deadlock.
+	 * Используется только из mf_on_1c_exchange_backfill().
+	 */
+	function mf_on_order_saved_1c_sync(\Bitrix\Sale\Order $order): void
 	{
-		if (defined('ADMIN_SECTION') && ADMIN_SECTION === true)
-		{
-			return;
-		}
-		/** @var \Bitrix\Sale\Order|null $order */
-		$order = $event->getParameter('ENTITY');
-		if (!$order instanceof \Bitrix\Sale\Order)
-		{
-			return;
-		}
 		if (function_exists('mf_basket_sync_order_for_1c'))
 		{
 			mf_basket_sync_order_for_1c($order, true);
@@ -4185,9 +4179,9 @@ if (!function_exists('mf_on_1c_exchange_backfill'))
 					continue;
 				}
 				$order = \Bitrix\Sale\Order::load($orderId);
-				if ($order && function_exists('mf_basket_sync_order_for_1c'))
+				if ($order && function_exists('mf_on_order_saved_1c_sync'))
 				{
-					mf_basket_sync_order_for_1c($order, true);
+					mf_on_order_saved_1c_sync($order);
 				}
 			}
 		}
@@ -4201,7 +4195,6 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 {
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleBasketItemBeforeSaved', 'mf_on_basket_item_before_saved');
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleOrderBeforeSaved', 'mf_on_order_before_saved');
-	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleOrderSaved', 'mf_on_order_saved_1c_sync');
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBeforeProlog', 'mf_on_1c_exchange_backfill');
 }
 
