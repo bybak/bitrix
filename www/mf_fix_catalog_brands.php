@@ -633,10 +633,13 @@ try
 				// Persist user decision into HL dictionary (so next items match automatically).
 				if (!$dry && is_array($hl))
 				{
-					mf_brand_register_alias($hl, $brandNew, $brandNew, true, 200);
-					if ($brandOld !== '')
+					if ($brandOld !== '' && mf_brand_norm($brandOld) !== mf_brand_norm($brandNew))
 					{
 						mf_brand_register_alias($hl, $brandNew, $brandOld, true, 200);
+					}
+					elseif ($brandOld === '' && function_exists('mf_brand_ensure_canonical_anchor'))
+					{
+						mf_brand_ensure_canonical_anchor($hl, $brandNew, 200);
 					}
 					// refresh dict snapshot for printing hints later
 					$dict = mf_brand_aliases_load(true);

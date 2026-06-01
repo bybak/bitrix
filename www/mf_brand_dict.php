@@ -125,9 +125,34 @@ function mf_brand_seed_defaults(array $hl): void
 		{
 			mf_brand_register_alias($hl, (string)$canonical, (string)$a, true, (int)$sort);
 		}
-		// Ensure canonical itself exists as alias too
-		mf_brand_register_alias($hl, (string)$canonical, (string)$canonical, true, (int)$sort);
 	}
+}
+
+/**
+ * Одна запись в HL для канона, если других алиасов ещё нет (якорь для mf_brand_find по CANONICAL_NORM).
+ * Не создаёт дубликат «канон = алиас», если алиасы уже есть.
+ */
+function mf_brand_ensure_canonical_anchor(array $hl, string $canonical, int $sort = 0): void
+{
+	$canonical = trim($canonical);
+	if ($canonical === '')
+	{
+		return;
+	}
+	$canonNorm = mf_brand_norm($canonical);
+	if ($canonNorm === '')
+	{
+		return;
+	}
+	$dataClass = $hl['DATA_CLASS'];
+	$cnt = (int)$dataClass::getCount([
+		'filter' => ['=UF_CANONICAL_NORM' => $canonNorm, '=UF_ACTIVE' => 1],
+	]);
+	if ($cnt > 0)
+	{
+		return;
+	}
+	mf_brand_register_alias($hl, $canonical, $canonical, true, $sort);
 }
 
 function mf_brand_aliases_load(bool $createIfMissing = false): array
@@ -235,30 +260,46 @@ function mf_brand_register_alias(array $hl, string $canonical, string $alias, bo
 	if ($canonNorm === '' || $aliasNorm === '') return;
 
 	$filter = ['=UF_CANONICAL_NORM' => $canonNorm, '=UF_ALIAS_NORM' => $aliasNorm];
-	$existing = $dataClass::getList(['filter' => $filter, 'select' => ['ID'], 'limit' => 1])->fetch();
+	$existing = $dataClass::getList([
+		'filter' => $filter,
+		'select' => ['ID', 'UF_CANONICAL', 'UF_CANONICAL_NORM', 'UF_ALIAS', 'UF_ALIAS_NORM', 'UF_ACTIVE', 'UF_SORT'],
+		'limit' => 1,
+	])->fetch();
 
 	$now = new DateTime();
+	$activeInt = $active ? 1 : 0;
 	$fields = [
 		'UF_CANONICAL' => $canonical,
 		'UF_CANONICAL_NORM' => $canonNorm,
 		'UF_ALIAS' => $alias,
 		'UF_ALIAS_NORM' => $aliasNorm,
-		'UF_ACTIVE' => $active ? 1 : 0,
+		'UF_ACTIVE' => $activeInt,
 		'UF_SORT' => $sort,
-		'UF_UPDATED_AT' => $now,
 	];
 
 	if ($existing)
 	{
+		if (
+			trim((string)($existing['UF_CANONICAL'] ?? '')) === $canonical
+			&& trim((string)($existing['UF_CANONICAL_NORM'] ?? '')) === $canonNorm
+			&& trim((string)($existing['UF_ALIAS'] ?? '')) === $alias
+			&& trim((string)($existing['UF_ALIAS_NORM'] ?? '')) === $aliasNorm
+			&& (int)($existing['UF_ACTIVE'] ?? 0) === $activeInt
+			&& (int)($existing['UF_SORT'] ?? 0) === $sort
+		)
+		{
+			return;
+		}
+		$fields['UF_UPDATED_AT'] = $now;
 		$dataClass::update((int)$existing['ID'], $fields);
-	}
-	else
-	{
-		$fields['UF_CREATED_AT'] = $now;
-		$dataClass::add($fields);
+		mf_brand_aliases_reset_cache();
+
+		return;
 	}
 
-	// Drop in-memory cache so next lookup sees the new alias.
+	$fields['UF_CREATED_AT'] = $now;
+	$fields['UF_UPDATED_AT'] = $now;
+	$dataClass::add($fields);
 	mf_brand_aliases_reset_cache();
 }
 
