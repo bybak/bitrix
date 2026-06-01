@@ -3287,18 +3287,33 @@ if (!function_exists('mf_basket_set_props'))
 		foreach ($props as $code => $val)
 		{
 			$code = (string)$code;
-			$val = (string)$val;
 			if ($code === '') continue;
+
+			$name = $code;
+			if (is_array($val))
+			{
+				$name = trim((string)($val['NAME'] ?? $val['name'] ?? $code));
+				$val = (string)($val['VALUE'] ?? $val['value'] ?? '');
+			}
+			else
+			{
+				$val = (string)$val;
+			}
+			if ($name === '')
+			{
+				$name = $code;
+			}
 
 			if (isset($byCode[$code]))
 			{
+				$byCode[$code]->setField('NAME', $name);
 				$byCode[$code]->setField('VALUE', $val);
 				continue;
 			}
 
 			$pi = $pc->createItem();
 			$pi->setFields([
-				'NAME' => $code,
+				'NAME' => $name,
 				'CODE' => $code,
 				'VALUE' => $val,
 				'SORT' => 1000,
@@ -3523,42 +3538,74 @@ if (!function_exists('mf_basket_product_identity'))
 
 if (!function_exists('mf_basket_apply_1c_sync_fields'))
 {
+	/**
+	 * Поля и свойства корзины для стандартного обмена заказов Bitrix ↔ 1С.
+	 * В XML уходит как СвойствоКорзины#CODE — 1С:УНФ мапит их на реквизиты номенклатуры.
+	 */
 	function mf_basket_apply_1c_sync_fields(\Bitrix\Sale\BasketItemBase $item): void
 	{
 		$productId = (int)$item->getProductId();
-		$identity = mf_basket_product_identity($productId);
-		if (!$identity)
+		if ($productId <= 0)
 		{
 			return;
 		}
 
-		$fields = [];
-		if ($identity['NAME'] !== '')
+		$identity = mf_basket_product_identity($productId);
+		if (is_array($identity))
 		{
-			$fields['NAME'] = $identity['NAME'];
-		}
-		if ($identity['PRODUCT_XML_ID'] !== '')
-		{
-			$fields['PRODUCT_XML_ID'] = $identity['PRODUCT_XML_ID'];
-		}
-		if ($identity['CATALOG_XML_ID'] !== '')
-		{
-			$fields['CATALOG_XML_ID'] = $identity['CATALOG_XML_ID'];
-		}
-		if (!empty($fields))
-		{
-			$item->setFields($fields);
+			$fields = [];
+			if ($identity['NAME'] !== '')
+			{
+				$fields['NAME'] = $identity['NAME'];
+			}
+			if ($identity['PRODUCT_XML_ID'] !== '')
+			{
+				$fields['PRODUCT_XML_ID'] = $identity['PRODUCT_XML_ID'];
+			}
+			if ($identity['CATALOG_XML_ID'] !== '')
+			{
+				$fields['CATALOG_XML_ID'] = $identity['CATALOG_XML_ID'];
+			}
+			if (!empty($fields))
+			{
+				$item->setFields($fields);
+			}
 		}
 
+		$meta = function_exists('mf_catalog_brand_article_by_product_id')
+			? mf_catalog_brand_article_by_product_id($productId)
+			: ['brand' => '', 'article' => '', 'name' => ''];
+
 		$props = [];
-		if ($identity['CATALOG_XML_ID'] !== '')
+		if (is_array($identity))
 		{
-			$props['CATALOG.XML_ID'] = $identity['CATALOG_XML_ID'];
+			if ($identity['CATALOG_XML_ID'] !== '')
+			{
+				$props['CATALOG.XML_ID'] = $identity['CATALOG_XML_ID'];
+			}
+			if ($identity['PRODUCT_XML_ID'] !== '')
+			{
+				$props['PRODUCT.XML_ID'] = $identity['PRODUCT_XML_ID'];
+			}
 		}
-		if ($identity['PRODUCT_XML_ID'] !== '')
+		if (trim((string)($meta['article'] ?? '')) !== '')
 		{
-			$props['PRODUCT.XML_ID'] = $identity['PRODUCT_XML_ID'];
+			$props['CML2_ARTICLE'] = [
+				'NAME' => 'Артикул',
+				'VALUE' => trim((string)$meta['article']),
+			];
 		}
+		if (trim((string)($meta['brand'] ?? '')) !== '')
+		{
+			$brand = trim((string)$meta['brand']);
+			// Категория номенклатуры в 1С ← бренд товара («В группе» не трогаем).
+			$props['Категория'] = [
+				'NAME' => 'Категория',
+				'VALUE' => $brand,
+			];
+			$props['MF_BRAND'] = $brand;
+		}
+
 		if (!empty($props) && function_exists('mf_basket_set_props'))
 		{
 			mf_basket_set_props($item, $props);
