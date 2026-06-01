@@ -3526,13 +3526,159 @@ if (!function_exists('mf_basket_product_identity'))
 			}
 		}
 
-		$catalogXmlId = trim((string)\CIBlock::GetArrayByID((int)$product['IBLOCK_ID'], 'XML_ID'));
+		$iblockId = (int)$product['IBLOCK_ID'];
+		$catalogXmlId = trim((string)\CIBlock::GetArrayByID($iblockId, 'XML_ID'));
+		if ($catalogXmlId === '')
+		{
+			$iblock = \CIBlock::GetArrayByID($iblockId);
+			$catalogXmlId = trim((string)($iblock['CODE'] ?? ''));
+		}
 
 		return [
 			'NAME' => $name,
 			'PRODUCT_XML_ID' => $productXmlId,
 			'CATALOG_XML_ID' => $catalogXmlId,
 		];
+	}
+}
+
+if (!function_exists('mf_basket_upsert_prop'))
+{
+	function mf_basket_upsert_prop(int $basketId, string $code, string $name, string $value): void
+	{
+		if ($basketId <= 0 || $code === '' || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return;
+		}
+
+		$name = trim($name) !== '' ? trim($name) : $code;
+		$value = (string)$value;
+
+		$existing = null;
+		$rs = \CSaleBasket::GetPropsList(
+			['ID' => 'ASC'],
+			['BASKET_ID' => $basketId, 'CODE' => $code],
+			false,
+			['nTopCount' => 1],
+			['ID', 'CODE', 'NAME', 'VALUE']
+		);
+		if ($rs)
+		{
+			$row = $rs->Fetch();
+			if (is_array($row))
+			{
+				$existing = $row;
+			}
+		}
+
+		if (is_array($existing))
+		{
+			if ((string)($existing['VALUE'] ?? '') === $value && (string)($existing['NAME'] ?? '') === $name)
+			{
+				return;
+			}
+			\CSaleBasketProps::Update((int)$existing['ID'], [
+				'VALUE' => $value,
+				'NAME' => $name,
+			]);
+
+			return;
+		}
+
+		if ($value === '')
+		{
+			return;
+		}
+
+		\CSaleBasketProps::Add([
+			'BASKET_ID' => $basketId,
+			'CODE' => $code,
+			'NAME' => $name,
+			'VALUE' => $value,
+			'SORT' => 500,
+		]);
+	}
+}
+
+if (!function_exists('mf_basket_persist_item_1c_fields'))
+{
+	/**
+	 * Гарантированно пишет поля/свойства позиции в b_sale_basket / b_sale_basket_props (для экспорта в 1С).
+	 */
+	function mf_basket_persist_item_1c_fields(\Bitrix\Sale\BasketItemBase $item): void
+	{
+		mf_basket_apply_1c_sync_fields($item);
+
+		$basketId = (int)$item->getId();
+		if ($basketId <= 0 || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return;
+		}
+
+		$fields = [];
+		foreach (['NAME', 'PRODUCT_XML_ID', 'CATALOG_XML_ID'] as $fieldName)
+		{
+			$val = trim((string)$item->getField($fieldName));
+			if ($val !== '')
+			{
+				$fields[$fieldName] = $val;
+			}
+		}
+		if (!empty($fields))
+		{
+			\CSaleBasket::Update($basketId, $fields);
+		}
+
+		$pc = $item->getPropertyCollection();
+		if (!$pc)
+		{
+			return;
+		}
+
+		foreach ($pc as $propItem)
+		{
+			if (!$propItem || !method_exists($propItem, 'getField'))
+			{
+				continue;
+			}
+			$code = trim((string)$propItem->getField('CODE'));
+			if ($code === '')
+			{
+				continue;
+			}
+			mf_basket_upsert_prop(
+				$basketId,
+				$code,
+				(string)$propItem->getField('NAME'),
+				(string)$propItem->getField('VALUE')
+			);
+		}
+	}
+}
+
+if (!function_exists('mf_basket_sync_order_for_1c'))
+{
+	function mf_basket_sync_order_for_1c(\Bitrix\Sale\Order $order, bool $persistToDb = false): void
+	{
+		$basket = $order->getBasket();
+		if (!$basket)
+		{
+			return;
+		}
+
+		foreach ($basket as $item)
+		{
+			if (!$item instanceof \Bitrix\Sale\BasketItemBase)
+			{
+				continue;
+			}
+			if ($persistToDb)
+			{
+				mf_basket_persist_item_1c_fields($item);
+				continue;
+			}
+			mf_basket_apply_1c_sync_fields($item);
+		}
 	}
 }
 
@@ -3590,9 +3736,15 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 		}
 		if (trim((string)($meta['article'] ?? '')) !== '')
 		{
+			$article = trim((string)$meta['article']);
 			$props['CML2_ARTICLE'] = [
 				'NAME' => 'Артикул',
-				'VALUE' => trim((string)$meta['article']),
+				'VALUE' => $article,
+			];
+			// Дубли для разных схем сопоставления в 1С:УНФ.
+			$props['ARTNUMBER'] = [
+				'NAME' => 'Артикул',
+				'VALUE' => $article,
 			];
 		}
 		if (trim((string)($meta['brand'] ?? '')) !== '')
@@ -3603,7 +3755,15 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 				'NAME' => 'Категория',
 				'VALUE' => $brand,
 			];
+			$props['MF_CATEGORY'] = [
+				'NAME' => 'Категория',
+				'VALUE' => $brand,
+			];
 			$props['MF_BRAND'] = $brand;
+			$props['CML2_MANUFACTURER'] = [
+				'NAME' => 'Производитель',
+				'VALUE' => $brand,
+			];
 		}
 
 		if (!empty($props) && function_exists('mf_basket_set_props'))
@@ -3951,10 +4111,98 @@ if (!function_exists('mf_on_order_before_saved'))
 	}
 }
 
+if (!function_exists('mf_on_order_saved_1c_sync'))
+{
+	function mf_on_order_saved_1c_sync(\Bitrix\Main\Event $event): void
+	{
+		if (defined('ADMIN_SECTION') && ADMIN_SECTION === true)
+		{
+			return;
+		}
+		/** @var \Bitrix\Sale\Order|null $order */
+		$order = $event->getParameter('ENTITY');
+		if (!$order instanceof \Bitrix\Sale\Order)
+		{
+			return;
+		}
+		if (function_exists('mf_basket_sync_order_for_1c'))
+		{
+			mf_basket_sync_order_for_1c($order, true);
+		}
+	}
+}
+
+if (!function_exists('mf_on_1c_exchange_backfill'))
+{
+	/**
+	 * Перед выгрузкой заказов в 1С (type=sale&mode=query) дописываем артикул/бренд в позиции.
+	 */
+	function mf_on_1c_exchange_backfill(): void
+	{
+		if (PHP_SAPI === 'cli')
+		{
+			return;
+		}
+
+		$script = (string)($_SERVER['SCRIPT_NAME'] ?? '');
+		if (stripos($script, '1c_exchange.php') === false)
+		{
+			return;
+		}
+		if ((string)($_REQUEST['type'] ?? '') !== 'sale')
+		{
+			return;
+		}
+		$mode = (string)($_REQUEST['mode'] ?? $_GET['mode'] ?? $_POST['mode'] ?? '');
+		if ($mode !== 'query')
+		{
+			return;
+		}
+		if (!class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return;
+		}
+
+		static $done = false;
+		if ($done)
+		{
+			return;
+		}
+		$done = true;
+
+		try
+		{
+			$rs = \Bitrix\Sale\Internals\OrderTable::getList([
+				'select' => ['ID'],
+				'order' => ['ID' => 'DESC'],
+				'limit' => 100,
+			]);
+			while ($row = $rs->fetch())
+			{
+				$orderId = (int)($row['ID'] ?? 0);
+				if ($orderId <= 0)
+				{
+					continue;
+				}
+				$order = \Bitrix\Sale\Order::load($orderId);
+				if ($order && function_exists('mf_basket_sync_order_for_1c'))
+				{
+					mf_basket_sync_order_for_1c($order, true);
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+	}
+}
+
 if (class_exists(\Bitrix\Main\EventManager::class))
 {
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleBasketItemBeforeSaved', 'mf_on_basket_item_before_saved');
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleOrderBeforeSaved', 'mf_on_order_before_saved');
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleOrderSaved', 'mf_on_order_saved_1c_sync');
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBeforeProlog', 'mf_on_1c_exchange_backfill');
 }
 
 // --- UNF integration (orders -> 1C:UNF via HTTP API) ------------------------
