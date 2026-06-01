@@ -3454,6 +3454,118 @@ if (!function_exists('mf_basket_item_display_name'))
 	}
 }
 
+if (!function_exists('mf_basket_product_identity'))
+{
+	/**
+	 * NAME / PRODUCT_XML_ID / CATALOG_XML_ID для синхронизации заказов Bitrix ↔ 1С.
+	 *
+	 * @return array{NAME: string, PRODUCT_XML_ID: string, CATALOG_XML_ID: string}|null
+	 */
+	function mf_basket_product_identity(int $productId): ?array
+	{
+		if ($productId <= 0)
+		{
+			return null;
+		}
+		if (!class_exists(\Bitrix\Main\Loader::class))
+		{
+			return null;
+		}
+		if (!\Bitrix\Main\Loader::includeModule('iblock') || !\Bitrix\Main\Loader::includeModule('catalog'))
+		{
+			return null;
+		}
+
+		$product = \CIBlockElement::GetList(
+			[],
+			['ID' => $productId],
+			false,
+			['nTopCount' => 1],
+			['ID', 'IBLOCK_ID', 'NAME', 'XML_ID']
+		)->Fetch();
+		if (!$product)
+		{
+			return null;
+		}
+
+		$name = trim((string)($product['NAME'] ?? ''));
+		$productXmlId = trim((string)($product['XML_ID'] ?? ''));
+
+		if (class_exists(\CCatalogSKU::class))
+		{
+			$skuInfo = \CCatalogSKU::GetProductInfo($productId);
+			if (is_array($skuInfo) && !empty($skuInfo['ID']) && $productXmlId !== '' && strpos($productXmlId, '#') === false)
+			{
+				$parent = \CIBlockElement::GetList(
+					[],
+					['ID' => (int)$skuInfo['ID']],
+					false,
+					['nTopCount' => 1],
+					['XML_ID']
+				)->Fetch();
+				$parentXmlId = trim((string)($parent['XML_ID'] ?? ''));
+				if ($parentXmlId !== '')
+				{
+					$productXmlId = $parentXmlId . '#' . $productXmlId;
+				}
+			}
+		}
+
+		$catalogXmlId = trim((string)\CIBlock::GetArrayByID((int)$product['IBLOCK_ID'], 'XML_ID'));
+
+		return [
+			'NAME' => $name,
+			'PRODUCT_XML_ID' => $productXmlId,
+			'CATALOG_XML_ID' => $catalogXmlId,
+		];
+	}
+}
+
+if (!function_exists('mf_basket_apply_1c_sync_fields'))
+{
+	function mf_basket_apply_1c_sync_fields(\Bitrix\Sale\BasketItemBase $item): void
+	{
+		$productId = (int)$item->getProductId();
+		$identity = mf_basket_product_identity($productId);
+		if (!$identity)
+		{
+			return;
+		}
+
+		$fields = [];
+		if ($identity['NAME'] !== '')
+		{
+			$fields['NAME'] = $identity['NAME'];
+		}
+		if ($identity['PRODUCT_XML_ID'] !== '')
+		{
+			$fields['PRODUCT_XML_ID'] = $identity['PRODUCT_XML_ID'];
+		}
+		if ($identity['CATALOG_XML_ID'] !== '')
+		{
+			$fields['CATALOG_XML_ID'] = $identity['CATALOG_XML_ID'];
+		}
+		if (!empty($fields))
+		{
+			$item->setFields($fields);
+		}
+
+		$props = [];
+		if ($identity['CATALOG_XML_ID'] !== '')
+		{
+			$props['CATALOG.XML_ID'] = $identity['CATALOG_XML_ID'];
+		}
+		if ($identity['PRODUCT_XML_ID'] !== '')
+		{
+			$props['PRODUCT.XML_ID'] = $identity['PRODUCT_XML_ID'];
+		}
+		if (!empty($props) && function_exists('mf_basket_set_props'))
+		{
+			mf_basket_set_props($item, $props);
+		}
+	}
+}
+
 if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 {
 	function mf_assign_store_and_price_to_basket_item(\Bitrix\Sale\BasketItemBase $item): void
@@ -3537,6 +3649,7 @@ if (!function_exists('mf_on_basket_item_before_saved'))
 		$basketItem = $event->getParameter('ENTITY');
 		if ($basketItem instanceof \Bitrix\Sale\BasketItemBase)
 		{
+			mf_basket_apply_1c_sync_fields($basketItem);
 			mf_assign_store_and_price_to_basket_item($basketItem);
 		}
 	}
@@ -3602,6 +3715,7 @@ if (!function_exists('mf_on_order_before_saved'))
 		{
 			if ($item instanceof \Bitrix\Sale\BasketItemBase)
 			{
+				mf_basket_apply_1c_sync_fields($item);
 				mf_assign_store_and_price_to_basket_item($item);
 			}
 		}

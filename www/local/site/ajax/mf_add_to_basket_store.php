@@ -46,18 +46,39 @@ try
 
 	$basket = \Bitrix\Sale\Basket::loadItemsForFUser($fUserId, $siteId);
 	$item = $basket->getExistsItem('catalog', $productId);
+	$productIdentity = function_exists('mf_basket_product_identity')
+		? mf_basket_product_identity($productId)
+		: null;
+
+	$basketFields = [
+		'PRODUCT_ID' => $productId,
+		'QUANTITY' => $qty,
+		'CURRENCY' => 'RUB',
+		'LID' => $siteId,
+		'CUSTOM_PRICE' => 'Y',
+		'PRICE' => $price,
+		'BASE_PRICE' => $price,
+	];
+	if (is_array($productIdentity))
+	{
+		if ($productIdentity['NAME'] !== '')
+		{
+			$basketFields['NAME'] = $productIdentity['NAME'];
+		}
+		if ($productIdentity['PRODUCT_XML_ID'] !== '')
+		{
+			$basketFields['PRODUCT_XML_ID'] = $productIdentity['PRODUCT_XML_ID'];
+		}
+		if ($productIdentity['CATALOG_XML_ID'] !== '')
+		{
+			$basketFields['CATALOG_XML_ID'] = $productIdentity['CATALOG_XML_ID'];
+		}
+	}
+
 	if (!$item)
 	{
 		$item = $basket->createItem('catalog', $productId);
-		$item->setFields([
-			'PRODUCT_ID' => $productId,
-			'QUANTITY' => $qty,
-			'CURRENCY' => 'RUB',
-			'LID' => $siteId,
-			'CUSTOM_PRICE' => 'Y',
-			'PRICE' => $price,
-			'BASE_PRICE' => $price,
-		]);
+		$item->setFields($basketFields);
 	}
 	else
 	{
@@ -66,6 +87,21 @@ try
 		$item->setField('PRICE', $price);
 		$item->setField('BASE_PRICE', $price);
 		$item->setField('CURRENCY', 'RUB');
+		if (is_array($productIdentity))
+		{
+			if ($productIdentity['NAME'] !== '')
+			{
+				$item->setField('NAME', $productIdentity['NAME']);
+			}
+			if ($productIdentity['PRODUCT_XML_ID'] !== '')
+			{
+				$item->setField('PRODUCT_XML_ID', $productIdentity['PRODUCT_XML_ID']);
+			}
+			if ($productIdentity['CATALOG_XML_ID'] !== '')
+			{
+				$item->setField('CATALOG_XML_ID', $productIdentity['CATALOG_XML_ID']);
+			}
+		}
 	}
 
 	// Attach store info as basket properties for order visibility.
@@ -89,6 +125,11 @@ try
 		{
 			mf_basket_set_props($item, $props);
 		}
+	}
+
+	if (function_exists('mf_basket_apply_1c_sync_fields'))
+	{
+		mf_basket_apply_1c_sync_fields($item);
 	}
 
 	$r = $basket->save();
