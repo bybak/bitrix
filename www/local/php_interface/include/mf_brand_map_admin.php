@@ -618,12 +618,18 @@ if ($bm_sort_canon !== '' && $missing !== [])
 }
 
 $catalogBrands = mf_bm_select_brand_choices($conn, 4);
-$catalogBrandsJson = json_encode(
-	$catalogBrands,
-	JSON_UNESCAPED_UNICODE
-	| (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0)
-);
+$catalogBrandsJsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
+if (defined('JSON_INVALID_UTF8_SUBSTITUTE'))
+{
+	$catalogBrandsJsonFlags |= JSON_INVALID_UTF8_SUBSTITUTE;
+}
+$catalogBrandsJson = json_encode($catalogBrands, $catalogBrandsJsonFlags);
+if (!is_string($catalogBrandsJson))
+{
+	$catalogBrandsJson = '[]';
+}
 $catalogBrandsLookup = array_fill_keys($catalogBrands, true);
+$catalogBrandsCount = count($catalogBrands);
 
 /** Записи HL, созданные блоком «Ручное сопоставление» (UF_SORT >= MF_BM_MANUAL_ALIAS_SORT). */
 $manualAliasRows = [];
@@ -681,7 +687,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	<div style="margin: 8px 0 12px 0; color:#666;">
 		Слева бренды из <code>mf_stock_import_missing</code>. Выбери канонический бренд из каталога — сохраним как alias→canonical в HL <code>mf_brand_alias</code>.
 		Вариант «Не сопоставлять» помечает бренд в таблице <code>mf_brand_import_skip</code>: такие строки не обрабатываются при импорте остатков и при загрузке внешних прайсов (остатки и цены по ним не меняются).
-		<br/>Список в селекте совпадает с выгрузкой каталога: значения <code>MF_BRAND</code> и <code>MF_BRAND_NORM</code> только у <b>выгружаемых</b> активных <b>товаров</b> (инфоблок каталога, без торговых предложений). Дополнительно подмешиваются каноны из <code>mf_brand_alias</code>, чтобы выбранная цель сопоставления не пропадала из списка.
+		<br/>Список в селекте: <code>MF_BRAND</code> у выгружаемых активных товаров + каноны из <code>mf_brand_alias</code>.
 		Можно указать <b>свой канон текстом</b> (поле под селектом в таблице и в блоке ручного сопоставления): непустое значение сохраняется вместо выбора из списка — удобно, если нужного написания ещё нет среди товаров каталога.
 		<br/>Блок <b>ниже</b> нужен, если в файле поставщика встречается бренд, которого <b>нет</b> в списке «ненайденных» (он уже сопоставляется с товарами) — например, завести «Ski-Doo» → «BRP» при существующем в каталоге Ski-Doo. Сохраняется с приоритетом, выше встроенных правил.
 	</div>
@@ -851,7 +857,7 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 				(по <?= (int)$bmPerPage ?> на странице<span class="js-bm-pagenum-wrap"<?= $bmTotalPages < 2 ? ' style="display:none;"' : '' ?>>, стр. <span class="js-bm-curpage"><?= (int)$bmClientPage ?></span> из <span class="js-bm-ntp"><?= (int)$bmTotalPages ?></span></span>).
 				Перелистывание без запроса к серверу.
 				Сортировка по колонке «Сейчас сопоставлен» — ссылки <b>↑</b> <b>↓</b> в заголовке таблицы (по тексту как на экране; «сброс» — снова порядок по имени бренда из базы).
-				<br/><span style="color:#555;">Список брендов каталога в выпадашках строк подгружается в браузере при открытии страницы пачки (меньше HTML и быстрее отклик).</span>
+				<br/><span style="color:#555;">В выпадашках — <strong><?= (int)$catalogBrandsCount ?></strong> брендов каталога (<code>MF_BRAND</code>); подгружаются в браузере для <b>текущей</b> страницы пагинации (кнопки «Назад / Вперёд»). Если видите только «не менять» и «не сопоставлять» — перелистните страницу ещё раз или обновите <code>mf_refresh_ce_brand_choices_cache.php</code>.</span>
 			</div>
 			<div class="js-bm-nav bm-pager-ui" style="margin:0 0 12px 0;contain:layout;isolation:isolate;transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden;user-select:none;touch-action:manipulation;"></div>
 		<?php endif; ?>
@@ -952,13 +958,16 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	</form>
 	</div>
 
-<script>window.MF_BM_CATALOG_BRANDS=<?= is_string($catalogBrandsJson) ? $catalogBrandsJson : '[]' ?>;</script>
+<script type="application/json" id="mf-bm-catalog-brands-json"><?= $catalogBrandsJson ?></script>
 <script>
 (function () {
 	var root = document.getElementById("bm-client-pager");
 	if (!root) return;
-	var n = parseInt(root.getAttribute("data-bm-n") || "0", 10) || 0;
+
+	var rows = Array.prototype.slice.call(root.querySelectorAll("tr.js-bm-row"));
+	var n = rows.length;
 	if (n < 1) return;
+
 	var per = Math.max(1, parseInt(root.getAttribute("data-bm-per") || "50", 10) || 50);
 	var totalPages = Math.max(1, Math.ceil(n / per));
 	var cur = Math.max(1, Math.min(
@@ -972,29 +981,50 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	var onlyUnmapped = root.getAttribute("data-bm-only-unmapped") || "0";
 	var sortCanon = root.getAttribute("data-bm-sort-canon") || "";
 
-	var rows = Array.prototype.slice.call(root.querySelectorAll("tr.js-bm-row"));
-	if (rows.length !== n) { return; }
+	var navPrevS = -1, navPrevE = -1;
 
-	var navPrevS = (cur - 1) * per, navPrevE = cur * per;
+	var brands = [];
+	try {
+		var jel = document.getElementById("mf-bm-catalog-brands-json");
+		if (jel && jel.textContent) {
+			var parsed = JSON.parse(jel.textContent);
+			if (Array.isArray(parsed)) {
+				brands = parsed;
+			}
+		}
+	} catch (e) {
+		brands = [];
+	}
 
-	var brands = Array.isArray(window.MF_BM_CATALOG_BRANDS) ? window.MF_BM_CATALOG_BRANDS : [];
+	function pageRange(page) {
+		var s = (page - 1) * per;
+		return { start: s, end: Math.min(page * per, n) };
+	}
 
 	function mfBmFillOneCatalogSelect(sel) {
 		if (!sel || sel.getAttribute("data-bm-filled") === "1") {
 			return;
 		}
+		if (brands.length === 0) {
+			return;
+		}
 		sel.setAttribute("data-bm-filled", "1");
 		var pref = sel.getAttribute("data-bm-pref") || "";
+		var frag = document.createDocumentFragment();
 		for (var i = 0; i < brands.length; i++) {
-			var b = brands[i];
+			var b = String(brands[i] != null ? brands[i] : "").trim();
+			if (b === "") {
+				continue;
+			}
 			var o = document.createElement("option");
 			o.value = b;
 			o.textContent = b;
 			if (pref !== "" && b === pref) {
 				o.selected = true;
 			}
-			sel.appendChild(o);
+			frag.appendChild(o);
 		}
+		sel.appendChild(frag);
 	}
 
 	function mfBmFillCatalogSelectsInRange(start, end) {
@@ -1036,14 +1066,23 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	}
 
 	function showRows() {
-		var s = (cur - 1) * per, e = cur * per;
-		if (s === navPrevS && e === navPrevE) { return; }
+		var range = pageRange(cur);
+		var s = range.start, e = range.end;
+		if (s === navPrevS && e === navPrevE) {
+			return;
+		}
 		var i, j;
-		for (i = navPrevS; i < navPrevE; i++) {
-			if (i < s || i >= e) { rows[i].style.display = "none"; }
+		if (navPrevS >= 0) {
+			for (i = navPrevS; i < navPrevE; i++) {
+				if (rows[i] && (i < s || i >= e)) {
+					rows[i].style.display = "none";
+				}
+			}
 		}
 		for (j = s; j < e; j++) {
-			if (j < navPrevS || j >= navPrevE) { rows[j].style.display = ""; }
+			if (rows[j] && (j < navPrevS || j >= navPrevE)) {
+				rows[j].style.display = "";
+			}
 		}
 		navPrevS = s;
 		navPrevE = e;
@@ -1075,8 +1114,9 @@ $bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNa
 	/** Повторно не трогаем innerHTML панели, если страница та же (меньше reflow при лишних вызовах). */
 	var lastNavBuildForCur = -1;
 	function paint() {
+		var range = pageRange(cur);
 		showRows();
-		mfBmFillCatalogSelectsInRange((cur - 1) * per, Math.min(cur * per, n));
+		mfBmFillCatalogSelectsInRange(range.start, range.end);
 		updateRange();
 		if (cur === lastNavBuildForCur) { return; }
 		lastNavBuildForCur = cur;
