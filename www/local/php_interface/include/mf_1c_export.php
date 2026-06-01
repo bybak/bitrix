@@ -56,11 +56,11 @@ if (!function_exists('mf_1c_export_xml_escape'))
 if (!function_exists('mf_1c_export_meta_from_product_xml_id'))
 {
 	/**
-	 * @return array{article: string, category: string}
+	 * @return array{article: string, category: string, name: string, product_id: int}
 	 */
 	function mf_1c_export_meta_from_product_xml_id(string $xmlId): array
 	{
-		$result = ['article' => '', 'category' => ''];
+		$result = ['article' => '', 'category' => '', 'name' => '', 'product_id' => 0];
 		$xmlId = trim($xmlId);
 		if ($xmlId === '' || !function_exists('mf_catalog_brand_article_by_product_id'))
 		{
@@ -102,6 +102,7 @@ if (!function_exists('mf_1c_export_meta_from_product_xml_id'))
 			return $result;
 		}
 
+		$result['product_id'] = $productId;
 		$meta = mf_catalog_brand_article_by_product_id($productId);
 		if (!is_array($meta))
 		{
@@ -110,8 +111,122 @@ if (!function_exists('mf_1c_export_meta_from_product_xml_id'))
 
 		$result['article'] = trim((string)($meta['article'] ?? ''));
 		$result['category'] = trim((string)($meta['brand'] ?? ''));
+		if (function_exists('mf_catalog_product_export_name'))
+		{
+			$result['name'] = mf_catalog_product_export_name($productId);
+		}
+		else
+		{
+			$result['name'] = trim((string)($meta['name'] ?? ''));
+		}
 
 		return $result;
+	}
+}
+
+if (!function_exists('mf_1c_export_product_title_from_block'))
+{
+	function mf_1c_export_product_title_from_block(string $itemBlock): string
+	{
+		if (!preg_match('/<Товар\b[^>]*>(.*?)<\/Товар>/su', $itemBlock, $wrap))
+		{
+			return '';
+		}
+		$inner = (string)$wrap[1];
+		$propsPos = stripos($inner, '<ЗначенияРеквизитов');
+		if ($propsPos !== false)
+		{
+			$inner = substr($inner, 0, $propsPos);
+		}
+		if (!preg_match('/<Наименование\b[^>]*>(.*?)<\/Наименование>/su', $inner, $nameMatch))
+		{
+			return '';
+		}
+
+		return trim(html_entity_decode(strip_tags($nameMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+	}
+}
+
+if (!function_exists('mf_1c_export_fix_product_title'))
+{
+	function mf_1c_export_fix_product_title(string $itemBlock, string $article): string
+	{
+		if (!function_exists('mf_name_is_trivial_article'))
+		{
+			return $itemBlock;
+		}
+
+		$title = mf_1c_export_product_title_from_block($itemBlock);
+		if ($title === '' || $article === '' || !mf_name_is_trivial_article($title, $article))
+		{
+			return $itemBlock;
+		}
+
+		$exportName = '';
+		if (preg_match('/<Ид\b[^>]*>(.*?)<\/Ид>/su', $itemBlock, $idMatch))
+		{
+			$meta = mf_1c_export_meta_from_product_xml_id(trim(strip_tags($idMatch[1])));
+			$exportName = trim((string)($meta['name'] ?? ''));
+		}
+		if ($exportName === '' || mf_name_is_trivial_article($exportName, $article))
+		{
+			return $itemBlock;
+		}
+
+		$propsPos = stripos($itemBlock, '<ЗначенияРеквизитов');
+		if ($propsPos === false)
+		{
+			return preg_replace(
+				'/(<Наименование\b[^>]*>)(.*?)(<\/Наименование>)/su',
+				'$1' . mf_1c_export_xml_escape($exportName) . '$3',
+				$itemBlock,
+				1
+			) ?? $itemBlock;
+		}
+
+		$head = substr($itemBlock, 0, $propsPos);
+		$tail = substr($itemBlock, $propsPos);
+		$head = preg_replace(
+			'/(<Наименование\b[^>]*>)(.*?)(<\/Наименование>)/su',
+			'$1' . mf_1c_export_xml_escape($exportName) . '$3',
+			$head,
+			1
+		) ?? $head;
+
+		return $head . $tail;
+	}
+}
+
+if (!function_exists('mf_1c_export_insert_after_product_title'))
+{
+	function mf_1c_export_insert_after_product_title(string $itemBlock, string $insert): string
+	{
+		if ($insert === '')
+		{
+			return $itemBlock;
+		}
+
+		$propsPos = stripos($itemBlock, '<ЗначенияРеквизитов');
+		if ($propsPos === false)
+		{
+			return preg_replace(
+				'/(<Наименование\b[^>]*>.*?<\/Наименование>)/su',
+				'$1' . $insert,
+				$itemBlock,
+				1
+			) ?? $itemBlock;
+		}
+
+		$head = substr($itemBlock, 0, $propsPos);
+		$tail = substr($itemBlock, $propsPos);
+		$head = preg_replace(
+			'/(<Наименование\b[^>]*>.*?<\/Наименование>)/su',
+			'$1' . $insert,
+			$head,
+			1
+		) ?? $head;
+
+		return $head . $tail;
 	}
 }
 
@@ -185,17 +300,15 @@ if (!function_exists('mf_1c_export_enrich_single_item_block'))
 			return $itemBlock;
 		}
 
-		$itemName = '';
-		if (preg_match('/<Наименование\b[^>]*>(.*?)<\/Наименование>/su', $itemBlock, $nameMatch))
-		{
-			$itemName = trim(html_entity_decode(strip_tags($nameMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-		}
+		$itemName = mf_1c_export_product_title_from_block($itemBlock);
 		if ($itemName !== '' && mb_stripos($itemName, 'доставка') !== false)
 		{
 			return $itemBlock;
 		}
 
 		$meta = mf_1c_export_extract_item_meta_from_block($itemBlock);
+		$itemBlock = mf_1c_export_fix_product_title($itemBlock, $meta['article']);
+
 		$insert = '';
 
 		if ($meta['article'] !== '' && !preg_match('/<Артикул\b[^>]*>[^<]+<\/Артикул>/su', $itemBlock))
@@ -212,37 +325,7 @@ if (!function_exists('mf_1c_export_enrich_single_item_block'))
 			return $itemBlock;
 		}
 
-		if (preg_match('/<Наименование\b[^>]*>.*?<\/Наименование>/su', $itemBlock))
-		{
-			return preg_replace(
-				'/(<Наименование\b[^>]*>.*?<\/Наименование>)/su',
-				'$1' . $insert,
-				$itemBlock,
-				1
-			) ?? $itemBlock;
-		}
-
-		if (preg_match('/<ИдКаталога\b[^>]*>.*?<\/ИдКаталога>/su', $itemBlock))
-		{
-			return preg_replace(
-				'/(<ИдКаталога\b[^>]*>.*?<\/ИдКаталога>)/su',
-				'$1' . $insert,
-				$itemBlock,
-				1
-			) ?? $itemBlock;
-		}
-
-		if (preg_match('/<Ид\b[^>]*>.*?<\/Ид>/su', $itemBlock))
-		{
-			return preg_replace(
-				'/(<Ид\b[^>]*>.*?<\/Ид>)/su',
-				'$1' . $insert,
-				$itemBlock,
-				1
-			) ?? $itemBlock;
-		}
-
-		return $itemBlock;
+		return mf_1c_export_insert_after_product_title($itemBlock, $insert);
 	}
 }
 

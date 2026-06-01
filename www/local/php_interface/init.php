@@ -3322,6 +3322,150 @@ if (!function_exists('mf_basket_set_props'))
 	}
 }
 
+if (!function_exists('mf_plain_text_from_html'))
+{
+	function mf_plain_text_from_html(string $html): string
+	{
+		if ($html === '')
+		{
+			return '';
+		}
+		$text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+		$text = preg_replace('/\s+/u', ' ', $text);
+
+		return trim((string)$text);
+	}
+}
+
+if (!function_exists('mf_normalize_simple_token'))
+{
+	function mf_normalize_simple_token(string $value): string
+	{
+		$value = mb_strtoupper(trim($value));
+
+		return (string)preg_replace('/[^0-9A-ZА-Я]/u', '', $value);
+	}
+}
+
+if (!function_exists('mf_name_is_trivial_article'))
+{
+	/** true, если наименование совпадает с артикулом (42657A4 и т.п.) */
+	function mf_name_is_trivial_article(string $name, string $article): bool
+	{
+		$name = trim($name);
+		$article = trim($article);
+		if ($name === '' || $article === '')
+		{
+			return false;
+		}
+		if (strcasecmp($name, $article) === 0)
+		{
+			return true;
+		}
+
+		$n = mf_normalize_simple_token($name);
+		$a = mf_normalize_simple_token($article);
+
+		return ($n !== '' && $a !== '' && $n === $a);
+	}
+}
+
+if (!function_exists('mf_catalog_resolve_export_name'))
+{
+	/**
+	 * Человекочитаемое наименование для 1С / заказа: не подставляем голый артикул, если есть описание.
+	 */
+	function mf_catalog_resolve_export_name(
+		string $iblockName,
+		string $previewText,
+		string $detailText,
+		string $article,
+		string $brand,
+		string $fallback = ''
+	): string {
+		$candidates = [];
+		foreach ([$fallback, $iblockName] as $candidate)
+		{
+			$candidate = trim($candidate);
+			if ($candidate !== '' && !mf_name_is_trivial_article($candidate, $article))
+			{
+				$candidates[] = $candidate;
+			}
+		}
+		foreach ([$previewText, $detailText] as $html)
+		{
+			$plain = mf_plain_text_from_html($html);
+			if ($plain !== '' && mb_strlen($plain) >= 3 && !mf_name_is_trivial_article($plain, $article))
+			{
+				$candidates[] = mb_substr($plain, 0, 250);
+			}
+		}
+		if (!empty($candidates))
+		{
+			usort($candidates, static function (string $a, string $b): int {
+				return mb_strlen($b) <=> mb_strlen($a);
+			});
+
+			return $candidates[0];
+		}
+
+		$iblockName = trim($iblockName);
+		if ($iblockName !== '' && mb_strlen($iblockName) > mb_strlen($article) + 5)
+		{
+			return $iblockName;
+		}
+
+		$plain = mf_plain_text_from_html($previewText);
+		if ($plain === '')
+		{
+			$plain = mf_plain_text_from_html($detailText);
+		}
+		if ($plain !== '')
+		{
+			return mb_substr($plain, 0, 250);
+		}
+		if ($iblockName !== '')
+		{
+			return $iblockName;
+		}
+		$fallback = trim($fallback);
+		if ($fallback !== '')
+		{
+			return $fallback;
+		}
+		$combo = trim($brand . ' ' . $article);
+
+		return $combo !== '' ? $combo : $article;
+	}
+}
+
+if (!function_exists('mf_catalog_product_export_name'))
+{
+	function mf_catalog_product_export_name(int $productId, string $fallback = ''): string
+	{
+		if ($productId <= 0)
+		{
+			return trim($fallback);
+		}
+		$meta = function_exists('mf_catalog_brand_article_by_product_id')
+			? mf_catalog_brand_article_by_product_id($productId)
+			: ['brand' => '', 'article' => '', 'name' => ''];
+		$name = trim((string)($meta['name'] ?? ''));
+		$article = trim((string)($meta['article'] ?? ''));
+		$fallback = trim($fallback);
+		if (
+			$fallback !== ''
+			&& !mf_name_is_trivial_article($fallback, $article)
+			&& (mf_name_is_trivial_article($name, $article) || mb_strlen($fallback) > mb_strlen($name))
+		)
+		{
+			return $fallback;
+		}
+
+		return $name;
+	}
+}
+
 if (!function_exists('mf_catalog_brand_article_by_product_id'))
 {
 	/**
@@ -3354,6 +3498,8 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			'ID',
 			'IBLOCK_ID',
 			'NAME',
+			'PREVIEW_TEXT',
+			'DETAIL_TEXT',
 			'PROPERTY_CML2_ARTICLE',
 			'PROPERTY_MF_BRAND',
 			'PROPERTY_MF_BRAND_NORM',
@@ -3409,6 +3555,8 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 		$brand = '';
 		$article = '';
 		$name = '';
+		$previewText = '';
+		$detailText = '';
 		foreach ($ids as $id)
 		{
 			$row = $load($id);
@@ -3429,7 +3577,17 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			{
 				$name = $p['name'];
 			}
+			if ($previewText === '' && trim((string)($row['PREVIEW_TEXT'] ?? '')) !== '')
+			{
+				$previewText = (string)$row['PREVIEW_TEXT'];
+			}
+			if ($detailText === '' && trim((string)($row['DETAIL_TEXT'] ?? '')) !== '')
+			{
+				$detailText = (string)$row['DETAIL_TEXT'];
+			}
 		}
+
+		$name = mf_catalog_resolve_export_name($name, $previewText, $detailText, $article, $brand, '');
 
 		$out = ['brand' => $brand, 'article' => $article, 'name' => $name];
 		$cache[$productId] = $out;
@@ -3445,27 +3603,28 @@ if (!function_exists('mf_basket_item_display_name'))
 	 */
 	function mf_basket_item_display_name(array $item): string
 	{
+		$basketName = '';
 		foreach (['NAME~', 'NAME'] as $key)
 		{
 			$name = trim(html_entity_decode(strip_tags((string)($item[$key] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 			if ($name !== '')
 			{
-				return $name;
+				$basketName = $name;
+				break;
 			}
 		}
 
 		$productId = (int)($item['PRODUCT_ID'] ?? 0);
-		if ($productId > 0 && function_exists('mf_catalog_brand_article_by_product_id'))
+		if ($productId > 0 && function_exists('mf_catalog_product_export_name'))
 		{
-			$meta = mf_catalog_brand_article_by_product_id($productId);
-			$name = trim((string)($meta['name'] ?? ''));
+			$name = mf_catalog_product_export_name($productId, $basketName);
 			if ($name !== '')
 			{
 				return $name;
 			}
 		}
 
-		return '';
+		return $basketName;
 	}
 }
 
@@ -3503,7 +3662,9 @@ if (!function_exists('mf_basket_product_identity'))
 			return null;
 		}
 
-		$name = trim((string)($product['NAME'] ?? ''));
+		$name = function_exists('mf_catalog_product_export_name')
+			? mf_catalog_product_export_name($productId)
+			: trim((string)($product['NAME'] ?? ''));
 		$productXmlId = trim((string)($product['XML_ID'] ?? ''));
 
 		if (class_exists(\CCatalogSKU::class))
@@ -3700,9 +3861,12 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 		if (is_array($identity))
 		{
 			$fields = [];
-			if ($identity['NAME'] !== '')
+			$exportName = function_exists('mf_catalog_product_export_name')
+				? mf_catalog_product_export_name($productId, trim((string)$item->getField('NAME')))
+				: trim((string)($identity['NAME'] ?? ''));
+			if ($exportName !== '')
 			{
-				$fields['NAME'] = $identity['NAME'];
+				$fields['NAME'] = $exportName;
 			}
 			if ($identity['PRODUCT_XML_ID'] !== '')
 			{
