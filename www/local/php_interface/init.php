@@ -4200,6 +4200,12 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 
 // --- UNF integration (orders -> 1C:UNF via HTTP API) ------------------------
 // Kept in a separate file to avoid bloating init.php.
+$mf1cExportInclude = __DIR__ . '/include/mf_1c_export.php';
+if (is_file($mf1cExportInclude))
+{
+	require_once $mf1cExportInclude;
+}
+
 $mfUnfInclude = __DIR__ . '/include/mf_unf.php';
 if (is_file($mfUnfInclude))
 {
