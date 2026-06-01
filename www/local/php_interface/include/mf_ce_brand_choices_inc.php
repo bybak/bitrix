@@ -157,7 +157,12 @@ if (!function_exists('mf_ce_brand_choices_cache_set'))
 			return false;
 		}
 		$key = mf_ce_brand_choices_cache_redis_key($iblockId, $onlyActiveBrands, $propertyCodes);
-		$payload = json_encode(array_values($brands), JSON_UNESCAPED_UNICODE);
+		$jsonFlags = JSON_UNESCAPED_UNICODE;
+		if (defined('JSON_INVALID_UTF8_SUBSTITUTE'))
+		{
+			$jsonFlags |= JSON_INVALID_UTF8_SUBSTITUTE;
+		}
+		$payload = json_encode(array_values($brands), $jsonFlags);
 		if ($payload === false)
 		{
 			return false;
@@ -432,6 +437,63 @@ if (!function_exists('mf_ce_refresh_brand_choices_cache'))
 	}
 }
 
+if (!function_exists('mf_ce_brand_choices_min_sanity_count'))
+{
+	function mf_ce_brand_choices_min_sanity_count(): int
+	{
+		$v = getenv('MF_CE_BRAND_CHOICES_MIN_SANITY');
+		if ($v !== false && $v !== '' && ctype_digit((string)$v))
+		{
+			return max(1, (int)$v);
+		}
+
+		return 8;
+	}
+}
+
+if (!function_exists('mf_ce_load_brand_choices_meta'))
+{
+	/**
+	 * Как mf_ce_load_brand_choices(), плюс источник данных (для диагностики админки).
+	 *
+	 * @param list<string>|null $propertyCodes
+	 * @return array{brands: list<string>, source: string, redis_key: string}
+	 */
+	function mf_ce_load_brand_choices_meta(int $iblockId, bool $onlyActiveBrands = true, ?array $propertyCodes = null): array
+	{
+		$redisKey = mf_ce_brand_choices_cache_redis_key($iblockId, $onlyActiveBrands, $propertyCodes);
+		$cached = mf_ce_brand_choices_cache_get($iblockId, $onlyActiveBrands, $propertyCodes);
+		if ($cached !== null)
+		{
+			$minSanity = mf_ce_brand_choices_min_sanity_count();
+			if (count($cached) < $minSanity)
+			{
+				$fromDb = mf_ce_load_brand_choices_from_db($iblockId, $onlyActiveBrands, $propertyCodes);
+				if (count($fromDb) > count($cached) + 2)
+				{
+					return [
+						'brands' => $fromDb,
+						'source' => 'database (в Redis только ' . count($cached) . ' — перечитали из БД)',
+						'redis_key' => $redisKey,
+					];
+				}
+			}
+
+			return [
+				'brands' => $cached,
+				'source' => 'redis',
+				'redis_key' => $redisKey,
+			];
+		}
+
+		return [
+			'brands' => mf_ce_load_brand_choices_from_db($iblockId, $onlyActiveBrands, $propertyCodes),
+			'source' => 'database',
+			'redis_key' => $redisKey,
+		];
+	}
+}
+
 if (!function_exists('mf_ce_load_brand_choices'))
 {
 	/**
@@ -447,13 +509,7 @@ if (!function_exists('mf_ce_load_brand_choices'))
 	 */
 	function mf_ce_load_brand_choices(int $iblockId, bool $onlyActiveBrands = true, ?array $propertyCodes = null): array
 	{
-		$cached = mf_ce_brand_choices_cache_get($iblockId, $onlyActiveBrands, $propertyCodes);
-		if ($cached !== null)
-		{
-			return $cached;
-		}
-
-		return mf_ce_load_brand_choices_from_db($iblockId, $onlyActiveBrands, $propertyCodes);
+		return mf_ce_load_brand_choices_meta($iblockId, $onlyActiveBrands, $propertyCodes)['brands'];
 	}
 }
 

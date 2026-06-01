@@ -1550,8 +1550,27 @@ if (is_array($mfCeImportReport))
 }
 
 $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
-$mfCeBrandChoices = mf_ce_load_brand_choices($iblockId);
-$mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400);
+
+@set_time_limit(300);
+@ini_set('memory_limit', '512M');
+
+$mfCeBrandMeta = function_exists('mf_ce_load_brand_choices_meta')
+	? mf_ce_load_brand_choices_meta($iblockId, true, null)
+	: ['brands' => mf_ce_load_brand_choices($iblockId), 'source' => 'unknown', 'redis_key' => ''];
+$mfCeBrandChoices = (array)($mfCeBrandMeta['brands'] ?? []);
+$mfCeBrandChoicesSource = (string)($mfCeBrandMeta['source'] ?? '');
+$mfCeBrandChoicesRedisKey = (string)($mfCeBrandMeta['redis_key'] ?? '');
+
+// Тяжёлый GROUP BY по всем значениям MF_BRAND* — только по явному запросу (иначе страница «обрывается» по таймауту PHP/nginx).
+$mfCeShowOrphans = (string)($_GET['mf_ce_show_orphans'] ?? '') === 'Y';
+$mfCeOrphanBrands = [];
+if ($mfCeShowOrphans)
+{
+	$mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400);
+}
+
+$mfCeOrphansUrl = $mfCePageClean . (strpos($mfCePageClean, '?') !== false ? '&' : '?')
+	. http_build_query(array_merge($mfCeQClean, ['mf_ce_show_orphans' => 'Y']));
 
 ?>
 <form method="post" action="<?= mf_ce_esc((string)$APPLICATION->GetCurPage()) ?>?lang=<?= mf_ce_esc($langUi) ?>">
@@ -1595,7 +1614,18 @@ $mfCeOrphanBrands = mf_ce_brands_only_on_non_exportable_elements($iblockId, 400)
 						<option value="<?= mf_ce_esc($b) ?>"><?= mf_ce_esc($b) ?></option>
 					<?php endforeach; ?>
 				</select>
-				<div style="margin-top:6px;color:#666;font-size:12px;">Список строится по тем же правилам, что и выгрузка с галочкой «только активные»: только <strong>активные</strong> выгружаемые элементы. Снимите галочку — в файл попадут и неактивные; тогда отбор ID по бренду тоже включает неактивные (в селекте по-прежнему только активные бренды — для редкого случая выгрузите без фильтра бренда).</div>
+				<div style="margin-top:6px;color:#666;font-size:12px;">
+					В селекте <strong><?= count($mfCeBrandChoices) ?></strong> брендов
+					(источник: <code><?= mf_ce_esc($mfCeBrandChoicesSource) ?></code>).
+					<?php if ($mfCeBrandChoicesSource === 'redis'): ?>
+						Ключ: <code style="font-size:11px"><?= mf_ce_esc($mfCeBrandChoicesRedisKey) ?></code>.
+					<?php endif; ?>
+					<?php if (count($mfCeBrandChoices) < mf_ce_brand_choices_min_sanity_count()): ?>
+						<span style="color:#c00">Мало брендов — возможно битый Redis-кэш. Прогрейте:
+						<code>php mf_refresh_ce_brand_choices_cache.php</code> или откройте с <code>MF_CE_BRAND_CHOICES_REDIS=N</code>.</span>
+					<?php endif; ?>
+				</div>
+				<div style="margin-top:4px;color:#666;font-size:12px;">Список строится по тем же правилам, что и выгрузка с галочкой «только активные»: только <strong>активные</strong> выгружаемые элементы. Снимите галочку — в файл попадут и неактивные; тогда отбор ID по бренду тоже включает неактивные (в селекте по-прежнему только активные бренды — для редкого случая выгрузите без фильтра бренда).</div>
 			</td>
 		</tr>
 	</table>
@@ -1738,8 +1768,15 @@ if ($mfCeShowJobPanel && $mfCeJobIdForJs > 0 && $mfCeJobTokenForJs !== '')
 	<input type="submit" class="adm-btn-save" value="Загрузить и обновить товары" />
 </form>
 
-<details class="adm-detail-content-table" style="max-width:920px;margin-top:24px">
+<details class="adm-detail-content-table" style="max-width:920px;margin-top:24px"<?= $mfCeShowOrphans ? ' open' : '' ?>>
 	<summary style="cursor:pointer;font-weight:600">Бренды только у невыгружаемых элементов (редирект, копии workflow…)</summary>
+	<?php if (!$mfCeShowOrphans): ?>
+		<p style="margin:10px 0;color:#666;font-size:13px">
+			Таблица не загружена при открытии страницы (тяжёлый запрос к БД).
+			<a href="<?= mf_ce_esc($mfCeOrphansUrl) ?>">Загрузить список</a>
+			— может занять 10–60 с на большом каталоге.
+		</p>
+	<?php else: ?>
 	<p class="adm-info-message" style="margin-top:10px">
 		Ниже — значения из MF_BRAND / MF_BRAND_NORM, которые <strong>ни разу не встречаются у выгружаемого товара</strong> (как в списке брендов выше),
 		но есть у других строк каталога (обычно редиректы). Это и есть «мусорные хвосты» для выгрузи/витрины. Реальные бренды с нулём товаров здесь не попадут — у них просто не будет строки в свойствах.
@@ -1762,6 +1799,7 @@ if ($mfCeShowJobPanel && $mfCeJobIdForJs > 0 && $mfCeJobTokenForJs !== '')
 		</table>
 		</div>
 		<p style="color:#666;font-size:11px">* Сколько разных элементов инфоблока имеют это значение в MF_BRAND или MF_BRAND_NORM (все типы строк, без фильтра «выгружаемый»).</p>
+	<?php endif; ?>
 	<?php endif; ?>
 </details>
 
