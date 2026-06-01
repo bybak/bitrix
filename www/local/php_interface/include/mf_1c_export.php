@@ -2,6 +2,9 @@
 /**
  * Дополнение XML экспорта заказов Bitrix → 1С:УНФ.
  * В стандартном CSaleExport у строки <Товар> нет <Артикул>/<Категория>, хотя 1С читает их при создании номенклатуры.
+ *
+ * Важно: полный XML заказа часто невалиден для DOMDocument (битые символы в ФИО покупателя),
+ * поэтому обогащаем каждый блок <Товар> отдельно через regex.
  */
 
 if (!function_exists('mf_1c_export_is_query_request'))
@@ -39,6 +42,14 @@ if (!function_exists('mf_1c_export_prop_name_matches'))
 		}
 
 		return false;
+	}
+}
+
+if (!function_exists('mf_1c_export_xml_escape'))
+{
+	function mf_1c_export_xml_escape(string $value): string
+	{
+		return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
 	}
 }
 
@@ -104,79 +115,52 @@ if (!function_exists('mf_1c_export_meta_from_product_xml_id'))
 	}
 }
 
-if (!function_exists('mf_1c_export_extract_item_meta'))
+if (!function_exists('mf_1c_export_extract_item_meta_from_block'))
 {
 	/**
 	 * @return array{article: string, category: string}
 	 */
-	function mf_1c_export_extract_item_meta(\DOMElement $item): array
+	function mf_1c_export_extract_item_meta_from_block(string $itemBlock): array
 	{
 		$article = '';
 		$category = '';
 
-		$propNodes = $item->getElementsByTagName('ЗначениеРеквизита');
-		for ($i = 0; $i < $propNodes->length; $i++)
+		if (preg_match_all('/<ЗначениеРеквизита\b[^>]*>(.*?)<\/ЗначениеРеквизита>/su', $itemBlock, $propMatches))
 		{
-			$prop = $propNodes->item($i);
-			if (!$prop instanceof \DOMElement)
+			foreach ($propMatches[1] as $propInner)
 			{
-				continue;
-			}
-
-			$nameNode = null;
-			$valueNode = null;
-			foreach ($prop->childNodes as $child)
-			{
-				if (!$child instanceof \DOMElement)
+				if (!preg_match('/<Наименование\b[^>]*>(.*?)<\/Наименование>/su', $propInner, $nameMatch))
 				{
 					continue;
 				}
-				if ($child->localName === 'Наименование' || $child->tagName === 'Наименование')
+				if (!preg_match('/<Значение\b[^>]*>(.*?)<\/Значение>/su', $propInner, $valueMatch))
 				{
-					$nameNode = $child;
+					continue;
 				}
-				elseif ($child->localName === 'Значение' || $child->tagName === 'Значение')
+
+				$name = trim(html_entity_decode(strip_tags($nameMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+				$value = trim(html_entity_decode(strip_tags($valueMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+				if ($value === '')
 				{
-					$valueNode = $child;
+					continue;
 				}
-			}
 
-			if (!$nameNode || !$valueNode)
-			{
-				continue;
-			}
-
-			$name = trim((string)$nameNode->textContent);
-			$value = trim((string)$valueNode->textContent);
-			if ($value === '')
-			{
-				continue;
-			}
-
-			if ($article === '' && mf_1c_export_prop_name_matches($name, ['CML2_ARTICLE', 'ARTNUMBER', 'Артикул']))
-			{
-				$article = $value;
-			}
-			if ($category === '' && mf_1c_export_prop_name_matches($name, ['Категория', 'MF_CATEGORY', 'MF_BRAND', 'CML2_MANUFACTURER']))
-			{
-				$category = $value;
+				if ($article === '' && mf_1c_export_prop_name_matches($name, ['CML2_ARTICLE', 'ARTNUMBER', 'Артикул']))
+				{
+					$article = $value;
+				}
+				if ($category === '' && mf_1c_export_prop_name_matches($name, ['Категория', 'MF_CATEGORY', 'MF_BRAND', 'CML2_MANUFACTURER']))
+				{
+					$category = $value;
+				}
 			}
 		}
 
 		if ($article === '' || $category === '')
 		{
-			$idNode = null;
-			foreach ($item->childNodes as $child)
+			if (preg_match('/<Ид\b[^>]*>(.*?)<\/Ид>/su', $itemBlock, $idMatch))
 			{
-				if ($child instanceof \DOMElement && ($child->localName === 'Ид' || $child->tagName === 'Ид'))
-				{
-					$idNode = $child;
-					break;
-				}
-			}
-			if ($idNode)
-			{
-				$fallback = mf_1c_export_meta_from_product_xml_id((string)$idNode->textContent);
+				$fallback = mf_1c_export_meta_from_product_xml_id(trim(strip_tags($idMatch[1])));
 				if ($article === '')
 				{
 					$article = $fallback['article'];
@@ -192,100 +176,73 @@ if (!function_exists('mf_1c_export_extract_item_meta'))
 	}
 }
 
-if (!function_exists('mf_1c_export_ensure_child_after'))
+if (!function_exists('mf_1c_export_enrich_single_item_block'))
 {
-	function mf_1c_export_ensure_child_after(\DOMDocument $doc, \DOMElement $parent, string $tagName, string $value, \DOMElement $afterNode): void
+	function mf_1c_export_enrich_single_item_block(string $itemBlock): string
 	{
-		$value = trim($value);
-		if ($value === '')
+		if (preg_match('/<Ид\b[^>]*>\s*ORDER_DELIVERY\s*<\/Ид>/su', $itemBlock))
 		{
-			return;
+			return $itemBlock;
 		}
 
-		foreach ($parent->childNodes as $child)
+		$itemName = '';
+		if (preg_match('/<Наименование\b[^>]*>(.*?)<\/Наименование>/su', $itemBlock, $nameMatch))
 		{
-			if ($child instanceof \DOMElement && ($child->localName === $tagName || $child->tagName === $tagName))
-			{
-				if (trim((string)$child->textContent) === '')
-				{
-					while ($child->firstChild)
-					{
-						$child->removeChild($child->firstChild);
-					}
-					$child->appendChild($doc->createTextNode($value));
-				}
-
-				return;
-			}
+			$itemName = trim(html_entity_decode(strip_tags($nameMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+		}
+		if ($itemName !== '' && mb_stripos($itemName, 'доставка') !== false)
+		{
+			return $itemBlock;
 		}
 
-		$newNode = $doc->createElement($tagName);
-		$newNode->appendChild($doc->createTextNode($value));
-		if ($afterNode->nextSibling)
-		{
-			$parent->insertBefore($newNode, $afterNode->nextSibling);
-		}
-		else
-		{
-			$parent->appendChild($newNode);
-		}
-	}
-}
+		$meta = mf_1c_export_extract_item_meta_from_block($itemBlock);
+		$insert = '';
 
-if (!function_exists('mf_1c_export_enrich_item_element'))
-{
-	function mf_1c_export_enrich_item_element(\DOMDocument $doc, \DOMElement $item): void
-	{
-		foreach ($item->childNodes as $child)
+		if ($meta['article'] !== '' && !preg_match('/<Артикул\b[^>]*>[^<]+<\/Артикул>/su', $itemBlock))
 		{
-			if ($child instanceof \DOMElement && ($child->localName === 'Ид' || $child->tagName === 'Ид'))
-			{
-				if (trim((string)$child->textContent) === 'ORDER_DELIVERY')
-				{
-					return;
-				}
-				break;
-			}
+			$insert .= '<Артикул>' . mf_1c_export_xml_escape($meta['article']) . '</Артикул>';
+		}
+		if ($meta['category'] !== '' && !preg_match('/<Категория\b[^>]*>[^<]+<\/Категория>/su', $itemBlock))
+		{
+			$insert .= '<Категория>' . mf_1c_export_xml_escape($meta['category']) . '</Категория>';
 		}
 
-		$nameNode = null;
-		foreach ($item->childNodes as $child)
+		if ($insert === '')
 		{
-			if ($child instanceof \DOMElement && ($child->localName === 'Наименование' || $child->tagName === 'Наименование'))
-			{
-				$nameNode = $child;
-				break;
-			}
-		}
-		if (!$nameNode)
-		{
-			return;
+			return $itemBlock;
 		}
 
-		$name = trim((string)$nameNode->textContent);
-		if ($name === '' || stripos($name, 'доставка') !== false)
+		if (preg_match('/<Наименование\b[^>]*>.*?<\/Наименование>/su', $itemBlock))
 		{
-			return;
+			return preg_replace(
+				'/(<Наименование\b[^>]*>.*?<\/Наименование>)/su',
+				'$1' . $insert,
+				$itemBlock,
+				1
+			) ?? $itemBlock;
 		}
 
-		$meta = mf_1c_export_extract_item_meta($item);
-		if ($meta['article'] !== '')
+		if (preg_match('/<ИдКаталога\b[^>]*>.*?<\/ИдКаталога>/su', $itemBlock))
 		{
-			mf_1c_export_ensure_child_after($doc, $item, 'Артикул', $meta['article'], $nameNode);
+			return preg_replace(
+				'/(<ИдКаталога\b[^>]*>.*?<\/ИдКаталога>)/su',
+				'$1' . $insert,
+				$itemBlock,
+				1
+			) ?? $itemBlock;
 		}
-		if ($meta['category'] !== '')
+
+		if (preg_match('/<Ид\b[^>]*>.*?<\/Ид>/su', $itemBlock))
 		{
-			$after = $nameNode;
-			foreach ($item->childNodes as $child)
-			{
-				if ($child instanceof \DOMElement && ($child->localName === 'Артикул' || $child->tagName === 'Артикул'))
-				{
-					$after = $child;
-					break;
-				}
-			}
-			mf_1c_export_ensure_child_after($doc, $item, 'Категория', $meta['category'], $after);
+			return preg_replace(
+				'/(<Ид\b[^>]*>.*?<\/Ид>)/su',
+				'$1' . $insert,
+				$itemBlock,
+				1
+			) ?? $itemBlock;
 		}
+
+		return $itemBlock;
 	}
 }
 
@@ -311,38 +268,14 @@ if (!function_exists('mf_1c_enrich_orders_xml_export'))
 			return $contents;
 		}
 
-		$previous = libxml_use_internal_errors(true);
-		$dom = new \DOMDocument('1.0', 'UTF-8');
-		$loaded = $dom->loadXML($contents, LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_NONET);
-		libxml_clear_errors();
-		libxml_use_internal_errors($previous);
+		$result = preg_replace_callback(
+			'/<Товар\b[^>]*>.*?<\/Товар>/su',
+			static function (array $matches): string {
+				return mf_1c_export_enrich_single_item_block($matches[0]);
+			},
+			$contents
+		);
 
-		if (!$loaded)
-		{
-			return $contents;
-		}
-
-		$itemNodes = $dom->getElementsByTagName('Товар');
-		if ($itemNodes->length === 0)
-		{
-			return $contents;
-		}
-
-		for ($i = 0; $i < $itemNodes->length; $i++)
-		{
-			$item = $itemNodes->item($i);
-			if ($item instanceof \DOMElement)
-			{
-				mf_1c_export_enrich_item_element($dom, $item);
-			}
-		}
-
-		$xml = $dom->saveXML();
-		if (!is_string($xml) || $xml === '')
-		{
-			return $contents;
-		}
-
-		return $xml;
+		return is_string($result) ? $result : $contents;
 	}
 }
