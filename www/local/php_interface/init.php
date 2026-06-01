@@ -701,6 +701,43 @@ if (class_exists(\Bitrix\Main\EventManager::class))
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_brand_map');
 }
 
+// Admin menu: "Магазин" -> "Бренды каталога" (статистика MF_BRAND)
+if (!function_exists('mf_admin_menu_brand_stats'))
+{
+	function mf_admin_menu_brand_stats(array &$aGlobalMenu, array &$aModuleMenu): void
+	{
+		if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
+		{
+			return;
+		}
+
+		$url = 'mf_brand_stats.php?lang=ru';
+		$parentMenu =
+			(isset($aGlobalMenu['global_menu_store']) ? 'global_menu_store' :
+				(isset($aGlobalMenu['global_menu_sale']) ? 'global_menu_sale' : 'global_menu_content'));
+
+		$aModuleMenu[] = [
+			'parent_menu' => $parentMenu,
+			'section' => 'mf_stock_import',
+			'sort' => 2048,
+			'text' => 'Бренды каталога (статистика)',
+			'title' => 'Список брендов MF_BRAND и количество товаров',
+			'icon' => 'sale_menu_icon',
+			'page_icon' => 'sale_menu_icon',
+			'items_id' => 'menu_mf_brand_stats',
+			'url' => $url,
+			'more_url' => [
+				'mf_brand_stats.php',
+			],
+		];
+	}
+}
+
+if (class_exists(\Bitrix\Main\EventManager::class))
+{
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBuildGlobalMenu', 'mf_admin_menu_brand_stats');
+}
+
 // Admin menu: "Магазин" -> "Логи импорта остатков" (table mf_supplier_stock_run_log)
 if (!function_exists('mf_admin_menu_stock_import_logs'))
 {
