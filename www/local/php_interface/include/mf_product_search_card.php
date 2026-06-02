@@ -119,7 +119,8 @@ if (!function_exists('mf_product_search_card_stores'))
 					{
 						continue;
 					}
-					$byStore[$storeId] = ($byStore[$storeId] ?? 0.0) + (float)($r['AMOUNT'] ?? 0);
+					$amtPart = (float)($r['AMOUNT'] ?? 0);
+					$byStore[$storeId] = ($byStore[$storeId] ?? 0.0) + $amtPart;
 				}
 			}
 		}
@@ -139,6 +140,18 @@ if (!function_exists('mf_product_search_card_stores'))
 				if ($raw !== null && $raw > 0)
 				{
 					$byStore[$extSid] = 0.0;
+				}
+			}
+		}
+
+		if (function_exists('mf_ep_product_store_row_visible'))
+		{
+			foreach (array_keys($byStore) as $pruneSid)
+			{
+				$pruneSid = (int)$pruneSid;
+				if (!mf_ep_product_store_row_visible($productId, $pruneSid, (float)($byStore[$pruneSid] ?? 0)))
+				{
+					unset($byStore[$pruneSid]);
 				}
 			}
 		}
@@ -176,35 +189,12 @@ if (!function_exists('mf_product_search_card_stores'))
 		{
 			$storeId = (int)$storeId;
 			$amt = (float)$amt;
-			if ($amt > 0)
+			if (function_exists('mf_ep_product_store_row_visible')
+				&& !mf_ep_product_store_row_visible($productId, $storeId, $amt))
 			{
-				$out[] = $makeRow($storeId, $amt);
 				continue;
 			}
-			// нулевой остаток: внешний склад — всегда строка (Под заказ / запрос цены), без требования цены в прайсе
-			if (function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($storeId))
-			{
-				$out[] = $makeRow($storeId, 0.0);
-			}
-		}
-
-		if (empty($out) && count($byStore) === 1)
-		{
-			$onlySid = 0;
-			$onlyAmt = 0.0;
-			foreach ($byStore as $sid => $a)
-			{
-				$onlySid = (int)$sid;
-				$onlyAmt = (float)$a;
-				break;
-			}
-			if ($onlySid > 0
-				&& function_exists('mf_ep_store_is_external_warehouse')
-				&& mf_ep_store_is_external_warehouse($onlySid)
-				&& $onlyAmt <= 1e-9)
-			{
-				$out[] = $makeRow($onlySid, 0.0);
-			}
+			$out[] = $makeRow($storeId, $amt);
 		}
 
 		$isMotorForceInternal = static function (int $storeId): bool {

@@ -143,16 +143,24 @@ if (!function_exists('mf_ep_clear_warehouse_touch_product'))
 					\CCatalogStoreProduct::Update((int)$rowZ['ID'], ['AMOUNT' => 0]);
 				}
 			}
-			if (function_exists('mf_ep_sync_catalog_qty_from_stores'))
-			{
-				mf_ep_sync_catalog_qty_from_stores($productId);
-			}
-			if (function_exists('mf_ep_recalc_base_one'))
-			{
-				mf_ep_recalc_base_one($productId);
-			}
-			$out['recalc'] = true;
+			$out['price_cleared'] = true;
 		}
+
+		// Нет других прайсов на этом складе — убираем «пустую» привязку (AMOUNT=0), как при полной очистке склада.
+		if (function_exists('mf_ep_delete_store_product_rows_cluster'))
+		{
+			mf_ep_delete_store_product_rows_cluster($productId, $storeId);
+		}
+
+		if (function_exists('mf_ep_sync_catalog_qty_from_stores'))
+		{
+			mf_ep_sync_catalog_qty_from_stores($productId);
+		}
+		if (function_exists('mf_ep_recalc_base_one'))
+		{
+			mf_ep_recalc_base_one($productId);
+		}
+		$out['recalc'] = true;
 
 		return $out;
 	}

@@ -1375,6 +1375,54 @@ if (!function_exists('mf_ep_store_is_external_warehouse'))
 	}
 }
 
+if (!function_exists('mf_ep_product_store_row_visible'))
+{
+	/**
+	 * Показывать ли склад в таблице на карточке/в поиске.
+	 * Внешний склад с остатком 0 — только если ещё есть закупка/цена по типу цены склада
+	 * (после «Очистка внешних складов» строка в b_catalog_store_product с AMOUNT=0 может остаться).
+	 */
+	function mf_ep_product_store_row_visible(int $productId, int $storeId, float $amount): bool
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		if ($productId <= 0 || $storeId <= 0)
+		{
+			return false;
+		}
+
+		if ($amount > 1e-9)
+		{
+			return true;
+		}
+
+		$isExternal = function_exists('mf_ep_store_is_external_warehouse')
+			&& mf_ep_store_is_external_warehouse($storeId);
+		if (!$isExternal)
+		{
+			return false;
+		}
+
+		if (function_exists('mf_raw_store_price'))
+		{
+			$raw = mf_raw_store_price($productId, $storeId);
+			if ($raw !== null && $raw > 0)
+			{
+				return true;
+			}
+		}
+
+		if (function_exists('mf_ep_display_price_for_store'))
+		{
+			$disp = mf_ep_display_price_for_store($productId, $storeId, 1.0);
+
+			return $disp !== null && (float)$disp > 0;
+		}
+
+		return false;
+	}
+}
+
 if (!function_exists('mf_ep_product_weight_grams_cluster'))
 {
 	/**
@@ -1682,6 +1730,80 @@ if (!function_exists('mf_ep_collect_candidates_for_store'))
 		}
 
 		return array_map('intval', array_keys($ids));
+	}
+}
+
+if (!function_exists('mf_ep_delete_store_product_row'))
+{
+	/**
+	 * Удаляет привязку товар–склад в b_catalog_store_product, если остаток не положительный.
+	 *
+	 * @return bool true если строка была удалена
+	 */
+	function mf_ep_delete_store_product_row(int $productId, int $storeId): bool
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		if ($productId <= 0 || $storeId <= 0 || !class_exists(\CCatalogStoreProduct::class))
+		{
+			return false;
+		}
+
+		$rs = \CCatalogStoreProduct::GetList(
+			[],
+			['PRODUCT_ID' => $productId, 'STORE_ID' => $storeId],
+			false,
+			false,
+			['ID', 'AMOUNT']
+		);
+		$row = $rs ? $rs->Fetch() : false;
+		if (!$row)
+		{
+			return false;
+		}
+		if ((float)($row['AMOUNT'] ?? 0) > 1e-9)
+		{
+			return false;
+		}
+
+		return \CCatalogStoreProduct::Delete((int)$row['ID']);
+	}
+}
+
+if (!function_exists('mf_ep_delete_store_product_rows_cluster'))
+{
+	/**
+	 * Удаляет нулевые привязки к складу у всех ID кластера (родитель SKU + офферы).
+	 *
+	 * @return int число удалённых строк
+	 */
+	function mf_ep_delete_store_product_rows_cluster(int $productId, int $storeId): int
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		if ($productId <= 0 || $storeId <= 0)
+		{
+			return 0;
+		}
+
+		$ids = function_exists('mf_catalog_product_cluster_ids')
+			? mf_catalog_product_cluster_ids($productId)
+			: [$productId];
+		$deleted = 0;
+		foreach ($ids as $cid)
+		{
+			$cid = (int)$cid;
+			if ($cid <= 0)
+			{
+				continue;
+			}
+			if (function_exists('mf_ep_delete_store_product_row') && mf_ep_delete_store_product_row($cid, $storeId))
+			{
+				$deleted++;
+			}
+		}
+
+		return $deleted;
 	}
 }
 

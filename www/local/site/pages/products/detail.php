@@ -246,8 +246,18 @@ if ($elementId > 0)
 			while ($r = $rsAmt->Fetch())
 			{
 				$sid = (int)$r['STORE_ID'];
-				if ($sid <= 0) continue;
-				$storeAmounts[$sid] = ($storeAmounts[$sid] ?? 0.0) + (float)$r['AMOUNT'];
+				if ($sid <= 0)
+				{
+					continue;
+				}
+				$amtPart = (float)$r['AMOUNT'];
+				$newAmt = ($storeAmounts[$sid] ?? 0.0) + $amtPart;
+				if (function_exists('mf_ep_product_store_row_visible')
+					&& !mf_ep_product_store_row_visible($elementId, $sid, $newAmt))
+				{
+					continue;
+				}
+				$storeAmounts[$sid] = $newAmt;
 			}
 		}
 
@@ -361,14 +371,11 @@ if ($elementId > 0)
 				: 0;
 			$mfOrderedStoreIds = array_values(array_filter(
 				$mfOrderedStoreIds,
-				static function ($sid) use ($storeAmounts, $mfIntSidKeep, $mfDetailSupplierPending) {
+				static function ($sid) use ($storeAmounts, $elementId, $mfIntSidKeep, $mfDetailSupplierPending) {
 					$sid = (int)$sid;
 					$amt = (float)($storeAmounts[$sid] ?? 0);
-					if ($amt > 1e-9)
-					{
-						return true;
-					}
-					if (function_exists('mf_ep_store_is_external_warehouse') && mf_ep_store_is_external_warehouse($sid))
+					if (function_exists('mf_ep_product_store_row_visible')
+						&& mf_ep_product_store_row_visible($elementId, $sid, $amt))
 					{
 						return true;
 					}
