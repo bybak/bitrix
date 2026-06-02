@@ -120,7 +120,7 @@ if (\CModule::IncludeModule('catalog'))
 }
 
 $mfAddStoreId = 0;
-if ($canBuy && function_exists('mf_catalog_listing_preferred_store_id'))
+if (function_exists('mf_catalog_listing_preferred_store_id'))
 {
 	$mfAddStoreId = (int)mf_catalog_listing_preferred_store_id((int)($actualItem['ID'] ?? 0));
 }
@@ -329,25 +329,22 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 				<span class="mf-pcard__cur product-item-price-current" id="<?=$itemIds['PRICE']?>">
 					<?php
 					$mfCardPriceHtml = 'Запросить цену';
-					if ($canBuy)
+					$mfCardAmount = null;
+					if ($mfDynPrice !== null && $mfDynPrice > 0)
 					{
-						$mfCardAmount = null;
-						if ($mfDynPrice !== null && $mfDynPrice > 0)
-						{
-							$mfCardAmount = (float)$mfDynPrice;
-						}
-						elseif (function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price['RATIO_PRICE']))
-						{
-							$mfCardAmount = function_exists('mf_round_price')
-								? mf_round_price((float)$price['RATIO_PRICE'])
-								: (float)ceil((float)$price['RATIO_PRICE']);
-						}
-						if ($mfCardAmount !== null && $mfCardAmount > 0)
-						{
-							$mfCardPriceHtml = function_exists('mf_format_display_price_rub')
-								? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub($mfCardAmount)))
-								: ('От ' . htmlspecialcharsbx(number_format($mfCardAmount, 0, '.', ' ')) . ' &#8381;');
-						}
+						$mfCardAmount = (float)$mfDynPrice;
+					}
+					elseif ($canBuy && function_exists('mf_catalog_use_bitrix_base_price_fallback') && mf_catalog_use_bitrix_base_price_fallback() && !empty($price['RATIO_PRICE']))
+					{
+						$mfCardAmount = function_exists('mf_round_price')
+							? mf_round_price((float)$price['RATIO_PRICE'])
+							: (float)ceil((float)$price['RATIO_PRICE']);
+					}
+					if ($mfCardAmount !== null && $mfCardAmount > 0)
+					{
+						$mfCardPriceHtml = function_exists('mf_format_display_price_rub')
+							? ('От ' . htmlspecialcharsbx(mf_format_display_price_rub($mfCardAmount)))
+							: ('От ' . htmlspecialcharsbx(number_format($mfCardAmount, 0, '.', ' ')) . ' &#8381;');
 					}
 					echo $mfCardPriceHtml;
 					?>
@@ -360,7 +357,7 @@ if (($brand === '' || $article === '') && \Bitrix\Main\Loader::includeModule('ib
 			<input type="hidden" id="<?=$itemIds['QUANTITY']?>" name="<?=$arParams['PRODUCT_QUANTITY_VARIABLE']?>" value="<?=$measureRatio?>" />
 
 			<?php if (!$haveOffers): ?>
-				<?php if ($canBuy && $mfAddStoreId > 0): ?>
+				<?php if ($mfAddStoreId > 0): ?>
 					<div class="mf-pcard__btn product-item-button-container" id="<?=$itemIds['BASKET_ACTIONS']?>">
 						<button
 							type="button"

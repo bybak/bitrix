@@ -2776,6 +2776,35 @@ if (!function_exists('mf_catalog_listing_preferred_store_id'))
 			}
 		}
 
+		// Внешний склад: цена в прайсе, остаток 0 — «Под заказ», как на карточке товара.
+		if ($bestSid <= 0)
+		{
+			$bestPrice = null;
+			foreach (mf_product_search_card_stores($productId) as $row)
+			{
+				if (empty($row['external_warehouse']))
+				{
+					continue;
+				}
+				$p = $row['price'] ?? null;
+				if ($p === null || (float)$p <= 0)
+				{
+					continue;
+				}
+				$p = (float)$p;
+				$sid = (int)($row['store_id'] ?? 0);
+				if ($sid <= 0)
+				{
+					continue;
+				}
+				if ($bestPrice === null || $p < $bestPrice)
+				{
+					$bestPrice = $p;
+					$bestSid = $sid;
+				}
+			}
+		}
+
 		return $bestSid > 0 ? $bestSid : 0;
 	}
 }
