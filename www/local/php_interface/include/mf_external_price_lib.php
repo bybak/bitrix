@@ -1251,7 +1251,7 @@ if (!function_exists('mf_ep_weight_surcharge_rub'))
 if (!function_exists('mf_ep_display_price_for_store'))
 {
 	/**
-	 * Цена за единицу для витрины и корзины: mf_calc_store_price (закуп×(1+наценка/100) или (закуп+вес×тариф)×(1+наценка/100)), опт −10%.
+	 * Цена за единицу для витрины и корзины: mf_calc_store_price (закуп×(1+наценка/100) или (закуп+вес×тариф)×(1+наценка/100)), скидка по типу покупателя (Опт 1–4).
 	 * Параметр qty зарезервирован (API), на цену за штуку не влияет.
 	 */
 	function mf_ep_display_price_for_store(int $productId, int $storeId, float $qty = 1.0): ?float
@@ -1271,9 +1271,9 @@ if (!function_exists('mf_ep_display_price_for_store'))
 		{
 			return null;
 		}
-		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+		if (function_exists('mf_customer_type_apply_discount'))
 		{
-			$computed = (float)$computed * 0.9;
+			$computed = mf_customer_type_apply_discount((float)$computed);
 		}
 		if (function_exists('mf_round_price'))
 		{

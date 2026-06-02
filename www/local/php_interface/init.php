@@ -1160,21 +1160,46 @@ if (
 	require_once $mfDeliveryFile;
 }
 
-// === Users: customer type (retail / wholesale) ===
+// === Users: customer type (retail / opt1–opt4) ===
+if (!function_exists('mf_customer_type_discount_map'))
+{
+	/** XML_ID => скидка к розничной динамической цене, %. */
+	function mf_customer_type_discount_map(): array
+	{
+		return [
+			'retail' => 0,
+			'opt1' => 3,
+			'opt2' => 5,
+			'opt3' => 7,
+			'opt4' => 10,
+			'wholesale' => 10, // legacy XML_ID (до переименования в «Опт 4»)
+		];
+	}
+}
+
+if (!function_exists('mf_customer_type_discount_percent_by_xml'))
+{
+	function mf_customer_type_discount_percent_by_xml(string $xmlId): int
+	{
+		$xmlId = trim($xmlId);
+		$map = mf_customer_type_discount_map();
+
+		return (int)($map[$xmlId] ?? 0);
+	}
+}
+
 if (!function_exists('mf_ensure_user_customer_type_field'))
 {
 	function mf_ensure_user_customer_type_field(): void
 	{
-		// Run once: guard with an option (but still verify existence if option wasn't set).
-		$optKey = 'mf_user_field_customer_type_installed';
+		$versionKey = 'mf_user_field_customer_type_version';
+		$targetVersion = 2;
+		$currentVersion = 0;
 		if (class_exists(\Bitrix\Main\Config\Option::class))
 		{
 			try
 			{
-				if (\Bitrix\Main\Config\Option::get('main', $optKey, 'N') === 'Y')
-				{
-					return;
-				}
+				$currentVersion = (int)\Bitrix\Main\Config\Option::get('main', $versionKey, '0');
 			}
 			catch (\Throwable $e)
 			{
@@ -1234,10 +1259,17 @@ if (!function_exists('mf_ensure_user_customer_type_field'))
 			return;
 		}
 
-		// Ensure enum values exist.
+		if ($currentVersion >= $targetVersion)
+		{
+			return;
+		}
+
 		$need = [
 			'retail' => ['VALUE' => 'Розничный', 'SORT' => 100, 'DEF' => 'Y', 'XML_ID' => 'retail'],
-			'wholesale' => ['VALUE' => 'Оптовый', 'SORT' => 200, 'DEF' => 'N', 'XML_ID' => 'wholesale'],
+			'opt1' => ['VALUE' => 'Опт 1', 'SORT' => 110, 'DEF' => 'N', 'XML_ID' => 'opt1'],
+			'opt2' => ['VALUE' => 'Опт 2', 'SORT' => 120, 'DEF' => 'N', 'XML_ID' => 'opt2'],
+			'opt3' => ['VALUE' => 'Опт 3', 'SORT' => 130, 'DEF' => 'N', 'XML_ID' => 'opt3'],
+			'opt4' => ['VALUE' => 'Опт 4', 'SORT' => 140, 'DEF' => 'N', 'XML_ID' => 'opt4'],
 		];
 
 		$existingEnumsByXml = [];
@@ -1271,6 +1303,26 @@ if (!function_exists('mf_ensure_user_customer_type_field'))
 		}
 
 		$changed = false;
+
+		// Бывший «Оптовый» (wholesale) → «Опт 4» (opt4), enum ID у пользователей сохраняется.
+		if (isset($existingEnumsByXml['wholesale']) && !isset($existingEnumsByXml['opt4']))
+		{
+			$id = (int)($existingEnumsByXml['wholesale']['ID'] ?? 0);
+			if ($id > 0)
+			{
+				$values[$id] = [
+					'ID' => $id,
+					'VALUE' => 'Опт 4',
+					'SORT' => 140,
+					'DEF' => 'N',
+					'XML_ID' => 'opt4',
+				];
+				$existingEnumsByXml['opt4'] = $existingEnumsByXml['wholesale'];
+				unset($existingEnumsByXml['wholesale']);
+				$changed = true;
+			}
+		}
+
 		foreach ($need as $xml => $v)
 		{
 			if (isset($existingEnumsByXml[$xml]))
@@ -1278,7 +1330,6 @@ if (!function_exists('mf_ensure_user_customer_type_field'))
 				$id = (int)$existingEnumsByXml[$xml]['ID'];
 				if ($id > 0)
 				{
-					// Normalize required values.
 					$cur = $values[$id] ?? [];
 					$norm = [
 						'ID' => $id,
@@ -1311,7 +1362,8 @@ if (!function_exists('mf_ensure_user_customer_type_field'))
 		{
 			try
 			{
-				\Bitrix\Main\Config\Option::set('main', $optKey, 'Y');
+				\Bitrix\Main\Config\Option::set('main', $versionKey, (string)$targetVersion);
+				\Bitrix\Main\Config\Option::set('main', 'mf_user_field_customer_type_installed', 'Y');
 			}
 			catch (\Throwable $e)
 			{
@@ -2450,7 +2502,8 @@ if (!function_exists('mf_min_price_from_available_stores'))
 		static $cache = [];
 		$productId = (int)$productId;
 		if ($productId <= 0) return [null, 0];
-		$cacheKey = $productId . '|' . (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale() ? '1' : '0');
+		$discKey = function_exists('mf_user_customer_discount_percent') ? mf_user_customer_discount_percent() : 0;
+		$cacheKey = $productId . '|' . $discKey;
 		if (isset($cache[$cacheKey])) return $cache[$cacheKey];
 
 		if (!class_exists(\CCatalogStoreProduct::class)) return [null, 0];
@@ -2637,7 +2690,8 @@ if (!function_exists('mf_catalog_listing_display_price'))
 		{
 			return null;
 		}
-		$cacheKey = $productId . '|' . (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale() ? '1' : '0');
+		$discKey = function_exists('mf_user_customer_discount_percent') ? mf_user_customer_discount_percent() : 0;
+		$cacheKey = $productId . '|' . $discKey;
 		if (array_key_exists($cacheKey, $cache))
 		{
 			return $cache[$cacheKey];
@@ -3103,38 +3157,31 @@ if (!function_exists('mf_product_available_stores_for_qty'))
 	}
 }
 
-// === Wholesale: show and charge -10% vs retail ===
-if (!function_exists('mf_user_is_wholesale'))
+// === Customer type: opt tiers 3/5/7/10% off retail dynamic price ===
+if (!function_exists('mf_user_customer_type_xml_id'))
 {
-	function mf_user_is_wholesale(): bool
+	function mf_user_customer_type_xml_id(): string
 	{
 		static $cache = null;
 		if ($cache !== null)
 		{
-			return (bool)$cache;
+			return (string)$cache;
 		}
 
 		global $USER;
 		if (!is_object($USER) || !$USER->IsAuthorized())
 		{
-			$cache = false;
-			return false;
+			$cache = '';
+			return '';
 		}
 
 		$userId = (int)$USER->GetID();
-		if ($userId <= 0)
+		if ($userId <= 0 || !class_exists(\CUser::class) || !class_exists(\CUserFieldEnum::class))
 		{
-			$cache = false;
-			return false;
+			$cache = '';
+			return '';
 		}
 
-		if (!class_exists(\CUser::class) || !class_exists(\CUserFieldEnum::class) || !class_exists(\CUserTypeEntity::class))
-		{
-			$cache = false;
-			return false;
-		}
-
-		// Load the enum ID from user field.
 		$by = 'ID';
 		$order = 'ASC';
 		$rs = \CUser::GetList($by, $order, ['ID' => $userId], ['SELECT' => ['UF_MF_CUSTOMER_TYPE']]);
@@ -3142,14 +3189,67 @@ if (!function_exists('mf_user_is_wholesale'))
 		$enumId = (int)($u['UF_MF_CUSTOMER_TYPE'] ?? 0);
 		if ($enumId <= 0)
 		{
-			$cache = false;
-			return false;
+			$cache = '';
+			return '';
 		}
 
 		$enum = \CUserFieldEnum::GetList([], ['ID' => $enumId])->Fetch();
-		$xml = (string)($enum['XML_ID'] ?? '');
-		$cache = ($xml === 'wholesale');
-		return (bool)$cache;
+		$cache = trim((string)($enum['XML_ID'] ?? ''));
+
+		return (string)$cache;
+	}
+}
+
+if (!function_exists('mf_user_customer_discount_percent'))
+{
+	function mf_user_customer_discount_percent(): int
+	{
+		static $cache = null;
+		if ($cache !== null)
+		{
+			return (int)$cache;
+		}
+
+		$xml = mf_user_customer_type_xml_id();
+		$cache = mf_customer_type_discount_percent_by_xml($xml);
+
+		return (int)$cache;
+	}
+}
+
+if (!function_exists('mf_customer_type_apply_discount'))
+{
+	function mf_customer_type_apply_discount(float $price): float
+	{
+		$price = (float)$price;
+		if ($price <= 0)
+		{
+			return $price;
+		}
+
+		$pct = mf_user_customer_discount_percent();
+		if ($pct <= 0)
+		{
+			return $price;
+		}
+
+		$mult = 1.0 - ($pct / 100.0);
+		$new = $price * $mult;
+		if (function_exists('mf_round_price'))
+		{
+			$new = mf_round_price($new);
+		}
+
+		return ($new > 0 && $new < $price) ? (float)$new : $price;
+	}
+}
+
+/** @deprecated используйте mf_user_customer_discount_percent() > 0 */
+if (!function_exists('mf_user_is_wholesale'))
+{
+	function mf_user_is_wholesale(): bool
+	{
+		return mf_user_customer_discount_percent() > 0;
 	}
 }
 
@@ -3181,15 +3281,15 @@ if (!function_exists('mf_wholesale_optimal_price_result'))
 			}
 		}
 
-		// Wholesale overlay: -10% from retail dynamic price.
-		if (mf_user_is_wholesale())
+		$discountPct = mf_user_customer_discount_percent();
+		if ($discountPct > 0)
 		{
 			$rp = &$arResult['RESULT_PRICE'];
 			$base = (float)($rp['BASE_PRICE'] ?? 0);
 			$cur = (float)($rp['DISCOUNT_PRICE'] ?? 0);
 			if ($cur > 0)
 			{
-				$new = mf_round_price($cur * 0.9);
+				$new = mf_customer_type_apply_discount($cur);
 				if ($new > 0 && $new < $cur)
 				{
 					$rp['DISCOUNT_PRICE'] = $new;

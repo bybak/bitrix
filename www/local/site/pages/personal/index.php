@@ -68,10 +68,13 @@ if ($mfIsAuthorized)
 			}
 		}
 
-		if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale())
+		if (function_exists('mf_user_customer_discount_percent'))
 		{
-			$mfDiscountPercent = 10;
-			$mfDiscountSize = '10%';
+			$mfDiscountPercent = (int)mf_user_customer_discount_percent();
+			if ($mfDiscountPercent > 0)
+			{
+				$mfDiscountSize = $mfDiscountPercent . '%';
+			}
 		}
 	}
 }
@@ -100,9 +103,9 @@ if ($mfIsAuthorized)
 			<div class="mf-personal-summary-label">Статус клиента</div>
 			<div class="mf-personal-summary-value"><?=$mfClientStatus?></div>
 		</div>
-		<?php if (function_exists('mf_user_is_wholesale') && mf_user_is_wholesale()): ?>
+		<?php if ($mfDiscountPercent > 0): ?>
 		<div class="mf-personal-summary-card">
-			<div class="mf-personal-summary-label">Тип клиента</div>
+			<div class="mf-personal-summary-label">Тип покупателя</div>
 			<div class="mf-personal-summary-value"><?=htmlspecialcharsbx($mfClientType)?></div>
 		</div>
 		<?php endif; ?>
