@@ -78,6 +78,8 @@ if(!(CModule::IncludeModule('sale') && CModule::IncludeModule('catalog')))
 	die();
 }
 
+IncludeModuleLangFile($_SERVER['DOCUMENT_ROOT'] . '/bitrix/components/bitrix/sale.export.1c/component.php');
+
 if($_GET["mode"] == "checkauth" && $USER->IsAuthorized())
 {
 	if(
