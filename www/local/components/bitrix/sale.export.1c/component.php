@@ -103,7 +103,12 @@ if($_GET["mode"] == "checkauth" && $USER->IsAuthorized())
 }
 elseif(!$USER->IsAuthorized())
 {
-	echo "failure\n".GetMessage("CC_BSC1_ERROR_AUTHORIZE");
+	$body = "failure\n" . GetMessage("CC_BSC1_ERROR_AUTHORIZE");
+	if (function_exists('mf_1c_exchange_append_login_error'))
+	{
+		$body = mf_1c_exchange_append_login_error($body);
+	}
+	echo $body;
 }
 elseif(COption::GetOptionString("sale", "secure_1c_exchange", "N") == "Y" && !check_bitrix_sessid())
 {
