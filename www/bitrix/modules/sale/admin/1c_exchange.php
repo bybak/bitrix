@@ -48,6 +48,22 @@ if (function_exists('mf_1c_exchange_ensure_user_authorized'))
 
 if ($type === 'sale')
 {
+
+	//--------------------------------------------------
+	file_put_contents(
+		$_SERVER["DOCUMENT_ROOT"]."/upload/1c_exchange_debug.log",
+		date("Y-m-d H:i:s")." REQUEST: ".print_r($_REQUEST, true)."\n",
+		FILE_APPEND
+	);
+	
+	if (!empty($_FILES)) {
+		file_put_contents(
+			$_SERVER["DOCUMENT_ROOT"]."/upload/1c_exchange_debug.log",
+			"FILES: ".print_r($_FILES, true)."\n",
+			FILE_APPEND
+		);
+	}
+	//--------------------------------------------------
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(
 		"SITE_LIST" => COption::GetOptionString("sale", "1C_SALE_SITE_LIST", ""),
 		"EXPORT_PAYED_ORDERS" => COption::GetOptionString("sale", "1C_EXPORT_PAYED_ORDERS", ""),
