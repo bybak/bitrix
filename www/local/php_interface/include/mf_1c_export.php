@@ -1,7 +1,8 @@
 <?php
 /**
  * Дополнение XML экспорта заказов Bitrix → 1С:УНФ.
- * В стандартном CSaleExport у строки <Товар> нет <Артикул>/<Категория>, хотя 1С читает их при создании номенклатуры.
+ * В стандартном CSaleExport у строки <Товар> нет <Артикул>/<ТорговаяМарка>, хотя 1С читает их при создании номенклатуры.
+ * Тег <Категория> в схеме CommerceML отсутствует — 1С его игнорирует; бренд дублируется в свойствах корзины.
  *
  * Важно: полный XML заказа часто невалиден для DOMDocument (битые символы в ФИО покупателя),
  * поэтому обогащаем каждый блок <Товар> отдельно через regex.
@@ -315,9 +316,10 @@ if (!function_exists('mf_1c_export_enrich_single_item_block'))
 		{
 			$insert .= '<Артикул>' . mf_1c_export_xml_escape($meta['article']) . '</Артикул>';
 		}
-		if ($meta['category'] !== '' && !preg_match('/<Категория\b[^>]*>[^<]+<\/Категория>/su', $itemBlock))
+		// <Категория> 1С не читает (нет в схеме CommerceML). Бренд — в <ТорговаяМарка> и в свойствах корзины.
+		if ($meta['category'] !== '' && !preg_match('/<ТорговаяМарка\b[^>]*>[^<]+<\/ТорговаяМарка>/su', $itemBlock))
 		{
-			$insert .= '<Категория>' . mf_1c_export_xml_escape($meta['category']) . '</Категория>';
+			$insert .= '<ТорговаяМарка>' . mf_1c_export_xml_escape($meta['category']) . '</ТорговаяМарка>';
 		}
 
 		if ($insert === '')
@@ -332,7 +334,7 @@ if (!function_exists('mf_1c_export_enrich_single_item_block'))
 if (!function_exists('mf_1c_enrich_orders_xml_export'))
 {
 	/**
-	 * Добавляет в XML заказов теги <Артикул> и <Категория> на уровне строки <Товар>.
+	 * Добавляет в XML заказов теги <Артикул> и <ТорговаяМарка> (бренд) на уровне строки <Товар>.
 	 */
 	function mf_1c_enrich_orders_xml_export(string $contents): string
 	{

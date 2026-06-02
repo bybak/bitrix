@@ -3611,6 +3611,70 @@ if (!function_exists('mf_catalog_product_export_name'))
 	}
 }
 
+if (!function_exists('mf_catalog_parse_manufacturer_from_text'))
+{
+	function mf_catalog_parse_manufacturer_from_text(string $text): string
+	{
+		$text = trim($text);
+		if ($text === '')
+		{
+			return '';
+		}
+		if (preg_match('/Производитель\s*:\s*(.+?)(?:Номер\s+по\s+каталогу|Оригинальные\s+номера|$)/su', $text, $m))
+		{
+			return trim((string)$m[1]);
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_catalog_brand_from_section_id'))
+{
+	/**
+	 * Бренд из цепочки разделов каталога (Mercury, Bosch, …), если свойство MF_BRAND пустое.
+	 */
+	function mf_catalog_brand_from_section_id(int $iblockId, int $sectionId): string
+	{
+		if ($iblockId <= 0 || $sectionId <= 0 || !class_exists(\CIBlockSection::class))
+		{
+			return '';
+		}
+
+		static $cache = [];
+		$key = $iblockId . ':' . $sectionId;
+		if (array_key_exists($key, $cache))
+		{
+			return $cache[$key];
+		}
+
+		$skip = ['каталог', 'catalog', 'прочее', 'разное', 'misc', 'from bitrix'];
+		$names = [];
+		$nav = \CIBlockSection::GetNavChain($iblockId, $sectionId, ['ID', 'NAME']);
+		if ($nav)
+		{
+			while ($section = $nav->Fetch())
+			{
+				$name = trim((string)($section['NAME'] ?? ''));
+				if ($name === '')
+				{
+					continue;
+				}
+				if (in_array(mb_strtolower($name, 'UTF-8'), $skip, true))
+				{
+					continue;
+				}
+				$names[] = $name;
+			}
+		}
+
+		$brand = $names !== [] ? $names[0] : '';
+		$cache[$key] = $brand;
+
+		return $brand;
+	}
+}
+
 if (!function_exists('mf_catalog_brand_article_by_product_id'))
 {
 	/**
@@ -3642,6 +3706,7 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 		$select = [
 			'ID',
 			'IBLOCK_ID',
+			'IBLOCK_SECTION_ID',
 			'NAME',
 			'PREVIEW_TEXT',
 			'DETAIL_TEXT',
@@ -3650,6 +3715,7 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			'PROPERTY_MF_BRAND_NORM',
 			'PROPERTY_MF_ARTICLE_NORM',
 			'PROPERTY_ARTNUMBER',
+			'PROPERTY_CML2_MANUFACTURER',
 		];
 
 		$pick = static function (array $row): array {
@@ -3666,6 +3732,10 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			if ($brand === '')
 			{
 				$brand = trim((string)($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
+			}
+			if ($brand === '')
+			{
+				$brand = trim((string)($row['PROPERTY_CML2_MANUFACTURER_VALUE'] ?? ''));
 			}
 			$name = trim((string)($row['NAME'] ?? ''));
 
@@ -3702,12 +3772,22 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 		$name = '';
 		$previewText = '';
 		$detailText = '';
+		$iblockId = 0;
+		$sectionId = 0;
 		foreach ($ids as $id)
 		{
 			$row = $load($id);
 			if ($row === null)
 			{
 				continue;
+			}
+			if ($iblockId <= 0)
+			{
+				$iblockId = (int)($row['IBLOCK_ID'] ?? 0);
+			}
+			if ($sectionId <= 0)
+			{
+				$sectionId = (int)($row['IBLOCK_SECTION_ID'] ?? 0);
 			}
 			$p = $pick($row);
 			if ($article === '' && $p['article'] !== '')
@@ -3729,6 +3809,22 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			if ($detailText === '' && trim((string)($row['DETAIL_TEXT'] ?? '')) !== '')
 			{
 				$detailText = (string)$row['DETAIL_TEXT'];
+			}
+		}
+
+		if ($brand === '' && function_exists('mf_catalog_brand_from_section_id'))
+		{
+			$brand = mf_catalog_brand_from_section_id($iblockId, $sectionId);
+		}
+		if ($brand === '' && function_exists('mf_catalog_parse_manufacturer_from_text'))
+		{
+			foreach ([$previewText, $detailText, $name] as $text)
+			{
+				$brand = mf_catalog_parse_manufacturer_from_text((string)$text);
+				if ($brand !== '')
+				{
+					break;
+				}
 			}
 		}
 
