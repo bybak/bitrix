@@ -3018,7 +3018,10 @@ if (!function_exists('mf_store_delivery_term'))
 
 				if ($min > 0 || $max > 0)
 				{
-					if ($min > 0 && $max > 0)
+					$hasMin = $min > 0;
+					$hasMax = $max > 0;
+
+					if ($hasMin && $hasMax)
 					{
 						$lo = min($min, $max);
 						$hi = max($min, $max);
@@ -3029,7 +3032,12 @@ if (!function_exists('mf_store_delivery_term'))
 
 						return (string)$lo . '–' . (string)$hi . ' ' . mf_store_decl_days_ru($hi);
 					}
-					if ($min > 0)
+					if (!$hasMin && $hasMax)
+					{
+						// min=0 (или пусто): «0-1 день», не «до 1 день».
+						return '0-' . (string)$max . ' ' . mf_store_decl_days_ru($max);
+					}
+					if ($hasMin && !$hasMax)
 					{
 						return 'от ' . (string)$min . ' ' . mf_store_decl_days_ru($min);
 					}
