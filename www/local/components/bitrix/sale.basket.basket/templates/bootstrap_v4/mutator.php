@@ -469,6 +469,11 @@ foreach ($this->basketItems as $row)
 		$rowData['LABEL_VALUES'] = $labels;
 	}
 
+	if (!empty($rowData['PROPS']) && is_array($rowData['PROPS']) && function_exists('mf_basket_dedupe_props_for_display'))
+	{
+		$rowData['PROPS'] = mf_basket_dedupe_props_for_display($rowData['PROPS']);
+	}
+
 	$result['BASKET_ITEM_RENDER_DATA'][] = $rowData;
 }
 

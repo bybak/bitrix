@@ -3467,6 +3467,131 @@ if (!function_exists('mf_basket_set_props'))
 	}
 }
 
+if (!function_exists('mf_basket_remove_props_by_codes'))
+{
+	/**
+	 * Удаляет свойства позиции корзины по CODE (например, устаревшие дубли для 1С).
+	 */
+	function mf_basket_remove_props_by_codes(\Bitrix\Sale\BasketItemBase $item, array $codes): void
+	{
+		$pc = $item->getPropertyCollection();
+		if (!$pc)
+		{
+			return;
+		}
+		$want = [];
+		foreach ($codes as $code)
+		{
+			$code = trim((string)$code);
+			if ($code !== '')
+			{
+				$want[$code] = true;
+			}
+		}
+		if ($want === [])
+		{
+			return;
+		}
+
+		foreach ($pc as $propItem)
+		{
+			if (!$propItem || !method_exists($propItem, 'getField'))
+			{
+				continue;
+			}
+			$code = trim((string)$propItem->getField('CODE'));
+			if ($code === '' || !isset($want[$code]))
+			{
+				continue;
+			}
+			if (method_exists($propItem, 'delete'))
+			{
+				$propItem->delete();
+			}
+		}
+	}
+}
+
+if (!function_exists('mf_basket_dedupe_props_for_display'))
+{
+	/**
+	 * Одна строка на подпись в корзине: убирает дубли «Артикул» / «Категория» из разных CODE.
+	 *
+	 * @param array<int, array<string, mixed>> $props
+	 * @return array<int, array<string, mixed>>
+	 */
+	function mf_basket_dedupe_props_for_display(array $props): array
+	{
+		if ($props === [])
+		{
+			return $props;
+		}
+
+		$preferCode = static function (string $nameKey) use ($props): ?string {
+			$prio = [
+				'артикул' => ['CML2_ARTICLE', 'ARTNUMBER', 'ARTICLE'],
+				'категория' => ['Категория', 'MF_CATEGORY', 'MF_BRAND'],
+			];
+			$list = $prio[$nameKey] ?? [];
+			foreach ($list as $code)
+			{
+				foreach ($props as $p)
+				{
+					if (!is_array($p))
+					{
+						continue;
+					}
+					if ((string)($p['CODE'] ?? '') === $code)
+					{
+						return $code;
+					}
+				}
+			}
+
+			return null;
+		};
+
+		$out = [];
+		$seenName = [];
+
+		foreach (['артикул', 'категория'] as $nameKey)
+		{
+			$code = $preferCode($nameKey);
+			if ($code === null)
+			{
+				continue;
+			}
+			foreach ($props as $p)
+			{
+				if (!is_array($p) || (string)($p['CODE'] ?? '') !== $code)
+				{
+					continue;
+				}
+				$seenName[$nameKey] = true;
+				$out[] = $p;
+				break;
+			}
+		}
+
+		foreach ($props as $p)
+		{
+			if (!is_array($p))
+			{
+				continue;
+			}
+			$name = trim((string)($p['NAME'] ?? ''));
+			$key = mb_strtolower($name);
+			if ($key === 'артикул' || $key === 'категория')
+			{
+				continue;
+			}
+			$out[] = $p;
+		}
+
+		return $out;
+	}
+}
+
 if (!function_exists('mf_plain_text_from_html'))
 {
 	function mf_plain_text_from_html(string $html): string
@@ -3944,6 +4069,33 @@ if (!function_exists('mf_basket_product_identity'))
 	}
 }
 
+if (!function_exists('mf_basket_delete_prop_from_db'))
+{
+	function mf_basket_delete_prop_from_db(int $basketId, string $code): void
+	{
+		$basketId = (int)$basketId;
+		$code = trim($code);
+		if ($basketId <= 0 || $code === '' || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return;
+		}
+
+		$rs = \Bitrix\Sale\Internals\BasketPropertyTable::getList([
+			'order' => ['ID' => 'ASC'],
+			'filter' => ['BASKET_ID' => $basketId, 'CODE' => $code],
+			'select' => ['ID'],
+		]);
+		while ($row = $rs->fetch())
+		{
+			$id = (int)($row['ID'] ?? 0);
+			if ($id > 0)
+			{
+				\Bitrix\Sale\Internals\BasketPropertyTable::delete($id);
+			}
+		}
+	}
+}
+
 if (!function_exists('mf_basket_upsert_prop'))
 {
 	function mf_basket_upsert_prop(int $basketId, string $code, string $name, string $value): void
@@ -3957,20 +4109,15 @@ if (!function_exists('mf_basket_upsert_prop'))
 		$value = (string)$value;
 
 		$existing = null;
-		$rs = \CSaleBasket::GetPropsList(
-			['ID' => 'ASC'],
-			['BASKET_ID' => $basketId, 'CODE' => $code],
-			false,
-			['nTopCount' => 1],
-			['ID', 'CODE', 'NAME', 'VALUE']
-		);
-		if ($rs)
+		$rs = \Bitrix\Sale\Internals\BasketPropertyTable::getList([
+			'order' => ['ID' => 'ASC'],
+			'filter' => ['BASKET_ID' => $basketId, 'CODE' => $code],
+			'limit' => 1,
+			'select' => ['ID', 'CODE', 'NAME', 'VALUE'],
+		]);
+		if ($row = $rs->fetch())
 		{
-			$row = $rs->Fetch();
-			if (is_array($row))
-			{
-				$existing = $row;
-			}
+			$existing = $row;
 		}
 
 		if (is_array($existing))
@@ -3979,7 +4126,7 @@ if (!function_exists('mf_basket_upsert_prop'))
 			{
 				return;
 			}
-			\CSaleBasketProps::Update((int)$existing['ID'], [
+			\Bitrix\Sale\Internals\BasketPropertyTable::update((int)$existing['ID'], [
 				'VALUE' => $value,
 				'NAME' => $name,
 			]);
@@ -3992,7 +4139,7 @@ if (!function_exists('mf_basket_upsert_prop'))
 			return;
 		}
 
-		\CSaleBasketProps::Add([
+		\Bitrix\Sale\Internals\BasketPropertyTable::add([
 			'BASKET_ID' => $basketId,
 			'CODE' => $code,
 			'NAME' => $name,
@@ -4054,6 +4201,14 @@ if (!function_exists('mf_basket_persist_item_1c_fields'))
 				(string)$propItem->getField('NAME'),
 				(string)$propItem->getField('VALUE')
 			);
+		}
+
+		if (function_exists('mf_basket_delete_prop_from_db'))
+		{
+			foreach (['ARTNUMBER', 'MF_CATEGORY', 'MF_BRAND'] as $legacyCode)
+			{
+				mf_basket_delete_prop_from_db($basketId, $legacyCode);
+			}
 		}
 	}
 }
@@ -4142,12 +4297,8 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 		if (trim((string)($meta['article'] ?? '')) !== '')
 		{
 			$article = trim((string)$meta['article']);
+			// Одна строка в корзине; 1С читает CML2_ARTICLE / «Артикул» (см. mf_1c_export).
 			$props['CML2_ARTICLE'] = [
-				'NAME' => 'Артикул',
-				'VALUE' => $article,
-			];
-			// Дубли для разных схем сопоставления в 1С:УНФ.
-			$props['ARTNUMBER'] = [
 				'NAME' => 'Артикул',
 				'VALUE' => $article,
 			];
@@ -4160,11 +4311,6 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 				'NAME' => 'Категория',
 				'VALUE' => $brand,
 			];
-			$props['MF_CATEGORY'] = [
-				'NAME' => 'Категория',
-				'VALUE' => $brand,
-			];
-			$props['MF_BRAND'] = $brand;
 			$props['CML2_MANUFACTURER'] = [
 				'NAME' => 'Производитель',
 				'VALUE' => $brand,
@@ -4174,6 +4320,20 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 		if (!empty($props) && function_exists('mf_basket_set_props'))
 		{
 			mf_basket_set_props($item, $props);
+		}
+
+		if (function_exists('mf_basket_remove_props_by_codes'))
+		{
+			mf_basket_remove_props_by_codes($item, ['ARTNUMBER', 'MF_CATEGORY', 'MF_BRAND']);
+		}
+
+		$basketId = (int)$item->getId();
+		if ($basketId > 0 && function_exists('mf_basket_delete_prop_from_db'))
+		{
+			foreach (['ARTNUMBER', 'MF_CATEGORY', 'MF_BRAND'] as $legacyCode)
+			{
+				mf_basket_delete_prop_from_db($basketId, $legacyCode);
+			}
 		}
 	}
 }
