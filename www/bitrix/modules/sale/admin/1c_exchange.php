@@ -29,7 +29,22 @@ if (isset($_SERVER["REQUEST_METHOD"]) && $_SERVER["REQUEST_METHOD"] === "GET")
 	}
 }
 
+$mf1cAuthInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_1c_exchange_auth.php';
+if (is_file($mf1cAuthInclude))
+{
+	require_once $mf1cAuthInclude;
+	if (function_exists('mf_1c_exchange_restore_basic_auth_server_vars'))
+	{
+		mf_1c_exchange_restore_basic_auth_server_vars();
+	}
+}
+
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/prolog_before.php");
+
+if (function_exists('mf_1c_exchange_ensure_user_authorized'))
+{
+	mf_1c_exchange_ensure_user_authorized();
+}
 
 if ($type === 'sale')
 {
