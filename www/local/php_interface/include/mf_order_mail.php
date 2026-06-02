@@ -274,6 +274,8 @@ final class Renderer
 	private const COLOR_HEAD_BG = '#f3f3f3';
 	private const COLOR_TOTAL_BG = '#fff8dc';
 	private const DELIVERY_PRELIMINARY_NOTE = 'Стоимость доставки предварительная. Точная сумма будет рассчитана после упаковки заказа и оплачивается при получении.';
+	/** Ширина таблицы заказа (px): при «Ответить» клиенты сужают блок цитаты — 100% ломает колонки. */
+	private const BASKET_TABLE_WIDTH = 640;
 
 	public static function orderDisplayNumber(Order $order): string
 	{
@@ -424,13 +426,13 @@ final class Renderer
 				}
 
 				$rows .= '<tr>'
-					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . self::esc($storeTitle !== '' ? $storeTitle : '—') . '</td>'
-					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . $deliverySpbHtml . '</td>'
-					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;color:' . self::COLOR_LINK . ';">' . $nameHtml . '</td>'
-					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';vertical-align:top;">' . self::esc($brand !== '' ? $brand : '—') . '</td>'
-					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';text-align:center;white-space:nowrap;">' . self::esc(self::qtyLabel($qty)) . '</td>'
-					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';text-align:right;white-space:nowrap;">' . self::esc(self::moneyPlain($price, $currency)) . '</td>'
-					. '<td style="padding:8px 10px;border-bottom:1px solid ' . self::COLOR_BORDER . ';text-align:right;white-space:nowrap;">' . self::esc(self::moneyPlain($lineTotal, $currency)) . '</td>'
+					. '<td' . self::basketCellAttr('store') . '>' . self::esc($storeTitle !== '' ? $storeTitle : '—') . '</td>'
+					. '<td' . self::basketCellAttr('delivery') . '>' . $deliverySpbHtml . '</td>'
+					. '<td' . self::basketCellAttr('name', false, 'color:' . self::COLOR_LINK . ';') . '>' . $nameHtml . '</td>'
+					. '<td' . self::basketCellAttr('brand') . '>' . self::esc($brand !== '' ? $brand : '—') . '</td>'
+					. '<td' . self::basketCellAttr('qty') . '>' . self::esc(self::qtyLabel($qty)) . '</td>'
+					. '<td' . self::basketCellAttr('price') . '>' . self::esc(self::moneyPlain($price, $currency)) . '</td>'
+					. '<td' . self::basketCellAttr('sum') . '>' . self::esc(self::moneyPlain($lineTotal, $currency)) . '</td>'
 					. '</tr>';
 			}
 		}
@@ -443,30 +445,97 @@ final class Renderer
 		$orderTotal = (float)$order->getPrice();
 		$payTotal = $orderTotal > 0 ? $orderTotal : $itemsTotal;
 
+		$w = self::BASKET_TABLE_WIDTH;
+		$cellBase = self::basketCellStyleBase();
+		$footLabel = 'padding:8px 6px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER
+			. ';' . $cellBase;
+		$footSum = 'padding:8px 6px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER
+			. ';white-space:nowrap;' . $cellBase;
+
 		return self::block(
-			'<table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;">'
+			'<table cellpadding="0" cellspacing="0" border="0" width="' . $w . '" style="width:' . $w . 'px;max-width:100%;table-layout:fixed;border-collapse:collapse;font-size:14px;mso-table-lspace:0pt;mso-table-rspace:0pt;">'
+			. self::basketColgroup()
 			. '<tr style="background:' . self::COLOR_HEAD_BG . ';font-weight:bold;">'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Склад</td>'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';width:210px;">Доставка</td>'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Наименование</td>'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';">Бренд</td>'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:center;width:90px;">Количество</td>'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:right;width:100px;">Цена</td>'
-			. '<td style="padding:8px 10px;border:1px solid ' . self::COLOR_BORDER . ';text-align:right;width:110px;">Стоимость</td>'
+			. '<td' . self::basketCellAttr('store', true) . '>Склад</td>'
+			. '<td' . self::basketCellAttr('delivery', true) . '>Доставка</td>'
+			. '<td' . self::basketCellAttr('name', true) . '>Наименование</td>'
+			. '<td' . self::basketCellAttr('brand', true) . '>Бренд</td>'
+			. '<td' . self::basketCellAttr('qty', true) . '>Кол-во</td>'
+			. '<td' . self::basketCellAttr('price', true) . '>Цена</td>'
+			. '<td' . self::basketCellAttr('sum', true) . '>Сумма</td>'
 			. '</tr>'
 			. $rows
 			. '<tr>'
-			. '<td colspan="6" style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">Итого:</td>'
-			. '<td style="padding:8px 10px;text-align:right;font-weight:bold;border-top:2px solid ' . self::COLOR_BORDER . ';">'
-			. self::esc(self::moneyPlain($itemsTotal, $currency)) . ' руб.'
-			. '</td></tr>'
+			. '<td colspan="6" style="' . $footLabel . '">Итого:</td>'
+			. '<td style="' . $footSum . '">' . self::esc(self::moneyPlain($itemsTotal, $currency)) . ' руб.</td>'
+			. '</tr>'
 			. '<tr style="background:' . self::COLOR_TOTAL_BG . ';">'
-			. '<td colspan="6" style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">Всего к оплате:</td>'
-			. '<td style="padding:10px;text-align:right;font-weight:bold;font-size:16px;">'
+			. '<td colspan="6" style="padding:10px 6px;text-align:right;font-weight:bold;font-size:16px;' . $cellBase . '">Всего к оплате:</td>'
+			. '<td style="padding:10px 6px;text-align:right;font-weight:bold;font-size:16px;white-space:nowrap;' . $cellBase . '">'
 			. self::esc(self::moneyPlain($payTotal, $currency)) . ' руб.'
 			. '</td></tr>'
 			. '</table>'
 		);
+	}
+
+	/** @return array<string, int> */
+	private static function basketColumnWidths(): array
+	{
+		return [
+			'store' => 60,
+			'delivery' => 180,
+			'name' => 166,
+			'brand' => 58,
+			'qty' => 54,
+			'price' => 60,
+			'sum' => 62,
+		];
+	}
+
+	private static function basketColgroup(): string
+	{
+		$html = '<colgroup>';
+		foreach (self::basketColumnWidths() as $px)
+		{
+			$html .= '<col width="' . $px . '" style="width:' . $px . 'px;">';
+		}
+		$html .= '</colgroup>';
+
+		return $html;
+	}
+
+	private static function basketCellStyleBase(): string
+	{
+		return 'word-wrap:break-word;overflow-wrap:break-word;word-break:break-word;white-space:normal;';
+	}
+
+	private static function basketCellAttr(string $column, bool $isHeader = false, string $extraStyle = ''): string
+	{
+		$widths = self::basketColumnWidths();
+		$px = (int)($widths[$column] ?? 64);
+		$border = $isHeader
+			? 'border:1px solid ' . self::COLOR_BORDER . ';'
+			: 'border-bottom:1px solid ' . self::COLOR_BORDER . ';';
+		$align = match ($column)
+		{
+			'qty' => 'text-align:center;',
+			'price', 'sum' => 'text-align:right;white-space:nowrap;',
+			default => '',
+		};
+		$columnExtra = match ($column)
+		{
+			'delivery' => 'font-size:12px;line-height:1.45;',
+			default => '',
+		};
+
+		return ' width="' . $px . '" style="width:' . $px . 'px;max-width:' . $px . 'px;min-width:' . $px . 'px;padding:8px 6px;'
+			. $border
+			. 'vertical-align:top;'
+			. self::basketCellStyleBase()
+			. $align
+			. $columnExtra
+			. $extraStyle
+			. '"';
 	}
 
 	private static function customerTable(Order $order): string

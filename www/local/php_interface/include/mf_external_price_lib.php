@@ -1555,7 +1555,7 @@ if (!function_exists('mf_store_delivery_spb_email_html'))
 		return '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:'
 			. $color
 			. ';vertical-align:middle;margin-right:6px;"></span>'
-			. '<span style="font-size:12px;line-height:1.4;color:#333;vertical-align:middle;">'
+			. '<span style="font-size:12px;line-height:1.4;color:#333;vertical-align:middle;word-wrap:break-word;overflow-wrap:break-word;">'
 			. $t
 			. '</span>';
 	}
@@ -1576,7 +1576,7 @@ if (!function_exists('mf_store_delivery_email_cell_html'))
 		}
 		if ($term !== '' && $term !== '—')
 		{
-			$html .= '<div style="margin-top:6px;font-size:12px;line-height:1.45;color:#555;">'
+			$html .= '<div style="margin-top:6px;font-size:12px;line-height:1.45;color:#555;word-wrap:break-word;overflow-wrap:break-word;">'
 				. '<span style="color:#888;">Сроки доставки:</span> '
 				. htmlspecialcharsbx($term)
 				. '</div>';
