@@ -4,6 +4,9 @@ const BX_SKIP_POST_UNQUOTE = true;
 const NO_AGENT_CHECK = true;
 const STATISTIC_SKIP_ACTIVITY_CHECK = true;
 const BX_FORCE_DISABLE_SEPARATED_SESSION_MODE = true;
+// Обмен 1С: авторизация через mode=checkauth, не через HTML-форму /bitrix/admin/
+define('NOT_CHECK_PERMISSIONS', true);
+define('NOT_CHECK_FILE_PERMISSIONS', true);
 
 /** @global CMain $APPLICATION */
 /** @global CUserTypeManager $CACHE_MANAGER */
@@ -46,6 +49,7 @@ if ($type === 'sale')
 		"IMPORT_NEW_ORDERS" => COption::GetOptionString("sale", "1C_IMPORT_NEW_ORDERS", "N"),
 		)
 	);
+	die();
 }
 elseif ($type === "crm")
 {
@@ -78,6 +82,7 @@ elseif ($type === "crm")
 			"USE_ZIP" => "N",
 		)
 	);
+	die();
 }
 elseif ($type === "catalog")
 {

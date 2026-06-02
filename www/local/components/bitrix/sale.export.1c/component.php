@@ -75,7 +75,7 @@ if($_REQUEST["sessid"] <> '' && COption::GetOptionString("sale", "secure_1c_exch
 if(!(CModule::IncludeModule('sale') && CModule::IncludeModule('catalog')))
 {
 	echo "failure\n".GetMessage("CC_BSC1_ERROR_MODULE");
-	return;
+	die();
 }
 
 if($_GET["mode"] == "checkauth" && $USER->IsAuthorized())
@@ -197,6 +197,14 @@ else
 	elseif($_GET["mode"] == "query" || $_POST["mode"] == "query")
 	{
 	    \Bitrix\Sale\Exchange\ManagerExport::deleteLoggingDate();
+
+		if (
+			empty($_SESSION["BX_CML2_EXPORT"]["cmlVersion"])
+			|| $_SESSION["BX_CML2_EXPORT"]["cmlVersion"] < doubleval(\Bitrix\Sale\Exchange\ExportOneCBase::SHEM_VERSION_2_10)
+		)
+		{
+			$_SESSION["BX_CML2_EXPORT"]["cmlVersion"] = doubleval(\Bitrix\Sale\Exchange\ExportOneCBase::SHEM_VERSION_2_10);
+		}
 
 		$arFilter = Array();
 		$nTopCount = false;
@@ -781,6 +789,19 @@ if (function_exists('mf_1c_enrich_orders_xml_export'))
 	$contents = mf_1c_enrich_orders_xml_export($contents);
 }
 
+$isQueryOrInfo = in_array((string)($_GET['mode'] ?? ''), ['query', 'info'], true)
+	|| in_array((string)($_POST['mode'] ?? ''), ['query', 'info'], true);
+$trimmedContents = ltrim($contents);
+$is1cTextProtocol = ($trimmedContents !== '')
+	&& in_array($trimmedContents[0], ['f', 's', 'p', 'z'], true)
+	&& preg_match('/^(failure|success|progress|zip=)/', $trimmedContents);
+if ($isQueryOrInfo && !$is1cTextProtocol && ($trimmedContents === '' || stripos($contents, '<КоммерческаяИнформация') === false))
+{
+	\Bitrix\Sale\Exchange\ExportOneCSubordinateSale::configuration();
+	$emptyExport = \Bitrix\Sale\Exchange\ExportOneCSubordinateSale::getInstance();
+	$contents = $emptyExport->outputXmlCMLHeader() . $emptyExport->outputXmlCMLFooter();
+}
+
 if(!$bDesignMode)
 {
 	if (!$bCrmMode)
@@ -799,14 +820,16 @@ if(!$bDesignMode)
 	else
 	{
 		$str = strlen($contents);
-		if(in_array($_GET["mode"], array("query", "info")) || in_array($_POST["mode"], array("query", "info")))
+		$isXmlBody = ($trimmedContents !== '' && $trimmedContents[0] === '<');
+		if ($isQueryOrInfo && $isXmlBody)
 		{
 			header("Content-Type: application/xml; charset=windows-1251");
 			header("Content-Length: ".$str);
 		}
 		else
 		{
-			header("Content-Type: text/html; charset=windows-1251");
+			header("Content-Type: text/plain; charset=windows-1251");
+			header("Content-Length: ".$str);
 		}
 	}
 
