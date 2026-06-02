@@ -63,6 +63,29 @@ if ($type === 'sale')
 			FILE_APPEND
 		);
 	}
+
+	if (
+		($_REQUEST['mode'] ?? '') === 'import'
+		&& !empty($_REQUEST['filename'])
+	)
+	{
+		$file = $_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange/'.basename($_REQUEST['filename']);
+	
+		file_put_contents(
+			$_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange_debug.log',
+			"IMPORT FILE: ".$file."\n",
+			FILE_APPEND
+		);
+	
+		if (file_exists($file))
+		{
+			file_put_contents(
+				$_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange_debug.log',
+				"XML CONTENT:\n".file_get_contents($file)."\n\n",
+				FILE_APPEND
+			);
+		}
+	}
 	//--------------------------------------------------
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(
 		"SITE_LIST" => COption::GetOptionString("sale", "1C_SALE_SITE_LIST", ""),
