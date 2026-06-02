@@ -138,10 +138,12 @@ async def _fetch_listing_stock_qty(
 			retry_delay_sec=retry_delay_sec,
 		)
 		sq = sum_stock_from_modal_available_html(html)
-		if sq is not None:
+		# 0 из modal_available не всегда «нет на сайте»: с IP дата-центра все магазины могут
+		# быть «нет в наличии», тогда остаток есть только в modal_color_size (размеры/цвета).
+		if sq is not None and sq > 0:
 			return sq
 		if not cfg.get("listing_stock_color_fallback", True):
-			return None
+			return sq
 		url_cs = listing_stock_modal_ajax_url(
 			base, gid, id_, page_code, kind="modal_color_size"
 		)
@@ -153,7 +155,10 @@ async def _fetch_listing_stock_qty(
 			max_retries=max_retries,
 			retry_delay_sec=retry_delay_sec,
 		)
-		return sum_stock_from_color_size_modal(html_cs)
+		sq_cs = sum_stock_from_color_size_modal(html_cs)
+		if sq_cs is not None and sq_cs > 0:
+			return sq_cs
+		return sq if sq is not None else sq_cs
 	except _TRANSIENT_HTTP_ERRORS:
 		return None
 	except httpx.HTTPStatusError:
