@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Bitrix\Main\Application;
 use Bitrix\Main\Loader;
-use Bitrix\Catalog\StoreTable;
 
 if (!defined('ADMIN_SECTION') || ADMIN_SECTION !== true)
 {
@@ -18,14 +17,7 @@ if (!is_object($USER) || !$USER->IsAdmin())
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Недостаточно прав.']);
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
-	return;
-}
 
-if (!class_exists(Application::class))
-{
-	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
-	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Bitrix\\Main\\Application недоступен.']);
-	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
 	return;
 }
 
@@ -35,22 +27,19 @@ if (!is_file($brandDict))
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Не найден файл словаря брендов: ' . $brandDict]);
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
+
 	return;
 }
 require_once $brandDict;
 
-/** POST value for «Не сопоставлять» — строки с этим брендом пропускаются при импорте остатков и внешних прайсов. */
+/** POST: «Не импортировать» вместо канона. */
 const MF_BM_MAP_SKIP = '__MF_SKIP__';
 
-/**
- * UF_SORT для ручного сопоставления: выше, чем у сидов в mf_brand_dict (обычно 80–200),
- * чтобы «Ski-Doo → BRP» и т.п. перекрывали встроенный «Ski-Doo → Ski-Doo».
- */
+/** Приоритет ручных сопоставлений (выше встроенных сидов в mf_brand_dict). */
 const MF_BM_MANUAL_ALIAS_SORT = 400;
 
-Loader::includeModule('iblock');
-Loader::includeModule('catalog');
 Loader::includeModule('highloadblock');
+Loader::includeModule('iblock');
 
 function mf_bm_escape(string $s): string
 {
@@ -59,36 +48,134 @@ function mf_bm_escape(string $s): string
 		: htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function mf_bm_table_exists(\Bitrix\Main\DB\Connection $conn, string $table): bool
+function mf_bm_format_dt($value): string
 {
-	try
+	if ($value === null || $value === '')
 	{
-		$r = $conn->query("SHOW TABLES LIKE '" . $conn->getSqlHelper()->forSql($table) . "'")->fetch();
-		return (bool)$r;
+		return '—';
 	}
-	catch (\Throwable $e)
+	if (is_object($value) && method_exists($value, 'format'))
 	{
-		return false;
+		return (string)$value->format('Y-m-d H:i');
 	}
+
+	return (string)$value;
 }
 
 /**
- * Варианты для селекта «Считать как бренд каталога» / «Сопоставить с брендом каталога»:
- * выгружаемые активные элементы инфоблока; для скорости — только MF_BRAND (меньше строк в JOIN, чем BRAND+NORM).
- * Плюс каноны из HL mf_brand_alias.
- *
+ * @return list<array<string, mixed>>
+ */
+function mf_bm_load_alias_rows(bool $activeOnly, string $find): array
+{
+	$rows = [];
+	$find = mb_strtolower(trim($find));
+	try
+	{
+		$hl = mf_brand_hl_ensure(false);
+		if (!$hl || empty($hl['DATA_CLASS']))
+		{
+			return [];
+		}
+		$filter = [];
+		if ($activeOnly)
+		{
+			$filter['=UF_ACTIVE'] = 1;
+		}
+		$rs = $hl['DATA_CLASS']::getList([
+			'filter' => $filter,
+			'select' => [
+				'ID',
+				'UF_ALIAS',
+				'UF_ALIAS_NORM',
+				'UF_CANONICAL',
+				'UF_CANONICAL_NORM',
+				'UF_SORT',
+				'UF_ACTIVE',
+				'UF_UPDATED_AT',
+			],
+			'order' => ['UF_SORT' => 'DESC', 'UF_ALIAS' => 'ASC', 'ID' => 'ASC'],
+		]);
+		while ($r = $rs->fetch())
+		{
+			if ($find !== '')
+			{
+				$hay = mb_strtolower(
+					trim((string)($r['UF_ALIAS'] ?? '')) . ' '
+					. trim((string)($r['UF_CANONICAL'] ?? '')) . ' '
+					. trim((string)($r['UF_ALIAS_NORM'] ?? '')) . ' '
+					. trim((string)($r['UF_CANONICAL_NORM'] ?? ''))
+				);
+				if (mb_strpos($hay, $find) === false)
+				{
+					continue;
+				}
+			}
+			$rows[] = $r;
+		}
+	}
+	catch (\Throwable $e)
+	{
+		return [];
+	}
+
+	return $rows;
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function mf_bm_load_import_skip_rows(string $find): array
+{
+	if (!function_exists('mf_brand_import_skip_ensure_table') || !mf_brand_import_skip_ensure_table())
+	{
+		return [];
+	}
+	$find = mb_strtolower(trim($find));
+	$out = [];
+	try
+	{
+		$conn = Application::getConnection();
+		$rs = $conn->query("
+			SELECT ID, UF_ALIAS_RAW, UF_ALIAS_NORM, UF_ACTIVE, UF_UPDATED_AT
+			FROM mf_brand_import_skip
+			WHERE UF_ACTIVE = 'Y'
+			ORDER BY UF_ALIAS_RAW ASC, ID ASC
+		");
+		while ($r = $rs->fetch())
+		{
+			if ($find !== '')
+			{
+				$hay = mb_strtolower(
+					trim((string)($r['UF_ALIAS_RAW'] ?? '')) . ' '
+					. trim((string)($r['UF_ALIAS_NORM'] ?? ''))
+				);
+				if (mb_strpos($hay, $find) === false)
+				{
+					continue;
+				}
+			}
+			$out[] = $r;
+		}
+	}
+	catch (\Throwable $e)
+	{
+		return [];
+	}
+
+	return $out;
+}
+
+/**
  * @return list<string>
  */
-function mf_bm_select_brand_choices(\Bitrix\Main\DB\Connection $conn, int $iblockId = 4): array
+function mf_bm_catalog_brand_choices(): array
 {
-	$iblockId = (int)$iblockId;
 	if (!function_exists('mf_ce_load_brand_choices'))
 	{
 		require_once __DIR__ . '/mf_ce_brand_choices_inc.php';
 	}
-
 	$out = [];
-	foreach (mf_ce_load_brand_choices($iblockId, true, ['MF_BRAND']) as $b)
+	foreach (mf_ce_load_brand_choices(4, true, ['MF_BRAND']) as $b)
 	{
 		$b = trim((string)$b);
 		if ($b !== '')
@@ -96,21 +183,19 @@ function mf_bm_select_brand_choices(\Bitrix\Main\DB\Connection $conn, int $ibloc
 			$out[$b] = true;
 		}
 	}
-
 	try
 	{
-		if (mf_bm_table_exists($conn, 'mf_brand_alias'))
+		$hl = mf_brand_hl_ensure(false);
+		if ($hl && !empty($hl['DATA_CLASS']))
 		{
-			$rs = $conn->query("
-				SELECT DISTINCT TRIM(UF_CANONICAL) AS BRAND
-				FROM mf_brand_alias
-				WHERE UF_ACTIVE = 1
-				  AND UF_CANONICAL IS NOT NULL AND TRIM(UF_CANONICAL) <> ''
-				LIMIT 5000
-			");
+			$rs = $hl['DATA_CLASS']::getList([
+				'filter' => ['=UF_ACTIVE' => 1],
+				'select' => ['UF_CANONICAL'],
+				'limit' => 5000,
+			]);
 			while ($r = $rs->fetch())
 			{
-				$b = trim((string)($r['BRAND'] ?? ''));
+				$b = trim((string)($r['UF_CANONICAL'] ?? ''));
 				if ($b !== '')
 				{
 					$out[$b] = true;
@@ -122,1027 +207,873 @@ function mf_bm_select_brand_choices(\Bitrix\Main\DB\Connection $conn, int $ibloc
 	{
 		// ignore
 	}
-
 	$keys = array_keys($out);
-	if ($keys === [])
-	{
-		return [];
-	}
 	natcasesort($keys);
 
 	return array_values($keys);
 }
 
-function mf_bm_get_alias_exact(string $alias): string
+/**
+ * HTML <option> для выбора канона (каталог + текущее значение, если его нет в списке).
+ */
+function mf_bm_canon_options_html(array $catalogBrands, string $selected = ''): string
 {
-	$alias = trim($alias);
-	if ($alias === '' || !function_exists('mf_brand_hl_ensure') || !function_exists('mf_brand_norm'))
+	$selected = trim($selected);
+	$html = '<option value="">— выберите —</option>';
+	$inList = false;
+	foreach ($catalogBrands as $bCh)
 	{
-		return '';
+		$bCh = (string)$bCh;
+		if ($bCh === '')
+		{
+			continue;
+		}
+		if ($selected !== '' && $selected === $bCh)
+		{
+			$inList = true;
+		}
+		$esc = mf_bm_escape($bCh);
+		$selAttr = ($selected !== '' && $selected === $bCh) ? ' selected' : '';
+		$html .= '<option value="' . $esc . '" title="' . $esc . '"' . $selAttr . '>' . $esc . '</option>';
+	}
+	if ($selected !== '' && !$inList)
+	{
+		$esc = mf_bm_escape($selected);
+		$html .= '<option value="' . $esc . '" title="' . $esc . '" selected>' . $esc . ' (не в каталоге)</option>';
+	}
+
+	return $html;
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function mf_bm_fetch_alias_by_id(int $id): ?array
+{
+	if ($id <= 0)
+	{
+		return null;
 	}
 	try
 	{
-		$hl = mf_brand_hl_ensure(true);
-		if (!$hl) return '';
-		$dataClass = $hl['DATA_CLASS'];
-		$an = mf_brand_norm($alias);
-		$r = $dataClass::getList([
-			'filter' => ['=UF_ALIAS_NORM' => $an, '=UF_ACTIVE' => 1],
-			'select' => ['UF_CANONICAL', 'UF_SORT', 'UF_ALIAS_NORM'],
-			'order' => ['UF_SORT' => 'DESC', 'ID' => 'DESC'],
+		$hl = mf_brand_hl_ensure(false);
+		if (!$hl || empty($hl['DATA_CLASS']))
+		{
+			return null;
+		}
+		$row = $hl['DATA_CLASS']::getList([
+			'filter' => ['=ID' => $id],
+			'select' => [
+				'ID',
+				'UF_ALIAS',
+				'UF_ALIAS_NORM',
+				'UF_CANONICAL',
+				'UF_CANONICAL_NORM',
+				'UF_SORT',
+				'UF_ACTIVE',
+			],
 			'limit' => 1,
 		])->fetch();
-		return trim((string)($r['UF_CANONICAL'] ?? ''));
+
+		return is_array($row) ? $row : null;
 	}
 	catch (\Throwable $e)
 	{
-		return '';
+		return null;
 	}
 }
 
 /**
- * UF_ALIAS_NORM → true для записей «не импортировать» (без N+1 на каждый бренд).
- *
- * @param list<string> $norms
- * @return array<string, true>
+ * @return string|null сообщение об ошибке или null при успехе
  */
-function mf_bm_batch_import_skip_by_norm(array $norms): array
+function mf_bm_update_alias_by_id(int $id, string $alias, string $canon, bool $active): ?string
 {
-	$norms = array_values(array_unique(array_filter(array_map('trim', $norms), static fn($s) => $s !== '')));
-	if ($norms === [] || !function_exists('mf_brand_import_skip_ensure_table') || !mf_brand_import_skip_ensure_table())
+	$row = mf_bm_fetch_alias_by_id($id);
+	if ($row === null)
 	{
-		return [];
-	}
-	$out = [];
-	$conn = Application::getConnection();
-	$h = $conn->getSqlHelper();
-	$chunk = 400;
-	for ($i = 0; $i < count($norms); $i += $chunk)
-	{
-		$part = array_slice($norms, $i, $chunk);
-		$in = implode(',', array_map(static fn($n) => "'" . $h->forSql($n) . "'", $part));
-		if ($in === '')
-		{
-			continue;
-		}
-		try
-		{
-			$rs = $conn->query("SELECT UF_ALIAS_NORM FROM mf_brand_import_skip WHERE UF_ACTIVE='Y' AND UF_ALIAS_NORM IN ({$in})");
-			while ($r = $rs->fetch())
-			{
-				$k = trim((string)($r['UF_ALIAS_NORM'] ?? ''));
-				if ($k !== '')
-				{
-					$out[$k] = true;
-				}
-			}
-		}
-		catch (\Throwable $e)
-		{
-			continue;
-		}
+		return 'Запись #' . $id . ' не найдена.';
 	}
 
-	return $out;
+	$alias = trim($alias);
+	$canon = trim($canon);
+	if ($alias === '' || $canon === '')
+	{
+		return 'Заполните алиас и канон.';
+	}
+
+	$aliasNorm = mf_brand_norm($alias);
+	$canonNorm = mf_brand_norm($canon);
+	if ($aliasNorm === '' || $canonNorm === '')
+	{
+		return 'Не удалось нормализовать алиас или канон.';
+	}
+
+	try
+	{
+		$hl = mf_brand_hl_ensure(false);
+		if (!$hl || empty($hl['DATA_CLASS']))
+		{
+			return 'HL mf_brand_alias недоступен.';
+		}
+		$dc = $hl['DATA_CLASS'];
+		$dup = $dc::getList([
+			'filter' => ['=UF_ALIAS_NORM' => $aliasNorm],
+			'select' => ['ID'],
+			'limit' => 2,
+		]);
+		while ($d = $dup->fetch())
+		{
+			if ((int)($d['ID'] ?? 0) !== $id)
+			{
+				return 'Алиас «' . $alias . '» уже сопоставлен в записи #' . (int)$d['ID'] . '.';
+			}
+		}
+
+		if (function_exists('mf_brand_import_skip_set'))
+		{
+			mf_brand_import_skip_set($alias, false);
+		}
+
+		$dc::update($id, [
+			'UF_ALIAS' => $alias,
+			'UF_ALIAS_NORM' => $aliasNorm,
+			'UF_CANONICAL' => $canon,
+			'UF_CANONICAL_NORM' => $canonNorm,
+			'UF_ACTIVE' => $active ? 1 : 0,
+			'UF_SORT' => (int)($row['UF_SORT'] ?? 0),
+			'UF_UPDATED_AT' => new \Bitrix\Main\Type\DateTime(),
+		]);
+		mf_brand_aliases_reset_cache();
+	}
+	catch (\Throwable $e)
+	{
+		return 'Ошибка сохранения: ' . $e->getMessage();
+	}
+
+	return null;
 }
 
 /**
- * Канон по нормализованному алиасу (как mf_bm_get_alias_exact, но пакетом).
- * Порядок выборки: UF_SORT DESC, ID DESC — берём первую строку на каждый норм.
- *
- * @param list<string> $norms
- * @return array<string, string>
+ * @return string|null сообщение об ошибке или null при успехе
  */
-function mf_bm_batch_alias_canonical_by_norm(array $norms, ?array $hl): array
+function mf_bm_update_skip_by_id(int $id, string $aliasRaw): ?string
 {
-	$norms = array_values(array_unique(array_filter(array_map('trim', $norms), static fn($s) => $s !== '')));
-	if ($norms === [] || !$hl || empty($hl['DATA_CLASS']))
+	if (!mf_brand_import_skip_ensure_table())
 	{
-		return [];
-	}
-	$dc = $hl['DATA_CLASS'];
-	$out = [];
-	$chunk = 400;
-	for ($i = 0; $i < count($norms); $i += $chunk)
-	{
-		$part = array_slice($norms, $i, $chunk);
-		if ($part === [])
-		{
-			continue;
-		}
-		try
-		{
-			$rs = $dc::getList([
-				'filter' => [
-					'@UF_ALIAS_NORM' => $part,
-					'=UF_ACTIVE' => 1,
-				],
-				'select' => ['UF_ALIAS_NORM', 'UF_CANONICAL', 'UF_SORT', 'ID'],
-				'order' => ['UF_SORT' => 'DESC', 'ID' => 'DESC'],
-			]);
-			while ($r = $rs->fetch())
-			{
-				$n = trim((string)($r['UF_ALIAS_NORM'] ?? ''));
-				if ($n === '' || array_key_exists($n, $out))
-				{
-					continue;
-				}
-				$out[$n] = trim((string)($r['UF_CANONICAL'] ?? ''));
-			}
-		}
-		catch (\Throwable $e)
-		{
-			continue;
-		}
+		return 'Таблица mf_brand_import_skip недоступна.';
 	}
 
-	return $out;
+	$aliasRaw = trim($aliasRaw);
+	if ($aliasRaw === '')
+	{
+		return 'Укажите текст бренда.';
+	}
+
+	$aliasNorm = mf_brand_norm($aliasRaw);
+	if ($aliasNorm === '')
+	{
+		return 'Не удалось нормализовать бренд.';
+	}
+
+	try
+	{
+		$conn = Application::getConnection();
+		$h = $conn->getSqlHelper();
+		$cur = $conn->query('SELECT ID FROM mf_brand_import_skip WHERE ID=' . $id . ' LIMIT 1')->fetch();
+		if (!$cur)
+		{
+			return 'Запись пропуска #' . $id . ' не найдена.';
+		}
+		$dup = $conn->query(
+			"SELECT ID FROM mf_brand_import_skip WHERE UF_ALIAS_NORM='"
+				. $h->forSql($aliasNorm) . "' AND ID<>" . $id . " LIMIT 1"
+		)->fetch();
+		if ($dup)
+		{
+			return 'Бренд «' . $aliasRaw . '» уже есть в записи #' . (int)$dup['ID'] . '.';
+		}
+		$now = date('Y-m-d H:i:s');
+		$conn->queryExecute(
+			"UPDATE mf_brand_import_skip SET UF_ALIAS_RAW='"
+				. $h->forSql($aliasRaw) . "', UF_ALIAS_NORM='"
+				. $h->forSql($aliasNorm) . "', UF_ACTIVE='Y', UF_UPDATED_AT='"
+				. $h->forSql($now) . "' WHERE ID=" . $id
+		);
+	}
+	catch (\Throwable $e)
+	{
+		return 'Ошибка сохранения: ' . $e->getMessage();
+	}
+
+	return null;
 }
 
-$conn = Application::getConnection();
-if (!mf_bm_table_exists($conn, 'mf_stock_import_missing'))
-{
-	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
-	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Таблица не найдена: mf_stock_import_missing']);
-	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
-	return;
-}
-
-$h = $conn->getSqlHelper();
 $adminNotice = null;
 
-// Filters: warehouse, brand substring, «only rows without mapping»
-$find_warehouse = trim((string)($_REQUEST['find_warehouse'] ?? ''));
-$find_brand = trim((string)($_REQUEST['find_brand'] ?? ''));
-$bm_only_unmapped = isset($_REQUEST['bm_only_unmapped']) && (string)$_REQUEST['bm_only_unmapped'] === 'Y';
-
-/** Сортировка таблицы ненайденных по колонке «Сейчас сопоставлен»: asc | desc | '' (как в SQL: по имени бренда). */
-$bm_sort_canon = trim((string)($_REQUEST['bm_sort_canon'] ?? ''));
-if (!in_array($bm_sort_canon, ['asc', 'desc'], true))
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && check_bitrix_sessid())
 {
-	$bm_sort_canon = '';
-}
+	$action = trim((string)($_POST['bm_action'] ?? ''));
 
-// Сколько брендов на «странице» (только в браузере, без повторных запросов к серверу)
-$bmPerPage = 50;
+	if ($action === 'add')
+	{
+		$alias = trim((string)($_POST['add_alias'] ?? ''));
+		$mode = trim((string)($_POST['add_mode'] ?? 'map'));
+		$canonSelect = trim((string)($_POST['add_canon'] ?? ''));
+		$canonCustom = trim((string)($_POST['add_canon_custom'] ?? ''));
 
-// Ручное сопоставление: любой текст бренда (не обязан быть в mf_stock_import_missing)
-if (
-	($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
-	&& (string)($_POST['bm_action'] ?? '') === 'manual_map'
-	&& check_bitrix_sessid()
-)
-{
-	$ma = trim((string)($_POST['manual_alias'] ?? ''));
-	$mtSelect = trim((string)($_POST['manual_target'] ?? ''));
-	$mtCustom = trim((string)($_POST['manual_target_custom'] ?? ''));
-	if ($mtCustom !== '')
-	{
-		$mt = $mtCustom;
-	}
-	elseif ($mtSelect === MF_BM_MAP_SKIP)
-	{
-		$mt = MF_BM_MAP_SKIP;
-	}
-	else
-	{
-		$mt = $mtSelect;
-	}
-	if ($ma === '' || $mt === '')
-	{
-		$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Укажи строку бренда (как в файле) и целевой канон: из списка или свой текст в поле ниже.'];
-	}
-	else
-	{
-		$hlM = mf_brand_hl_ensure(true);
-		if ($mt === MF_BM_MAP_SKIP)
-		{
-			if (function_exists('mf_brand_import_skip_set'))
-			{
-				mf_brand_import_skip_set($ma, true);
-			}
-			$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Для введённого бренда включён пропуск при импорте.'];
-		}
-		else
-		{
-			mf_brand_register_alias($hlM, $mt, $ma, true, MF_BM_MANUAL_ALIAS_SORT);
-			$adminNotice = [
-				'TYPE' => 'OK',
-				'MESSAGE' => 'Сохранено сопоставление: «' . mf_bm_escape($ma) . '» → «' . mf_bm_escape($mt) . '» (приоритет '
-					. (int)MF_BM_MANUAL_ALIAS_SORT . ', перекрывает встроенные алиасы с меньшим сортом).',
-			];
-		}
-	}
-}
-
-// Удаление записи ручного сопоставления (HL mf_brand_alias, UF_SORT >= MF_BM_MANUAL_ALIAS_SORT)
-if (
-	($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
-	&& (string)($_POST['bm_action'] ?? '') === 'delete_manual_alias'
-	&& check_bitrix_sessid()
-)
-{
-	$delId = (int)($_POST['delete_id'] ?? 0);
-	if ($delId <= 0)
-	{
-		$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не передан ID записи.'];
-	}
-	else
-	{
-		try
-		{
-			$hlD = mf_brand_hl_ensure(true);
-			$dcD = $hlD['DATA_CLASS'];
-			$rowD = $dcD::getList([
-				'filter' => ['=ID' => $delId],
-				'select' => ['ID', 'UF_SORT'],
-				'limit' => 1,
-			])->fetch();
-			if (!$rowD || (int)($rowD['UF_SORT'] ?? 0) < MF_BM_MANUAL_ALIAS_SORT)
-			{
-				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Запись не найдена или не относится к ручным сопоставлениям.'];
-			}
-			else
-			{
-				$resDel = $dcD::delete($delId);
-				if ($resDel->isSuccess())
-				{
-					if (function_exists('mf_brand_aliases_reset_cache'))
-					{
-						mf_brand_aliases_reset_cache();
-					}
-					$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Ручное сопоставление удалено (ID ' . $delId . ').'];
-				}
-				else
-				{
-					$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не удалось удалить: ' . implode('; ', $resDel->getErrorMessages())];
-				}
-			}
-		}
-		catch (\Throwable $e)
-		{
-			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Ошибка: ' . $e->getMessage()];
-		}
-	}
-}
-
-// Save mappings
-if (
-	($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
-	&& isset($_POST['map'])
-	&& is_array($_POST['map'])
-	&& check_bitrix_sessid()
-)
-{
-	$hl = mf_brand_hl_ensure(true);
-	$saved = 0;
-	$skipped = 0;
-	$mapCustom = isset($_POST['map_custom']) && is_array($_POST['map_custom']) ? $_POST['map_custom'] : [];
-	$mapAliases = array_values(array_unique(array_merge(
-		array_keys($_POST['map']),
-		array_keys($mapCustom)
-	)));
-
-	foreach ($mapAliases as $mapAliasKey)
-	{
-		$alias = trim((string)$mapAliasKey);
-		$fromSelect = trim((string)(($_POST['map'][$mapAliasKey] ?? '')));
-		$customCanon = trim((string)($mapCustom[$mapAliasKey] ?? ''));
-		if ($customCanon !== '')
-		{
-			$canonical = $customCanon;
-		}
-		elseif ($fromSelect === MF_BM_MAP_SKIP)
-		{
-			$canonical = MF_BM_MAP_SKIP;
-		}
-		else
-		{
-			$canonical = $fromSelect;
-		}
 		if ($alias === '')
 		{
-			$skipped++;
-			continue;
+			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Укажите текст бренда (как в прайсе/остатках).'];
 		}
-		if ($canonical === '')
-		{
-			$skipped++;
-			continue;
-		}
-		if ($canonical === MF_BM_MAP_SKIP)
+		elseif ($mode === 'skip')
 		{
 			if (function_exists('mf_brand_import_skip_set'))
 			{
 				mf_brand_import_skip_set($alias, true);
+				$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Бренд «' . $alias . '» помечен: не импортировать.'];
 			}
-			$saved++;
-			continue;
-		}
-		mf_brand_register_alias($hl, $canonical, $alias, true, 100);
-		$saved++;
-	}
-	$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Сохранено записей (сопоставления и «не импортировать»): ' . $saved . ', без изменений: ' . $skipped];
-}
-
-// Warehouses dropdown (from stores + fallback from table)
-$warehouses = [];
-try
-{
-	$rs = StoreTable::getList([
-		'filter' => ['%XML_ID' => 'SUPPLIER_'],
-		'select' => ['XML_ID', 'TITLE'],
-		'order' => ['TITLE' => 'ASC'],
-	]);
-	while ($s = $rs->fetch())
-	{
-		$xml = trim((string)($s['XML_ID'] ?? ''));
-		if ($xml === '') continue;
-		$warehouses[$xml] = (string)($s['TITLE'] ?? $xml);
-	}
-}
-catch (\Throwable $e)
-{
-	// ignore
-}
-try
-{
-	$rs = $conn->query("SELECT DISTINCT UF_WAREHOUSE_XML_ID, UF_WAREHOUSE_TITLE FROM mf_stock_import_missing ORDER BY UF_WAREHOUSE_TITLE ASC LIMIT 3000");
-	while ($r = $rs->fetch())
-	{
-		$xml = trim((string)($r['UF_WAREHOUSE_XML_ID'] ?? ''));
-		if ($xml === '') continue;
-		if (!isset($warehouses[$xml]))
-		{
-			$warehouses[$xml] = (string)($r['UF_WAREHOUSE_TITLE'] ?? $xml);
-		}
-	}
-}
-catch (\Throwable $e)
-{
-	// ignore
-}
-
-// Missing brands list
-$where = "WHERE UF_BRAND IS NOT NULL AND UF_BRAND <> ''";
-if ($find_warehouse !== '')
-{
-	$where .= " AND UF_WAREHOUSE_XML_ID='" . $h->forSql($find_warehouse) . "'";
-}
-if ($find_brand !== '')
-{
-	$where .= " AND UF_BRAND LIKE '%" . $h->forSql($find_brand) . "%'";
-}
-
-$missing = [];
-$missingRaw = [];
-try
-{
-	$rs = $conn->query("
-		SELECT UF_BRAND AS BRAND, COUNT(*) AS CNT, MAX(UF_LAST_SEEN) AS LAST_SEEN
-		FROM mf_stock_import_missing
-		{$where}
-		GROUP BY UF_BRAND
-		ORDER BY BRAND ASC
-	");
-	while ($r = $rs->fetch())
-	{
-		$b = trim((string)($r['BRAND'] ?? ''));
-		if ($b === '')
-		{
-			continue;
-		}
-		$missingRaw[] = [
-			'BRAND' => $b,
-			'CNT' => (int)($r['CNT'] ?? 0),
-			'LAST_SEEN' => (string)($r['LAST_SEEN'] ?? ''),
-		];
-	}
-}
-catch (\Throwable $e)
-{
-	$missingRaw = [];
-}
-
-$normsForBatch = [];
-foreach ($missingRaw as $row)
-{
-	$b = (string)$row['BRAND'];
-	if (!function_exists('mf_brand_norm'))
-	{
-		continue;
-	}
-	$n = mf_brand_norm($b);
-	if ($n !== '')
-	{
-		$normsForBatch[$n] = true;
-	}
-}
-$normList = array_keys($normsForBatch);
-$skipSet = function_exists('mf_bm_batch_import_skip_by_norm') ? mf_bm_batch_import_skip_by_norm($normList) : [];
-$hlForBatch = null;
-try
-{
-	$hlForBatch = mf_brand_hl_ensure(false);
-}
-catch (\Throwable $e)
-{
-	$hlForBatch = null;
-}
-$canonByNorm = mf_bm_batch_alias_canonical_by_norm($normList, $hlForBatch);
-
-foreach ($missingRaw as $row)
-{
-	$b = (string)$row['BRAND'];
-	$n = function_exists('mf_brand_norm') ? mf_brand_norm($b) : '';
-	$isSkip = ($n !== '' && isset($skipSet[$n]));
-	$canon = '';
-	if (!$isSkip && $n !== '')
-	{
-		$canon = (string)($canonByNorm[$n] ?? '');
-	}
-	$missing[] = [
-		'BRAND' => $b,
-		'CNT' => (int)$row['CNT'],
-		'LAST_SEEN' => (string)$row['LAST_SEEN'],
-		'CANON' => $canon,
-		'IS_SKIP' => $isSkip,
-	];
-}
-
-if ($bm_only_unmapped)
-{
-	$missing = array_values(array_filter(
-		$missing,
-		static function (array $m): bool {
-			if (!empty($m['IS_SKIP']))
+			else
 			{
-				return false;
+				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Функция mf_brand_import_skip_set недоступна.'];
 			}
-
-			return trim((string)($m['CANON'] ?? '')) === '';
 		}
-	));
-}
-
-/**
- * Текст колонки «Сейчас сопоставлен» для сортировки (как видит пользователь, без HTML).
- */
-$mf_bm_canon_col_sort_val = static function (array $m): string {
-	if (!empty($m['IS_SKIP']))
-	{
-		return '— не импортировать —';
-	}
-	$c = trim((string)($m['CANON'] ?? ''));
-
-	return $c !== '' ? $c : '—';
-};
-
-if ($bm_sort_canon !== '' && $missing !== [])
-{
-	$dir = $bm_sort_canon === 'desc' ? -1 : 1;
-	usort(
-		$missing,
-		static function (array $a, array $b) use ($dir, $mf_bm_canon_col_sort_val): int {
-			$va = mb_strtolower($mf_bm_canon_col_sort_val($a));
-			$vb = mb_strtolower($mf_bm_canon_col_sort_val($b));
-			$c = strnatcasecmp($va, $vb);
-			if ($c !== 0)
-			{
-				return $c * $dir;
-			}
-
-			return strnatcasecmp((string)$a['BRAND'], (string)$b['BRAND']);
-		}
-	);
-}
-
-$catalogBrands = mf_bm_select_brand_choices($conn, 4);
-$catalogBrandsJsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
-if (defined('JSON_INVALID_UTF8_SUBSTITUTE'))
-{
-	$catalogBrandsJsonFlags |= JSON_INVALID_UTF8_SUBSTITUTE;
-}
-$catalogBrandsJson = json_encode($catalogBrands, $catalogBrandsJsonFlags);
-if (!is_string($catalogBrandsJson))
-{
-	$catalogBrandsJson = '[]';
-}
-$catalogBrandsLookup = array_fill_keys($catalogBrands, true);
-$catalogBrandsCount = count($catalogBrands);
-
-/** Записи HL, созданные блоком «Ручное сопоставление» (UF_SORT >= MF_BM_MANUAL_ALIAS_SORT). */
-$manualAliasRows = [];
-try
-{
-	$hlList = mf_brand_hl_ensure(false);
-	if ($hlList)
-	{
-		$dcList = $hlList['DATA_CLASS'];
-		$rsList = $dcList::getList([
-			'filter' => [
-				'>=UF_SORT' => MF_BM_MANUAL_ALIAS_SORT,
-				'=UF_ACTIVE' => 1,
-			],
-			'select' => ['ID', 'UF_ALIAS', 'UF_CANONICAL', 'UF_SORT', 'UF_UPDATED_AT'],
-			'order' => ['UF_ALIAS' => 'ASC', 'ID' => 'ASC'],
-		]);
-		while ($mr = $rsList->fetch())
+		else
 		{
-			$manualAliasRows[] = $mr;
+			$canon = $canonCustom !== '' ? $canonCustom : $canonSelect;
+			if ($canon === '' || $canon === MF_BM_MAP_SKIP)
+			{
+				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Укажите канонический бренд (из списка или своим текстом).'];
+			}
+			else
+			{
+				$hl = mf_brand_hl_ensure(true);
+				if (!$hl)
+				{
+					$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не удалось открыть HL mf_brand_alias.'];
+				}
+				else
+				{
+					mf_brand_register_alias($hl, $canon, $alias, true, MF_BM_MANUAL_ALIAS_SORT);
+					$adminNotice = [
+						'TYPE' => 'OK',
+						'MESSAGE' => 'Сохранено: «' . $alias . '» → «' . $canon . '» (приоритет ' . MF_BM_MANUAL_ALIAS_SORT . ').',
+					];
+				}
+			}
+		}
+	}
+	elseif ($action === 'update_alias')
+	{
+		$editId = (int)($_POST['edit_id'] ?? 0);
+		$alias = trim((string)($_POST['edit_alias'] ?? ''));
+		$canon = trim((string)($_POST['edit_canon'] ?? ''));
+		$active = (string)($_POST['edit_active'] ?? '') === 'Y';
+
+		$err = mf_bm_update_alias_by_id($editId, $alias, $canon, $active);
+		if ($err !== null)
+		{
+			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => $err];
+		}
+		else
+		{
+			$adminNotice = [
+				'TYPE' => 'OK',
+				'MESSAGE' => 'Сопоставление #' . $editId . ' обновлено: «' . $alias . '» → «' . $canon . '».',
+			];
+		}
+	}
+	elseif ($action === 'update_skip')
+	{
+		$editId = (int)($_POST['edit_id'] ?? 0);
+		$aliasRaw = trim((string)($_POST['edit_skip_alias'] ?? ''));
+
+		$err = mf_bm_update_skip_by_id($editId, $aliasRaw);
+		if ($err !== null)
+		{
+			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => $err];
+		}
+		else
+		{
+			$adminNotice = [
+				'TYPE' => 'OK',
+				'MESSAGE' => 'Запись пропуска #' . $editId . ' обновлена: «' . $aliasRaw . '».',
+			];
+		}
+	}
+	elseif ($action === 'delete_alias')
+	{
+		$delId = (int)($_POST['delete_id'] ?? 0);
+		if ($delId <= 0)
+		{
+			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не передан ID записи.'];
+		}
+		else
+		{
+			try
+			{
+				$hl = mf_brand_hl_ensure(false);
+				if ($hl && !empty($hl['DATA_CLASS']))
+				{
+					$hl['DATA_CLASS']::delete($delId);
+					mf_brand_aliases_reset_cache();
+					$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Сопоставление #' . $delId . ' удалено.'];
+				}
+			}
+			catch (\Throwable $e)
+			{
+				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Ошибка удаления: ' . $e->getMessage()];
+			}
+		}
+	}
+	elseif ($action === 'delete_skip')
+	{
+		$delId = (int)($_POST['delete_id'] ?? 0);
+		if ($delId <= 0)
+		{
+			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Не передан ID записи.'];
+		}
+		elseif (!mf_brand_import_skip_ensure_table())
+		{
+			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Таблица mf_brand_import_skip недоступна.'];
+		}
+		else
+		{
+			try
+			{
+				Application::getConnection()->queryExecute(
+					'DELETE FROM mf_brand_import_skip WHERE ID=' . $delId
+				);
+				$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Запись пропуска #' . $delId . ' удалена.'];
+			}
+			catch (\Throwable $e)
+			{
+				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Ошибка удаления: ' . $e->getMessage()];
+			}
 		}
 	}
 }
-catch (\Throwable $e)
-{
-	$manualAliasRows = [];
-}
 
-$bmN = count($missing);
-$bmTotalPages = $bmN > 0 ? (int)ceil($bmN / $bmPerPage) : 1;
-$bmClientPage = (int)($_GET['bm_page'] ?? 1);
-if ($bmClientPage < 1)
+$catalogBrands = mf_bm_catalog_brand_choices();
+
+$activeOnly = (string)($_REQUEST['active_only'] ?? 'Y') !== 'N';
+$find = trim((string)($_REQUEST['find'] ?? ''));
+$perPage = max(10, min(200, (int)($_REQUEST['per_page'] ?? 50)));
+$page = max(1, (int)($_REQUEST['page'] ?? 1));
+
+$aliasRows = mf_bm_load_alias_rows($activeOnly, $find);
+$skipRows = mf_bm_load_import_skip_rows($find);
+
+$aliasTotal = count($aliasRows);
+$aliasPages = max(1, (int)ceil($aliasTotal / $perPage));
+if ($page > $aliasPages)
 {
-	$bmClientPage = 1;
+	$page = $aliasPages;
 }
-if ($bmClientPage > $bmTotalPages)
-{
-	$bmClientPage = $bmTotalPages;
-}
+$aliasSlice = array_slice($aliasRows, ($page - 1) * $perPage, $perPage);
+
+$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+$curPage = (string)($APPLICATION->GetCurPage() ?? 'mf_brand_map.php');
+$baseUrl = $curPage . '?lang=' . rawurlencode($lang);
+
+$navRemove = ['page'];
+$baseParams = [
+	'lang' => $lang,
+	'active_only' => $activeOnly ? 'Y' : 'N',
+	'find' => $find,
+	'per_page' => (string)$perPage,
+];
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
-$APPLICATION->SetTitle('Сопоставление брендов (импорт складов)');
-
-$bmSortNavRemove = ['sessid', 'bm_page', 'bm_sort_canon'];
-$bmUrlSortAsc = htmlspecialcharsbx($APPLICATION->GetCurPageParam('bm_sort_canon=asc', $bmSortNavRemove));
-$bmUrlSortDesc = htmlspecialcharsbx($APPLICATION->GetCurPageParam('bm_sort_canon=desc', $bmSortNavRemove));
-$bmUrlSortReset = htmlspecialcharsbx($APPLICATION->GetCurPageParam('', $bmSortNavRemove));
+$APPLICATION->SetTitle('Сопоставление брендов');
 
 ?>
-<div style="max-width: 1200px;">
+<style>
+.mf-bss { max-width: 1100px; font-family: var(--ui-font-family-primary, "Helvetica Neue", Helvetica, Arial, sans-serif); color: #333; }
+.mf-bss__lead { margin: 0 0 20px 0; padding: 14px 16px; background: linear-gradient(135deg, #f0f4f8 0%, #e8eef5 100%); border: 1px solid #d5dde8; border-radius: 8px; font-size: 13px; line-height: 1.55; color: #4a5568; }
+.mf-bss__lead strong { color: #1a202c; }
+.mf-bss__lead code { background: rgba(255,255,255,.7); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+.mf-bss__cards { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.mf-bss__card { flex: 1 1 140px; min-width: 120px; padding: 16px 18px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+.mf-bss__card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #718096; margin-bottom: 6px; }
+.mf-bss__card-value { font-size: 28px; font-weight: 600; line-height: 1.1; color: #2d3748; }
+.mf-bss__card-value--sm { font-size: 22px; }
+.mf-bss__card-hint { font-size: 11px; color: #a0aec0; margin-top: 6px; }
+.mf-bss__filters { margin-bottom: 20px; padding: 16px 18px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(15,23,42,.05); }
+.mf-bss__filters-title { font-size: 14px; font-weight: 600; margin: 0 0 14px 0; color: #2d3748; }
+.mf-bss__filters-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 20px; }
+.mf-bss__field label { display: block; font-size: 12px; color: #4a5568; margin-bottom: 5px; }
+.mf-bss__field input[type="text"], .mf-bss__field select {
+	padding: 7px 10px;
+	border: 1px solid #cbd5e0;
+	border-radius: 6px;
+	font-size: 13px;
+	box-sizing: border-box;
+}
+.mf-bss__field input[type="text"] { min-width: 200px; }
+.mf-bss__field select { min-width: 120px; width: auto; max-width: none; }
+/* Bitrix .adm-workarea select { height:27px } — режет текст по вертикали */
+.mf-bss__field select,
+.mf-bss__field select option {
+	line-height: 1.45;
+}
+.mf-bss__field select {
+	height: auto !important;
+	min-height: 2.35em;
+	padding: 8px 28px 8px 10px !important;
+}
+.mf-bss__field select option {
+	padding: 6px 10px;
+	min-height: 1.75em;
+}
+.mf-bss__field--canon { flex: 1 1 280px; max-width: 520px; min-width: 240px; }
+.mf-bss__field--canon select {
+	width: 100%;
+	min-width: 240px;
+	max-width: 520px;
+}
+.mf-bss__field input[type="text"]:focus, .mf-bss__field select:focus { border-color: #4299e1; outline: none; box-shadow: 0 0 0 2px rgba(66,153,225,.2); }
+.mf-bss__checks { display: flex; flex-direction: column; gap: 8px; padding-bottom: 2px; }
+.mf-bss__check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #4a5568; cursor: pointer; user-select: none; }
+.mf-bss__check input { margin: 0; }
+.mf-bss__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mf-bss__reset { font-size: 13px; color: #718096; text-decoration: none; }
+.mf-bss__reset:hover { color: #2b6cb0; text-decoration: underline; }
+.mf-bss__section-title { font-size: 15px; font-weight: 600; margin: 0 0 12px 0; color: #2d3748; }
+.mf-bss__table-wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,.06); margin-bottom: 24px; }
+.mf-bss__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mf-bss__table thead { background: #f7fafc; border-bottom: 1px solid #e2e8f0; }
+.mf-bss__table th { padding: 11px 14px; text-align: left; font-weight: 600; font-size: 12px; color: #4a5568; text-transform: uppercase; letter-spacing: .03em; }
+.mf-bss__table th.mf-bss__th-num { width: 52px; text-align: center; }
+.mf-bss__table th.mf-bss__th-arrow { width: 36px; text-align: center; }
+.mf-bss__table th.mf-bss__th-meta { width: 100px; text-align: center; }
+.mf-bss__table th.mf-bss__th-date { width: 130px; text-align: right; }
+.mf-bss__table td { padding: 10px 14px; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
+.mf-bss__table tbody tr:last-child td { border-bottom: none; }
+.mf-bss__table tbody tr:hover { background: #f7fafc; }
+.mf-bss__table tbody tr:nth-child(even) { background: #fafbfc; }
+.mf-bss__table tbody tr:nth-child(even):hover { background: #f1f5f9; }
+.mf-bss__num { text-align: center; color: #a0aec0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.mf-bss__alias { font-weight: 500; color: #4a5568; }
+.mf-bss__canon { font-weight: 600; color: #2d3748; }
+.mf-bss__arrow { text-align: center; color: #a0aec0; font-size: 16px; }
+.mf-bss__meta { text-align: center; font-variant-numeric: tabular-nums; color: #4a5568; }
+.mf-bss__date { text-align: right; color: #718096; font-size: 12px; white-space: nowrap; }
+.mf-bss__badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.mf-bss__badge--ok { background: #c6f6d5; color: #22543d; }
+.mf-bss__badge--off { background: #fed7d7; color: #742a2a; }
+.mf-bss__badge--skip { background: #feebc8; color: #7b341e; }
+.mf-bss__empty { padding: 32px 20px; text-align: center; color: #718096; font-size: 14px; }
+.mf-bss__pager { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+.mf-bss__pager-btn { display: inline-block; padding: 6px 12px; border: 1px solid #cbd5e0; border-radius: 6px; background: #fff; color: #2b6cb0; text-decoration: none; font-size: 13px; }
+.mf-bss__pager-btn:hover { background: #ebf8ff; border-color: #90cdf4; }
+.mf-bss__pager-btn--cur { background: #4299e1; border-color: #4299e1; color: #fff; pointer-events: none; }
+.mf-bss__footer { margin-top: 8px; padding-top: 14px; font-size: 12px; color: #718096; line-height: 1.6; }
+.mf-bss__footer a { color: #2b6cb0; text-decoration: none; }
+.mf-bss__footer a:hover { text-decoration: underline; }
+.mf-bss__add { margin-bottom: 20px; padding: 16px 18px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(15,23,42,.05); }
+.mf-bss__add-hint { font-size: 12px; color: #718096; margin: 0 0 12px 0; line-height: 1.45; }
+.mf-bss__add-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 18px; }
+.mf-bss__field--wide input[type="text"] { min-width: 260px; }
+.mf-bss__th-actions { width: 150px; text-align: center; }
+.mf-bss__actions-cell { text-align: center; white-space: nowrap; }
+.mf-bss__row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; }
+.mf-bss__inp-cell { min-width: 120px; }
+.mf-bss__inp-cell input[type="text"] {
+	width: 100%;
+	min-width: 100px;
+	max-width: 280px;
+	padding: 6px 8px;
+	font-size: 13px;
+}
+.mf-bss__inp-cell--canon select {
+	width: 100%;
+	min-width: 180px;
+	max-width: 320px;
+}
+.mf-bss__check-inline {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 12px;
+	color: #4a5568;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.mf-bss__check-inline input { margin: 0; }
+.mf-bss__btn-save { font-size: 12px; color: #2b6cb0; background: #ebf8ff; border: 1px solid #90cdf4; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.mf-bss__btn-save:hover { background: #bee3f8; }
+.mf-bss__btn-del { font-size: 12px; color: #c53030; background: transparent; border: 1px solid #feb2b2; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.mf-bss__btn-del:hover { background: #fff5f5; }
+.mf-bss__sort-readonly { color: #a0aec0; font-size: 12px; }
+.adm-workarea .mf-bss select {
+	height: auto !important;
+	min-height: 2.35em !important;
+	line-height: 1.45 !important;
+	padding-top: 8px !important;
+	padding-bottom: 8px !important;
+}
+.adm-workarea .mf-bss__field--canon select {
+	max-width: 520px !important;
+	width: 100% !important;
+}
+</style>
+
+<div class="mf-bss">
+	<div class="mf-bss__lead">
+		Справочник <strong>алиас → канон</strong> из HL <code>mf_brand_alias</code>: как бренд приходит в прайсе/остатках и во что он переводится при импорте.
+		Отдельно — бренды из <code>mf_brand_import_skip</code>, которые <strong>не импортируются</strong>.
+		Ниже можно <strong>добавить</strong> сопоставление или пометку «не импортировать»; в таблицах — <strong>редактирование</strong> и удаление.
+	</div>
+
 	<?php if (is_array($adminNotice)): ?>
 		<?php \CAdminMessage::ShowMessage($adminNotice); ?>
 	<?php endif; ?>
 
-	<div style="margin: 8px 0 12px 0; color:#666;">
-		Слева бренды из <code>mf_stock_import_missing</code>. Выбери канонический бренд из каталога — сохраним как alias→canonical в HL <code>mf_brand_alias</code>.
-		Вариант «Не сопоставлять» помечает бренд в таблице <code>mf_brand_import_skip</code>: такие строки не обрабатываются при импорте остатков и при загрузке внешних прайсов (остатки и цены по ним не меняются).
-		<br/>Список в селекте: <code>MF_BRAND</code> у выгружаемых активных товаров + каноны из <code>mf_brand_alias</code>.
-		Можно указать <b>свой канон текстом</b> (поле под селектом в таблице и в блоке ручного сопоставления): непустое значение сохраняется вместо выбора из списка — удобно, если нужного написания ещё нет среди товаров каталога.
-		<br/>Блок <b>ниже</b> нужен, если в файле поставщика встречается бренд, которого <b>нет</b> в списке «ненайденных» (он уже сопоставляется с товарами) — например, завести «Ski-Doo» → «BRP» при существующем в каталоге Ski-Doo. Сохраняется с приоритетом, выше встроенных правил.
-	</div>
-
-	<form method="get" action="<?= mf_bm_escape($APPLICATION->GetCurPage()) ?>">
-		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
-		<?php if ($bm_sort_canon !== ''): ?>
-			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
-		<?php endif; ?>
-		<div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin-bottom:8px;">
-			<div>
-				<label style="display:block;margin-bottom:4px;">Склад</label>
-				<select name="find_warehouse" style="min-width:380px;" onchange="this.form.submit();">
-					<option value="" <?= ($find_warehouse === '' ? 'selected' : '') ?>>— все —</option>
-					<?php foreach ($warehouses as $xml => $title): ?>
-						<option value="<?= mf_bm_escape((string)$xml) ?>" <?= ($find_warehouse === (string)$xml ? 'selected' : '') ?>>
-							<?= mf_bm_escape((string)$title) ?> (<?= mf_bm_escape((string)$xml) ?>)
-						</option>
-					<?php endforeach; ?>
+	<form method="post" action="<?= mf_bm_escape($curPage) ?>" class="mf-bss__add">
+		<?= bitrix_sessid_post() ?>
+		<input type="hidden" name="lang" value="<?= mf_bm_escape($lang) ?>">
+		<input type="hidden" name="bm_action" value="add">
+		<input type="hidden" name="active_only" value="<?= $activeOnly ? 'Y' : 'N' ?>">
+		<input type="hidden" name="find" value="<?= mf_bm_escape($find) ?>">
+		<input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
+		<input type="hidden" name="page" value="<?= (int)$page ?>">
+		<div class="mf-bss__filters-title">Добавить запись</div>
+		<p class="mf-bss__add-hint">
+			Текст бренда — <b>как в файле поставщика</b>. Выберите канон из списка или укажите свой («Свой канон» в приоритете, если заполнен).
+			Приоритет новых сопоставлений: <?= (int)MF_BM_MANUAL_ALIAS_SORT ?>.
+		</p>
+		<div class="mf-bss__add-row">
+			<div class="mf-bss__field mf-bss__field--wide">
+				<label for="mf_bm_add_alias">Бренд в файле (алиас)</label>
+				<input type="text" name="add_alias" id="mf_bm_add_alias" value="" placeholder="например Ski-Doo" required>
+			</div>
+			<div class="mf-bss__field">
+				<label for="mf_bm_add_mode">Действие</label>
+				<select name="add_mode" id="mf_bm_add_mode">
+					<option value="map">Сопоставить с каноном</option>
+					<option value="skip">Не импортировать</option>
 				</select>
 			</div>
-			<div>
-				<label style="display:block;margin-bottom:4px;">Бренд содержит</label>
-				<input type="text" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>" placeholder="подстрока" style="min-width:200px;padding:4px 8px;" />
+			<div class="mf-bss__field mf-bss__field--canon">
+				<label for="mf_bm_add_canon">Канон (из каталога)</label>
+				<select name="add_canon" id="mf_bm_add_canon" title="Канонический бренд из MF_BRAND">
+					<?= mf_bm_canon_options_html($catalogBrands) ?>
+				</select>
 			</div>
-			<div style="padding-bottom:4px;">
-				<label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;">
-					<input type="checkbox" name="bm_only_unmapped" value="Y" <?= $bm_only_unmapped ? 'checked' : '' ?> />
-					Только без сопоставления
+			<div class="mf-bss__field mf-bss__field--wide">
+				<label for="mf_bm_add_canon_custom">Свой канон (необязательно)</label>
+				<input type="text" name="add_canon_custom" id="mf_bm_add_canon_custom" value="" placeholder="если нет в списке">
+			</div>
+			<div class="mf-bss__actions">
+				<input type="submit" class="adm-btn-save" value="Сохранить">
+			</div>
+		</div>
+	</form>
+	<script>
+	(function () {
+		var sel = document.getElementById('mf_bm_add_canon');
+		if (!sel) { return; }
+		function syncTitle() {
+			var opt = sel.options[sel.selectedIndex];
+			sel.title = opt ? (opt.text || opt.value || '') : '';
+		}
+		sel.addEventListener('change', syncTitle);
+		syncTitle();
+	})();
+	</script>
+
+	<select id="mf_bm_canon_options_tpl" class="mf-bss__canon-tpl" hidden aria-hidden="true" tabindex="-1">
+		<?= mf_bm_canon_options_html($catalogBrands) ?>
+	</select>
+
+	<form method="get" action="<?= mf_bm_escape($curPage) ?>" class="mf-bss__filters">
+		<input type="hidden" name="lang" value="<?= mf_bm_escape($lang) ?>">
+		<div class="mf-bss__filters-title">Фильтры</div>
+		<div class="mf-bss__filters-row">
+			<div class="mf-bss__checks">
+				<label class="mf-bss__check">
+					<input type="checkbox" name="active_only" value="Y" <?= $activeOnly ? 'checked' : '' ?>>
+					Только активные сопоставления
 				</label>
 			</div>
-			<div>
-				<input type="submit" class="adm-btn" value="Применить" />
+			<div class="mf-bss__field">
+				<label for="mf_bm_find">Поиск (алиас или канон)</label>
+				<input type="text" id="mf_bm_find" name="find" value="<?= mf_bm_escape($find) ?>" placeholder="например Ski-Doo">
 			</div>
-		</div>
-	</form>
-
-	<form method="post" action="<?= mf_bm_escape($APPLICATION->GetCurPageParam('', ['sessid'])) ?>" style="margin:14px 0 18px 0; padding:12px; border:1px solid #d0d4dc; background:#f9fafb; border-radius:2px; max-width: 1160px;">
-		<?= bitrix_sessid_post() ?>
-		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
-		<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
-		<input type="hidden" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>">
-		<?php if ($bm_only_unmapped): ?>
-			<input type="hidden" name="bm_only_unmapped" value="Y">
-		<?php endif; ?>
-		<?php if ($bm_sort_canon !== ''): ?>
-			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
-		<?php endif; ?>
-		<input type="hidden" name="bm_action" value="manual_map">
-		<div style="font-weight:600; margin-bottom:8px;">Ручное сопоставление (любой текст бренда)</div>
-		<div style="color:#555; font-size:13px; margin-bottom:10px; line-height:1.4;">
-			Впиши строку <b>как в прайсе/остатках</b> и укажи канон: из списка или <b>свой текст</b> в поле ниже (непустое поле заменяет выбор в списке; для «Не сопоставлять» список оставь, поле своего канона очисти).
-			Это не меняет уже записанные на товарах значения <code>MF_BRAND</code>, только логику поиска/матчинг при загрузке.
-		</div>
-		<div style="display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px;">
-			<div>
-				<label for="id_manual_alias" style="display:block; margin-bottom:4px; color:#333;">Текст бренда (из файла)</label>
-				<input type="text" name="manual_alias" id="id_manual_alias" value="" placeholder="например Ski-Doo" style="min-width:280px; padding:4px 8px;"/>
-			</div>
-			<div style="min-width:360px;">
-				<label for="id_manual_target" style="display:block; margin-bottom:4px; color:#333;">Считать как бренд каталога (список)</label>
-				<select name="manual_target" id="id_manual_target" style="width:100%; max-width:420px; padding:4px 8px;">
-					<option value="">— выбери —</option>
-					<option value="<?= mf_bm_escape(MF_BM_MAP_SKIP) ?>">— Не сопоставлять (пропуск при импорте) —</option>
-					<?php foreach ($catalogBrands as $bCh): ?>
-						<option value="<?= mf_bm_escape((string)$bCh) ?>"><?= mf_bm_escape((string)$bCh) ?></option>
+			<div class="mf-bss__field">
+				<label for="mf_bm_per_page">На странице</label>
+				<select name="per_page" id="mf_bm_per_page">
+					<?php foreach ([25, 50, 100, 200] as $pp): ?>
+						<option value="<?= (int)$pp ?>" <?= $perPage === $pp ? 'selected' : '' ?>><?= (int)$pp ?></option>
 					<?php endforeach; ?>
 				</select>
-				<label for="id_manual_target_custom" style="display:block; margin:8px 0 4px 0; color:#333;">Свой канон (если заполнено — в приоритете над списком)</label>
-				<input type="text" name="manual_target_custom" id="id_manual_target_custom" value="" placeholder="например HONDA или W.S.M." style="width:100%; max-width:420px; padding:4px 8px;"/>
 			</div>
-			<div>
-				<input type="submit" class="adm-btn-save" name="bm_manual_save" value="Сохранить в словарь"/>
+			<div class="mf-bss__actions">
+				<input type="submit" class="adm-btn-save" value="Показать">
+				<a class="mf-bss__reset" href="<?= mf_bm_escape($baseUrl) ?>">Сбросить</a>
 			</div>
 		</div>
 	</form>
 
-	<div style="margin: 0 0 22px 0; max-width: 1160px;">
-		<div style="font-weight:600; margin-bottom:6px;">Список ручных сопоставлений</div>
-		<div style="color:#555; font-size:13px; margin-bottom:8px; line-height:1.4;">
-			Здесь только записи с приоритетом <b>≥ <?= (int)MF_BM_MANUAL_ALIAS_SORT ?></b> (кнопка «Сохранить в словарь»). Сопоставления из списка ненайденных ниже
-			(сорт 100) сюда не попадают. Полные данные по всем алиасам смотри в Bitrix: <b>Highload-блоки</b> → сущность MfBrandAlias, таблица
-			<code>mf_brand_alias</code>.
+	<div class="mf-bss__cards">
+		<div class="mf-bss__card">
+			<div class="mf-bss__card-label">Сопоставлений</div>
+			<div class="mf-bss__card-value"><?= number_format($aliasTotal, 0, '', ' ') ?></div>
+			<?php if ($aliasPages > 1): ?>
+				<div class="mf-bss__card-hint">стр. <?= (int)$page ?> из <?= (int)$aliasPages ?></div>
+			<?php endif; ?>
 		</div>
-		<?php if (empty($manualAliasRows)): ?>
-			<div style="color:#888;">Пока нет таких записей.</div>
-		<?php else: ?>
-		<table class="adm-list-table" style="width:100%;">
-			<thead>
-			<tr class="adm-list-table-header">
-				<td class="adm-list-table-cell">ID</td>
-				<td class="adm-list-table-cell">Алиас (текст из файла)</td>
-				<td class="adm-list-table-cell">→ канон (каталог)</td>
-				<td class="adm-list-table-cell">Сорт</td>
-				<td class="adm-list-table-cell">Обновлено</td>
-				<td class="adm-list-table-cell"></td>
-			</tr>
-			</thead>
-			<tbody>
-			<?php foreach ($manualAliasRows as $mar): ?>
-				<?php
-				$mid = (int)($mar['ID'] ?? 0);
-				$mAlias = (string)($mar['UF_ALIAS'] ?? '');
-				$mCanon = (string)($mar['UF_CANONICAL'] ?? '');
-				$mSort = (int)($mar['UF_SORT'] ?? 0);
-				$mUpd = $mar['UF_UPDATED_AT'] ?? null;
-				$mUpdStr = '—';
-				if ($mUpd !== null && $mUpd !== '')
-				{
-					if (is_object($mUpd) && method_exists($mUpd, 'format'))
-					{
-						$mUpdStr = (string)$mUpd->format('Y-m-d H:i');
-					}
-					else
-					{
-						$mUpdStr = (string)$mUpd;
-					}
-				}
-				?>
-				<tr class="adm-list-table-row">
-					<td class="adm-list-table-cell"><?= $mid ?></td>
-					<td class="adm-list-table-cell"><b><?= mf_bm_escape($mAlias) ?></b></td>
-					<td class="adm-list-table-cell"><?= mf_bm_escape($mCanon) ?></td>
-					<td class="adm-list-table-cell"><?= (int)$mSort ?></td>
-					<td class="adm-list-table-cell"><?= mf_bm_escape($mUpdStr) ?></td>
-					<td class="adm-list-table-cell" style="white-space:nowrap;">
-						<form method="post" action="<?= mf_bm_escape($APPLICATION->GetCurPageParam('', ['sessid'])) ?>" style="display:inline;margin:0;" onsubmit="return confirm('Удалить сопоставление #<?= (int)$mid ?>?');">
-							<?= bitrix_sessid_post() ?>
-							<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
-							<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
-							<input type="hidden" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>">
-							<?php if ($bm_only_unmapped): ?>
-								<input type="hidden" name="bm_only_unmapped" value="Y">
-							<?php endif; ?>
-							<?php if ($bm_sort_canon !== ''): ?>
-								<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
-							<?php endif; ?>
-							<input type="hidden" name="bm_action" value="delete_manual_alias">
-							<input type="hidden" name="delete_id" value="<?= (int)$mid ?>">
-							<button type="submit" class="adm-btn" style="font-size:12px;">Удалить</button>
-						</form>
-					</td>
-				</tr>
-			<?php endforeach; ?>
-			</tbody>
-		</table>
-		<?php endif; ?>
+		<div class="mf-bss__card">
+			<div class="mf-bss__card-label">Не импортировать</div>
+			<div class="mf-bss__card-value"><?= number_format(count($skipRows), 0, '', ' ') ?></div>
+			<div class="mf-bss__card-hint">mf_brand_import_skip</div>
+		</div>
 	</div>
 
-	<?php
-	$bmShowFrom0 = $bmN > 0 ? (($bmClientPage - 1) * $bmPerPage + 1) : 0;
-	$bmShowTo0 = $bmN > 0 ? min($bmClientPage * $bmPerPage, $bmN) : 0;
-	?>
-	<div id="bm-client-pager" data-bm-total-pages="<?= (int)$bmTotalPages ?>"
-		data-bm-initial="<?= (int)$bmClientPage ?>"
-		data-bm-per="<?= (int)$bmPerPage ?>"
-		data-bm-cur-url="<?= mf_bm_escape((string)$APPLICATION->GetCurPage()) ?>"
-		data-bm-lang="<?= mf_bm_escape((string)LANGUAGE_ID) ?>"
-		data-bm-warehouse="<?= mf_bm_escape($find_warehouse) ?>"
-		data-bm-find-brand="<?= mf_bm_escape($find_brand) ?>"
-		data-bm-only-unmapped="<?= $bm_only_unmapped ? '1' : '0' ?>"
-		data-bm-sort-canon="<?= mf_bm_escape($bm_sort_canon) ?>"
-		data-bm-n="<?= (int)$bmN ?>">
-		<?php if ($bmN > 0): ?>
-			<div class="js-bm-range" style="margin:10px 0 6px 0; color:#555;">
-				Показаны бренды <b class="js-bm-from"><?= (int)$bmShowFrom0 ?></b>–<b class="js-bm-to"><?= (int)$bmShowTo0 ?></b> из <b class="js-bm-total"><?= (int)$bmN ?></b>
-				(по <?= (int)$bmPerPage ?> на странице<span class="js-bm-pagenum-wrap"<?= $bmTotalPages < 2 ? ' style="display:none;"' : '' ?>>, стр. <span class="js-bm-curpage"><?= (int)$bmClientPage ?></span> из <span class="js-bm-ntp"><?= (int)$bmTotalPages ?></span></span>).
-				Перелистывание без запроса к серверу.
-				Сортировка по колонке «Сейчас сопоставлен» — ссылки <b>↑</b> <b>↓</b> в заголовке таблицы (по тексту как на экране; «сброс» — снова порядок по имени бренда из базы).
-				<br/><span style="color:#555;">В выпадашках — <strong><?= (int)$catalogBrandsCount ?></strong> брендов каталога (<code>MF_BRAND</code>); подгружаются в браузере для <b>текущей</b> страницы пагинации (кнопки «Назад / Вперёд»). Если видите только «не менять» и «не сопоставлять» — перелистните страницу ещё раз или обновите <code>mf_refresh_ce_brand_choices_cache.php</code>.</span>
-			</div>
-			<div class="js-bm-nav bm-pager-ui" style="margin:0 0 12px 0;contain:layout;isolation:isolate;transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden;user-select:none;touch-action:manipulation;"></div>
-		<?php endif; ?>
-
-		<form method="post" action="<?= mf_bm_escape($APPLICATION->GetCurPageParam('', ['sessid'])) ?>" style="margin-top:0;">
-		<?= bitrix_sessid_post() ?>
-		<input type="hidden" name="lang" value="<?= mf_bm_escape((string)LANGUAGE_ID) ?>">
-		<input type="hidden" name="find_warehouse" value="<?= mf_bm_escape($find_warehouse) ?>">
-		<input type="hidden" name="find_brand" value="<?= mf_bm_escape($find_brand) ?>">
-		<?php if ($bm_only_unmapped): ?>
-			<input type="hidden" name="bm_only_unmapped" value="Y">
-		<?php endif; ?>
-		<?php if ($bm_sort_canon !== ''): ?>
-			<input type="hidden" name="bm_sort_canon" value="<?= mf_bm_escape($bm_sort_canon) ?>">
-		<?php endif; ?>
-
-		<table class="adm-list-table" style="width:100%;margin-top:10px;">
-			<thead>
-			<tr class="adm-list-table-header">
-				<td class="adm-list-table-cell">Бренд (в ненайденных)</td>
-				<td class="adm-list-table-cell">Кол-во</td>
-				<td class="adm-list-table-cell">Последнее</td>
-				<td class="adm-list-table-cell">
-					<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;">
-						<span>Сейчас сопоставлен</span>
-						<span style="font-weight:normal;white-space:nowrap;color:#555;">
-							<?php if ($bm_sort_canon === 'asc'): ?>
-								<strong title="По возрастанию">↑</strong>
-							<?php else: ?>
-								<a href="<?= $bmUrlSortAsc ?>" title="По возрастанию значения в колонке">↑</a>
-							<?php endif; ?>
-							<?php if ($bm_sort_canon === 'desc'): ?>
-								<strong title="По убыванию">↓</strong>
-							<?php else: ?>
-								<a href="<?= $bmUrlSortDesc ?>" title="По убыванию значения в колонке">↓</a>
-							<?php endif; ?>
-							<?php if ($bm_sort_canon !== ''): ?>
-								<a href="<?= $bmUrlSortReset ?>" title="Сортировка как в базе (по имени бренда)" style="font-size:11px;margin-left:2px;">сброс</a>
-							<?php endif; ?>
-						</span>
-					</span>
-				</td>
-				<td class="adm-list-table-cell">Сопоставить с брендом каталога / свой канон</td>
-			</tr>
-			</thead>
-			<tbody>
-			<?php if (empty($missing)): ?>
-				<tr class="adm-list-table-row">
-					<td class="adm-list-table-cell" colspan="5">Нет данных.</td>
+	<h2 class="mf-bss__section-title">Сопоставления</h2>
+	<div class="mf-bss__table-wrap">
+		<?php if ($aliasTotal === 0): ?>
+			<div class="mf-bss__empty">Нет записей по выбранным фильтрам.</div>
+		<?php else: ?>
+			<table class="mf-bss__table">
+				<thead>
+				<tr>
+					<th class="mf-bss__th-num">#</th>
+					<th>Алиас</th>
+					<th class="mf-bss__th-arrow"></th>
+					<th>Канон</th>
+					<th class="mf-bss__th-meta">Приоритет</th>
+					<th class="mf-bss__th-meta">Статус</th>
+					<th class="mf-bss__th-date">Обновлено</th>
+					<th class="mf-bss__th-actions"></th>
 				</tr>
-			<?php else: ?>
-				<?php foreach ($missing as $bmIdx => $m): ?>
-					<?php
-					$alias = (string)$m['BRAND'];
-					$canon = (string)$m['CANON'];
-					$isSkip = !empty($m['IS_SKIP']);
-					$bmInPage = $bmIdx >= ($bmClientPage - 1) * $bmPerPage && $bmIdx < $bmClientPage * $bmPerPage;
+				</thead>
+				<tbody>
+				<?php
+				$rowNum = ($page - 1) * $perPage;
+				foreach ($aliasSlice as $row):
+					$rowNum++;
+					$rowId = (int)($row['ID'] ?? 0);
+					$isActive = !empty($row['UF_ACTIVE']);
+					$formId = 'mf_bm_alias_' . $rowId;
+					$aliasVal = (string)($row['UF_ALIAS'] ?? '');
+					$canonVal = (string)($row['UF_CANONICAL'] ?? '');
 					?>
-					<tr class="adm-list-table-row js-bm-row" data-bm-i="<?= (int)$bmIdx ?>"
-						<?= $bmInPage ? '' : ' style="display:none;"' ?>>
-						<td class="adm-list-table-cell"><b><?= mf_bm_escape($alias) ?></b></td>
-						<td class="adm-list-table-cell"><?= (int)$m['CNT'] ?></td>
-						<td class="adm-list-table-cell"><?= mf_bm_escape((string)$m['LAST_SEEN']) ?></td>
-						<td class="adm-list-table-cell"><?= $isSkip ? '— не импортировать —' : ($canon !== '' ? mf_bm_escape($canon) : '—') ?></td>
-						<td class="adm-list-table-cell">
-							<?php
-							$bmPrefCatalog = '';
-							if (!$isSkip && $canon !== '' && isset($catalogBrandsLookup[$canon]))
-							{
-								$bmPrefCatalog = $canon;
-							}
-							?>
-							<select name="map[<?= mf_bm_escape($alias) ?>]" class="js-bm-catalog-select" style="min-width:420px;" data-bm-pref="<?= htmlspecialcharsbx($bmPrefCatalog) ?>">
-								<option value="">— не менять —</option>
-								<option value="<?= mf_bm_escape(MF_BM_MAP_SKIP) ?>" <?= ($isSkip ? 'selected' : '') ?>>— Не сопоставлять (пропуск при импорте) —</option>
-								<?php if ($canon !== '' && !isset($catalogBrandsLookup[$canon])): ?>
-									<option value="<?= mf_bm_escape($canon) ?>" <?= (!$isSkip ? 'selected' : '') ?>><?= mf_bm_escape($canon) ?> (текущий)</option>
-								<?php endif; ?>
+					<tr>
+						<td class="mf-bss__num"><?= $rowNum ?></td>
+						<td class="mf-bss__inp-cell">
+							<label class="adm-invisible">Алиас</label>
+							<input
+								type="text"
+								form="<?= mf_bm_escape($formId) ?>"
+								name="edit_alias"
+								value="<?= mf_bm_escape($aliasVal) ?>"
+								title="<?= mf_bm_escape($aliasVal) ?>"
+							>
+						</td>
+						<td class="mf-bss__arrow" aria-hidden="true">→</td>
+						<td class="mf-bss__inp-cell mf-bss__inp-cell--canon">
+							<label class="adm-invisible">Канон</label>
+							<select
+								form="<?= mf_bm_escape($formId) ?>"
+								name="edit_canon"
+								class="js-mf-bm-edit-canon"
+								data-selected="<?= mf_bm_escape($canonVal) ?>"
+								title="<?= mf_bm_escape($canonVal) ?>"
+							>
+								<option value="">— загрузка списка —</option>
 							</select>
-							<div style="margin-top:6px;">
-								<label style="font-size:12px;color:#555;display:block;margin-bottom:2px;">Свой канон (необязательно; если заполнено — сохранится вместо выбора выше)</label>
-								<input type="text" name="map_custom[<?= mf_bm_escape($alias) ?>]" value="" placeholder="<?= mf_bm_escape('Свой текст канона') ?>" style="min-width:420px;max-width:100%;padding:4px 8px;box-sizing:border-box;"/>
+						</td>
+						<td class="mf-bss__meta mf-bss__sort-readonly" title="Приоритет не меняется при редактировании"><?= (int)($row['UF_SORT'] ?? 0) ?></td>
+						<td class="mf-bss__meta">
+							<label class="mf-bss__check-inline" title="Активно">
+								<input
+									type="checkbox"
+									form="<?= mf_bm_escape($formId) ?>"
+									name="edit_active"
+									value="Y"
+									<?= $isActive ? 'checked' : '' ?>
+								>
+								<?= $isActive ? 'вкл' : 'выкл' ?>
+							</label>
+						</td>
+						<td class="mf-bss__date"><?= mf_bm_escape(mf_bm_format_dt($row['UF_UPDATED_AT'] ?? null)) ?></td>
+						<td class="mf-bss__actions-cell">
+							<div class="mf-bss__row-actions">
+								<button type="submit" form="<?= mf_bm_escape($formId) ?>" class="mf-bss__btn-save">Сохранить</button>
+								<form method="post" action="<?= mf_bm_escape($curPage) ?>" style="margin:0;display:inline;" onsubmit="return confirm('Удалить сопоставление #<?= $rowId ?>?');">
+									<?= bitrix_sessid_post() ?>
+									<input type="hidden" name="lang" value="<?= mf_bm_escape($lang) ?>">
+									<input type="hidden" name="bm_action" value="delete_alias">
+									<input type="hidden" name="delete_id" value="<?= $rowId ?>">
+									<input type="hidden" name="active_only" value="<?= $activeOnly ? 'Y' : 'N' ?>">
+									<input type="hidden" name="find" value="<?= mf_bm_escape($find) ?>">
+									<input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
+									<input type="hidden" name="page" value="<?= (int)$page ?>">
+									<button type="submit" class="mf-bss__btn-del">Удалить</button>
+								</form>
 							</div>
+							<form id="<?= mf_bm_escape($formId) ?>" method="post" action="<?= mf_bm_escape($curPage) ?>" style="display:none;">
+								<?= bitrix_sessid_post() ?>
+								<input type="hidden" name="lang" value="<?= mf_bm_escape($lang) ?>">
+								<input type="hidden" name="bm_action" value="update_alias">
+								<input type="hidden" name="edit_id" value="<?= $rowId ?>">
+								<input type="hidden" name="active_only" value="<?= $activeOnly ? 'Y' : 'N' ?>">
+								<input type="hidden" name="find" value="<?= mf_bm_escape($find) ?>">
+								<input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
+								<input type="hidden" name="page" value="<?= (int)$page ?>">
+							</form>
 						</td>
 					</tr>
 				<?php endforeach; ?>
-			<?php endif; ?>
-			</tbody>
-		</table>
-
-		<?php if ($bmN > 0): ?>
-			<div class="js-bm-nav bm-pager-ui" style="margin:12px 0 0 0;contain:layout;isolation:isolate;transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden;user-select:none;touch-action:manipulation;"></div>
+				</tbody>
+			</table>
 		<?php endif; ?>
-
-		<div style="margin-top:12px;">
-			<input type="submit" class="adm-btn-save" value="Сохранить сопоставления">
-		</div>
-	</form>
 	</div>
 
-<script type="application/json" id="mf-bm-catalog-brands-json"><?= $catalogBrandsJson ?></script>
-<script>
-(function () {
-	var root = document.getElementById("bm-client-pager");
-	if (!root) return;
+	<?php if ($aliasPages > 1): ?>
+		<div class="mf-bss__pager">
+			<?php
+			$lo = max(1, $page - 3);
+			$hi = min($aliasPages, $page + 3);
+			if ($page > 1):
+				$params = $baseParams;
+				$params['page'] = (string)($page - 1);
+				$url = htmlspecialcharsbx($APPLICATION->GetCurPageParam(http_build_query($params), $navRemove));
+				?>
+				<a class="mf-bss__pager-btn" href="<?= $url ?>">← Назад</a>
+			<?php endif;
+			for ($p = $lo; $p <= $hi; $p++):
+				$params = $baseParams;
+				$params['page'] = (string)$p;
+				$url = htmlspecialcharsbx($APPLICATION->GetCurPageParam(http_build_query($params), $navRemove));
+				$cls = $p === $page ? 'mf-bss__pager-btn mf-bss__pager-btn--cur' : 'mf-bss__pager-btn';
+				?>
+				<a class="<?= $cls ?>" href="<?= $url ?>"><?= (int)$p ?></a>
+			<?php endfor;
+			if ($page < $aliasPages):
+				$params = $baseParams;
+				$params['page'] = (string)($page + 1);
+				$url = htmlspecialcharsbx($APPLICATION->GetCurPageParam(http_build_query($params), $navRemove));
+				?>
+				<a class="mf-bss__pager-btn" href="<?= $url ?>">Вперёд →</a>
+			<?php endif; ?>
+		</div>
+	<?php endif; ?>
 
-	var rows = Array.prototype.slice.call(root.querySelectorAll("tr.js-bm-row"));
-	var n = rows.length;
-	if (n < 1) return;
+	<h2 class="mf-bss__section-title">Не импортировать</h2>
+	<div class="mf-bss__table-wrap">
+		<?php if ($skipRows === []): ?>
+			<div class="mf-bss__empty">
+				Нет активных записей<?= !function_exists('mf_brand_import_skip_ensure_table') ? ' (таблица ещё не создана)' : '' ?>.
+			</div>
+		<?php else: ?>
+			<table class="mf-bss__table">
+				<thead>
+				<tr>
+					<th class="mf-bss__th-num">#</th>
+					<th>Бренд в файле</th>
+					<th class="mf-bss__th-meta">Пометка</th>
+					<th class="mf-bss__th-date">Обновлено</th>
+					<th class="mf-bss__th-actions"></th>
+				</tr>
+				</thead>
+				<tbody>
+				<?php $n = 0; foreach ($skipRows as $row): $n++;
+					$skipId = (int)($row['ID'] ?? 0);
+					$skipFormId = 'mf_bm_skip_' . $skipId;
+					$skipVal = (string)($row['UF_ALIAS_RAW'] ?? '');
+					?>
+					<tr>
+						<td class="mf-bss__num"><?= $n ?></td>
+						<td class="mf-bss__inp-cell">
+							<label class="adm-invisible">Бренд в файле</label>
+							<input
+								type="text"
+								form="<?= mf_bm_escape($skipFormId) ?>"
+								name="edit_skip_alias"
+								value="<?= mf_bm_escape($skipVal) ?>"
+								title="<?= mf_bm_escape($skipVal) ?>"
+							>
+						</td>
+						<td class="mf-bss__meta"><span class="mf-bss__badge mf-bss__badge--skip">пропуск</span></td>
+						<td class="mf-bss__date"><?= mf_bm_escape(mf_bm_format_dt($row['UF_UPDATED_AT'] ?? null)) ?></td>
+						<td class="mf-bss__actions-cell">
+							<div class="mf-bss__row-actions">
+								<button type="submit" form="<?= mf_bm_escape($skipFormId) ?>" class="mf-bss__btn-save">Сохранить</button>
+								<form method="post" action="<?= mf_bm_escape($curPage) ?>" style="margin:0;display:inline;" onsubmit="return confirm('Удалить запись пропуска #<?= $skipId ?>?');">
+									<?= bitrix_sessid_post() ?>
+									<input type="hidden" name="lang" value="<?= mf_bm_escape($lang) ?>">
+									<input type="hidden" name="bm_action" value="delete_skip">
+									<input type="hidden" name="delete_id" value="<?= $skipId ?>">
+									<input type="hidden" name="active_only" value="<?= $activeOnly ? 'Y' : 'N' ?>">
+									<input type="hidden" name="find" value="<?= mf_bm_escape($find) ?>">
+									<input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
+									<input type="hidden" name="page" value="<?= (int)$page ?>">
+									<button type="submit" class="mf-bss__btn-del">Удалить</button>
+								</form>
+							</div>
+							<form id="<?= mf_bm_escape($skipFormId) ?>" method="post" action="<?= mf_bm_escape($curPage) ?>" style="display:none;">
+								<?= bitrix_sessid_post() ?>
+								<input type="hidden" name="lang" value="<?= mf_bm_escape($lang) ?>">
+								<input type="hidden" name="bm_action" value="update_skip">
+								<input type="hidden" name="edit_id" value="<?= $skipId ?>">
+								<input type="hidden" name="active_only" value="<?= $activeOnly ? 'Y' : 'N' ?>">
+								<input type="hidden" name="find" value="<?= mf_bm_escape($find) ?>">
+								<input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
+								<input type="hidden" name="page" value="<?= (int)$page ?>">
+							</form>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
+	</div>
 
-	var per = Math.max(1, parseInt(root.getAttribute("data-bm-per") || "50", 10) || 50);
-	var totalPages = Math.max(1, Math.ceil(n / per));
-	var cur = Math.max(1, Math.min(
-		totalPages,
-		parseInt(root.getAttribute("data-bm-initial") || "1", 10) || 1
-	));
-	var baseUrl = root.getAttribute("data-bm-cur-url") || window.location.pathname;
-	var lang = root.getAttribute("data-bm-lang") || "";
-	var wh = root.getAttribute("data-bm-warehouse") || "";
-	var findBrand = root.getAttribute("data-bm-find-brand") || "";
-	var onlyUnmapped = root.getAttribute("data-bm-only-unmapped") || "0";
-	var sortCanon = root.getAttribute("data-bm-sort-canon") || "";
-
-	var navPrevS = -1, navPrevE = -1;
-
-	var brands = [];
-	try {
-		var jel = document.getElementById("mf-bm-catalog-brands-json");
-		if (jel && jel.textContent) {
-			var parsed = JSON.parse(jel.textContent);
-			if (Array.isArray(parsed)) {
-				brands = parsed;
-			}
+	<script>
+	(function () {
+		var tpl = document.getElementById('mf_bm_canon_options_tpl');
+		if (!tpl) { return; }
+		var tplHtml = tpl.innerHTML;
+		function syncCanonTitle(sel) {
+			var opt = sel.options[sel.selectedIndex];
+			sel.title = opt ? (opt.text || opt.value || '') : '';
 		}
-	} catch (e) {
-		brands = [];
-	}
-
-	function pageRange(page) {
-		var s = (page - 1) * per;
-		return { start: s, end: Math.min(page * per, n) };
-	}
-
-	function mfBmFillOneCatalogSelect(sel) {
-		if (!sel || sel.getAttribute("data-bm-filled") === "1") {
-			return;
-		}
-		if (brands.length === 0) {
-			return;
-		}
-		sel.setAttribute("data-bm-filled", "1");
-		var pref = sel.getAttribute("data-bm-pref") || "";
-		var frag = document.createDocumentFragment();
-		for (var i = 0; i < brands.length; i++) {
-			var b = String(brands[i] != null ? brands[i] : "").trim();
-			if (b === "") {
-				continue;
-			}
-			var o = document.createElement("option");
-			o.value = b;
-			o.textContent = b;
-			if (pref !== "" && b === pref) {
-				o.selected = true;
-			}
-			frag.appendChild(o);
-		}
-		sel.appendChild(frag);
-	}
-
-	function mfBmFillCatalogSelectsInRange(start, end) {
-		for (var i = start; i < end; i++) {
-			var row = rows[i];
-			if (!row) {
-				continue;
-			}
-			var sel = row.querySelector("select.js-bm-catalog-select");
-			if (sel) {
-				mfBmFillOneCatalogSelect(sel);
-			}
-		}
-	}
-
-	function setUrlPage(p) {
-		var q = { lang: lang, find_warehouse: wh };
-		if (findBrand !== "") { q.find_brand = findBrand; }
-		if (onlyUnmapped === "1") { q.bm_only_unmapped = "Y"; }
-		if (p > 1) { q.bm_page = p; }
-		if (sortCanon === "asc" || sortCanon === "desc") { q.bm_sort_canon = sortCanon; }
-		var qs = Object.keys(q).map(function (k) {
-			return encodeURIComponent(k) + "=" + encodeURIComponent(q[k] != null ? String(q[k]) : "");
-		}).join("&");
-		try {
-			if (window.history && window.history.replaceState) {
-				window.history.replaceState(null, "", baseUrl + (qs ? "?" + qs : ""));
-			}
-		} catch (e) {}
-	}
-
-	function updateRange() {
-		var from = (cur - 1) * per + 1, to = Math.min(cur * per, n);
-		root.querySelectorAll(".js-bm-from").forEach(function (el) { el.textContent = String(from); });
-		root.querySelectorAll(".js-bm-to").forEach(function (el) { el.textContent = String(to); });
-		root.querySelectorAll(".js-bm-curpage").forEach(function (el) { el.textContent = String(cur); });
-		var w = root.querySelectorAll(".js-bm-pagenum-wrap");
-		w.forEach(function (el) { el.style.display = totalPages > 1 ? "" : "none"; });
-	}
-
-	function showRows() {
-		var range = pageRange(cur);
-		var s = range.start, e = range.end;
-		if (s === navPrevS && e === navPrevE) {
-			return;
-		}
-		var i, j;
-		if (navPrevS >= 0) {
-			for (i = navPrevS; i < navPrevE; i++) {
-				if (rows[i] && (i < s || i >= e)) {
-					rows[i].style.display = "none";
+		document.querySelectorAll('.js-mf-bm-edit-canon').forEach(function (sel) {
+			var want = sel.getAttribute('data-selected') || '';
+			sel.innerHTML = tplHtml;
+			if (want !== '') {
+				var found = false;
+				for (var i = 0; i < sel.options.length; i++) {
+					if (sel.options[i].value === want) {
+						sel.selectedIndex = i;
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					var o = document.createElement('option');
+					o.value = want;
+					o.textContent = want + ' (не в каталоге)';
+					o.selected = true;
+					o.title = want;
+					sel.insertBefore(o, sel.options[1] || null);
 				}
 			}
-		}
-		for (j = s; j < e; j++) {
-			if (rows[j] && (j < navPrevS || j >= navPrevE)) {
-				rows[j].style.display = "";
-			}
-		}
-		navPrevS = s;
-		navPrevE = e;
-	}
+			sel.addEventListener('change', function () { syncCanonTitle(sel); });
+			syncCanonTitle(sel);
+		});
+	})();
+	</script>
 
-	function buildNav() {
-		var h = [];
-		if (cur > 1) {
-			h.push("<button type=\"button\" class=\"adm-btn\" data-bm-p=\"" + (cur - 1) + "\">← Назад</button>");
-		} else {
-			h.push("<span class=\"adm-btn\" style=\"pointer-events:none;opacity:.5;\">← Назад</span>");
-		}
-		var lo = Math.max(1, cur - 4), hi = Math.min(totalPages, cur + 4);
-		for (var p = lo; p <= hi; p++) {
-			if (p === cur) {
-				h.push("<span class=\"adm-btn\" style=\"margin-left:4px;pointer-events:none;opacity:.85;\">" + p + "</span>");
-			} else {
-				h.push("<button type=\"button\" class=\"adm-btn\" style=\"margin-left:4px;\" data-bm-p=\"" + p + "\">" + p + "</button>");
-			}
-		}
-		if (cur < totalPages) {
-			h.push("<button type=\"button\" class=\"adm-btn\" style=\"margin-left:4px;\" data-bm-p=\"" + (cur + 1) + "\">Вперёд →</button>");
-		} else {
-			h.push("<span class=\"adm-btn\" style=\"margin-left:4px;pointer-events:none;opacity:.5;\">Вперёд →</span>");
-		}
-		return h.join(" ");
-	}
-
-	/** Повторно не трогаем innerHTML панели, если страница та же (меньше reflow при лишних вызовах). */
-	var lastNavBuildForCur = -1;
-	function paint() {
-		var range = pageRange(cur);
-		showRows();
-		mfBmFillCatalogSelectsInRange(range.start, range.end);
-		updateRange();
-		if (cur === lastNavBuildForCur) { return; }
-		lastNavBuildForCur = cur;
-		var html = buildNav();
-		var navEls = root.querySelectorAll(".js-bm-nav");
-		for (var ni = 0; ni < navEls.length; ni++) { navEls[ni].innerHTML = html; }
-	}
-
-	root.addEventListener("click", function (ev) {
-		var t = ev.target;
-		if (!t || !t.getAttribute) return;
-		var p = t.getAttribute("data-bm-p");
-		if (p == null) return;
-		var np = parseInt(p, 10);
-		if (!np || np < 1 || np > totalPages || np === cur) return;
-		ev.preventDefault();
-		cur = np;
-		paint();
-		setUrlPage(cur);
-	});
-
-	paint();
-})();
-</script>
+	<div class="mf-bss__footer">
+		Связанные разделы:
+		<a href="mf_brand_stats.php?lang=<?= rawurlencode($lang) ?>">Бренды каталога</a>
+		·
+		<a href="mf_catalog_export.php?lang=<?= rawurlencode($lang) ?>">Выгрузка каталога</a>
+	</div>
 </div>
 
 <?php
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
-
