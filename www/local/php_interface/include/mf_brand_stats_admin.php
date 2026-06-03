@@ -300,7 +300,7 @@ if ($stats['error'] !== '')
 
 		<div class="mf-bss__footer">
 			Связанные разделы:
-			<a href="mf_brand_map.php?lang=<?= rawurlencode($lang) ?>">Сопоставление брендов</a>
+			<a href="mf_brand_map.php?lang=<?= rawurlencode($lang) ?>">Сопоставление брендов (справочник)</a>
 			·
 			<a href="mf_catalog_export.php?lang=<?= rawurlencode($lang) ?>">Выгрузка каталога</a>
 		</div>
