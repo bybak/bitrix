@@ -64,58 +64,57 @@ if ($type === 'sale')
 		);
 	}
 
+	$statusUpdates = [];
+
 	if (
+		($_REQUEST['mode'] ?? '') === 'import'
+		&& !empty($_REQUEST['filename'])
+	) {
+		$file = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . basename((string)$_REQUEST['filename']);
 
-        ($_REQUEST['mode'] ?? '') === 'import'
+		if (is_file($file)) {
+			$xmlString = file_get_contents($file);
 
-        && !empty($_REQUEST['filename'])
+			$xmlString = str_replace(
+				'<Наименование>Статуса заказа ИД</Наименование>',
+				'<Наименование>Статус заказа ИД</Наименование>',
+				$xmlString
+			);
 
-    ) {
+			file_put_contents($file, $xmlString);
 
-        $exchangeDir = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/';
+			$xml = simplexml_load_string($xmlString);
 
-        $file = $exchangeDir . basename((string)$_REQUEST['filename']);
+			if ($xml) {
+				$xml->registerXPathNamespace('cml', 'urn:1C.ru:commerceml_210');
 
-        if (is_file($file)) {
+				foreach ($xml->xpath('//cml:Документ') as $doc) {
+					$number = (string)$doc->Номер;
+					$statusId = '';
 
-            $xml = file_get_contents($file);
+					foreach ($doc->ЗначенияРеквизитов->ЗначениеРеквизита as $req) {
+						if ((string)$req->Наименование === 'Статус заказа ИД') {
+							$statusId = trim((string)$req->Значение);
+						}
+					}
 
-            $patchedXml = str_replace(
-
-                '<Наименование>Статуса заказа ИД</Наименование>',
-
-                '<Наименование>Статус заказа ИД</Наименование>',
-
-                $xml
-
-            );
-
-            if ($patchedXml !== $xml) {
-
-                file_put_contents($file, $patchedXml);
-
-                file_put_contents(
-
-                    $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-
-                    "PATCHED STATUS REQUISITE IN FILE: {$file}\n",
-
-                    FILE_APPEND
-
-                );
-
-            }
-
-        }
-
-    }
+					if ($number && $statusId) {
+						$statusUpdates[] = [
+							'number' => $number,
+							'status' => $statusId,
+						];
+					}
+				}
+			}
+		}
+	}
 	//--------------------------------------------------
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(
 		"SITE_LIST" => COption::GetOptionString("sale", "1C_SALE_SITE_LIST", ""),
 		"EXPORT_PAYED_ORDERS" => COption::GetOptionString("sale", "1C_EXPORT_PAYED_ORDERS", ""),
 		"EXPORT_ALLOW_DELIVERY_ORDERS" => COption::GetOptionString("sale", "1C_EXPORT_ALLOW_DELIVERY_ORDERS", ""),
 		"EXPORT_FINAL_ORDERS" => COption::GetOptionString("sale", "1C_EXPORT_FINAL_ORDERS", ""),
-		"CHANGE_STATUS_FROM_1C" => COption::GetOptionString("sale", "1C_CHANGE_STATUS_FROM_1C", ""),
+		"CHANGE_STATUS_FROM_1C" => "Y",
 		"FINAL_STATUS_ON_DELIVERY" => COption::GetOptionString("sale", "1C_FINAL_STATUS_ON_DELIVERY", "F"),
 		"REPLACE_CURRENCY" => COption::GetOptionString("sale", "1C_REPLACE_CURRENCY", ""),
 		"GROUP_PERMISSIONS" => explode(",", COption::GetOptionString("sale", "1C_SALE_GROUP_PERMISSIONS", "1")),
@@ -124,8 +123,54 @@ if ($type === 'sale')
 		"FILE_SIZE_LIMIT" => COption::GetOptionString("sale", "1C_FILE_SIZE_LIMIT", 200*1024),
 		"SITE_NEW_ORDERS" => COption::GetOptionString("sale", "1C_SITE_NEW_ORDERS", "s1"),
 		"IMPORT_NEW_ORDERS" => COption::GetOptionString("sale", "1C_IMPORT_NEW_ORDERS", "N"),
-		)
-	);
+	));
+	if (!empty($statusUpdates) && CModule::IncludeModule('sale')) {
+		foreach ($statusUpdates as $update) {
+			$number = $update['number']; // например s1285
+			$status = $update['status']; // например F
+	
+			$numeric = preg_replace('/\D+/', '', $number);
+	
+			$filter = [
+				'LOGIC' => 'OR',
+				['ACCOUNT_NUMBER' => $number],
+				['ACCOUNT_NUMBER' => $numeric],
+				['ACCOUNT_NUMBER' => '1-' . $numeric],
+			];
+	
+			$orderRow = \Bitrix\Sale\Order::getList([
+				'filter' => $filter,
+				'select' => ['ID', 'ACCOUNT_NUMBER', 'STATUS_ID'],
+				'limit' => 1,
+			])->fetch();
+	
+			if ($orderRow) {
+				$order = \Bitrix\Sale\Order::load((int)$orderRow['ID']);
+	
+				if ($order && $order->getField('STATUS_ID') !== $status) {
+					$order->setField('STATUS_ID', $status);
+					$result = $order->save();
+	
+					file_put_contents(
+						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+						'FORCE STATUS UPDATE: order=' . $orderRow['ID'] .
+						' account=' . $orderRow['ACCOUNT_NUMBER'] .
+						' status=' . $status .
+						' result=' . ($result->isSuccess() ? 'OK' : implode('; ', $result->getErrorMessages())) .
+						"\n",
+						FILE_APPEND
+					);
+				}
+			} else {
+				file_put_contents(
+					$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+					'FORCE STATUS UPDATE: order not found for number=' . $number . "\n",
+					FILE_APPEND
+				);
+			}
+		}
+	}
+	
 	die();
 }
 elseif ($type === "crm")
