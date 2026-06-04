@@ -210,6 +210,29 @@ if ($type === 'sale')
 			}
 		});
 	}
+
+	if (
+		($_REQUEST['mode'] ?? '') === 'import'
+		&& !empty($_REQUEST['filename'])
+	) {
+		$file = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . basename($_REQUEST['filename']);
+	
+		if (file_exists($file)) {
+	
+			copy(
+				$file,
+				$_SERVER['DOCUMENT_ROOT'] . '/upload/debug_' . time() . '_' . basename($file)
+			);
+	
+			file_put_contents(
+				$_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange_debug.log',
+				"\n\n==================== XML DUMP ====================\n".
+				file_get_contents($file).
+				"\n================== END XML DUMP ==================\n\n",
+				FILE_APPEND
+			);
+		}
+	}
 	//--------------------------------------------------
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(
 		"SITE_LIST" => COption::GetOptionString("sale", "1C_SALE_SITE_LIST", ""),
