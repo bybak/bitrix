@@ -72,6 +72,12 @@ if ($type === 'sale')
 	) {
 		$file = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . basename((string)$_REQUEST['filename']);
 
+		file_put_contents(
+			$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+			"IMPORT PATCH CHECK FILE: {$file}\n",
+			FILE_APPEND
+		);
+
 		if (is_file($file)) {
 			$xmlString = file_get_contents($file);
 
@@ -83,30 +89,121 @@ if ($type === 'sale')
 
 			file_put_contents($file, $xmlString);
 
-			$xml = simplexml_load_string($xmlString);
+			$dom = new DOMDocument();
+			$dom->loadXML($xmlString);
 
-			if ($xml) {
-				$xml->registerXPathNamespace('cml', 'urn:1C.ru:commerceml_210');
+			$xpath = new DOMXPath($dom);
+			$xpath->registerNamespace('cml', 'urn:1C.ru:commerceml_210');
 
-				foreach ($xml->xpath('//cml:Документ') as $doc) {
-					$number = (string)$doc->Номер;
-					$statusId = '';
+			foreach ($xpath->query('//cml:Документ') as $docNode) {
+				$numberNode = $xpath->query('cml:Номер', $docNode)->item(0);
+				$number = $numberNode ? trim($numberNode->nodeValue) : '';
 
-					foreach ($doc->ЗначенияРеквизитов->ЗначениеРеквизита as $req) {
-						if ((string)$req->Наименование === 'Статус заказа ИД') {
-							$statusId = trim((string)$req->Значение);
-						}
-					}
+				$statusId = '';
 
-					if ($number && $statusId) {
-						$statusUpdates[] = [
-							'number' => $number,
-							'status' => $statusId,
-						];
+				foreach ($xpath->query('cml:ЗначенияРеквизитов/cml:ЗначениеРеквизита', $docNode) as $reqNode) {
+					$nameNode = $xpath->query('cml:Наименование', $reqNode)->item(0);
+					$valueNode = $xpath->query('cml:Значение', $reqNode)->item(0);
+
+					$name = $nameNode ? trim($nameNode->nodeValue) : '';
+					$value = $valueNode ? trim($valueNode->nodeValue) : '';
+
+					if ($name === 'Статус заказа ИД') {
+						$statusId = $value;
 					}
 				}
+
+				if ($number !== '' && $statusId !== '') {
+					$statusUpdates[] = [
+						'number' => $number,
+						'status' => $statusId,
+					];
+				}
 			}
+
+			file_put_contents(
+				$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+				'STATUS UPDATES PARSED: ' . print_r($statusUpdates, true) . "\n",
+				FILE_APPEND
+			);
 		}
+	}
+
+	if (!empty($statusUpdates)) {
+		register_shutdown_function(static function () use ($statusUpdates) {
+			if (!CModule::IncludeModule('sale')) {
+				file_put_contents(
+					$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+					"FORCE STATUS UPDATE: sale module not loaded\n",
+					FILE_APPEND
+				);
+				return;
+			}
+
+			foreach ($statusUpdates as $update) {
+				$number = $update['number'];
+				$status = $update['status'];
+
+				$numeric = preg_replace('/\D+/', '', $number);
+
+				$filter = [
+					'LOGIC' => 'OR',
+					['ACCOUNT_NUMBER' => $number],
+					['ACCOUNT_NUMBER' => $numeric],
+					['ACCOUNT_NUMBER' => '1-' . $numeric],
+					['ACCOUNT_NUMBER' => 's' . $numeric],
+				];
+
+				$orderRow = \Bitrix\Sale\Order::getList([
+					'filter' => $filter,
+					'select' => ['ID', 'ACCOUNT_NUMBER', 'STATUS_ID'],
+					'limit' => 1,
+				])->fetch();
+
+				if (!$orderRow) {
+					file_put_contents(
+						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+						"FORCE STATUS UPDATE: order not found for number={$number}\n",
+						FILE_APPEND
+					);
+					continue;
+				}
+
+				$order = \Bitrix\Sale\Order::load((int)$orderRow['ID']);
+
+				if (!$order) {
+					file_put_contents(
+						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+						"FORCE STATUS UPDATE: order load failed id={$orderRow['ID']}\n",
+						FILE_APPEND
+					);
+					continue;
+				}
+
+				if ($order->getField('STATUS_ID') === $status) {
+					file_put_contents(
+						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+						"FORCE STATUS UPDATE: already status={$status} order={$orderRow['ID']}\n",
+						FILE_APPEND
+					);
+					continue;
+				}
+
+				$order->setField('STATUS_ID', $status);
+				$result = $order->save();
+
+				file_put_contents(
+					$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+					'FORCE STATUS UPDATE: order=' . $orderRow['ID'] .
+					' account=' . $orderRow['ACCOUNT_NUMBER'] .
+					' old=' . $orderRow['STATUS_ID'] .
+					' new=' . $status .
+					' result=' . ($result->isSuccess() ? 'OK' : implode('; ', $result->getErrorMessages())) .
+					"\n",
+					FILE_APPEND
+				);
+			}
+		});
 	}
 	//--------------------------------------------------
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(
