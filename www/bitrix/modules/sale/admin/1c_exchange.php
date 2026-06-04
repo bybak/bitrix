@@ -144,14 +144,19 @@ if ($type === 'sale')
 				$number = $update['number'];
 				$status = $update['status'];
 
-				$numeric = preg_replace('/\D+/', '', $number);
+				$digits = preg_replace('/\D+/', '', $number);
+
+				// s1288 / 1c-001288 -> 288
+				$orderNumber = $digits;
+				if (strlen($digits) > 3) {
+					$orderNumber = (string)((int)substr($digits, -3));
+				}
 
 				$filter = [
 					'LOGIC' => 'OR',
+					['ID' => (int)$orderNumber],
+					['ACCOUNT_NUMBER' => $orderNumber],
 					['ACCOUNT_NUMBER' => $number],
-					['ACCOUNT_NUMBER' => $numeric],
-					['ACCOUNT_NUMBER' => '1-' . $numeric],
-					['ACCOUNT_NUMBER' => 's' . $numeric],
 				];
 
 				$orderRow = \Bitrix\Sale\Order::getList([
@@ -221,52 +226,6 @@ if ($type === 'sale')
 		"SITE_NEW_ORDERS" => COption::GetOptionString("sale", "1C_SITE_NEW_ORDERS", "s1"),
 		"IMPORT_NEW_ORDERS" => COption::GetOptionString("sale", "1C_IMPORT_NEW_ORDERS", "N"),
 	));
-	if (!empty($statusUpdates) && CModule::IncludeModule('sale')) {
-		foreach ($statusUpdates as $update) {
-			$number = $update['number']; // например s1285
-			$status = $update['status']; // например F
-	
-			$numeric = preg_replace('/\D+/', '', $number);
-	
-			$filter = [
-				'LOGIC' => 'OR',
-				['ACCOUNT_NUMBER' => $number],
-				['ACCOUNT_NUMBER' => $numeric],
-				['ACCOUNT_NUMBER' => '1-' . $numeric],
-			];
-	
-			$orderRow = \Bitrix\Sale\Order::getList([
-				'filter' => $filter,
-				'select' => ['ID', 'ACCOUNT_NUMBER', 'STATUS_ID'],
-				'limit' => 1,
-			])->fetch();
-	
-			if ($orderRow) {
-				$order = \Bitrix\Sale\Order::load((int)$orderRow['ID']);
-	
-				if ($order && $order->getField('STATUS_ID') !== $status) {
-					$order->setField('STATUS_ID', $status);
-					$result = $order->save();
-	
-					file_put_contents(
-						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-						'FORCE STATUS UPDATE: order=' . $orderRow['ID'] .
-						' account=' . $orderRow['ACCOUNT_NUMBER'] .
-						' status=' . $status .
-						' result=' . ($result->isSuccess() ? 'OK' : implode('; ', $result->getErrorMessages())) .
-						"\n",
-						FILE_APPEND
-					);
-				}
-			} else {
-				file_put_contents(
-					$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-					'FORCE STATUS UPDATE: order not found for number=' . $number . "\n",
-					FILE_APPEND
-				);
-			}
-		}
-	}
 	
 	die();
 }
