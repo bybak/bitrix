@@ -220,6 +220,8 @@ function mf_bm_canon_options_html(array $catalogBrands, string $selected = ''): 
 {
 	$selected = trim($selected);
 	$html = '<option value="">— выберите —</option>';
+	$skipSel = ($selected === MF_BM_MAP_SKIP) ? ' selected' : '';
+	$html .= '<option value="' . mf_bm_escape(MF_BM_MAP_SKIP) . '" title="Не импортировать строки с этим брендом"' . $skipSel . '>— не импортировать —</option>';
 	$inList = false;
 	foreach ($catalogBrands as $bCh)
 	{
@@ -236,13 +238,54 @@ function mf_bm_canon_options_html(array $catalogBrands, string $selected = ''): 
 		$selAttr = ($selected !== '' && $selected === $bCh) ? ' selected' : '';
 		$html .= '<option value="' . $esc . '" title="' . $esc . '"' . $selAttr . '>' . $esc . '</option>';
 	}
-	if ($selected !== '' && !$inList)
+	if ($selected !== '' && $selected !== MF_BM_MAP_SKIP && !$inList)
 	{
 		$esc = mf_bm_escape($selected);
 		$html .= '<option value="' . $esc . '" title="' . $esc . '" selected>' . $esc . ' (не в каталоге)</option>';
 	}
 
 	return $html;
+}
+
+/**
+ * Переводит сопоставление HL в «не импортировать» (удаляет запись HL, пишет skip).
+ *
+ * @return string|null сообщение об ошибке или null при успехе
+ */
+function mf_bm_convert_alias_to_skip(int $id, string $alias): ?string
+{
+	$row = mf_bm_fetch_alias_by_id($id);
+	if ($row === null)
+	{
+		return 'Запись #' . $id . ' не найдена.';
+	}
+
+	$alias = trim($alias);
+	if ($alias === '')
+	{
+		return 'Укажите текст бренда (алиас).';
+	}
+
+	if (!function_exists('mf_brand_import_skip_set'))
+	{
+		return 'Функция mf_brand_import_skip_set недоступна.';
+	}
+
+	try
+	{
+		$hl = mf_brand_hl_ensure(false);
+		if ($hl && !empty($hl['DATA_CLASS']))
+		{
+			$hl['DATA_CLASS']::delete($id);
+		}
+		mf_brand_import_skip_set($alias, true);
+	}
+	catch (\Throwable $e)
+	{
+		return 'Ошибка: ' . $e->getMessage();
+	}
+
+	return null;
 }
 
 /**
@@ -440,7 +483,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && check_bitrix_sessid())
 		else
 		{
 			$canon = $canonCustom !== '' ? $canonCustom : $canonSelect;
-			if ($canon === '' || $canon === MF_BM_MAP_SKIP)
+			if ($canon === MF_BM_MAP_SKIP)
+			{
+				if (function_exists('mf_brand_import_skip_set'))
+				{
+					mf_brand_import_skip_set($alias, true);
+					$adminNotice = ['TYPE' => 'OK', 'MESSAGE' => 'Бренд «' . $alias . '» помечен: не импортировать.'];
+				}
+				else
+				{
+					$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Функция mf_brand_import_skip_set недоступна.'];
+				}
+			}
+			elseif ($canon === '')
 			{
 				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => 'Укажите канонический бренд (из списка или своим текстом).'];
 			}
@@ -469,17 +524,35 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && check_bitrix_sessid())
 		$canon = trim((string)($_POST['edit_canon'] ?? ''));
 		$active = (string)($_POST['edit_active'] ?? '') === 'Y';
 
-		$err = mf_bm_update_alias_by_id($editId, $alias, $canon, $active);
-		if ($err !== null)
+		if ($canon === MF_BM_MAP_SKIP)
 		{
-			$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => $err];
+			$err = mf_bm_convert_alias_to_skip($editId, $alias);
+			if ($err !== null)
+			{
+				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => $err];
+			}
+			else
+			{
+				$adminNotice = [
+					'TYPE' => 'OK',
+					'MESSAGE' => 'Бренд «' . $alias . '» перенесён в «не импортировать» (сопоставление #' . $editId . ' снято).',
+				];
+			}
 		}
 		else
 		{
-			$adminNotice = [
-				'TYPE' => 'OK',
-				'MESSAGE' => 'Сопоставление #' . $editId . ' обновлено: «' . $alias . '» → «' . $canon . '».',
-			];
+			$err = mf_bm_update_alias_by_id($editId, $alias, $canon, $active);
+			if ($err !== null)
+			{
+				$adminNotice = ['TYPE' => 'ERROR', 'MESSAGE' => $err];
+			}
+			else
+			{
+				$adminNotice = [
+					'TYPE' => 'OK',
+					'MESSAGE' => 'Сопоставление #' . $editId . ' обновлено: «' . $alias . '» → «' . $canon . '».',
+				];
+			}
 		}
 	}
 	elseif ($action === 'update_skip')
@@ -588,7 +661,7 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 
 ?>
 <style>
-.mf-bss { max-width: 1100px; font-family: var(--ui-font-family-primary, "Helvetica Neue", Helvetica, Arial, sans-serif); color: #333; }
+.mf-bss { max-width: 1280px; font-family: var(--ui-font-family-primary, "Helvetica Neue", Helvetica, Arial, sans-serif); color: #333; }
 .mf-bss__lead { margin: 0 0 20px 0; padding: 14px 16px; background: linear-gradient(135deg, #f0f4f8 0%, #e8eef5 100%); border: 1px solid #d5dde8; border-radius: 8px; font-size: 13px; line-height: 1.55; color: #4a5568; }
 .mf-bss__lead strong { color: #1a202c; }
 .mf-bss__lead code { background: rgba(255,255,255,.7); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
@@ -677,19 +750,52 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 .mf-bss__th-actions { width: 150px; text-align: center; }
 .mf-bss__actions-cell { text-align: center; white-space: nowrap; }
 .mf-bss__row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; }
+.mf-bss__table--map { table-layout: fixed; }
+.mf-bss__th-alias { width: 36%; }
+.mf-bss__th-canon { width: 30%; }
+.mf-bss__th-more { width: 44px; text-align: center; }
 .mf-bss__inp-cell { min-width: 120px; }
+.mf-bss__inp-cell--alias input[type="text"] {
+	width: 100%;
+	min-width: 160px;
+	max-width: none;
+	padding: 6px 8px;
+	font-size: 13px;
+}
 .mf-bss__inp-cell input[type="text"] {
 	width: 100%;
 	min-width: 100px;
-	max-width: 280px;
 	padding: 6px 8px;
 	font-size: 13px;
 }
 .mf-bss__inp-cell--canon select {
 	width: 100%;
-	min-width: 180px;
-	max-width: 320px;
+	min-width: 160px;
+	max-width: none;
 }
+.mf-bss__btn-more {
+	font-size: 11px;
+	line-height: 1;
+	color: #4a5568;
+	background: #edf2f7;
+	border: 1px solid #cbd5e0;
+	border-radius: 6px;
+	padding: 5px 8px;
+	cursor: pointer;
+	vertical-align: middle;
+}
+.mf-bss__btn-more:hover { background: #e2e8f0; color: #2d3748; }
+.mf-bss__btn-more[aria-expanded="true"] { background: #ebf8ff; border-color: #90cdf4; color: #2b6cb0; }
+.mf-bss__details-row td {
+	background: #f7fafc;
+	padding: 8px 14px 10px 52px;
+	font-size: 12px;
+	color: #718096;
+	border-bottom: 1px solid #edf2f7;
+}
+.mf-bss__details-row[hidden] { display: none; }
+.mf-bss__details-kv { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.mf-bss__details-kv strong { color: #4a5568; font-weight: 600; }
 .mf-bss__check-inline {
 	display: inline-flex;
 	align-items: center;
@@ -835,16 +941,15 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 		<?php if ($aliasTotal === 0): ?>
 			<div class="mf-bss__empty">Нет записей по выбранным фильтрам.</div>
 		<?php else: ?>
-			<table class="mf-bss__table">
+			<table class="mf-bss__table mf-bss__table--map">
 				<thead>
 				<tr>
 					<th class="mf-bss__th-num">#</th>
-					<th>Алиас</th>
+					<th class="mf-bss__th-alias">Алиас</th>
 					<th class="mf-bss__th-arrow"></th>
-					<th>Канон</th>
-					<th class="mf-bss__th-meta">Приоритет</th>
+					<th class="mf-bss__th-canon">Канон</th>
 					<th class="mf-bss__th-meta">Статус</th>
-					<th class="mf-bss__th-date">Обновлено</th>
+					<th class="mf-bss__th-more" title="Приоритет и дата обновления"></th>
 					<th class="mf-bss__th-actions"></th>
 				</tr>
 				</thead>
@@ -858,10 +963,12 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 					$formId = 'mf_bm_alias_' . $rowId;
 					$aliasVal = (string)($row['UF_ALIAS'] ?? '');
 					$canonVal = (string)($row['UF_CANONICAL'] ?? '');
+					$sortVal = (int)($row['UF_SORT'] ?? 0);
+					$updatedStr = mf_bm_format_dt($row['UF_UPDATED_AT'] ?? null);
 					?>
-					<tr>
+					<tr class="mf-bss__data-row">
 						<td class="mf-bss__num"><?= $rowNum ?></td>
-						<td class="mf-bss__inp-cell">
+						<td class="mf-bss__inp-cell mf-bss__inp-cell--alias">
 							<label class="adm-invisible">Алиас</label>
 							<input
 								type="text"
@@ -884,7 +991,6 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 								<option value="">— загрузка списка —</option>
 							</select>
 						</td>
-						<td class="mf-bss__meta mf-bss__sort-readonly" title="Приоритет не меняется при редактировании"><?= (int)($row['UF_SORT'] ?? 0) ?></td>
 						<td class="mf-bss__meta">
 							<label class="mf-bss__check-inline" title="Активно">
 								<input
@@ -897,7 +1003,15 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 								<?= $isActive ? 'вкл' : 'выкл' ?>
 							</label>
 						</td>
-						<td class="mf-bss__date"><?= mf_bm_escape(mf_bm_format_dt($row['UF_UPDATED_AT'] ?? null)) ?></td>
+						<td class="mf-bss__meta">
+							<button
+								type="button"
+								class="mf-bss__btn-more js-mf-bm-details-toggle"
+								aria-expanded="false"
+								aria-controls="mf_bm_details_<?= $rowId ?>"
+								title="Приоритет и дата обновления"
+							>⋯</button>
+						</td>
 						<td class="mf-bss__actions-cell">
 							<div class="mf-bss__row-actions">
 								<button type="submit" form="<?= mf_bm_escape($formId) ?>" class="mf-bss__btn-save">Сохранить</button>
@@ -923,6 +1037,15 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 								<input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
 								<input type="hidden" name="page" value="<?= (int)$page ?>">
 							</form>
+						</td>
+					</tr>
+					<tr class="mf-bss__details-row" id="mf_bm_details_<?= $rowId ?>" hidden>
+						<td colspan="7">
+							<div class="mf-bss__details-kv">
+								<span><strong>ID:</strong> <?= $rowId ?></span>
+								<span><strong>Приоритет:</strong> <?= $sortVal ?> <span class="mf-bss__sort-readonly">(не меняется при сохранении)</span></span>
+								<span><strong>Обновлено:</strong> <?= mf_bm_escape($updatedStr) ?></span>
+							</div>
 						</td>
 					</tr>
 				<?php endforeach; ?>
@@ -1033,6 +1156,20 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 
 	<script>
 	(function () {
+		document.querySelectorAll('.js-mf-bm-details-toggle').forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				var id = btn.getAttribute('aria-controls');
+				if (!id) { return; }
+				var row = document.getElementById(id);
+				if (!row) { return; }
+				var open = row.hidden;
+				row.hidden = !open;
+				btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+				btn.textContent = open ? '▲' : '⋯';
+			});
+		});
+	})();
+	(function () {
 		var tpl = document.getElementById('mf_bm_canon_options_tpl');
 		if (!tpl) { return; }
 		var tplHtml = tpl.innerHTML;
@@ -1040,6 +1177,7 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 			var opt = sel.options[sel.selectedIndex];
 			sel.title = opt ? (opt.text || opt.value || '') : '';
 		}
+		var skipValue = <?= json_encode(MF_BM_MAP_SKIP, JSON_UNESCAPED_UNICODE) ?>;
 		document.querySelectorAll('.js-mf-bm-edit-canon').forEach(function (sel) {
 			var want = sel.getAttribute('data-selected') || '';
 			sel.innerHTML = tplHtml;
@@ -1052,13 +1190,13 @@ $APPLICATION->SetTitle('Сопоставление брендов');
 						break;
 					}
 				}
-				if (!found) {
+				if (!found && want !== skipValue) {
 					var o = document.createElement('option');
 					o.value = want;
 					o.textContent = want + ' (не в каталоге)';
 					o.selected = true;
 					o.title = want;
-					sel.insertBefore(o, sel.options[1] || null);
+					sel.insertBefore(o, sel.options[2] || null);
 				}
 			}
 			sel.addEventListener('change', function () { syncCanonTitle(sel); });
