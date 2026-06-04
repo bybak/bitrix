@@ -65,27 +65,50 @@ if ($type === 'sale')
 	}
 
 	if (
-		($_REQUEST['mode'] ?? '') === 'import'
-		&& !empty($_REQUEST['filename'])
-	)
-	{
-		$file = $_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange/'.basename($_REQUEST['filename']);
-	
-		file_put_contents(
-			$_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange_debug.log',
-			"IMPORT FILE: ".$file."\n",
-			FILE_APPEND
-		);
-	
-		if (file_exists($file))
-		{
-			file_put_contents(
-				$_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange_debug.log',
-				"XML CONTENT:\n".file_get_contents($file)."\n\n",
-				FILE_APPEND
-			);
-		}
-	}
+
+        ($_REQUEST['mode'] ?? '') === 'import'
+
+        && !empty($_REQUEST['filename'])
+
+    ) {
+
+        $exchangeDir = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/';
+
+        $file = $exchangeDir . basename((string)$_REQUEST['filename']);
+
+        if (is_file($file)) {
+
+            $xml = file_get_contents($file);
+
+            $patchedXml = str_replace(
+
+                '<Наименование>Статуса заказа ИД</Наименование>',
+
+                '<Наименование>Статус заказа ИД</Наименование>',
+
+                $xml
+
+            );
+
+            if ($patchedXml !== $xml) {
+
+                file_put_contents($file, $patchedXml);
+
+                file_put_contents(
+
+                    $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
+
+                    "PATCHED STATUS REQUISITE IN FILE: {$file}\n",
+
+                    FILE_APPEND
+
+                );
+
+            }
+
+        }
+
+    }
 	//--------------------------------------------------
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(
 		"SITE_LIST" => COption::GetOptionString("sale", "1C_SALE_SITE_LIST", ""),
