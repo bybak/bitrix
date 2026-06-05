@@ -31,15 +31,18 @@ if (!function_exists('mf1c_exchange_upload_file_candidates'))
 	function mf1c_exchange_upload_file_candidates(string $exchangeFilename): array
 	{
 		$exchangeFilename = basename($exchangeFilename);
-		$candidates = [mf1c_exchange_www_root() . '/upload/1c_exchange/' . $exchangeFilename];
-
-		$moduleRoot = dirname(__DIR__, 4);
-		if ($moduleRoot !== mf1c_exchange_www_root())
+		$candidates = [];
+		$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+		if ($docRoot !== '')
 		{
-			$candidates[] = $moduleRoot . '/upload/1c_exchange/' . $exchangeFilename;
+			$candidates[] = $docRoot . '/upload/1c_exchange/' . $exchangeFilename;
 		}
+		$candidates[] = dirname(__DIR__, 4) . '/upload/1c_exchange/' . $exchangeFilename;
+		$candidates[] = '/var/www/html/upload/1c_exchange/' . $exchangeFilename;
+		$candidates[] = '/www/bitrix_motor_force/www/upload/1c_exchange/' . $exchangeFilename;
+		$candidates[] = mf1c_exchange_www_root() . '/upload/1c_exchange/' . $exchangeFilename;
 
-		return array_values(array_unique($candidates));
+		return array_values(array_unique(array_filter($candidates)));
 	}
 }
 
@@ -195,35 +198,18 @@ if ($type === 'sale')
 
 	if ($exchangeFilename !== '')
 	{
-		$exchangeFile = mf1c_exchange_resolve_upload_file($exchangeFilename);
-		if ($exchangeFile !== '')
+		if ($exchangeMode === 'import' && function_exists('mf_1c_import_register_shutdown'))
 		{
-			mf1c_exchange_debug_log('XML resolved: ' . $exchangeFile);
-		}
-		else
-		{
-			mf1c_exchange_debug_log('XML resolved: NOT FOUND for filename=' . $exchangeFilename);
-		}
-
-		if ($exchangeMode === 'import' && $exchangeFile !== '')
-		{
-			$xmlBody = file_get_contents($exchangeFile);
-			if (is_string($xmlBody) && $xmlBody !== '')
+			$exchangeFile = mf1c_exchange_resolve_upload_file($exchangeFilename);
+			if ($exchangeFile !== '')
 			{
-				$maxLen = 512000;
-				$size = strlen($xmlBody);
-				$dump = $size > $maxLen ? substr($xmlBody, 0, $maxLen) . "\n... [truncated]" : $xmlBody;
-				mf1c_exchange_debug_log(
-					"==================== XML DUMP: {$exchangeFilename} ({$size} bytes) ====================\n"
-					. $dump
-					. "\n================== END XML DUMP =================="
-				);
+				mf1c_exchange_debug_log('MF IMPORT: xml=' . $exchangeFile);
+				mf_1c_import_register_shutdown($exchangeFile);
 			}
-		}
-
-		if ($exchangeMode === 'import' && $exchangeFile !== '' && function_exists('mf_1c_import_register_shutdown'))
-		{
-			mf_1c_import_register_shutdown($exchangeFile);
+			else
+			{
+				mf1c_exchange_debug_log('MF IMPORT: xml NOT FOUND filename=' . $exchangeFilename);
+			}
 		}
 		elseif ($exchangeMode === 'file')
 		{

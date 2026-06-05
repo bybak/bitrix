@@ -145,6 +145,113 @@ if (!function_exists('mf_1c_import_collect_requisites'))
 	}
 }
 
+if (!function_exists('mf_1c_import_merge_all_requisites'))
+{
+	function mf_1c_import_merge_all_requisites(DOMXPath $xpath, DOMNode $docNode): array
+	{
+		$merged = mf_1c_import_collect_requisites($xpath, $docNode);
+		$subNodes = $xpath->query('cml:ПодчиненныеДокументы/cml:ПодчиненныйДокумент', $docNode);
+		if (!$subNodes)
+		{
+			return $merged;
+		}
+
+		foreach ($subNodes as $subNode)
+		{
+			foreach (mf_1c_import_collect_requisites($xpath, $subNode) as $name => $value)
+			{
+				if (($merged[$name] ?? '') === '' && $value !== '')
+				{
+					$merged[$name] = $value;
+				}
+			}
+		}
+
+		return $merged;
+	}
+}
+
+if (!function_exists('mf_1c_import_normalize_mf_code'))
+{
+	function mf_1c_import_normalize_mf_code(string $type, ?string $code): ?string
+	{
+		$code = strtoupper(trim((string)$code));
+		if ($code === '')
+		{
+			return null;
+		}
+
+		$allowed = [
+			'order' => ['IN_WORK', 'DONE', 'CANCELED'],
+			'payment' => ['NOT_PAID', 'PARTIAL_PAID', 'PAID'],
+			'shipment' => ['NOT_SHIPPED', 'PARTIAL_SHIPPED', 'SHIPPED'],
+		];
+
+		if (!isset($allowed[$type]) || !in_array($code, $allowed[$type], true))
+		{
+			mf_1c_import_log('IMPORT STATUSES: unknown MF code type=' . $type . ' code=' . $code);
+
+			return null;
+		}
+
+		return $code;
+	}
+}
+
+if (!function_exists('mf_1c_import_extract_mf_fields'))
+{
+	function mf_1c_import_extract_mf_fields(array $reqs): array
+	{
+		$cancelReason = trim((string)($reqs['ПричинаОтменыMF'] ?? ''));
+		$cancelComment = trim((string)($reqs['КомментарийОтменыMF'] ?? ''));
+
+		return [
+			'order_status' => mf_1c_import_normalize_mf_code('order', $reqs['КодСтатусаЗаказаMF'] ?? null),
+			'payment_status' => mf_1c_import_normalize_mf_code('payment', $reqs['КодСтатусаОплатыMF'] ?? null),
+			'shipment_status' => mf_1c_import_normalize_mf_code('shipment', $reqs['КодСтатусаДоставкиMF'] ?? null),
+			'cancel_reason' => $cancelReason,
+			'cancel_comment' => $cancelComment,
+			'raw' => [
+				'СтатусЗаказаMF' => trim((string)($reqs['СтатусЗаказаMF'] ?? '')),
+				'СтатусОплатыMF' => trim((string)($reqs['СтатусОплатыMF'] ?? '')),
+				'СтатусДоставкиMF' => trim((string)($reqs['СтатусДоставкиMF'] ?? '')),
+				'СуммаЗаказаMF' => trim((string)($reqs['СуммаЗаказаMF'] ?? '')),
+				'СуммаОплаченоMF' => trim((string)($reqs['СуммаОплаченоMF'] ?? '')),
+				'КоличествоЗаказаноMF' => trim((string)($reqs['КоличествоЗаказаноMF'] ?? '')),
+				'КоличествоОтгруженоMF' => trim((string)($reqs['КоличествоОтгруженоMF'] ?? '')),
+			],
+		];
+	}
+}
+
+if (!function_exists('mf_1c_import_format_mf_log'))
+{
+	function mf_1c_import_format_mf_log(array $mf): string
+	{
+		$parts = [
+			'order=' . ($mf['order_status'] ?? ''),
+			'payment=' . ($mf['payment_status'] ?? ''),
+			'shipment=' . ($mf['shipment_status'] ?? ''),
+			'cancel_reason=' . ($mf['cancel_reason'] ?? ''),
+			'cancel_comment=' . ($mf['cancel_comment'] ?? ''),
+		];
+
+		$raw = $mf['raw'] ?? [];
+		if (is_array($raw))
+		{
+			foreach ($raw as $name => $value)
+			{
+				if ($value !== '')
+				{
+					$parts[] = $name . '=' . $value;
+				}
+			}
+		}
+
+		return implode(' ', $parts);
+	}
+}
+
 if (!function_exists('mf_1c_import_sum_products_qty'))
 {
 	function mf_1c_import_sum_products_qty(DOMXPath $xpath, DOMNode $contextNode): float
@@ -180,11 +287,12 @@ if (!function_exists('mf_1c_import_parse_document'))
 			return null;
 		}
 
-		$mainReqs = mf_1c_import_collect_requisites($xpath, $docNode);
-		$statusId = strtoupper(trim((string)($mainReqs['Статус заказа ИД'] ?? '')));
+		$allReqs = mf_1c_import_merge_all_requisites($xpath, $docNode);
+		$mf = mf_1c_import_extract_mf_fields($allReqs);
+		$statusId = strtoupper(trim((string)($allReqs['Статус заказа ИД'] ?? '')));
 
-		$paid = mf_1c_import_xml_bool($mainReqs['Оплачен'] ?? null);
-		$shipped = mf_1c_import_xml_bool($mainReqs['Отгружен'] ?? null);
+		$paid = mf_1c_import_xml_bool($allReqs['Оплачен'] ?? null);
+		$shipped = mf_1c_import_xml_bool($allReqs['Отгружен'] ?? null);
 		$paymentSum = 0.0;
 		$shippedQty = mf_1c_import_sum_products_qty($xpath, $docNode);
 
@@ -239,6 +347,7 @@ if (!function_exists('mf_1c_import_parse_document'))
 			'order_candidates' => $candidates,
 			'resolved_number' => $candidates[0] ?? '',
 			'status_id' => $statusId,
+			'mf' => $mf,
 			'paid' => $paid,
 			'shipped' => $shipped,
 			'payment_sum' => $paymentSum,
@@ -303,15 +412,15 @@ if (!function_exists('mf_1c_import_parse_xml_file'))
 				continue;
 			}
 			$updates[] = $parsed;
+			$mf = is_array($parsed['mf'] ?? null) ? $parsed['mf'] : [];
 			mf_1c_import_log(
 				'IMPORT STATUSES PARSED: xml_number=' . $parsed['xml_number']
+				. ' bitrix_id=' . $parsed['resolved_number']
 				. ' candidates=' . implode(',', $parsed['order_candidates'] ?? [])
-				. ' resolved=' . $parsed['resolved_number']
-				. ' status_id=' . $parsed['status_id']
+				. ' legacy_status_id=' . $parsed['status_id']
+				. ' mf_fields=' . mf_1c_import_format_mf_log($mf)
 				. ' paid=' . var_export($parsed['paid'], true)
 				. ' shipped=' . var_export($parsed['shipped'], true)
-				. ' payment_sum=' . $parsed['payment_sum']
-				. ' shipped_qty=' . $parsed['shipped_qty']
 			);
 		}
 
@@ -588,11 +697,14 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				continue;
 			}
 
+			$mf = is_array($parsed['mf'] ?? null) ? $parsed['mf'] : [];
 			$orderId = mf_1c_import_find_order_id($parsed);
 			mf_1c_import_log(
 				'IMPORT STATUSES LOOKUP: xml_number=' . ($parsed['xml_number'] ?? '')
-				. ' resolved=' . ($parsed['resolved_number'] ?? '')
+				. ' bitrix_id=' . ($parsed['resolved_number'] ?? '')
+				. ' order_found=' . ($orderId > 0 ? 'Y' : 'N')
 				. ' order_id=' . (int)$orderId
+				. ' mf_fields=' . mf_1c_import_format_mf_log($mf)
 			);
 
 			if ($orderId <= 0)
@@ -621,7 +733,11 @@ if (!function_exists('mf_1c_import_apply_updates'))
 			}
 
 			$statusId = strtoupper(trim((string)($parsed['status_id'] ?? '')));
-			$ufOrderStatus = mf_1c_import_map_order_status($statusId);
+			$ufOrderStatus = $mf['order_status'] ?? null;
+			if ($ufOrderStatus === null)
+			{
+				$ufOrderStatus = mf_1c_import_map_order_status($statusId);
+			}
 			if ($ufOrderStatus !== null)
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_ORDER_STATUS', $ufOrderStatus))
@@ -630,7 +746,28 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
-			if ($statusId === 'F' && mf_1c_import_order_status_exists('F'))
+			if ($ufOrderStatus === 'DONE' && mf_1c_import_order_status_exists('F'))
+			{
+				if ((string)$order->getField('STATUS_ID') !== 'F')
+				{
+					$order->setField('STATUS_ID', 'F');
+					$changedFields[] = 'STATUS_ID=F';
+				}
+			}
+			elseif ($ufOrderStatus === 'CANCELED' && mf_1c_import_order_status_exists('C'))
+			{
+				if ((string)$order->getField('STATUS_ID') !== 'C')
+				{
+					$order->setField('STATUS_ID', 'C');
+					$changedFields[] = 'STATUS_ID=C';
+				}
+				if ($order->getField('CANCELED') !== 'Y')
+				{
+					$order->setField('CANCELED', 'Y');
+					$changedFields[] = 'CANCELED=Y';
+				}
+			}
+			elseif ($statusId === 'F' && mf_1c_import_order_status_exists('F'))
 			{
 				if ((string)$order->getField('STATUS_ID') !== 'F')
 				{
@@ -652,11 +789,15 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
-			$ufPaymentStatus = mf_1c_import_detect_payment_status(
-				$parsed['paid'] ?? null,
-				(float)($parsed['payment_sum'] ?? 0),
-				$orderPrice
-			);
+			$ufPaymentStatus = $mf['payment_status'] ?? null;
+			if ($ufPaymentStatus === null)
+			{
+				$ufPaymentStatus = mf_1c_import_detect_payment_status(
+					$parsed['paid'] ?? null,
+					(float)($parsed['payment_sum'] ?? 0),
+					$orderPrice
+				);
+			}
 			if ($ufPaymentStatus !== null)
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_PAYMENT_STATUS', $ufPaymentStatus))
@@ -669,11 +810,15 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
-			$ufShipmentStatus = mf_1c_import_detect_shipment_status(
-				$parsed['shipped'] ?? null,
-				(float)($parsed['shipped_qty'] ?? 0),
-				$orderQty
-			);
+			$ufShipmentStatus = $mf['shipment_status'] ?? null;
+			if ($ufShipmentStatus === null)
+			{
+				$ufShipmentStatus = mf_1c_import_detect_shipment_status(
+					$parsed['shipped'] ?? null,
+					(float)($parsed['shipped_qty'] ?? 0),
+					$orderQty
+				);
+			}
 			if ($ufShipmentStatus !== null)
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_SHIPMENT_STATUS', $ufShipmentStatus))
@@ -690,6 +835,24 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				{
 					$order->setField('STATUS_ID', 'DF');
 					$changedFields[] = 'STATUS_ID=DF';
+				}
+			}
+
+			$cancelReason = trim((string)($mf['cancel_reason'] ?? ''));
+			if ($cancelReason !== '')
+			{
+				if (mf_1c_import_set_order_uf($order, 'UF_1C_CANCEL_REASON', $cancelReason))
+				{
+					$changedFields[] = 'UF_1C_CANCEL_REASON=' . $cancelReason;
+				}
+			}
+
+			$cancelComment = trim((string)($mf['cancel_comment'] ?? ''));
+			if ($cancelComment !== '')
+			{
+				if (mf_1c_import_set_order_uf($order, 'UF_1C_CANCEL_COMMENT', $cancelComment))
+				{
+					$changedFields[] = 'UF_1C_CANCEL_COMMENT=' . $cancelComment;
 				}
 			}
 
@@ -723,14 +886,21 @@ if (!function_exists('mf_1c_import_register_shutdown'))
 {
 	function mf_1c_import_register_shutdown(string $filePath): void
 	{
+		mf_1c_import_log('IMPORT STATUSES: register shutdown xml=' . $filePath);
 		$updates = mf_1c_import_parse_xml_file($filePath);
 		if ($updates === [])
 		{
+			mf_1c_import_log('IMPORT STATUSES: no documents to apply for xml=' . basename($filePath));
+
 			return;
 		}
 
+		mf_1c_import_log('IMPORT STATUSES: shutdown queued documents=' . count($updates));
+
 		register_shutdown_function(static function () use ($updates): void {
+			mf_1c_import_log('IMPORT STATUSES: shutdown apply start documents=' . count($updates));
 			mf_1c_import_apply_updates($updates);
+			mf_1c_import_log('IMPORT STATUSES: shutdown apply done');
 		});
 	}
 }
