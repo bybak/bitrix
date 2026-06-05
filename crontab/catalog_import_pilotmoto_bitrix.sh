@@ -18,10 +18,12 @@ fi
 
 exec docker exec -i "$CONTAINER" php /var/www/html/mf_update_supplier_stock.php \
   --apply \
+  --create-not-found=Y \
   --warehouse-code=PilotMoto \
   --warehouse-title=PilotMoto \
   --file="$IN_CONTAINER_FILE" \
   --encoding=utf-8 \
   --price=Y \
   --recalc-base=Y \
-  --sync-missing=Y
+  --sync-missing=Y \
+  --brand-dict=Y

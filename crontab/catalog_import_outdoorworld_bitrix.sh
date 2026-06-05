@@ -18,6 +18,7 @@ fi
 
 exec docker exec -i "$CONTAINER" php /var/www/html/mf_update_supplier_stock.php \
   --apply \
+  --create-not-found=Y \
   --warehouse-code=OutdoorWorld \
   --warehouse-title=OutdoorWorld \
   --file="$IN_CONTAINER_FILE" \
