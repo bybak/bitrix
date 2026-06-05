@@ -357,6 +357,9 @@ if (!function_exists('mf_1c_import_parse_document'))
 			return null;
 		}
 
+		$id1cNode = $xpath->query('cml:Ид', $docNode)->item(0);
+		$id1c = $id1cNode ? trim($id1cNode->nodeValue) : '';
+
 		$allReqs = mf_1c_import_merge_all_requisites($xpath, $docNode);
 		$mf = mf_1c_import_extract_mf_fields($allReqs);
 		$statusId = strtoupper(trim((string)($allReqs['Статус заказа ИД'] ?? '')));
@@ -425,6 +428,7 @@ if (!function_exists('mf_1c_import_parse_document'))
 
 		return [
 			'xml_number' => $xmlNumber,
+			'id_1c' => $id1c,
 			'number_1c' => $number1c,
 			'order_candidates' => $candidates,
 			'resolved_number' => $candidates[0] ?? '',
@@ -508,6 +512,58 @@ if (!function_exists('mf_1c_import_parse_xml_file'))
 	}
 }
 
+if (!function_exists('mf_1c_import_get_order_loader'))
+{
+	function mf_1c_import_get_order_loader(): ?\CSaleOrderLoader
+	{
+		if (!Loader::includeModule('sale'))
+		{
+			return null;
+		}
+
+		$path = $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/sale/general/order_loader.php';
+		if (!class_exists('CSaleOrderLoader', false) && is_file($path))
+		{
+			require_once $path;
+		}
+
+		if (!class_exists('CSaleOrderLoader', false))
+		{
+			return null;
+		}
+
+		return new \CSaleOrderLoader();
+	}
+}
+
+if (!function_exists('mf_1c_import_find_order_id_by_code'))
+{
+	function mf_1c_import_find_order_id_by_code(string $orderCode): ?int
+	{
+		$orderCode = trim($orderCode);
+		if ($orderCode === '')
+		{
+			return null;
+		}
+
+		$loader = mf_1c_import_get_order_loader();
+		if (!$loader || !method_exists($loader, 'getOrderIdByDocument'))
+		{
+			return null;
+		}
+
+		$orderId = $loader->getOrderIdByDocument($orderCode);
+		if ($orderId === false || $orderId === null || $orderId === '')
+		{
+			return null;
+		}
+
+		$orderId = (int)$orderId;
+
+		return $orderId > 0 ? $orderId : null;
+	}
+}
+
 if (!function_exists('mf_1c_import_find_order_id'))
 {
 	function mf_1c_import_find_order_id(array $parsed): ?int
@@ -515,6 +571,56 @@ if (!function_exists('mf_1c_import_find_order_id'))
 		if (!Loader::includeModule('sale'))
 		{
 			return null;
+		}
+
+		$id1c = trim((string)($parsed['id_1c'] ?? ''));
+		if ($id1c !== '')
+		{
+			$row = \Bitrix\Sale\Internals\OrderTable::getList([
+				'filter' => ['=ID_1C' => $id1c],
+				'select' => ['ID', 'ACCOUNT_NUMBER'],
+				'order' => ['ID' => 'DESC'],
+				'limit' => 1,
+			])->fetch();
+			if (is_array($row) && (int)($row['ID'] ?? 0) > 0)
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES MATCH: method=ID_1C value=' . $id1c
+					. ' order_id=' . (int)$row['ID']
+					. ' account=' . (string)($row['ACCOUNT_NUMBER'] ?? '')
+				);
+
+				return (int)$row['ID'];
+			}
+		}
+
+		$lookupCodes = [];
+		$xmlNumber = trim((string)($parsed['xml_number'] ?? ''));
+		if ($xmlNumber !== '')
+		{
+			$lookupCodes[] = $xmlNumber;
+		}
+		foreach ($parsed['order_candidates'] ?? [] as $candidate)
+		{
+			$candidate = trim((string)$candidate);
+			if ($candidate !== '' && !in_array($candidate, $lookupCodes, true))
+			{
+				$lookupCodes[] = $candidate;
+			}
+		}
+
+		foreach ($lookupCodes as $orderCode)
+		{
+			$orderId = mf_1c_import_find_order_id_by_code($orderCode);
+			if ($orderId !== null && $orderId > 0)
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES MATCH: method=getOrderIdByDocument value=' . $orderCode
+					. ' order_id=' . $orderId
+				);
+
+				return $orderId;
+			}
 		}
 
 		$candidates = $parsed['order_candidates'] ?? null;
@@ -773,9 +879,28 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 		?string $shipmentStatus
 	): array
 	{
-		if ($orderId <= 0 || !function_exists('mf_order_custom_status_set'))
+		if ($orderId <= 0)
 		{
 			return [];
+		}
+
+		if (!function_exists('mf_order_custom_status_set'))
+		{
+			mf_1c_import_log('IMPORT STATUSES HL SKIP: mf_order_custom_status_set is not loaded order_id=' . $orderId);
+
+			return [];
+		}
+
+		if (function_exists('mf_order_custom_status_ensure_hl'))
+		{
+			try
+			{
+				mf_order_custom_status_ensure_hl();
+			}
+			catch (\Throwable $e)
+			{
+				mf_1c_import_log('IMPORT STATUSES HL ENSURE ERROR: ' . $e->getMessage());
+			}
 		}
 
 		$payload = [];
@@ -813,9 +938,24 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 				}
 				$beforeCode = is_array($before) ? (string)($before[$key] ?? '') : '';
 				$afterCode = is_array($after) ? (string)($after[$key] ?? '') : '';
-				if ($afterCode !== '' && $afterCode !== $beforeCode)
+				if ($afterCode !== '' && ($beforeCode === '' || $afterCode !== $beforeCode))
 				{
 					$changed[] = 'HL_' . $key . '=' . $afterCode;
+				}
+			}
+			if ($changed === [] && is_array($after))
+			{
+				foreach (['ORDER_STATUS', 'PAYMENT_STATUS', 'SHIPMENT_STATUS'] as $key)
+				{
+					if (!array_key_exists($key, $payload))
+					{
+						continue;
+					}
+					$afterCode = (string)($after[$key] ?? '');
+					if ($afterCode !== '')
+					{
+						$changed[] = 'HL_' . $key . '=' . $afterCode;
+					}
 				}
 			}
 		}

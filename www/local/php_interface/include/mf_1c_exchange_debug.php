@@ -240,6 +240,12 @@ if (!function_exists('mf_on_1c_exchange_debug_log'))
 		mf_1c_exchange_debug_hit('prolog');
 		mf_1c_exchange_log_request();
 
+		$mfOrderCustomStatusInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_order_custom_status.php';
+		if (is_file($mfOrderCustomStatusInclude))
+		{
+			require_once $mfOrderCustomStatusInclude;
+		}
+
 		$mode = (string)($_REQUEST['mode'] ?? '');
 		$filename = !empty($_REQUEST['filename']) ? basename((string)$_REQUEST['filename']) : '';
 		if ($filename === '')

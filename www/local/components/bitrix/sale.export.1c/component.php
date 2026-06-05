@@ -848,6 +848,40 @@ if ($isQueryOrInfo && !$is1cTextProtocol && ($trimmedContents === '' || stripos(
 	$contents = $emptyExport->outputXmlCMLHeader() . $emptyExport->outputXmlCMLFooter();
 }
 
+$mfExchangeMode = (string)($_GET['mode'] ?? $_POST['mode'] ?? '');
+if (
+	$mfExchangeMode === 'import'
+	&& isset($ABS_FILE_NAME)
+	&& is_string($ABS_FILE_NAME)
+	&& $ABS_FILE_NAME !== ''
+	&& is_file($ABS_FILE_NAME)
+	&& preg_match('/^success\b/u', ltrim($contents))
+)
+{
+	try
+	{
+		$mf1cImportStatusesInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_1c_import_statuses.php';
+		if (is_file($mf1cImportStatusesInclude))
+		{
+			require_once $mf1cImportStatusesInclude;
+		}
+		if (function_exists('mf_1c_import_apply_file'))
+		{
+			mf_1c_import_apply_file($ABS_FILE_NAME);
+		}
+	}
+	catch (\Throwable $e)
+	{
+		if (function_exists('mf_1c_import_log'))
+		{
+			mf_1c_import_log(
+				'IMPORT STATUSES FINAL HOOK ERROR: ' . $e->getMessage()
+				. ' @ ' . $e->getFile() . ':' . $e->getLine()
+			);
+		}
+	}
+}
+
 if(!$bDesignMode)
 {
 	if (!$bCrmMode)
