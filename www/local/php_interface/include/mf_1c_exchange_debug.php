@@ -16,14 +16,15 @@ if (!function_exists('mf_1c_exchange_debug_log_path'))
 			return $path;
 		}
 
-		$candidates = [];
+		$candidates = [
+			dirname(__DIR__, 3) . '/upload/1c_exchange_debug.log',
+			'/var/www/html/upload/1c_exchange_debug.log',
+			'/www/bitrix_motor_force/www/upload/1c_exchange_debug.log',
+		];
 		if (!empty($_SERVER['DOCUMENT_ROOT']))
 		{
 			$candidates[] = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') . '/upload/1c_exchange_debug.log';
 		}
-
-		// local/php_interface/include -> www
-		$candidates[] = dirname(__DIR__, 3) . '/upload/1c_exchange_debug.log';
 
 		foreach ($candidates as $candidate)
 		{
@@ -45,16 +46,62 @@ if (!function_exists('mf_1c_exchange_debug_log_path'))
 	}
 }
 
+if (!function_exists('mf1c_exchange_upload_file_candidates'))
+{
+	function mf1c_exchange_upload_file_candidates(string $exchangeFilename): array
+	{
+		$exchangeFilename = basename($exchangeFilename);
+
+		$candidates = [
+			dirname(__DIR__, 3) . '/upload/1c_exchange/' . $exchangeFilename,
+			'/var/www/html/upload/1c_exchange/' . $exchangeFilename,
+			'/www/bitrix_motor_force/www/upload/1c_exchange/' . $exchangeFilename,
+		];
+		$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+		if ($docRoot !== '')
+		{
+			array_unshift($candidates, $docRoot . '/upload/1c_exchange/' . $exchangeFilename);
+		}
+
+		return array_values(array_unique($candidates));
+	}
+}
+
+if (!function_exists('mf1c_exchange_resolve_upload_file'))
+{
+	function mf1c_exchange_resolve_upload_file(string $exchangeFilename): string
+	{
+		foreach (mf1c_exchange_upload_file_candidates($exchangeFilename) as $candidate)
+		{
+			if (function_exists('mf1c_exchange_debug_log'))
+			{
+				mf1c_exchange_debug_log(
+					'XML candidate: ' . $candidate . ' exists=' . (is_file($candidate) ? 'Y' : 'N')
+				);
+			}
+			if (is_file($candidate))
+			{
+				return $candidate;
+			}
+		}
+
+		return '';
+	}
+}
+
 if (!function_exists('mf_1c_exchange_debug_log_paths'))
 {
 	function mf_1c_exchange_debug_log_paths(): array
 	{
-		$paths = [];
+		$paths = [
+			dirname(__DIR__, 3) . '/upload/1c_exchange_debug.log',
+			'/var/www/html/upload/1c_exchange_debug.log',
+			'/www/bitrix_motor_force/www/upload/1c_exchange_debug.log',
+		];
 		if (!empty($_SERVER['DOCUMENT_ROOT']))
 		{
 			$paths[] = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') . '/upload/1c_exchange_debug.log';
 		}
-		$paths[] = dirname(__DIR__, 3) . '/upload/1c_exchange_debug.log';
 
 		return array_values(array_unique($paths));
 	}
@@ -220,20 +267,29 @@ if (!function_exists('mf_on_1c_exchange_debug_log'))
 			return;
 		}
 
-		$docRoot = !empty($_SERVER['DOCUMENT_ROOT'])
-			? rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/')
-			: dirname(__DIR__, 3);
-		$exchangeFile = $docRoot . '/upload/1c_exchange/' . $filename;
-
 		if ($mode === 'file')
 		{
-			mf_1c_exchange_log_file_shutdown($exchangeFile);
+			register_shutdown_function(static function () use ($filename): void {
+				$exchangeFile = function_exists('mf1c_exchange_resolve_upload_file')
+					? mf1c_exchange_resolve_upload_file($filename)
+					: '';
+				if ($exchangeFile !== '')
+				{
+					mf_1c_import_log_xml_dump($exchangeFile);
+				}
+			});
 		}
 		elseif ($mode === 'import')
 		{
-			register_shutdown_function(static function () use ($exchangeFile): void {
-				mf_1c_import_log_xml_dump($exchangeFile);
-			});
+			$exchangeFile = function_exists('mf1c_exchange_resolve_upload_file')
+				? mf1c_exchange_resolve_upload_file($filename)
+				: '';
+			if ($exchangeFile !== '')
+			{
+				register_shutdown_function(static function () use ($exchangeFile): void {
+					mf_1c_import_log_xml_dump($exchangeFile);
+				});
+			}
 		}
 	}
 }

@@ -8,11 +8,57 @@ const BX_FORCE_DISABLE_SEPARATED_SESSION_MODE = true;
 define('NOT_CHECK_PERMISSIONS', true);
 define('NOT_CHECK_FILE_PERMISSIONS', true);
 
+if (!function_exists('mf1c_exchange_upload_file_candidates'))
+{
+	function mf1c_exchange_upload_file_candidates(string $exchangeFilename): array
+	{
+		$exchangeFilename = basename($exchangeFilename);
+
+		$candidates = [
+			dirname(__DIR__, 4) . '/upload/1c_exchange/' . $exchangeFilename,
+			'/var/www/html/upload/1c_exchange/' . $exchangeFilename,
+			'/www/bitrix_motor_force/www/upload/1c_exchange/' . $exchangeFilename,
+		];
+		$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+		if ($docRoot !== '')
+		{
+			array_unshift($candidates, $docRoot . '/upload/1c_exchange/' . $exchangeFilename);
+		}
+
+		return array_values(array_unique($candidates));
+	}
+}
+
+if (!function_exists('mf1c_exchange_resolve_upload_file'))
+{
+	function mf1c_exchange_resolve_upload_file(string $exchangeFilename): string
+	{
+		$exchangeFile = '';
+		foreach (mf1c_exchange_upload_file_candidates($exchangeFilename) as $candidate)
+		{
+			mf1c_exchange_debug_log(
+				'XML candidate: ' . $candidate . ' exists=' . (is_file($candidate) ? 'Y' : 'N')
+			);
+			if (is_file($candidate))
+			{
+				$exchangeFile = $candidate;
+				break;
+			}
+		}
+
+		return $exchangeFile;
+	}
+}
+
 if (!function_exists('mf1c_exchange_debug_log_paths'))
 {
 	function mf1c_exchange_debug_log_paths(): array
 	{
-		$paths = [dirname(__DIR__, 4) . '/upload/1c_exchange_debug.log'];
+		$paths = [
+			dirname(__DIR__, 4) . '/upload/1c_exchange_debug.log',
+			'/var/www/html/upload/1c_exchange_debug.log',
+			'/www/bitrix_motor_force/www/upload/1c_exchange_debug.log',
+		];
 		if (!empty($_SERVER['DOCUMENT_ROOT']))
 		{
 			$paths[] = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') . '/upload/1c_exchange_debug.log';
@@ -40,11 +86,13 @@ if (!function_exists('mf1c_exchange_debug_log'))
 		if (!$pathsLogged)
 		{
 			$pathsLogged = true;
-			@file_put_contents(
-				dirname(__DIR__, 4) . '/upload/1c_exchange_debug.paths.txt',
-				date('Y-m-d H:i:s') . ' ' . implode("\n", mf1c_exchange_debug_log_paths()) . "\n",
-				FILE_APPEND
-			);
+			$pathsLine = date('Y-m-d H:i:s')
+				. ' DOCUMENT_ROOT=' . (string)($_SERVER['DOCUMENT_ROOT'] ?? '')
+				. "\n" . implode("\n", mf1c_exchange_debug_log_paths()) . "\n";
+			foreach (mf1c_exchange_debug_log_paths() as $logFile)
+			{
+				@file_put_contents(dirname($logFile) . '/1c_exchange_debug.paths.txt', $pathsLine, FILE_APPEND);
+			}
 		}
 	}
 }
@@ -131,9 +179,17 @@ if ($type === 'sale')
 
 	if ($exchangeFilename !== '')
 	{
-		$exchangeFile = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . $exchangeFilename;
+		$exchangeFile = mf1c_exchange_resolve_upload_file($exchangeFilename);
+		if ($exchangeFile !== '')
+		{
+			mf1c_exchange_debug_log('XML resolved: ' . $exchangeFile);
+		}
+		else
+		{
+			mf1c_exchange_debug_log('XML resolved: NOT FOUND for filename=' . $exchangeFilename);
+		}
 
-		if ($exchangeMode === 'import' && is_file($exchangeFile))
+		if ($exchangeMode === 'import' && $exchangeFile !== '')
 		{
 			$xmlBody = file_get_contents($exchangeFile);
 			if (is_string($xmlBody) && $xmlBody !== '')
@@ -149,27 +205,28 @@ if ($type === 'sale')
 			}
 		}
 
-		if ($exchangeMode === 'import' && function_exists('mf_1c_import_register_shutdown'))
+		if ($exchangeMode === 'import' && $exchangeFile !== '' && function_exists('mf_1c_import_register_shutdown'))
 		{
 			mf_1c_import_register_shutdown($exchangeFile);
 		}
 		elseif ($exchangeMode === 'file')
 		{
-			register_shutdown_function(static function () use ($exchangeFile): void {
-				if (!is_file($exchangeFile))
+			register_shutdown_function(static function () use ($exchangeFilename): void {
+				$resolvedFile = mf1c_exchange_resolve_upload_file($exchangeFilename);
+				if ($resolvedFile === '')
 				{
-					mf1c_exchange_debug_log('XML DUMP file mode: not found ' . $exchangeFile);
+					mf1c_exchange_debug_log('XML DUMP file mode: not found filename=' . $exchangeFilename);
 					return;
 				}
-				$xmlBody = file_get_contents($exchangeFile);
+				$xmlBody = file_get_contents($resolvedFile);
 				if (!is_string($xmlBody) || $xmlBody === '')
 				{
-					mf1c_exchange_debug_log('XML DUMP file mode: empty ' . $exchangeFile);
+					mf1c_exchange_debug_log('XML DUMP file mode: empty ' . $resolvedFile);
 					return;
 				}
 				$size = strlen($xmlBody);
 				mf1c_exchange_debug_log(
-					"==================== XML DUMP (file mode): " . basename($exchangeFile) . " ({$size} bytes) ====================\n"
+					"==================== XML DUMP (file mode): " . basename($resolvedFile) . " ({$size} bytes) ====================\n"
 					. $xmlBody
 					. "\n================== END XML DUMP =================="
 				);
