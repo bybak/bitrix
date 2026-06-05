@@ -10,10 +10,10 @@ services:
       - ./www:/var/www/html
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      # includes/bitrix.conf подключается из default.conf и ssl.conf
+      # includes/bitrix.conf подключается из default.conf (локально) и ssl.conf (прод)
       - ./logs/nginx:/var/log/nginx
       - ./certbot/www:/var/www/certbot:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # /etc/letsencrypt — только на проде, см. docker-compose.prod.yml
     depends_on:
       - php
     networks:

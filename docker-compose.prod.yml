@@ -1,0 +1,8 @@
+# Продакшен: HTTPS motor-force.ru + сертификаты Let's Encrypt на хосте.
+# Запуск: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  nginx:
+    volumes:
+      - ./nginx/ssl.prod.conf:/etc/nginx/conf.d/ssl.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
