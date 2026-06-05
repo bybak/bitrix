@@ -48,192 +48,26 @@ if (function_exists('mf_1c_exchange_ensure_user_authorized'))
 
 if ($type === 'sale')
 {
-
-	//--------------------------------------------------
-	file_put_contents(
-		$_SERVER["DOCUMENT_ROOT"]."/upload/1c_exchange_debug.log",
-		date("Y-m-d H:i:s")." REQUEST: ".print_r($_REQUEST, true)."\n",
-		FILE_APPEND
-	);
-	
-	if (!empty($_FILES)) {
-		file_put_contents(
-			$_SERVER["DOCUMENT_ROOT"]."/upload/1c_exchange_debug.log",
-			"FILES: ".print_r($_FILES, true)."\n",
-			FILE_APPEND
-		);
-	}
-
-	$statusUpdates = [];
-
-	if (
-		($_REQUEST['mode'] ?? '') === 'import'
-		&& !empty($_REQUEST['filename'])
-	) {
-		$file = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . basename((string)$_REQUEST['filename']);
-
-		file_put_contents(
-			$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-			"IMPORT PATCH CHECK FILE: {$file}\n",
-			FILE_APPEND
-		);
-
-		if (is_file($file)) {
-			$xmlString = file_get_contents($file);
-
-			$xmlString = str_replace(
-				'<Наименование>Статуса заказа ИД</Наименование>',
-				'<Наименование>Статус заказа ИД</Наименование>',
-				$xmlString
-			);
-
-			file_put_contents($file, $xmlString);
-
-			$dom = new DOMDocument();
-			$dom->loadXML($xmlString);
-
-			$xpath = new DOMXPath($dom);
-			$xpath->registerNamespace('cml', 'urn:1C.ru:commerceml_210');
-
-			foreach ($xpath->query('//cml:Документ') as $docNode) {
-				$numberNode = $xpath->query('cml:Номер', $docNode)->item(0);
-				$number = $numberNode ? trim($numberNode->nodeValue) : '';
-
-				$statusId = '';
-
-				foreach ($xpath->query('cml:ЗначенияРеквизитов/cml:ЗначениеРеквизита', $docNode) as $reqNode) {
-					$nameNode = $xpath->query('cml:Наименование', $reqNode)->item(0);
-					$valueNode = $xpath->query('cml:Значение', $reqNode)->item(0);
-
-					$name = $nameNode ? trim($nameNode->nodeValue) : '';
-					$value = $valueNode ? trim($valueNode->nodeValue) : '';
-
-					if ($name === 'Статус заказа ИД') {
-						$statusId = $value;
-					}
-				}
-
-				if ($number !== '' && $statusId !== '') {
-					$statusUpdates[] = [
-						'number' => $number,
-						'status' => $statusId,
-					];
-				}
-			}
-
-			file_put_contents(
-				$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-				'STATUS UPDATES PARSED: ' . print_r($statusUpdates, true) . "\n",
-				FILE_APPEND
-			);
-		}
-	}
-
-	if (!empty($statusUpdates)) {
-		register_shutdown_function(static function () use ($statusUpdates) {
-			if (!CModule::IncludeModule('sale')) {
-				file_put_contents(
-					$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-					"FORCE STATUS UPDATE: sale module not loaded\n",
-					FILE_APPEND
-				);
-				return;
-			}
-
-			foreach ($statusUpdates as $update) {
-				$number = $update['number'];
-				$status = $update['status'];
-
-				$digits = preg_replace('/\D+/', '', $number);
-
-				// s1288 / 1c-001288 -> 288
-				$orderNumber = $digits;
-				if (strlen($digits) > 3) {
-					$orderNumber = (string)((int)substr($digits, -3));
-				}
-
-				$filter = [
-					'LOGIC' => 'OR',
-					['ID' => (int)$orderNumber],
-					['ACCOUNT_NUMBER' => $orderNumber],
-					['ACCOUNT_NUMBER' => $number],
-				];
-
-				$orderRow = \Bitrix\Sale\Order::getList([
-					'filter' => $filter,
-					'select' => ['ID', 'ACCOUNT_NUMBER', 'STATUS_ID'],
-					'limit' => 1,
-				])->fetch();
-
-				if (!$orderRow) {
-					file_put_contents(
-						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-						"FORCE STATUS UPDATE: order not found for number={$number}\n",
-						FILE_APPEND
-					);
-					continue;
-				}
-
-				$order = \Bitrix\Sale\Order::load((int)$orderRow['ID']);
-
-				if (!$order) {
-					file_put_contents(
-						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-						"FORCE STATUS UPDATE: order load failed id={$orderRow['ID']}\n",
-						FILE_APPEND
-					);
-					continue;
-				}
-
-				if ($order->getField('STATUS_ID') === $status) {
-					file_put_contents(
-						$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-						"FORCE STATUS UPDATE: already status={$status} order={$orderRow['ID']}\n",
-						FILE_APPEND
-					);
-					continue;
-				}
-
-				$order->setField('STATUS_ID', $status);
-				$result = $order->save();
-
-				file_put_contents(
-					$_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log',
-					'FORCE STATUS UPDATE: order=' . $orderRow['ID'] .
-					' account=' . $orderRow['ACCOUNT_NUMBER'] .
-					' old=' . $orderRow['STATUS_ID'] .
-					' new=' . $status .
-					' result=' . ($result->isSuccess() ? 'OK' : implode('; ', $result->getErrorMessages())) .
-					"\n",
-					FILE_APPEND
-				);
-			}
-		});
+	$mf1cImportStatusesInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_1c_import_statuses.php';
+	if (is_file($mf1cImportStatusesInclude))
+	{
+		require_once $mf1cImportStatusesInclude;
 	}
 
 	if (
 		($_REQUEST['mode'] ?? '') === 'import'
 		&& !empty($_REQUEST['filename'])
-	) {
-		$file = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . basename($_REQUEST['filename']);
-	
-		if (file_exists($file)) {
-	
-			copy(
-				$file,
-				$_SERVER['DOCUMENT_ROOT'] . '/upload/debug_' . time() . '_' . basename($file)
-			);
-	
-			file_put_contents(
-				$_SERVER['DOCUMENT_ROOT'].'/upload/1c_exchange_debug.log',
-				"\n\n==================== XML DUMP ====================\n".
-				file_get_contents($file).
-				"\n================== END XML DUMP ==================\n\n",
-				FILE_APPEND
-			);
+		&& function_exists('mf_1c_import_register_shutdown')
+	)
+	{
+		$importFile = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . basename((string)$_REQUEST['filename']);
+		if (function_exists('mf_1c_import_log'))
+		{
+			mf_1c_import_log('IMPORT REQUEST filename=' . basename((string)$_REQUEST['filename']));
 		}
+		mf_1c_import_register_shutdown($importFile);
 	}
-	//--------------------------------------------------
+
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(
 		"SITE_LIST" => COption::GetOptionString("sale", "1C_SALE_SITE_LIST", ""),
 		"EXPORT_PAYED_ORDERS" => COption::GetOptionString("sale", "1C_EXPORT_PAYED_ORDERS", ""),

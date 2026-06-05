@@ -4800,6 +4800,18 @@ if (is_file($mf1cExportInclude))
 	require_once $mf1cExportInclude;
 }
 
+// --- Custom order statuses from 1C (HL mf_order_custom_status) --------------
+$mfOrderCustomStatusInclude = __DIR__ . '/include/mf_order_custom_status.php';
+if (is_file($mfOrderCustomStatusInclude))
+{
+	require_once $mfOrderCustomStatusInclude;
+}
+$mfOrderCustomStatusAdminInclude = __DIR__ . '/include/mf_order_custom_status_admin.php';
+if (is_file($mfOrderCustomStatusAdminInclude))
+{
+	require_once $mfOrderCustomStatusAdminInclude;
+}
+
 $mfUnfInclude = __DIR__ . '/include/mf_unf.php';
 if (is_file($mfUnfInclude))
 {
