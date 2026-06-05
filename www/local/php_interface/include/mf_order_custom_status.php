@@ -777,3 +777,82 @@ if (!function_exists('mf_order_custom_status_order_matches_filters'))
 		return true;
 	}
 }
+
+if (!function_exists('mf_order_custom_status_set_defaults_for_new_order'))
+{
+	/**
+	 * Начальные MF-статусы для нового заказа (сайт / админка).
+	 */
+	function mf_order_custom_status_set_defaults_for_new_order(int $orderId): void
+	{
+		if ($orderId <= 0)
+		{
+			return;
+		}
+
+		if (mf_order_custom_status_get($orderId) !== null)
+		{
+			return;
+		}
+
+		mf_order_custom_status_set($orderId, [
+			'ORDER_STATUS' => 'in_progress',
+			'PAYMENT_STATUS' => 'not_paid',
+			'SHIPMENT_STATUS' => 'not_shipped',
+		]);
+	}
+}
+
+if (!function_exists('mf_order_custom_status_on_order_saved'))
+{
+	/**
+	 * sale:OnSaleOrderSaved — проставить MF-статусы при первом сохранении заказа.
+	 */
+	function mf_order_custom_status_on_order_saved(\Bitrix\Main\Event $event): void
+	{
+		if (!(bool)$event->getParameter('IS_NEW'))
+		{
+			return;
+		}
+
+		$order = $event->getParameter('ENTITY');
+		if (!$order instanceof \Bitrix\Sale\Order)
+		{
+			$order = $event->getParameter('ORDER');
+		}
+		if (!$order instanceof \Bitrix\Sale\Order)
+		{
+			return;
+		}
+
+		$orderId = (int)$order->getId();
+		if ($orderId <= 0)
+		{
+			return;
+		}
+
+		try
+		{
+			mf_order_custom_status_set_defaults_for_new_order($orderId);
+		}
+		catch (\Throwable $e)
+		{
+			if (function_exists('AddMessage2Log'))
+			{
+				AddMessage2Log(
+					'mf_order_custom_status_on_order_saved: order_id=' . $orderId . ' ' . $e->getMessage(),
+					'mf_order_custom_status'
+				);
+			}
+		}
+	}
+}
+
+if (class_exists(\Bitrix\Main\EventManager::class))
+{
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler(
+		'sale',
+		'OnSaleOrderSaved',
+		'mf_order_custom_status_on_order_saved'
+	);
+}
