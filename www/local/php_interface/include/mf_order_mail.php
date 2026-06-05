@@ -4,7 +4,9 @@ declare(strict_types=1);
 namespace Mf\OrderMail;
 
 use Bitrix\Main\Config\Option;
+use Bitrix\Main\Diag\Debug;
 use Bitrix\Main\Loader;
+use Bitrix\Main\Mail\Mail;
 use Bitrix\Sale\BasketItemBase;
 use Bitrix\Sale\Order;
 use Bitrix\Sale\Payment;
@@ -130,43 +132,24 @@ final class Handlers
 
 	public static function onOrderStatusSendEmail(int $orderId, &$eventName, &$fields, $statusId): bool
 	{
-		try
-		{
-			if (self::shouldSuppressStatusEmail((string)$statusId))
-			{
-				return false;
-			}
+		unset($orderId, $eventName, $fields, $statusId);
 
-			$order = self::loadOrder($orderId);
-			if (!$order)
-			{
-				return true;
-			}
-
-			$display = Renderer::orderDisplayNumber($order);
-			$fields['MF_ORDER_DISPLAY'] = $display;
-			$fields['MF_ORDER_MAIL_BODY'] = Renderer::renderStatusChange(
-				$order,
-				(string)($fields['ORDER_STATUS'] ?? ''),
-				(string)($fields['ORDER_DESCRIPTION'] ?? '')
-			);
-		}
-		catch (\Throwable $e)
-		{
-			self::log($e->getMessage());
-		}
-
-		return true;
+		// Стандартные письма Bitrix при смене STATUS_ID отключены — уведомления только по MF-статусам из 1С.
+		return false;
 	}
 
-	public static function onBeforeEventSend(array &$fields, array &$eventMessage, $context, array &$result): void
+	public static function onBeforeEventSend(array &$fields, array &$eventMessage, $context, array &$result): bool
 	{
 		unset($context, $result);
 
 		$eventName = (string)($eventMessage['EVENT_NAME'] ?? '');
+		if (str_starts_with($eventName, 'SALE_STATUS_CHANGED'))
+		{
+			return false;
+		}
 		if (!in_array($eventName, self::mailEventNames(), true))
 		{
-			return;
+			return true;
 		}
 
 		$clientFrom = function_exists('mf_mail_default_from_client')
@@ -185,13 +168,15 @@ final class Handlers
 		$body = trim((string)($fields['MF_ORDER_MAIL_BODY'] ?? ''));
 		if ($body === '')
 		{
-			return;
+			return true;
 		}
 
 		$eventMessage['BODY_TYPE'] = 'html';
 		$eventMessage['SITE_TEMPLATE_ID'] = '';
 		$eventMessage['MESSAGE'] = $body;
 		unset($eventMessage['MESSAGE_PHP']);
+
+		return true;
 	}
 
 	/** @return list<string> */
@@ -199,47 +184,12 @@ final class Handlers
 	{
 		return [
 			'SALE_NEW_ORDER',
-			'SALE_STATUS_CHANGED_N',
-			'SALE_STATUS_CHANGED_F',
-			'SALE_STATUS_CHANGED_P',
 		];
 	}
 
-	private static function shouldSuppressStatusEmail(string $statusId): bool
+	public static function loadOrderPublic(int $orderId): ?Order
 	{
-		$statusId = trim($statusId);
-		if ($statusId === '')
-		{
-			return false;
-		}
-
-		if (Loader::includeModule('sale') && class_exists(\Bitrix\Sale\OrderStatus::class))
-		{
-			$initial = trim((string)\Bitrix\Sale\OrderStatus::getInitialStatus());
-			if ($initial !== '' && $statusId === $initial)
-			{
-				return true;
-			}
-		}
-
-		if (class_exists(\CSaleStatus::class))
-		{
-			$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
-			$row = \CSaleStatus::GetByID($statusId, $lang);
-			if (is_array($row))
-			{
-				$name = mb_strtolower(trim((string)($row['NAME'] ?? '')));
-				if (
-					str_contains($name, 'ожидается оплата')
-					|| str_contains($name, 'принят, ожидается')
-				)
-				{
-					return true;
-				}
-			}
-		}
-
-		return false;
+		return self::loadOrder($orderId);
 	}
 
 	private static function loadOrder(int $orderId): ?Order
@@ -259,6 +209,198 @@ final class Handlers
 		if (class_exists(\Bitrix\Main\Diag\Debug::class))
 		{
 			\Bitrix\Main\Diag\Debug::writeToFile(date('c') . ' mf_order_mail: ' . $message, '', 'mf_order_mail.log');
+		}
+	}
+}
+
+final class CustomStatusNotifier
+{
+	/** @var array<string, array{group:string,title:string}> */
+	private const FIELD_MAP = [
+		'ORDER_STATUS' => ['group' => 'order', 'title' => 'Статус заказа'],
+		'PAYMENT_STATUS' => ['group' => 'payment', 'title' => 'Статус оплаты'],
+		'SHIPMENT_STATUS' => ['group' => 'shipment', 'title' => 'Статус доставки'],
+	];
+
+	public static function notify(int $orderId, ?array $before, array $after): void
+	{
+		if ($orderId <= 0 || self::isDisabled())
+		{
+			return;
+		}
+
+		$changes = self::collectChanges($before, $after);
+		if ($changes === [])
+		{
+			return;
+		}
+
+		try
+		{
+			$order = Handlers::loadOrderPublic($orderId);
+			if (!$order)
+			{
+				self::log('custom status mail: order not found id=' . $orderId);
+
+				return;
+			}
+
+			$email = self::customerEmail($order);
+			if ($email === '')
+			{
+				self::log('custom status mail: empty customer email orderId=' . $orderId);
+
+				return;
+			}
+
+			$display = Renderer::orderDisplayNumber($order);
+			$subject = count($changes) === 1
+				? self::sanitizeSubject('Заказ №' . $display . ': ' . (string)$changes[0]['title'])
+				: self::sanitizeSubject('Заказ №' . $display . ': обновление статусов');
+			$body = Renderer::renderMfCustomStatusChanges($order, $changes);
+
+			$header = self::mailHeader();
+			$params = [
+				'TO' => $email,
+				'SUBJECT' => $subject,
+				'BODY' => $body,
+				'CHARSET' => 'UTF-8',
+				'CONTENT_TYPE' => 'html',
+				'HEADER' => $header,
+			];
+
+			if (!class_exists(Mail::class) || !Mail::send($params))
+			{
+				self::log('custom status mail: Mail::send failed orderId=' . $orderId);
+			}
+		}
+		catch (\Throwable $e)
+		{
+			self::log('custom status mail: ' . $e->getMessage());
+		}
+	}
+
+	/** @return list<array{title:string,old:string,new:string}> */
+	private static function collectChanges(?array $before, array $after): array
+	{
+		$changes = [];
+		foreach (self::FIELD_MAP as $key => $meta)
+		{
+			$beforeCode = is_array($before) ? trim((string)($before[$key] ?? '')) : '';
+			$afterCode = trim((string)($after[$key] ?? ''));
+			if ($beforeCode === '' || $afterCode === '' || $beforeCode === $afterCode)
+			{
+				continue;
+			}
+
+			$changes[] = [
+				'title' => (string)$meta['title'],
+				'old' => self::statusLabel($meta['group'], $before, $key, $beforeCode),
+				'new' => self::statusLabel($meta['group'], $after, $key, $afterCode),
+			];
+		}
+
+		return $changes;
+	}
+
+	/** @param 'order'|'payment'|'shipment' $group */
+	private static function statusLabel(string $group, ?array $row, string $key, string $code): string
+	{
+		$labelKey = $key . '_LABEL';
+		$label = is_array($row) ? trim((string)($row[$labelKey] ?? '')) : '';
+		if ($label !== '')
+		{
+			return $label;
+		}
+		if (function_exists('mf_order_custom_status_label'))
+		{
+			return mf_order_custom_status_label($group, $code);
+		}
+
+		return $code;
+	}
+
+	private static function isDisabled(): bool
+	{
+		$env = getenv('MF_ORDER_CUSTOM_STATUS_MAIL');
+		if ($env !== false)
+		{
+			return in_array(strtolower(trim((string)$env)), ['0', 'false', 'off', 'no'], true);
+		}
+
+		return false;
+	}
+
+	/** @return array<string, string> */
+	private static function mailHeader(): array
+	{
+		$header = [];
+		$from = function_exists('mf_mail_default_from_client')
+			? mf_mail_default_from_client()
+			: '';
+		if ($from !== '')
+		{
+			$header['From'] = function_exists('mf_mail_default_from_client_header')
+				? mf_mail_default_from_client_header()
+				: $from;
+			$header['Reply-To'] = $from;
+			$header['X-MF-SMTP-Profile'] = 'andrey';
+		}
+
+		return $header;
+	}
+
+	private static function customerEmail(Order $order): string
+	{
+		try
+		{
+			$pc = $order->getPropertyCollection();
+			if ($pc !== null)
+			{
+				$prop = $pc->getUserEmail();
+				if ($prop !== null)
+				{
+					$email = trim((string)$prop->getValue());
+					if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+					{
+						return $email;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		$uid = (int)$order->getUserId();
+		if ($uid > 0 && class_exists(\CUser::class))
+		{
+			$user = \CUser::GetByID($uid)->Fetch();
+			if (is_array($user))
+			{
+				$email = trim((string)($user['EMAIL'] ?? ''));
+				if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+				{
+					return $email;
+				}
+			}
+		}
+
+		return '';
+	}
+
+	private static function sanitizeSubject(string $subject): string
+	{
+		$subject = preg_replace('~[\r\n]+~u', ' ', $subject) ?? $subject;
+
+		return trim(preg_replace('~\s+~u', ' ', $subject) ?? $subject);
+	}
+
+	private static function log(string $message): void
+	{
+		if (class_exists(Debug::class))
+		{
+			Debug::writeToFile(date('c') . ' mf_order_mail: ' . $message, '', 'mf_order_mail.log');
 		}
 	}
 }
@@ -334,6 +476,60 @@ final class Renderer
 		$html[] = self::customerTable($order);
 
 		$html[] = self::footerBlock();
+		$html[] = self::wrapClose();
+
+		return implode("\n", $html);
+	}
+
+	/**
+	 * @param list<array{title:string,old:string,new:string}> $changes
+	 */
+	public static function renderMfCustomStatusChanges(Order $order, array $changes): string
+	{
+		$display = self::orderDisplayNumber($order);
+		$ordersUrl = rtrim(self::siteUrl($order), '/') . '/personal/orders/';
+
+		$html = [];
+		$html[] = self::wrapOpen();
+		$html[] = self::block(
+			'<div style="text-align:center;margin:0 0 18px 0;">'
+			. '<div style="font-size:24px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
+			. 'Заказ №' . self::esc($display)
+			. '</div>'
+			. '<div style="font-size:14px;color:#333;">Обновление статуса заказа</div>'
+			. '</div>'
+		);
+
+		$lines = [];
+		foreach ($changes as $change)
+		{
+			$title = trim((string)($change['title'] ?? ''));
+			$old = trim((string)($change['old'] ?? ''));
+			$new = trim((string)($change['new'] ?? ''));
+			if ($title === '' || $new === '')
+			{
+				continue;
+			}
+			$line = '<strong>' . self::esc($title) . ':</strong> ' . self::esc($new);
+			if ($old !== '' && $old !== $new)
+			{
+				$line = '<strong>' . self::esc($title) . ':</strong> '
+					. self::esc($old) . ' → <strong>' . self::esc($new) . '</strong>';
+			}
+			$lines[] = $line;
+		}
+
+		if ($lines === [])
+		{
+			$lines[] = 'Статус заказа обновлён.';
+		}
+
+		$lines[] = 'Подробности в <a href="' . self::esc($ordersUrl) . '" style="color:' . self::COLOR_LINK . ';">личном кабинете</a>.';
+
+		$html[] = self::block(
+			'<div style="font-size:14px;line-height:1.7;color:#333;">' . implode('<br>', $lines) . '</div>'
+		);
+		$html[] = self::footerBlock(false);
 		$html[] = self::wrapClose();
 
 		return implode("\n", $html);

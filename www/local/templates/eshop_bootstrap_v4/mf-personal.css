@@ -168,6 +168,80 @@
 }
 
 /* Orders list (`sale.personal.order.list` / `bootstrap_v4`) */
+.mf-personal .mf-order-filters{
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  background: rgba(255,255,255,.88);
+  box-shadow: 0 12px 32px rgba(12,18,40,.06);
+}
+
+.mf-personal .mf-order-filters-grid{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: .85rem 1rem;
+  align-items: end;
+}
+
+.mf-personal .mf-order-filters-label{
+  display: block;
+  margin-bottom: .35rem;
+  color: rgba(17,24,39,.58);
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.mf-personal .mf-order-filters-select{
+  width: 100%;
+  min-height: 42px;
+  padding: 0 2rem 0 1rem;
+  border-radius: 10px;
+  border-color: rgba(17,24,39,.14);
+  color: rgba(17,24,39,.9);
+  font-weight: 700;
+}
+
+.mf-personal .mf-order-filters-actions{
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.mf-personal .mf-order-filters-submit{
+  min-height: 42px;
+  min-width: 8.5rem;
+  font-weight: 800;
+}
+
+.mf-personal .mf-order-filters-submit.btn.btn-primary{
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  color: rgba(17,24,39,.92);
+  box-shadow: 0 14px 30px rgba(255,138,0,.20);
+}
+
+.mf-personal .mf-order-filters-submit.btn.btn-primary:hover,
+.mf-personal .mf-order-filters-submit.btn.btn-primary:focus{
+  border: none;
+  background: linear-gradient(135deg, var(--mf-personal-accent-1) 0%, var(--mf-personal-accent-2) 100%);
+  color: rgba(17,24,39,.92);
+  box-shadow: 0 16px 34px rgba(255,138,0,.26);
+}
+
+.mf-personal .mf-order-filters-reset{
+  color: rgba(17,24,39,.62);
+  font-size: .9rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mf-personal .mf-order-filters-reset:hover{
+  color: rgba(17,24,39,.92);
+  text-decoration: underline;
+}
+
 .mf-personal .mf-order-card{
   margin: 0 0 1.5rem;
 }
@@ -190,12 +264,24 @@
   gap: 1rem;
 }
 
+.mf-personal .mf-order-card-top-left{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .mf-personal .mf-order-card-title{
   color: rgba(17,24,39,.94);
   font-size: 1.1rem;
   font-weight: 900;
   line-height: 1.25;
   display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.mf-personal .mf-order-card-title-main{
+  display: inline-flex;
   align-items: center;
   gap: .55rem;
   flex-wrap: wrap;
@@ -243,6 +329,40 @@
   border-color: rgba(245,158,11,.28);
   background: rgba(245,158,11,.14);
   color: rgba(146,90,8,.98);
+}
+
+.mf-personal .mf-order-badge_alert{
+  border-color: rgba(220,53,69,.28);
+  background: rgba(220,53,69,.10);
+  color: rgba(153,27,27,.98);
+}
+
+.mf-personal .mf-order-card-status-text.mf-order-badge{
+  display: inline-flex;
+}
+
+.mf-personal .mf-order-card-cancel-reason{
+  margin-top: .85rem;
+  padding: .75rem .95rem;
+  border-radius: 14px;
+  background: rgba(220,53,69,.08);
+  border: 1px solid rgba(220,53,69,.18);
+}
+
+.mf-personal .mf-order-card-cancel-reason-label{
+  color: rgba(153,27,27,.82);
+  font-size: .82rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.mf-personal .mf-order-card-cancel-reason-value{
+  margin-top: .35rem;
+  color: rgba(17,24,39,.9);
+  font-size: .95rem;
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .mf-personal .mf-order-card-grid{
@@ -297,17 +417,29 @@
 }
 
 .mf-personal .mf-order-card-badges .mf-order-card-cancel-link.sale-order-list-cancel-link{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 .85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(220, 53, 69, .42);
+  background: rgba(220, 53, 69, .08);
+  color: #b91c1c;
+  font-size: .86rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
   white-space: nowrap;
-  border-color: rgba(220, 53, 69, .42) !important;
-  background: rgba(220, 53, 69, .08) !important;
-  color: #b91c1c !important;
+  box-sizing: border-box;
 }
 
 .mf-personal .mf-order-card-badges .mf-order-card-cancel-link.sale-order-list-cancel-link:hover{
-  border-color: rgba(220, 53, 69, .65) !important;
-  background: rgba(220, 53, 69, .12) !important;
-  color: #991b1b !important;
+  border-color: rgba(220, 53, 69, .65);
+  background: rgba(220, 53, 69, .12);
+  color: #991b1b;
   box-shadow: 0 10px 24px rgba(220, 53, 69, .12);
+  text-decoration: none;
 }
 
 .mf-personal .mf-order-card-cell--payment{
@@ -592,6 +724,18 @@
 }
 
 @media (max-width: 767.98px){
+  .mf-personal .mf-order-filters-grid{
+    grid-template-columns: 1fr;
+  }
+
+  .mf-personal .mf-order-filters-actions{
+    width: 100%;
+  }
+
+  .mf-personal .mf-order-filters-submit{
+    flex: 1 1 auto;
+  }
+
   .mf-personal .mf-order-card-top{
     flex-direction: column;
   }

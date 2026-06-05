@@ -268,23 +268,75 @@ if (!function_exists('mf_1c_import_normalize_mf_code'))
 	}
 }
 
+if (!function_exists('mf_1c_import_parse_bool'))
+{
+	function mf_1c_import_parse_bool(mixed $value): bool
+	{
+		if (is_bool($value))
+		{
+			return $value;
+		}
+
+		$value = mb_strtolower(trim((string)$value));
+
+		return in_array($value, ['1', 'y', 'yes', 'true', 'да'], true);
+	}
+}
+
+if (!function_exists('mf_1c_import_is_cancelled_mf'))
+{
+	function mf_1c_import_is_cancelled_mf(array $mf): bool
+	{
+		if (mf_1c_import_parse_bool($mf['is_cancelled'] ?? false))
+		{
+			return true;
+		}
+
+		return (string)($mf['order_status'] ?? '') === 'CANCELED';
+	}
+}
+
+if (!function_exists('mf_1c_import_resolve_cancel_reason_text'))
+{
+	/**
+	 * Для отображения «Причина отмены» используем КомментарийОтменыMF (1С копирует туда комментарий завершения).
+	 */
+	function mf_1c_import_resolve_cancel_reason_text(array $mf): string
+	{
+		if (!mf_1c_import_is_cancelled_mf($mf))
+		{
+			return '';
+		}
+
+		return trim((string)($mf['cancel_comment'] ?? ''));
+	}
+}
+
 if (!function_exists('mf_1c_import_extract_mf_fields'))
 {
 	function mf_1c_import_extract_mf_fields(array $reqs): array
 	{
-		$cancelReason = trim((string)($reqs['ПричинаОтменыMF'] ?? ''));
+		$cancelReasonCode = trim((string)($reqs['ПричинаОтменыMF'] ?? ''));
 		$cancelComment = trim((string)($reqs['КомментарийОтменыMF'] ?? ''));
 
 		return [
 			'order_status' => mf_1c_import_normalize_mf_code('order', $reqs['КодСтатусаЗаказаMF'] ?? null),
 			'payment_status' => mf_1c_import_normalize_mf_code('payment', $reqs['КодСтатусаОплатыMF'] ?? null),
 			'shipment_status' => mf_1c_import_normalize_mf_code('shipment', $reqs['КодСтатусаДоставкиMF'] ?? null),
-			'cancel_reason' => $cancelReason,
+			'is_cancelled' => mf_1c_import_parse_bool($reqs['ОтмененMF'] ?? false),
+			'completion_variant' => trim((string)($reqs['ВариантЗавершенияMF'] ?? '')),
+			'completion_comment' => trim((string)($reqs['КомментарийЗавершенияMF'] ?? '')),
+			'cancel_reason' => $cancelReasonCode,
 			'cancel_comment' => $cancelComment,
 			'raw' => [
 				'СтатусЗаказаMF' => trim((string)($reqs['СтатусЗаказаMF'] ?? '')),
 				'СтатусОплатыMF' => trim((string)($reqs['СтатусОплатыMF'] ?? '')),
 				'СтатусДоставкиMF' => trim((string)($reqs['СтатусДоставкиMF'] ?? '')),
+				'ОтмененMF' => trim((string)($reqs['ОтмененMF'] ?? '')),
+				'ВариантЗавершенияMF' => trim((string)($reqs['ВариантЗавершенияMF'] ?? '')),
+				'КомментарийЗавершенияMF' => trim((string)($reqs['КомментарийЗавершенияMF'] ?? '')),
+				'ПричинаОтменыMF' => $cancelReasonCode,
+				'КомментарийОтменыMF' => $cancelComment,
 				'СуммаЗаказаMF' => trim((string)($reqs['СуммаЗаказаMF'] ?? '')),
 				'СуммаОплаченоMF' => trim((string)($reqs['СуммаОплаченоMF'] ?? '')),
 				'КоличествоЗаказаноMF' => trim((string)($reqs['КоличествоЗаказаноMF'] ?? '')),
@@ -911,7 +963,8 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 		int $orderId,
 		?string $orderStatus,
 		?string $paymentStatus,
-		?string $shipmentStatus
+		?string $shipmentStatus,
+		array $mf = []
 	): array
 	{
 		if ($orderId <= 0)
@@ -952,6 +1005,22 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 			$payload['SHIPMENT_STATUS'] = $shipmentStatus;
 		}
 
+		$isCancelled = mf_1c_import_is_cancelled_mf($mf);
+		$payload['IS_CANCELED'] = $isCancelled;
+		$payload['CANCEL_REASON'] = mf_1c_import_resolve_cancel_reason_text($mf);
+
+		$completionVariant = trim((string)($mf['completion_variant'] ?? ''));
+		if ($completionVariant !== '')
+		{
+			$payload['COMPLETION_VARIANT'] = $completionVariant;
+		}
+
+		$completionComment = trim((string)($mf['completion_comment'] ?? ''));
+		if ($completionComment !== '')
+		{
+			$payload['COMPLETION_COMMENT'] = $completionComment;
+		}
+
 		if ($payload === [])
 		{
 			return [];
@@ -965,31 +1034,48 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 		try
 		{
 			$after = mf_order_custom_status_set($orderId, $payload);
-			foreach (['ORDER_STATUS', 'PAYMENT_STATUS', 'SHIPMENT_STATUS'] as $key)
+			$trackKeys = [
+				'ORDER_STATUS' => 'ORDER_STATUS',
+				'PAYMENT_STATUS' => 'PAYMENT_STATUS',
+				'SHIPMENT_STATUS' => 'SHIPMENT_STATUS',
+				'CANCEL_REASON' => 'CANCEL_REASON',
+				'COMPLETION_VARIANT' => 'COMPLETION_VARIANT',
+				'COMPLETION_COMMENT' => 'COMPLETION_COMMENT',
+			];
+			foreach ($trackKeys as $key => $afterKey)
 			{
 				if (!array_key_exists($key, $payload))
 				{
 					continue;
 				}
-				$beforeCode = is_array($before) ? (string)($before[$key] ?? '') : '';
-				$afterCode = is_array($after) ? (string)($after[$key] ?? '') : '';
-				if ($afterCode !== '' && ($beforeCode === '' || $afterCode !== $beforeCode))
+				$beforeValue = is_array($before) ? (string)($before[$afterKey] ?? '') : '';
+				$afterValue = is_array($after) ? (string)($after[$afterKey] ?? '') : '';
+				if ($beforeValue !== $afterValue)
 				{
-					$changed[] = 'HL_' . $key . '=' . $afterCode;
+					$changed[] = 'HL_' . $key . '=' . $afterValue;
+				}
+			}
+			if (array_key_exists('IS_CANCELED', $payload) && is_array($after))
+			{
+				$beforeCanceled = is_array($before) && !empty($before['IS_CANCELED']);
+				$afterCanceled = !empty($after['IS_CANCELED']);
+				if ($beforeCanceled !== $afterCanceled)
+				{
+					$changed[] = 'HL_IS_CANCELED=' . ($afterCanceled ? 'Y' : 'N');
 				}
 			}
 			if ($changed === [] && is_array($after))
 			{
-				foreach (['ORDER_STATUS', 'PAYMENT_STATUS', 'SHIPMENT_STATUS'] as $key)
+				foreach ($trackKeys as $key => $afterKey)
 				{
 					if (!array_key_exists($key, $payload))
 					{
 						continue;
 					}
-					$afterCode = (string)($after[$key] ?? '');
-					if ($afterCode !== '')
+					$afterValue = (string)($after[$afterKey] ?? '');
+					if ($afterValue !== '')
 					{
-						$changed[] = 'HL_' . $key . '=' . $afterCode;
+						$changed[] = 'HL_' . $key . '=' . $afterValue;
 					}
 				}
 			}
@@ -1156,7 +1242,8 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				$orderId,
 				$ufOrderStatus,
 				$ufPaymentStatus,
-				$ufShipmentStatus
+				$ufShipmentStatus,
+				$mf
 			);
 			if ($hlChanged === [])
 			{
@@ -1271,12 +1358,19 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
-			$cancelComment = trim((string)($mf['cancel_comment'] ?? ''));
+			$cancelComment = mf_1c_import_resolve_cancel_reason_text($mf);
 			if ($cancelComment !== '')
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_CANCEL_COMMENT', $cancelComment))
 				{
 					$changedFields[] = 'UF_1C_CANCEL_COMMENT=' . $cancelComment;
+				}
+			}
+			elseif (mf_1c_import_is_cancelled_mf($mf))
+			{
+				if (mf_1c_import_set_order_uf($order, 'UF_1C_CANCEL_COMMENT', ''))
+				{
+					$changedFields[] = 'UF_1C_CANCEL_COMMENT=';
 				}
 			}
 

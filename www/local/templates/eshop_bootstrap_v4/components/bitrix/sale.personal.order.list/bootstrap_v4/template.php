@@ -279,9 +279,63 @@ else
 			ShowError($error);
 		}
 	}
+	$mfStatusLabels = is_array($arResult['MF_STATUS_LABELS'] ?? null)
+		? $arResult['MF_STATUS_LABELS']
+		: (function_exists('mf_order_custom_status_labels') ? mf_order_custom_status_labels() : []);
+	$mfStatusFilters = is_array($arResult['MF_STATUS_FILTERS'] ?? null)
+		? $arResult['MF_STATUS_FILTERS']
+		: (function_exists('mf_order_custom_status_active_filters') ? mf_order_custom_status_active_filters() : ['order' => '', 'payment' => '', 'shipment' => '']);
+	$mfFilterClearKeys = ['mf_order_status', 'mf_payment_status', 'mf_shipment_status', 'filter_history', 'filter_status', 'show_all', 'show_canceled', 'del_filter'];
+	$mfFilterResetUrl = $APPLICATION->GetCurPageParam('show_all=Y', $mfFilterClearKeys, false);
+	?>
+	<form class="mf-order-filters mb-4" method="get" action="<?=htmlspecialcharsbx($APPLICATION->GetCurPage())?>">
+		<input type="hidden" name="show_all" value="Y">
+		<div class="mf-order-filters-grid">
+			<div class="mf-order-filters-field">
+				<label class="mf-order-filters-label" for="mf_order_status">Статус заказа</label>
+				<select class="mf-order-filters-select custom-select" id="mf_order_status" name="mf_order_status">
+					<option value="">Все</option>
+					<?php foreach (($mfStatusLabels['order'] ?? []) as $code => $label): ?>
+						<option value="<?=htmlspecialcharsbx($code)?>"<?=($mfStatusFilters['order'] === $code ? ' selected' : '')?>><?=htmlspecialcharsbx($label)?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div class="mf-order-filters-field">
+				<label class="mf-order-filters-label" for="mf_payment_status">Статус оплаты</label>
+				<select class="mf-order-filters-select custom-select" id="mf_payment_status" name="mf_payment_status">
+					<option value="">Все</option>
+					<?php foreach (($mfStatusLabels['payment'] ?? []) as $code => $label): ?>
+						<option value="<?=htmlspecialcharsbx($code)?>"<?=($mfStatusFilters['payment'] === $code ? ' selected' : '')?>><?=htmlspecialcharsbx($label)?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div class="mf-order-filters-field">
+				<label class="mf-order-filters-label" for="mf_shipment_status">Статус доставки</label>
+				<select class="mf-order-filters-select custom-select" id="mf_shipment_status" name="mf_shipment_status">
+					<option value="">Все</option>
+					<?php foreach (($mfStatusLabels['shipment'] ?? []) as $code => $label): ?>
+						<option value="<?=htmlspecialcharsbx($code)?>"<?=($mfStatusFilters['shipment'] === $code ? ' selected' : '')?>><?=htmlspecialcharsbx($label)?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div class="mf-order-filters-actions">
+				<button type="submit" class="btn btn-primary mf-order-filters-submit">Применить</button>
+				<?php if (!empty($arResult['MF_STATUS_FILTERS_ACTIVE'])): ?>
+					<a class="mf-order-filters-reset" href="<?=htmlspecialcharsbx($mfFilterResetUrl)?>">Сбросить</a>
+				<?php endif; ?>
+			</div>
+		</div>
+	</form>
+	<?
 	if (empty($arResult['ORDERS']))
 	{
-		if ($filterHistory === 'Y')
+		if (!empty($arResult['MF_STATUS_FILTERS_ACTIVE']))
+		{
+			?>
+			<h3>Заказы с выбранными статусами не найдены</h3>
+			<?
+		}
+		elseif ($filterHistory === 'Y')
 		{
 			if ($filterShowCanceled === 'Y')
 			{
@@ -303,48 +357,12 @@ else
 			<?
 		}
 	}
-	?>
-	<div class="row mb-3">
-		<div class="col">
-			<?
-			$nothing = !isset($_REQUEST["filter_history"]) && !isset($_REQUEST["show_all"]);
-			$clearFromLink = array("filter_history","filter_status","show_all", "show_canceled");
-
-			if ($filterHistory === 'Y')
-			{
-				?>
-				<a class="mr-4" href="<?=$APPLICATION->GetCurPageParam("", $clearFromLink, false)?>"><?echo Loc::getMessage("SPOL_TPL_CUR_ORDERS")?></a>
-				<?
-				if ($filterShowCanceled !== 'Y')
-				{
-					?>
-					<a class="mr-4" href="<?=$APPLICATION->GetCurPageParam("filter_history=Y&show_canceled=Y", $clearFromLink, false)?>"><?echo Loc::getMessage("SPOL_TPL_VIEW_ORDERS_CANCELED")?></a>
-					<?
-				}
-			}
-			?>
-		</div>
-	</div>
-	<?
 	if ($filterHistory !== 'Y')
 	{
 		$paymentChangeData = array();
-		$orderHeaderStatus = null;
 
 		foreach ($arResult['ORDERS'] as $key => $order)
 		{
-			if ($orderHeaderStatus !== $order['ORDER']['STATUS_ID'] && $arResult['SORT_TYPE'] == 'STATUS')
-			{
-				$orderHeaderStatus = $order['ORDER']['STATUS_ID'];
-
-				?>
-				<div class="row mb-3">
-					<div class="col">
-						<h2><?= Loc::getMessage('SPOL_TPL_ORDER_IN_STATUSES_MSGVER_1', ['#STATUS#' => htmlspecialcharsbx($arResult['INFO']['STATUS'][$orderHeaderStatus]['NAME'])]) ?>
-					</div>
-				</div>
-				<?
-			}
 			$basketCount = count($order['BASKET_ITEMS']);
 			$basketLabel = Loc::getMessage('SPOL_TPL_GOODS');
 			$count = $basketCount % 10;
@@ -357,7 +375,29 @@ else
 				$basketLabel = Loc::getMessage('SPOL_TPL_TWO_GOODS');
 			}
 
-			$orderStatusName = htmlspecialcharsbx((string)($arResult['INFO']['STATUS'][$order['ORDER']['STATUS_ID']]['NAME'] ?? $order['ORDER']['STATUS_NAME'] ?? ''));
+			$mfCustomStatus = is_array($order['MF_CUSTOM_STATUS'] ?? null) ? $order['MF_CUSTOM_STATUS'] : null;
+			$mfOrderStatusDisplay = function_exists('mf_order_custom_status_display_for_list')
+				? mf_order_custom_status_display_for_list($mfCustomStatus, 'order')
+				: ['text' => '—', 'badge_class' => 'mf-order-badge_status', 'has_status' => false];
+			$mfPaymentStatusDisplay = function_exists('mf_order_custom_status_display_for_list')
+				? mf_order_custom_status_display_for_list($mfCustomStatus, 'payment')
+				: ['text' => '—', 'badge_class' => 'mf-order-badge mf-order-badge_status', 'has_status' => false];
+			$mfShipmentStatusDisplay = function_exists('mf_order_custom_status_display_for_list')
+				? mf_order_custom_status_display_for_list($mfCustomStatus, 'shipment')
+				: ['text' => '—', 'badge_class' => 'mf-order-badge mf-order-badge_status', 'has_status' => false];
+
+			$orderStatusName = htmlspecialcharsbx((string)$mfOrderStatusDisplay['text']);
+			$orderStatusBadgeClass = (string)$mfOrderStatusDisplay['badge_class'];
+			$paymentStatusText = (string)$mfPaymentStatusDisplay['text'];
+			$paymentStatusClass = (string)$mfPaymentStatusDisplay['badge_class'];
+			$deliveryStatusText = (string)$mfShipmentStatusDisplay['text'];
+			$deliveryStatusClass = (string)$mfShipmentStatusDisplay['badge_class'];
+			$mfIsCancelled = function_exists('mf_order_custom_status_is_cancelled')
+				&& mf_order_custom_status_is_cancelled($mfCustomStatus);
+			$mfCancelReasonText = $mfIsCancelled
+				? trim((string)($mfCustomStatus['CANCEL_REASON'] ?? ''))
+				: '';
+
 			$primaryPayment = null;
 			foreach ($order['PAYMENT'] as $paymentRow)
 			{
@@ -365,29 +405,6 @@ else
 				break;
 			}
 			$paymentMethodName = trim((string)($primaryPayment['PAY_SYSTEM_NAME'] ?? 'Не указан'));
-			if ($primaryPayment)
-			{
-				if (($primaryPayment['PAID'] ?? 'N') === 'Y')
-				{
-					$paymentStatusText = Loc::getMessage('SPOL_TPL_PAID');
-					$paymentStatusClass = 'sale-order-list-status-success';
-				}
-				elseif (($order['ORDER']['IS_ALLOW_PAY'] ?? 'Y') === 'N')
-				{
-					$paymentStatusText = Loc::getMessage('SPOL_TPL_RESTRICTED_PAID');
-					$paymentStatusClass = 'sale-order-list-status-restricted';
-				}
-				else
-				{
-					$paymentStatusText = Loc::getMessage('SPOL_TPL_NOTPAID');
-					$paymentStatusClass = 'sale-order-list-status-alert';
-				}
-			}
-			else
-			{
-				$paymentStatusText = 'Не указан';
-				$paymentStatusClass = 'sale-order-list-status-restricted';
-			}
 
 			$primaryShipment = null;
 			foreach ($order['SHIPMENT'] as $shipmentRow)
@@ -401,18 +418,10 @@ else
 			$orderComments = (string)($order['ORDER']['COMMENTS'] ?? '');
 			$edostDelivery = $mfParseEdostFromComments($orderComments);
 
-			$deliveryStatusText = 'Не указан';
 			$deliveryServiceFull = 'Не указана';
 			$showEdostDeliveryNote = false;
 			if ($primaryShipment)
 			{
-				$deliveryStatusText = trim((string)($primaryShipment['DELIVERY_STATUS_NAME'] ?? ''));
-				if ($deliveryStatusText === '')
-				{
-					$deliveryStatusText = (($primaryShipment['DEDUCTED'] ?? 'N') === 'Y')
-						? Loc::getMessage('SPOL_TPL_LOADED')
-						: Loc::getMessage('SPOL_TPL_NOTLOADED');
-				}
 
 				if ($edostDelivery && !empty($edostDelivery['full']))
 				{
@@ -465,23 +474,31 @@ else
 				<div class="row mx-0 sale-order-list-title-container mf-order-card-header">
 					<div class="col-12 py-3">
 						<div class="mf-order-card-top">
-							<div>
+							<div class="mf-order-card-top-left">
 								<div class="mf-order-card-title">
-									<?=Loc::getMessage('SPOL_TPL_ORDER')?>
-									<?=Loc::getMessage('SPOL_TPL_NUMBER_SIGN').htmlspecialcharsbx($order['ORDER']['ACCOUNT_NUMBER_DISPLAY'] ?? $order['ORDER']['ACCOUNT_NUMBER'])?>
-									<span class="mf-order-card-title-sep">|</span>
-									<?=Loc::getMessage('SPOL_TPL_FROM_DATE')?> <?=$order['ORDER']['DATE_INSERT_FORMATED']?>
+									<span class="mf-order-card-title-main">
+										<?=Loc::getMessage('SPOL_TPL_ORDER')?>
+										<?=Loc::getMessage('SPOL_TPL_NUMBER_SIGN').htmlspecialcharsbx($order['ORDER']['ACCOUNT_NUMBER_DISPLAY'] ?? $order['ORDER']['ACCOUNT_NUMBER'])?>
+										<span class="mf-order-card-title-sep">|</span>
+										<?=Loc::getMessage('SPOL_TPL_FROM_DATE')?> <?=$order['ORDER']['DATE_INSERT_FORMATED']?>
+									</span>
+									<?php if ($orderStatusName !== ''): ?>
+										<span class="mf-order-badge <?=$orderStatusBadgeClass?>"><?=$orderStatusName?></span>
+									<?php endif; ?>
 								</div>
 							</div>
 							<div class="mf-order-card-badges">
-								<?php if ($orderStatusName !== ''): ?>
-									<span class="mf-order-badge mf-order-badge_status"><?=$orderStatusName?></span>
-								<?php endif; ?>
 								<?php if ($order['ORDER']['CAN_CANCEL'] !== 'N'): ?>
-									<a class="sale-order-list-cancel-link mf-order-card-cancel-link" href="<?=htmlspecialcharsbx($order["ORDER"]["URL_TO_CANCEL"])?>"><?=Loc::getMessage('SPOL_TPL_CANCEL_ORDER')?></a>
+									<a class="sale-order-list-cancel-link mf-order-badge mf-order-card-cancel-link" href="<?=htmlspecialcharsbx($order["ORDER"]["URL_TO_CANCEL"])?>"><?=Loc::getMessage('SPOL_TPL_CANCEL_ORDER')?></a>
 								<?php endif; ?>
 							</div>
 						</div>
+						<?php if ($mfIsCancelled): ?>
+							<div class="mf-order-card-cancel-reason">
+								<div class="mf-order-card-cancel-reason-label">Причина отмены</div>
+								<div class="mf-order-card-cancel-reason-value"><?=htmlspecialcharsbx($mfCancelReasonText !== '' ? $mfCancelReasonText : '—')?></div>
+							</div>
+						<?php endif; ?>
 						<div class="mf-order-card-grid">
 							<div class="mf-order-card-cell mf-order-card-cell--payment">
 								<div class="mf-order-card-payment-headline">
@@ -523,7 +540,7 @@ else
 								</div>
 								<div class="mf-order-card-value"><?=htmlspecialcharsbx($paymentMethodName)?></div>
 								<div class="mf-order-card-meta">
-									<span class="<?=$paymentStatusClass?>"><?=$paymentStatusText?></span>
+									<span class="<?=$paymentStatusClass?> mf-order-card-status-text"><?=htmlspecialcharsbx($paymentStatusText)?></span>
 								</div>
 								<?php foreach ($order['PAYMENT'] as $payment): ?>
 									<div class="mf-order-card-payment-sum">
@@ -547,7 +564,13 @@ else
 							</div>
 							<div class="mf-order-card-cell">
 								<div class="mf-order-card-label">Доставка</div>
-								<div class="mf-order-card-value"><?=htmlspecialcharsbx($deliveryStatusText)?></div>
+								<div class="mf-order-card-value">
+									<?php if ($deliveryStatusClass !== ''): ?>
+										<span class="<?=$deliveryStatusClass?> mf-order-card-status-text"><?=htmlspecialcharsbx($deliveryStatusText)?></span>
+									<?php else: ?>
+										<?=htmlspecialcharsbx($deliveryStatusText)?>
+									<?php endif; ?>
+								</div>
 								<div class="mf-order-card-meta">
 									<div>Служба доставки: <strong><?=htmlspecialcharsbx($deliveryServiceFull)?></strong></div>
 									<?php if ($showEdostDeliveryNote): ?>
@@ -628,8 +651,6 @@ else
 	}
 	else
 	{
-		$orderHeaderStatus = null;
-
 		if ($filterShowCanceled === 'Y' && !empty($arResult['ORDERS']))
 		{
 			?>
@@ -643,15 +664,6 @@ else
 
 		foreach ($arResult['ORDERS'] as $key => $order)
 		{
-			if ($orderHeaderStatus !== $order['ORDER']['STATUS_ID'] && $filterShowCanceled !== 'Y')
-			{
-				$orderHeaderStatus = $order['ORDER']['STATUS_ID'];
-				?>
-				<h1 class="sale-order-title">
-					<?= Loc::getMessage('SPOL_TPL_ORDER_IN_STATUSES_MSGVER_1', ['#STATUS#' => htmlspecialcharsbx($arResult['INFO']['STATUS'][$orderHeaderStatus]['NAME'])]) ?>
-				</h1>
-				<?
-			}
 			?>
 			<div class="row sale-order-list-accomplished-title-container">
 				<h3 class="g-font-size-20 mb-1 mt-1 col-sm">

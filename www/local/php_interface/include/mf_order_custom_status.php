@@ -224,6 +224,9 @@ if (!function_exists('mf_order_custom_status_ensure_hl'))
 			mf_order_custom_status_ensure_indexes($tableName);
 		}
 
+		// Добавляет новые UF-поля при обновлении схемы (идемпотентно).
+		mf_order_custom_status_ensure_user_fields($entityId);
+
 		$entity = \Bitrix\Highloadblock\HighloadBlockTable::compileEntity($hl);
 		$dataClass = $entity->getDataClass();
 
@@ -271,6 +274,30 @@ if (!function_exists('mf_order_custom_status_ensure_user_fields'))
 				'MANDATORY' => 'N',
 				'EDIT_FORM_LABEL' => ['ru' => 'Статус доставки'],
 				'LIST_COLUMN_LABEL' => ['ru' => 'SHIPMENT_STATUS'],
+			],
+			'UF_IS_CANCELED' => [
+				'USER_TYPE_ID' => 'boolean',
+				'MANDATORY' => 'N',
+				'EDIT_FORM_LABEL' => ['ru' => 'Отменён (1С)'],
+				'LIST_COLUMN_LABEL' => ['ru' => 'IS_CANCELED'],
+			],
+			'UF_CANCEL_REASON' => [
+				'USER_TYPE_ID' => 'string',
+				'MANDATORY' => 'N',
+				'EDIT_FORM_LABEL' => ['ru' => 'Причина отмены'],
+				'LIST_COLUMN_LABEL' => ['ru' => 'CANCEL_REASON'],
+			],
+			'UF_COMPLETION_VARIANT' => [
+				'USER_TYPE_ID' => 'string',
+				'MANDATORY' => 'N',
+				'EDIT_FORM_LABEL' => ['ru' => 'Вариант завершения (1С)'],
+				'LIST_COLUMN_LABEL' => ['ru' => 'COMPLETION_VARIANT'],
+			],
+			'UF_COMPLETION_COMMENT' => [
+				'USER_TYPE_ID' => 'string',
+				'MANDATORY' => 'N',
+				'EDIT_FORM_LABEL' => ['ru' => 'Комментарий завершения (1С)'],
+				'LIST_COLUMN_LABEL' => ['ru' => 'COMPLETION_COMMENT'],
 			],
 			'UF_UPDATED_AT' => [
 				'USER_TYPE_ID' => 'datetime',
@@ -359,6 +386,10 @@ if (!function_exists('mf_order_custom_status_format_row'))
 			$updatedAt = trim((string)$updatedAt);
 		}
 
+		$isCanceled = ($row['UF_IS_CANCELED'] ?? false) === true
+			|| ($row['UF_IS_CANCELED'] ?? '') === '1'
+			|| (string)($row['UF_IS_CANCELED'] ?? '') === 'Y';
+
 		return [
 			'ID' => (int)($row['ID'] ?? 0),
 			'ORDER_ID' => (int)($row['UF_ORDER_ID'] ?? 0),
@@ -368,6 +399,10 @@ if (!function_exists('mf_order_custom_status_format_row'))
 			'PAYMENT_STATUS_LABEL' => mf_order_custom_status_label('payment', $paymentStatus),
 			'SHIPMENT_STATUS' => $shipmentStatus,
 			'SHIPMENT_STATUS_LABEL' => mf_order_custom_status_label('shipment', $shipmentStatus),
+			'IS_CANCELED' => $isCanceled || $orderStatus === 'cancelled',
+			'CANCEL_REASON' => trim((string)($row['UF_CANCEL_REASON'] ?? '')),
+			'COMPLETION_VARIANT' => trim((string)($row['UF_COMPLETION_VARIANT'] ?? '')),
+			'COMPLETION_COMMENT' => trim((string)($row['UF_COMPLETION_COMMENT'] ?? '')),
 			'UPDATED_AT' => $updatedAt,
 		];
 	}
@@ -445,6 +480,10 @@ if (!function_exists('mf_order_custom_status_set'))
 	 *   ORDER_STATUS?:string|null,
 	 *   PAYMENT_STATUS?:string|null,
 	 *   SHIPMENT_STATUS?:string|null,
+	 *   IS_CANCELED?:bool|null,
+	 *   CANCEL_REASON?:string|null,
+	 *   COMPLETION_VARIANT?:string|null,
+	 *   COMPLETION_COMMENT?:string|null,
 	 *   UPDATED_AT?:string|DateTime|null
 	 * } $statuses
 	 */
@@ -500,9 +539,33 @@ if (!function_exists('mf_order_custom_status_set'))
 			}
 		}
 
+		if (array_key_exists('IS_CANCELED', $statuses))
+		{
+			$fields['UF_IS_CANCELED'] = !empty($statuses['IS_CANCELED']) ? 1 : 0;
+		}
+
+		foreach ([
+			'CANCEL_REASON' => 'UF_CANCEL_REASON',
+			'COMPLETION_VARIANT' => 'UF_COMPLETION_VARIANT',
+			'COMPLETION_COMMENT' => 'UF_COMPLETION_COMMENT',
+		] as $payloadKey => $ufKey)
+		{
+			if (!array_key_exists($payloadKey, $statuses))
+			{
+				continue;
+			}
+			$value = $statuses[$payloadKey];
+			$fields[$ufKey] = ($value === null || trim((string)$value) === '') ? '' : trim((string)$value);
+		}
+
 		if ($errors !== [])
 		{
 			throw new \InvalidArgumentException(implode('; ', $errors));
+		}
+
+		if ($fields === [])
+		{
+			throw new \InvalidArgumentException('No fields to save.');
 		}
 
 		if (array_key_exists('UPDATED_AT', $statuses) && $statuses['UPDATED_AT'] !== null && $statuses['UPDATED_AT'] !== '')
@@ -518,6 +581,8 @@ if (!function_exists('mf_order_custom_status_set'))
 		{
 			$fields['UF_UPDATED_AT'] = new DateTime();
 		}
+
+		$before = mf_order_custom_status_get($orderId);
 
 		$existing = $dataClass::getList([
 			'filter' => ['=UF_ORDER_ID' => $orderId],
@@ -546,6 +611,169 @@ if (!function_exists('mf_order_custom_status_set'))
 			throw new \RuntimeException('Order custom status was saved but cannot be read back.');
 		}
 
+		if (class_exists(\Mf\OrderMail\CustomStatusNotifier::class))
+		{
+			\Mf\OrderMail\CustomStatusNotifier::notify($orderId, $before, $result);
+		}
+
 		return $result;
+	}
+}
+
+if (!function_exists('mf_order_custom_status_is_cancelled'))
+{
+	function mf_order_custom_status_is_cancelled(?array $mfStatus): bool
+	{
+		if (!is_array($mfStatus))
+		{
+			return false;
+		}
+
+		if (!empty($mfStatus['IS_CANCELED']))
+		{
+			return true;
+		}
+
+		return (string)($mfStatus['ORDER_STATUS'] ?? '') === 'cancelled';
+	}
+}
+
+if (!function_exists('mf_order_custom_status_display_for_list'))
+{
+	/**
+	 * Подпись и CSS-класс бейджа для карточки заказа в ЛК (только MF-поля).
+	 *
+	 * @param 'order'|'payment'|'shipment' $group
+	 * @return array{text:string,badge_class:string,has_status:bool}
+	 */
+	function mf_order_custom_status_display_for_list(?array $mfStatus, string $group): array
+	{
+		$fieldMap = [
+			'order' => ['ORDER_STATUS', 'ORDER_STATUS_LABEL'],
+			'payment' => ['PAYMENT_STATUS', 'PAYMENT_STATUS_LABEL'],
+			'shipment' => ['SHIPMENT_STATUS', 'SHIPMENT_STATUS_LABEL'],
+		];
+		$fields = $fieldMap[$group] ?? null;
+		if (!is_array($fields))
+		{
+			return ['text' => '—', 'badge_class' => 'mf-order-badge_status', 'has_status' => false];
+		}
+
+		$code = '';
+		$label = '';
+		if (is_array($mfStatus))
+		{
+			$code = trim((string)($mfStatus[$fields[0]] ?? ''));
+			$label = trim((string)($mfStatus[$fields[1]] ?? ''));
+			if ($label === '' && $code !== '')
+			{
+				$label = mf_order_custom_status_label($group, $code);
+			}
+		}
+
+		if ($label === '')
+		{
+			return ['text' => '—', 'badge_class' => 'mf-order-badge_status', 'has_status' => false];
+		}
+
+		$badgeClass = 'mf-order-badge_status';
+		$customBadgeClass = mf_order_custom_status_badge_class($group, $code);
+		if ($customBadgeClass !== '')
+		{
+			$badgeClass = $customBadgeClass;
+		}
+
+		if ($group !== 'order')
+		{
+			$badgeClass = 'mf-order-badge ' . $badgeClass;
+		}
+
+		return ['text' => $label, 'badge_class' => $badgeClass, 'has_status' => true];
+	}
+}
+
+if (!function_exists('mf_order_custom_status_badge_class'))
+{
+	/**
+	 * CSS-модификатор бейджа для ЛК (mf-order-badge_*).
+	 *
+	 * @param 'order'|'payment'|'shipment' $group
+	 */
+	function mf_order_custom_status_badge_class(string $group, ?string $code): string
+	{
+		$code = trim((string)$code);
+		if ($code === '')
+		{
+			return '';
+		}
+
+		$success = ['completed', 'paid', 'shipped'];
+		$warn = ['in_progress', 'partially_paid', 'partially_shipped'];
+		$alert = ['not_paid', 'not_shipped', 'cancelled'];
+
+		if (in_array($code, $success, true))
+		{
+			return 'mf-order-badge_success';
+		}
+		if (in_array($code, $warn, true))
+		{
+			return 'mf-order-badge_warn';
+		}
+		if (in_array($code, $alert, true))
+		{
+			return 'mf-order-badge_alert';
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_order_custom_status_active_filters'))
+{
+	/**
+	 * @return array{order:string,payment:string,shipment:string}
+	 */
+	function mf_order_custom_status_active_filters(): array
+	{
+		return [
+			'order' => trim((string)($_REQUEST['mf_order_status'] ?? '')),
+			'payment' => trim((string)($_REQUEST['mf_payment_status'] ?? '')),
+			'shipment' => trim((string)($_REQUEST['mf_shipment_status'] ?? '')),
+		];
+	}
+}
+
+if (!function_exists('mf_order_custom_status_order_matches_filters'))
+{
+	/**
+	 * @param array{order:string,payment:string,shipment:string} $filters
+	 */
+	function mf_order_custom_status_order_matches_filters(?array $mfStatus, array $filters): bool
+	{
+		$hasFilter = ($filters['order'] !== '' || $filters['payment'] !== '' || $filters['shipment'] !== '');
+		if (!$hasFilter)
+		{
+			return true;
+		}
+
+		if (!is_array($mfStatus))
+		{
+			return false;
+		}
+
+		if ($filters['order'] !== '' && (string)($mfStatus['ORDER_STATUS'] ?? '') !== $filters['order'])
+		{
+			return false;
+		}
+		if ($filters['payment'] !== '' && (string)($mfStatus['PAYMENT_STATUS'] ?? '') !== $filters['payment'])
+		{
+			return false;
+		}
+		if ($filters['shipment'] !== '' && (string)($mfStatus['SHIPMENT_STATUS'] ?? '') !== $filters['shipment'])
+		{
+			return false;
+		}
+
+		return true;
 	}
 }

@@ -29,6 +29,12 @@ if (!function_exists('mf_admin_order_list_custom_status_headers'))
 				'sort' => '',
 				'default' => true,
 			],
+			'MF_CANCEL_REASON' => [
+				'id' => 'MF_CANCEL_REASON',
+				'content' => 'Причина отмены',
+				'sort' => '',
+				'default' => true,
+			],
 		];
 	}
 }
@@ -173,6 +179,16 @@ if (!function_exists('mf_admin_order_list_inject_custom_statuses'))
 			$row->AddField(
 				'MF_SHIPMENT_STATUS',
 				mf_admin_order_list_custom_status_cell(is_array($status) ? ($status['SHIPMENT_STATUS_LABEL'] ?? '') : '')
+			);
+
+			$cancelReason = '';
+			if (is_array($status) && function_exists('mf_order_custom_status_is_cancelled') && mf_order_custom_status_is_cancelled($status))
+			{
+				$cancelReason = trim((string)($status['CANCEL_REASON'] ?? ''));
+			}
+			$row->AddField(
+				'MF_CANCEL_REASON',
+				mf_admin_order_list_custom_status_cell($cancelReason)
 			);
 		}
 	}
