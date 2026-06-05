@@ -8,14 +8,35 @@ const BX_FORCE_DISABLE_SEPARATED_SESSION_MODE = true;
 define('NOT_CHECK_PERMISSIONS', true);
 define('NOT_CHECK_FILE_PERMISSIONS', true);
 
+if (!function_exists('mf1c_exchange_debug_log'))
+{
+	function mf1c_exchange_debug_log(string $message): void
+	{
+		static $logFile = null;
+		if ($logFile === null)
+		{
+			$logFile = dirname(__DIR__, 4) . '/upload/1c_exchange_debug.log';
+			$dir = dirname($logFile);
+			if (!is_dir($dir))
+			{
+				@mkdir($dir, 0775, true);
+			}
+		}
+		@file_put_contents($logFile, date('Y-m-d H:i:s') . ' ' . $message . "\n", FILE_APPEND);
+	}
+}
+
+mf1c_exchange_debug_log(
+	'ENTRY type=' . (string)($_REQUEST['type'] ?? '')
+	. ' mode=' . (string)($_REQUEST['mode'] ?? '')
+	. ' filename=' . (string)($_REQUEST['filename'] ?? '')
+	. ' method=' . (string)($_SERVER['REQUEST_METHOD'] ?? '')
+);
+
 $__mf1cExchangeDebugBootstrap = __DIR__ . '/../../../../local/php_interface/include/mf_1c_exchange_debug.php';
 if (is_file($__mf1cExchangeDebugBootstrap))
 {
 	require_once $__mf1cExchangeDebugBootstrap;
-	if (function_exists('mf_1c_exchange_debug_hit'))
-	{
-		mf_1c_exchange_debug_hit('bootstrap');
-	}
 }
 unset($__mf1cExchangeDebugBootstrap);
 
@@ -59,15 +80,24 @@ if (function_exists('mf_1c_exchange_ensure_user_authorized'))
 
 if ($type === 'sale')
 {
+	$requestLog = $_REQUEST;
+	foreach (['USER_PASSWORD', 'PASSWORD', 'USER_PASS'] as $secretKey)
+	{
+		if (isset($requestLog[$secretKey]))
+		{
+			$requestLog[$secretKey] = '***';
+		}
+	}
+	mf1c_exchange_debug_log('REQUEST: ' . print_r($requestLog, true));
+	if (!empty($_FILES))
+	{
+		mf1c_exchange_debug_log('FILES: ' . print_r($_FILES, true));
+	}
+
 	$mf1cImportStatusesInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_1c_import_statuses.php';
 	if (is_file($mf1cImportStatusesInclude))
 	{
 		require_once $mf1cImportStatusesInclude;
-	}
-
-	if (function_exists('mf_1c_exchange_log_request'))
-	{
-		mf_1c_exchange_log_request();
 	}
 
 	$exchangeMode = (string)($_REQUEST['mode'] ?? '');
@@ -79,14 +109,47 @@ if ($type === 'sale')
 	{
 		$exchangeFile = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . $exchangeFilename;
 
+		if ($exchangeMode === 'import' && is_file($exchangeFile))
+		{
+			$xmlBody = file_get_contents($exchangeFile);
+			if (is_string($xmlBody) && $xmlBody !== '')
+			{
+				$maxLen = 512000;
+				$size = strlen($xmlBody);
+				$dump = $size > $maxLen ? substr($xmlBody, 0, $maxLen) . "\n... [truncated]" : $xmlBody;
+				mf1c_exchange_debug_log(
+					"==================== XML DUMP: {$exchangeFilename} ({$size} bytes) ====================\n"
+					. $dump
+					. "\n================== END XML DUMP =================="
+				);
+			}
+		}
+
 		if ($exchangeMode === 'import' && function_exists('mf_1c_import_register_shutdown'))
 		{
 			mf_1c_import_register_shutdown($exchangeFile);
 		}
-		elseif ($exchangeMode === 'file' && function_exists('mf_1c_exchange_log_file_shutdown'))
+		elseif ($exchangeMode === 'file')
 		{
-			// mode=file: 1С пишет тело в php://input, после компонента смотрим накопленный файл
-			mf_1c_exchange_log_file_shutdown($exchangeFile);
+			register_shutdown_function(static function () use ($exchangeFile): void {
+				if (!is_file($exchangeFile))
+				{
+					mf1c_exchange_debug_log('XML DUMP file mode: not found ' . $exchangeFile);
+					return;
+				}
+				$xmlBody = file_get_contents($exchangeFile);
+				if (!is_string($xmlBody) || $xmlBody === '')
+				{
+					mf1c_exchange_debug_log('XML DUMP file mode: empty ' . $exchangeFile);
+					return;
+				}
+				$size = strlen($xmlBody);
+				mf1c_exchange_debug_log(
+					"==================== XML DUMP (file mode): " . basename($exchangeFile) . " ({$size} bytes) ====================\n"
+					. $xmlBody
+					. "\n================== END XML DUMP =================="
+				);
+			});
 		}
 	}
 

@@ -58,6 +58,11 @@ if (!function_exists('mf_1c_import_log'))
 {
 	function mf_1c_import_log(string $message): void
 	{
+		if (function_exists('mf1c_exchange_debug_log'))
+		{
+			mf1c_exchange_debug_log($message);
+			return;
+		}
 		mf_1c_exchange_debug_write($message);
 	}
 }
