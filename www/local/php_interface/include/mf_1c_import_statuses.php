@@ -982,6 +982,79 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 	}
 }
 
+if (!function_exists('mf_1c_import_resolve_status_codes'))
+{
+	/**
+	 * @return array{order:?string,payment:?string,shipment:?string}
+	 */
+	function mf_1c_import_resolve_status_codes(array $parsed, ?Order $order = null): array
+	{
+		$mf = is_array($parsed['mf'] ?? null) ? $parsed['mf'] : [];
+		$statusId = strtoupper(trim((string)($parsed['status_id'] ?? '')));
+
+		$orderStatus = $mf['order_status'] ?? null;
+		if ($orderStatus === null)
+		{
+			$orderStatus = mf_1c_import_map_order_status($statusId);
+		}
+
+		$orderPrice = 0.0;
+		$orderQty = 0.0;
+		if ($order)
+		{
+			$orderPrice = (float)$order->getPrice();
+			$basket = $order->getBasket();
+			if ($basket)
+			{
+				foreach ($basket as $basketItem)
+				{
+					$orderQty += (float)$basketItem->getQuantity();
+				}
+			}
+		}
+		$raw = is_array($mf['raw'] ?? null) ? $mf['raw'] : [];
+		if ($orderPrice <= 0 && ($raw['СуммаЗаказаMF'] ?? '') !== '')
+		{
+			$orderPrice = (float)str_replace(',', '.', (string)$raw['СуммаЗаказаMF']);
+		}
+		if ($orderQty <= 0 && ($raw['КоличествоЗаказаноMF'] ?? '') !== '')
+		{
+			$orderQty = (float)str_replace(',', '.', (string)$raw['КоличествоЗаказаноMF']);
+		}
+
+		$paymentStatus = $mf['payment_status'] ?? null;
+		if ($paymentStatus === null)
+		{
+			$paymentStatus = mf_1c_import_detect_payment_status(
+				$parsed['paid'] ?? null,
+				(float)($parsed['payment_sum'] ?? 0),
+				$orderPrice
+			);
+		}
+
+		$shipmentStatus = $mf['shipment_status'] ?? null;
+		if ($shipmentStatus === null)
+		{
+			$shippedQty = (float)($parsed['shipped_qty'] ?? 0);
+			if ($shippedQty <= 0 && ($raw['КоличествоОтгруженоMF'] ?? '') !== '')
+			{
+				$shippedQty = (float)str_replace(',', '.', (string)$raw['КоличествоОтгруженоMF']);
+			}
+			$shipmentStatus = mf_1c_import_detect_shipment_status(
+				$parsed['shipped'] ?? null,
+				$shippedQty,
+				$orderQty
+			);
+		}
+
+		return [
+			'order' => $orderStatus,
+			'payment' => $paymentStatus,
+			'shipment' => $shipmentStatus,
+		];
+	}
+}
+
 if (!function_exists('mf_1c_import_apply_updates'))
 {
 	function mf_1c_import_apply_updates(array $updates): void
@@ -1026,31 +1099,39 @@ if (!function_exists('mf_1c_import_apply_updates'))
 			}
 
 			$orderId = $resolvedOrderId;
+			$statusCodes = mf_1c_import_resolve_status_codes($parsed);
+			$ufOrderStatus = $statusCodes['order'] ?? null;
+			$ufPaymentStatus = $statusCodes['payment'] ?? null;
+			$ufShipmentStatus = $statusCodes['shipment'] ?? null;
+
+			$hlChanged = mf_1c_import_sync_hl_statuses(
+				$orderId,
+				$ufOrderStatus,
+				$ufPaymentStatus,
+				$ufShipmentStatus
+			);
+			if ($hlChanged === [])
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES HL NOOP: order_id=' . $orderId
+					. ' order=' . (string)$ufOrderStatus
+					. ' payment=' . (string)$ufPaymentStatus
+					. ' shipment=' . (string)$ufShipmentStatus
+				);
+			}
+
+			$changedFields = $hlChanged;
 			$order = Order::load($orderId);
 			if (!$order)
 			{
-				mf_1c_import_log('IMPORT STATUSES APPLY: Order::load failed id=' . $orderId);
+				mf_1c_import_log(
+					'IMPORT STATUSES APPLY: Order::load failed id=' . $orderId
+					. ' hl=' . implode(', ', $hlChanged)
+				);
 				continue;
 			}
 
-			$changedFields = [];
-			$orderPrice = (float)$order->getPrice();
-			$orderQty = 0.0;
-			$basket = $order->getBasket();
-			if ($basket)
-			{
-				foreach ($basket as $basketItem)
-				{
-					$orderQty += (float)$basketItem->getQuantity();
-				}
-			}
-
 			$statusId = strtoupper(trim((string)($parsed['status_id'] ?? '')));
-			$ufOrderStatus = $mf['order_status'] ?? null;
-			if ($ufOrderStatus === null)
-			{
-				$ufOrderStatus = mf_1c_import_map_order_status($statusId);
-			}
 			if ($ufOrderStatus !== null)
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_ORDER_STATUS', $ufOrderStatus))
@@ -1102,15 +1183,6 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
-			$ufPaymentStatus = $mf['payment_status'] ?? null;
-			if ($ufPaymentStatus === null)
-			{
-				$ufPaymentStatus = mf_1c_import_detect_payment_status(
-					$parsed['paid'] ?? null,
-					(float)($parsed['payment_sum'] ?? 0),
-					$orderPrice
-				);
-			}
 			if ($ufPaymentStatus !== null)
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_PAYMENT_STATUS', $ufPaymentStatus))
@@ -1123,15 +1195,6 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
-			$ufShipmentStatus = $mf['shipment_status'] ?? null;
-			if ($ufShipmentStatus === null)
-			{
-				$ufShipmentStatus = mf_1c_import_detect_shipment_status(
-					$parsed['shipped'] ?? null,
-					(float)($parsed['shipped_qty'] ?? 0),
-					$orderQty
-				);
-			}
 			if ($ufShipmentStatus !== null)
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_SHIPMENT_STATUS', $ufShipmentStatus))
@@ -1167,17 +1230,6 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				{
 					$changedFields[] = 'UF_1C_CANCEL_COMMENT=' . $cancelComment;
 				}
-			}
-
-			$hlChanged = mf_1c_import_sync_hl_statuses(
-				$orderId,
-				$ufOrderStatus,
-				$ufPaymentStatus,
-				$ufShipmentStatus
-			);
-			if ($hlChanged !== [])
-			{
-				$changedFields = array_merge($changedFields, $hlChanged);
 			}
 
 			if ($changedFields === [])
@@ -1254,7 +1306,7 @@ if (!function_exists('mf_1c_import_apply_file'))
 				return;
 			}
 
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE: start ' . $filePath);
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260605c: start ' . $filePath);
 
 			if (!Loader::includeModule('sale'))
 			{

@@ -31,4 +31,21 @@ if ($filePath === '' || !is_file($filePath))
 
 echo "Apply MF statuses from: {$filePath}\n";
 mf_1c_import_apply_file($filePath);
+
+if (function_exists('mf_1c_import_parse_xml_file') && function_exists('mf_1c_import_find_order_id') && function_exists('mf_order_custom_status_get'))
+{
+	$updates = mf_1c_import_parse_xml_file($filePath);
+	foreach ($updates as $parsed)
+	{
+		$orderId = mf_1c_import_find_order_id($parsed);
+		if ($orderId === null || $orderId <= 0)
+		{
+			continue;
+		}
+		$row = mf_order_custom_status_get((int)$orderId);
+		echo 'HL after apply order_id=' . (int)$orderId . PHP_EOL;
+		echo json_encode($row, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . PHP_EOL;
+	}
+}
+
 echo "Done. See upload/1c_exchange_debug.log\n";
