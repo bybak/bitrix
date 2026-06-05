@@ -65,6 +65,30 @@ if (!function_exists('mf_order_custom_status_normalize'))
 			return null;
 		}
 
+		$mfAliases = [
+			'order' => [
+				'IN_WORK' => 'in_progress',
+				'DONE' => 'completed',
+				'CANCELED' => 'cancelled',
+				'CANCELLED' => 'cancelled',
+			],
+			'payment' => [
+				'NOT_PAID' => 'not_paid',
+				'PARTIAL_PAID' => 'partially_paid',
+				'PAID' => 'paid',
+			],
+			'shipment' => [
+				'NOT_SHIPPED' => 'not_shipped',
+				'PARTIAL_SHIPPED' => 'partially_shipped',
+				'SHIPPED' => 'shipped',
+			],
+		];
+		$upperValue = strtoupper($value);
+		if (isset($mfAliases[$group][$upperValue]))
+		{
+			return $mfAliases[$group][$upperValue];
+		}
+
 		if (isset($map[$value]))
 		{
 			return $value;

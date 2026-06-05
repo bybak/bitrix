@@ -12,6 +12,12 @@ if (is_file($mf1cExchangeDebugInclude))
 	require_once $mf1cExchangeDebugInclude;
 }
 
+$mfOrderCustomStatusInclude = __DIR__ . '/mf_order_custom_status.php';
+if (is_file($mfOrderCustomStatusInclude))
+{
+	require_once $mfOrderCustomStatusInclude;
+}
+
 if (!function_exists('mf_1c_import_xml_bool'))
 {
 	function mf_1c_import_xml_bool(?string $value): ?bool
@@ -82,16 +88,23 @@ if (!function_exists('mf_1c_import_order_number_candidates'))
 		if ($tailDigits !== '' && $digits !== '' && $digits === '1' . $tailDigits)
 		{
 			$push($tailDigits);
+			$push('1-' . $tailDigits);
 		}
 
 		if ($digits !== '')
 		{
 			$push($digits);
+			$trimmedDigits = ltrim($digits, '0');
+			if ($trimmedDigits !== '' && $trimmedDigits !== $digits)
+			{
+				$push($trimmedDigits);
+			}
 		}
 
 		if ($tailDigits !== '')
 		{
 			$push($tailDigits);
+			$push('1-' . $tailDigits);
 		}
 
 		if ($digits !== '' && preg_match('/^s\d/i', $xmlNumber) && strlen($digits) > 3)
@@ -100,6 +113,63 @@ if (!function_exists('mf_1c_import_order_number_candidates'))
 		}
 
 		$push($xmlNumber);
+
+		return $ordered;
+	}
+}
+
+if (!function_exists('mf_1c_import_number_1c_candidates'))
+{
+	/**
+	 * Кандидаты из реквизита «Номер по 1С», например 1c-001295 → 295, 1-295.
+	 *
+	 * @return string[]
+	 */
+	function mf_1c_import_number_1c_candidates(string $number1c): array
+	{
+		$number1c = trim($number1c);
+		if ($number1c === '')
+		{
+			return [];
+		}
+
+		$ordered = [];
+		$seen = [];
+		$push = static function (string $value) use (&$ordered, &$seen): void {
+			$value = trim($value);
+			if ($value === '' || isset($seen[$value]))
+			{
+				return;
+			}
+			$seen[$value] = true;
+			$ordered[] = $value;
+		};
+
+		if (preg_match('/(\d+)$/u', $number1c, $matches))
+		{
+			$digits = ltrim((string)$matches[1], '0');
+			if ($digits !== '')
+			{
+				$push($digits);
+				if (strlen($digits) > 1 && $digits[0] === '1')
+				{
+					$tail = substr($digits, 1);
+					if ($tail !== '')
+					{
+						$push($tail);
+						$push('1-' . $tail);
+					}
+				}
+			}
+		}
+
+		if (preg_match('/^s\d/i', $number1c))
+		{
+			foreach (mf_1c_import_order_number_candidates($number1c) as $candidate)
+			{
+				$push($candidate);
+			}
+		}
 
 		return $ordered;
 	}
@@ -341,9 +411,21 @@ if (!function_exists('mf_1c_import_parse_document'))
 		}
 
 		$candidates = mf_1c_import_order_number_candidates($xmlNumber);
+		$number1c = trim((string)($allReqs['Номер по 1С'] ?? ''));
+		if ($number1c !== '')
+		{
+			foreach (mf_1c_import_number_1c_candidates($number1c) as $extraCandidate)
+			{
+				if (!in_array($extraCandidate, $candidates, true))
+				{
+					$candidates[] = $extraCandidate;
+				}
+			}
+		}
 
 		return [
 			'xml_number' => $xmlNumber,
+			'number_1c' => $number1c,
 			'order_candidates' => $candidates,
 			'resolved_number' => $candidates[0] ?? '',
 			'status_id' => $statusId,
@@ -675,6 +757,89 @@ if (!function_exists('mf_1c_import_mark_order_paid'))
 	}
 }
 
+if (!function_exists('mf_1c_import_sync_hl_statuses'))
+{
+	/**
+	 * Сохраняет статусы в HL mf_order_custom_status (колонки «Заказ (1С)» в админке).
+	 *
+	 * @return string[] список обновлённых полей HL
+	 */
+	function mf_1c_import_sync_hl_statuses(
+		int $orderId,
+		?string $orderStatus,
+		?string $paymentStatus,
+		?string $shipmentStatus
+	): array
+	{
+		if ($orderId <= 0 || !function_exists('mf_order_custom_status_set'))
+		{
+			return [];
+		}
+
+		$payload = [];
+		if ($orderStatus !== null && $orderStatus !== '')
+		{
+			$payload['ORDER_STATUS'] = $orderStatus;
+		}
+		if ($paymentStatus !== null && $paymentStatus !== '')
+		{
+			$payload['PAYMENT_STATUS'] = $paymentStatus;
+		}
+		if ($shipmentStatus !== null && $shipmentStatus !== '')
+		{
+			$payload['SHIPMENT_STATUS'] = $shipmentStatus;
+		}
+
+		if ($payload === [])
+		{
+			return [];
+		}
+
+		$before = function_exists('mf_order_custom_status_get')
+			? mf_order_custom_status_get($orderId)
+			: null;
+		$changed = [];
+
+		try
+		{
+			$after = mf_order_custom_status_set($orderId, $payload);
+			foreach (['ORDER_STATUS', 'PAYMENT_STATUS', 'SHIPMENT_STATUS'] as $key)
+			{
+				if (!array_key_exists($key, $payload))
+				{
+					continue;
+				}
+				$beforeCode = is_array($before) ? (string)($before[$key] ?? '') : '';
+				$afterCode = is_array($after) ? (string)($after[$key] ?? '') : '';
+				if ($afterCode !== '' && $afterCode !== $beforeCode)
+				{
+					$changed[] = 'HL_' . $key . '=' . $afterCode;
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+			mf_1c_import_log(
+				'IMPORT STATUSES HL ERROR: order_id=' . $orderId
+				. ' error=' . $e->getMessage()
+				. ' payload=' . json_encode($payload, JSON_UNESCAPED_UNICODE)
+			);
+
+			return [];
+		}
+
+		if ($changed !== [])
+		{
+			mf_1c_import_log(
+				'IMPORT STATUSES HL OK: order_id=' . $orderId
+				. ' updated=' . implode(', ', $changed)
+			);
+		}
+
+		return $changed;
+	}
+}
+
 if (!function_exists('mf_1c_import_apply_updates'))
 {
 	function mf_1c_import_apply_updates(array $updates): void
@@ -701,7 +866,9 @@ if (!function_exists('mf_1c_import_apply_updates'))
 			$orderId = mf_1c_import_find_order_id($parsed);
 			mf_1c_import_log(
 				'IMPORT STATUSES LOOKUP: xml_number=' . ($parsed['xml_number'] ?? '')
+				. ' number_1c=' . ($parsed['number_1c'] ?? '')
 				. ' bitrix_id=' . ($parsed['resolved_number'] ?? '')
+				. ' candidates=' . implode(',', $parsed['order_candidates'] ?? [])
 				. ' order_found=' . ($orderId > 0 ? 'Y' : 'N')
 				. ' order_id=' . (int)$orderId
 				. ' mf_fields=' . mf_1c_import_format_mf_log($mf)
@@ -856,9 +1023,39 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
+			$hlChanged = mf_1c_import_sync_hl_statuses(
+				$orderId,
+				$ufOrderStatus,
+				$ufPaymentStatus,
+				$ufShipmentStatus
+			);
+			if ($hlChanged !== [])
+			{
+				$changedFields = array_merge($changedFields, $hlChanged);
+			}
+
 			if ($changedFields === [])
 			{
 				mf_1c_import_log('IMPORT STATUSES APPLY: no changes for order_id=' . $orderId);
+				continue;
+			}
+
+			$orderNeedsSave = false;
+			foreach ($changedFields as $fieldChange)
+			{
+				if (!str_starts_with($fieldChange, 'HL_'))
+				{
+					$orderNeedsSave = true;
+					break;
+				}
+			}
+
+			if (!$orderNeedsSave)
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES APPLY OK (HL only): order_id=' . $orderId
+					. ' updated=' . implode(', ', $changedFields)
+				);
 				continue;
 			}
 
