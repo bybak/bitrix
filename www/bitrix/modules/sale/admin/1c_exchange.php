@@ -8,6 +8,17 @@ const BX_FORCE_DISABLE_SEPARATED_SESSION_MODE = true;
 define('NOT_CHECK_PERMISSIONS', true);
 define('NOT_CHECK_FILE_PERMISSIONS', true);
 
+$__mf1cExchangeDebugBootstrap = __DIR__ . '/../../../../local/php_interface/include/mf_1c_exchange_debug.php';
+if (is_file($__mf1cExchangeDebugBootstrap))
+{
+	require_once $__mf1cExchangeDebugBootstrap;
+	if (function_exists('mf_1c_exchange_debug_hit'))
+	{
+		mf_1c_exchange_debug_hit('bootstrap');
+	}
+}
+unset($__mf1cExchangeDebugBootstrap);
+
 /** @global CMain $APPLICATION */
 /** @global CUserTypeManager $CACHE_MANAGER */
 

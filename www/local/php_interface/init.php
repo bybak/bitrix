@@ -4785,11 +4785,19 @@ if (!function_exists('mf_on_1c_exchange_backfill'))
 	}
 }
 
+$mf1cExchangeDebugInit = __DIR__ . '/include/mf_1c_exchange_debug.php';
+if (is_file($mf1cExchangeDebugInit))
+{
+	require_once $mf1cExchangeDebugInit;
+}
+unset($mf1cExchangeDebugInit);
+
 if (class_exists(\Bitrix\Main\EventManager::class))
 {
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleBasketItemBeforeSaved', 'mf_on_basket_item_before_saved');
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('sale', 'OnSaleOrderBeforeSaved', 'mf_on_order_before_saved');
 	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBeforeProlog', 'mf_on_1c_exchange_backfill');
+	\Bitrix\Main\EventManager::getInstance()->addEventHandler('main', 'OnBeforeProlog', 'mf_on_1c_exchange_debug_log');
 }
 
 // --- UNF integration (orders -> 1C:UNF via HTTP API) ------------------------
