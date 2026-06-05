@@ -695,6 +695,17 @@ else
 			{
 				$_SESSION["BX_CML2_EXPORT"]["last_xml_entry"] = "";
 				$loader->clearSessionData();
+
+				$mf1cImportStatusesInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_1c_import_statuses.php';
+				if (is_file($mf1cImportStatusesInclude))
+				{
+					require_once $mf1cImportStatusesInclude;
+				}
+				if (function_exists('mf_1c_import_apply_file') && is_string($ABS_FILE_NAME) && $ABS_FILE_NAME !== '')
+				{
+					mf_1c_import_apply_file($ABS_FILE_NAME);
+				}
+
 				echo "success";
 			}
 			if($loader->strError <> '')

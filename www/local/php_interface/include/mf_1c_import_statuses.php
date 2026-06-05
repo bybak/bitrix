@@ -567,6 +567,10 @@ if (!function_exists('mf_1c_import_find_order_id'))
 
 		if ($orders === [])
 		{
+			mf_1c_import_log(
+				'IMPORT STATUSES LOOKUP MISS: candidates=' . implode(',', $candidates)
+			);
+
 			return null;
 		}
 
@@ -1079,25 +1083,61 @@ if (!function_exists('mf_1c_import_apply_updates'))
 	}
 }
 
-if (!function_exists('mf_1c_import_register_shutdown'))
+if (!function_exists('mf_1c_import_apply_file'))
 {
-	function mf_1c_import_register_shutdown(string $filePath): void
+	function mf_1c_import_apply_file(string $filePath): void
 	{
-		mf_1c_import_log('IMPORT STATUSES: register shutdown xml=' . $filePath);
-		$updates = mf_1c_import_parse_xml_file($filePath);
-		if ($updates === [])
+		$filePath = trim($filePath);
+		if ($filePath === '' || !is_file($filePath))
 		{
-			mf_1c_import_log('IMPORT STATUSES: no documents to apply for xml=' . basename($filePath));
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE: not found ' . $filePath);
 
 			return;
 		}
 
-		mf_1c_import_log('IMPORT STATUSES: shutdown queued documents=' . count($updates));
+		mf_1c_import_log('IMPORT STATUSES APPLY FILE: start ' . $filePath);
 
-		register_shutdown_function(static function () use ($updates): void {
-			mf_1c_import_log('IMPORT STATUSES: shutdown apply start documents=' . count($updates));
-			mf_1c_import_apply_updates($updates);
-			mf_1c_import_log('IMPORT STATUSES: shutdown apply done');
+		if (!Loader::includeModule('sale'))
+		{
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE: sale module not loaded');
+
+			return;
+		}
+
+		Loader::includeModule('highloadblock');
+
+		$updates = mf_1c_import_parse_xml_file($filePath);
+		if ($updates === [])
+		{
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE: no documents in ' . basename($filePath));
+
+			return;
+		}
+
+		mf_1c_import_log('IMPORT STATUSES APPLY FILE: documents=' . count($updates));
+		mf_1c_import_apply_updates($updates);
+		mf_1c_import_log('IMPORT STATUSES APPLY FILE: done');
+	}
+}
+
+if (!function_exists('mf_1c_import_register_shutdown'))
+{
+	function mf_1c_import_register_shutdown(string $filePath): void
+	{
+		static $registered = [];
+		$filePath = trim($filePath);
+		if ($filePath === '' || isset($registered[$filePath]))
+		{
+			return;
+		}
+		$registered[$filePath] = true;
+
+		mf_1c_import_log('IMPORT STATUSES: register shutdown xml=' . $filePath);
+
+		register_shutdown_function(static function () use ($filePath): void {
+			mf_1c_import_log('IMPORT STATUSES: shutdown fallback start');
+			mf_1c_import_apply_file($filePath);
+			mf_1c_import_log('IMPORT STATUSES: shutdown fallback done');
 		});
 	}
 }

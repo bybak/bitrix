@@ -6,6 +6,60 @@ declare(strict_types=1);
  * Лог обмена 1С — только local/, не зависит от правок в bitrix/modules.
  */
 
+if (!function_exists('mf1c_exchange_www_root'))
+{
+	function mf1c_exchange_www_root(): string
+	{
+		static $root = null;
+		if (is_string($root))
+		{
+			return $root;
+		}
+
+		$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+		$localRoot = dirname(__DIR__, 3);
+		$root = ($docRoot !== '' && is_dir($docRoot)) ? $docRoot : $localRoot;
+
+		return $root;
+	}
+}
+
+if (!function_exists('mf1c_exchange_upload_file_candidates'))
+{
+	function mf1c_exchange_upload_file_candidates(string $exchangeFilename): array
+	{
+		$exchangeFilename = basename($exchangeFilename);
+		$candidates = [];
+		$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+		if ($docRoot !== '')
+		{
+			$candidates[] = $docRoot . '/upload/1c_exchange/' . $exchangeFilename;
+		}
+		$candidates[] = dirname(__DIR__, 3) . '/upload/1c_exchange/' . $exchangeFilename;
+		$candidates[] = '/var/www/html/upload/1c_exchange/' . $exchangeFilename;
+		$candidates[] = '/www/bitrix_motor_force/www/upload/1c_exchange/' . $exchangeFilename;
+		$candidates[] = mf1c_exchange_www_root() . '/upload/1c_exchange/' . $exchangeFilename;
+
+		return array_values(array_unique(array_filter($candidates)));
+	}
+}
+
+if (!function_exists('mf1c_exchange_resolve_upload_file'))
+{
+	function mf1c_exchange_resolve_upload_file(string $exchangeFilename): string
+	{
+		foreach (mf1c_exchange_upload_file_candidates($exchangeFilename) as $candidate)
+		{
+			if (is_file($candidate))
+			{
+				return $candidate;
+			}
+		}
+
+		return '';
+	}
+}
+
 if (!function_exists('mf_1c_exchange_debug_log_path'))
 {
 	function mf_1c_exchange_debug_log_path(): string
@@ -208,6 +262,24 @@ if (!function_exists('mf_on_1c_exchange_debug_log'))
 				}
 				mf_1c_import_log_xml_dump($exchangeFile);
 			});
+		}
+
+		if ($mode === 'import')
+		{
+			$mf1cImportStatusesInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_1c_import_statuses.php';
+			if (is_file($mf1cImportStatusesInclude))
+			{
+				require_once $mf1cImportStatusesInclude;
+			}
+			if (function_exists('mf_1c_import_register_shutdown') && function_exists('mf1c_exchange_resolve_upload_file'))
+			{
+				$exchangeFile = mf1c_exchange_resolve_upload_file($filename);
+				if ($exchangeFile !== '')
+				{
+					mf_1c_exchange_debug_write('MF IMPORT prolog: xml=' . $exchangeFile);
+					mf_1c_import_register_shutdown($exchangeFile);
+				}
+			}
 		}
 	}
 }
