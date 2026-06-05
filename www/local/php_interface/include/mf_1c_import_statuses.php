@@ -759,10 +759,50 @@ if (!function_exists('mf_1c_import_map_order_status'))
 	}
 }
 
+if (!function_exists('mf_1c_import_detect_payment_status_from_mf_sums'))
+{
+	function mf_1c_import_detect_payment_status_from_mf_sums(?string $orderSumRaw, ?string $paidSumRaw): ?string
+	{
+		$orderSumRaw = trim((string)$orderSumRaw);
+		$paidSumRaw = trim((string)$paidSumRaw);
+		if ($orderSumRaw === '' || $paidSumRaw === '')
+		{
+			return null;
+		}
+
+		$orderSum = (float)str_replace([' ', ','], ['', '.'], $orderSumRaw);
+		$paidSum = (float)str_replace([' ', ','], ['', '.'], $paidSumRaw);
+		if ($orderSum <= 0)
+		{
+			return null;
+		}
+		if ($paidSum <= 0)
+		{
+			return 'NOT_PAID';
+		}
+		if ($paidSum + 0.001 >= $orderSum)
+		{
+			return 'PAID';
+		}
+
+		return 'PARTIAL_PAID';
+	}
+}
+
 if (!function_exists('mf_1c_import_detect_payment_status'))
 {
 	function mf_1c_import_detect_payment_status(?bool $paid, float $paymentSum, float $orderPrice): ?string
 	{
+		if ($paymentSum > 0 && $orderPrice > 0)
+		{
+			if ($paymentSum + 0.001 < $orderPrice)
+			{
+				return 'PARTIAL_PAID';
+			}
+
+			return 'PAID';
+		}
+
 		if ($paid === false)
 		{
 			return 'NOT_PAID';
@@ -773,14 +813,9 @@ if (!function_exists('mf_1c_import_detect_payment_status'))
 			return 'PAID';
 		}
 
-		if ($paymentSum > 0 && $orderPrice > 0 && $paymentSum < $orderPrice)
+		if ($paymentSum > 0 && $orderPrice <= 0)
 		{
 			return 'PARTIAL_PAID';
-		}
-
-		if ($paymentSum > 0 && ($orderPrice <= 0 || $paymentSum >= $orderPrice))
-		{
-			return 'PAID';
 		}
 
 		return null;
@@ -1022,12 +1057,25 @@ if (!function_exists('mf_1c_import_resolve_status_codes'))
 			$orderQty = (float)str_replace(',', '.', (string)$raw['КоличествоЗаказаноMF']);
 		}
 
-		$paymentStatus = $mf['payment_status'] ?? null;
+		$paymentSum = (float)($parsed['payment_sum'] ?? 0);
+		if ($paymentSum <= 0 && ($raw['СуммаОплаченоMF'] ?? '') !== '')
+		{
+			$paymentSum = (float)str_replace(',', '.', (string)$raw['СуммаОплаченоMF']);
+		}
+
+		$paymentStatus = mf_1c_import_detect_payment_status_from_mf_sums(
+			(string)($raw['СуммаЗаказаMF'] ?? ''),
+			(string)($raw['СуммаОплаченоMF'] ?? '')
+		);
+		if ($paymentStatus === null)
+		{
+			$paymentStatus = $mf['payment_status'] ?? null;
+		}
 		if ($paymentStatus === null)
 		{
 			$paymentStatus = mf_1c_import_detect_payment_status(
 				$parsed['paid'] ?? null,
-				(float)($parsed['payment_sum'] ?? 0),
+				$paymentSum,
 				$orderPrice
 			);
 		}
@@ -1306,7 +1354,7 @@ if (!function_exists('mf_1c_import_apply_file'))
 				return;
 			}
 
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260605c: start ' . $filePath);
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260605d: start ' . $filePath);
 
 			if (!Loader::includeModule('sale'))
 			{
