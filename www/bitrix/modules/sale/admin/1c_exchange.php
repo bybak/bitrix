@@ -8,29 +8,53 @@ const BX_FORCE_DISABLE_SEPARATED_SESSION_MODE = true;
 define('NOT_CHECK_PERMISSIONS', true);
 define('NOT_CHECK_FILE_PERMISSIONS', true);
 
+if (!function_exists('mf1c_exchange_debug_log_paths'))
+{
+	function mf1c_exchange_debug_log_paths(): array
+	{
+		$paths = [dirname(__DIR__, 4) . '/upload/1c_exchange_debug.log'];
+		if (!empty($_SERVER['DOCUMENT_ROOT']))
+		{
+			$paths[] = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') . '/upload/1c_exchange_debug.log';
+		}
+
+		return array_values(array_unique($paths));
+	}
+}
+
 if (!function_exists('mf1c_exchange_debug_log'))
 {
 	function mf1c_exchange_debug_log(string $message): void
 	{
-		static $logFile = null;
-		if ($logFile === null)
+		static $pathsLogged = false;
+		$line = date('Y-m-d H:i:s') . ' ' . $message . "\n";
+		foreach (mf1c_exchange_debug_log_paths() as $logFile)
 		{
-			$logFile = dirname(__DIR__, 4) . '/upload/1c_exchange_debug.log';
 			$dir = dirname($logFile);
 			if (!is_dir($dir))
 			{
 				@mkdir($dir, 0775, true);
 			}
+			@file_put_contents($logFile, $line, FILE_APPEND);
 		}
-		@file_put_contents($logFile, date('Y-m-d H:i:s') . ' ' . $message . "\n", FILE_APPEND);
+		if (!$pathsLogged)
+		{
+			$pathsLogged = true;
+			@file_put_contents(
+				dirname(__DIR__, 4) . '/upload/1c_exchange_debug.paths.txt',
+				date('Y-m-d H:i:s') . ' ' . implode("\n", mf1c_exchange_debug_log_paths()) . "\n",
+				FILE_APPEND
+			);
+		}
 	}
 }
 
 mf1c_exchange_debug_log(
-	'ENTRY type=' . (string)($_REQUEST['type'] ?? '')
+	'ENTRY[v20260606] type=' . (string)($_REQUEST['type'] ?? '')
 	. ' mode=' . (string)($_REQUEST['mode'] ?? '')
 	. ' filename=' . (string)($_REQUEST['filename'] ?? '')
 	. ' method=' . (string)($_SERVER['REQUEST_METHOD'] ?? '')
+	. ' log=' . implode(',', mf1c_exchange_debug_log_paths())
 );
 
 $__mf1cExchangeDebugBootstrap = __DIR__ . '/../../../../local/php_interface/include/mf_1c_exchange_debug.php';

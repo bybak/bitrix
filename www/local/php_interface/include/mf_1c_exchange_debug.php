@@ -45,12 +45,35 @@ if (!function_exists('mf_1c_exchange_debug_log_path'))
 	}
 }
 
+if (!function_exists('mf_1c_exchange_debug_log_paths'))
+{
+	function mf_1c_exchange_debug_log_paths(): array
+	{
+		$paths = [];
+		if (!empty($_SERVER['DOCUMENT_ROOT']))
+		{
+			$paths[] = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') . '/upload/1c_exchange_debug.log';
+		}
+		$paths[] = dirname(__DIR__, 3) . '/upload/1c_exchange_debug.log';
+
+		return array_values(array_unique($paths));
+	}
+}
+
 if (!function_exists('mf_1c_exchange_debug_write'))
 {
 	function mf_1c_exchange_debug_write(string $message): void
 	{
 		$line = date('Y-m-d H:i:s') . ' ' . $message . "\n";
-		@file_put_contents(mf_1c_exchange_debug_log_path(), $line, FILE_APPEND | LOCK_EX);
+		if (function_exists('mf1c_exchange_debug_log'))
+		{
+			mf1c_exchange_debug_log($message);
+			return;
+		}
+		foreach (mf_1c_exchange_debug_log_paths() as $logFile)
+		{
+			@file_put_contents($logFile, $line, FILE_APPEND);
+		}
 	}
 }
 
