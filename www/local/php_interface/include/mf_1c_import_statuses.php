@@ -466,8 +466,6 @@ if (!function_exists('mf_1c_import_parse_xml_file'))
 			$xmlString
 		);
 
-		file_put_contents($filePath, $xmlString);
-
 		$dom = new DOMDocument();
 		if (@$dom->loadXML($xmlString) === false)
 		{
@@ -866,24 +864,28 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				continue;
 			}
 
+			try
+			{
 			$mf = is_array($parsed['mf'] ?? null) ? $parsed['mf'] : [];
 			$orderId = mf_1c_import_find_order_id($parsed);
+			$resolvedOrderId = ($orderId !== null && $orderId > 0) ? (int)$orderId : 0;
 			mf_1c_import_log(
 				'IMPORT STATUSES LOOKUP: xml_number=' . ($parsed['xml_number'] ?? '')
 				. ' number_1c=' . ($parsed['number_1c'] ?? '')
 				. ' bitrix_id=' . ($parsed['resolved_number'] ?? '')
 				. ' candidates=' . implode(',', $parsed['order_candidates'] ?? [])
-				. ' order_found=' . ($orderId > 0 ? 'Y' : 'N')
-				. ' order_id=' . (int)$orderId
+				. ' order_found=' . ($resolvedOrderId > 0 ? 'Y' : 'N')
+				. ' order_id=' . $resolvedOrderId
 				. ' mf_fields=' . mf_1c_import_format_mf_log($mf)
 			);
 
-			if ($orderId <= 0)
+			if ($resolvedOrderId <= 0)
 			{
 				mf_1c_import_log('IMPORT STATUSES APPLY: order not found for xml_number=' . ($parsed['xml_number'] ?? ''));
 				continue;
 			}
 
+			$orderId = $resolvedOrderId;
 			$order = Order::load($orderId);
 			if (!$order)
 			{
@@ -1079,6 +1081,15 @@ if (!function_exists('mf_1c_import_apply_updates'))
 					. ' attempted=' . implode(', ', $changedFields)
 				);
 			}
+			}
+			catch (\Throwable $e)
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES APPLY DOC ERROR: xml_number=' . ($parsed['xml_number'] ?? '')
+					. ' error=' . $e->getMessage()
+					. ' @ ' . $e->getFile() . ':' . $e->getLine()
+				);
+			}
 		}
 	}
 }
@@ -1087,36 +1098,53 @@ if (!function_exists('mf_1c_import_apply_file'))
 {
 	function mf_1c_import_apply_file(string $filePath): void
 	{
+		static $applied = [];
 		$filePath = trim($filePath);
-		if ($filePath === '' || !is_file($filePath))
+		if ($filePath === '' || isset($applied[$filePath]))
 		{
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE: not found ' . $filePath);
-
 			return;
 		}
 
-		mf_1c_import_log('IMPORT STATUSES APPLY FILE: start ' . $filePath);
-
-		if (!Loader::includeModule('sale'))
+		try
 		{
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE: sale module not loaded');
+			if (!is_file($filePath))
+			{
+				mf_1c_import_log('IMPORT STATUSES APPLY FILE: not found ' . $filePath);
 
-			return;
+				return;
+			}
+
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE: start ' . $filePath);
+
+			if (!Loader::includeModule('sale'))
+			{
+				mf_1c_import_log('IMPORT STATUSES APPLY FILE: sale module not loaded');
+
+				return;
+			}
+
+			Loader::includeModule('highloadblock');
+
+			$updates = mf_1c_import_parse_xml_file($filePath);
+			if ($updates === [])
+			{
+				mf_1c_import_log('IMPORT STATUSES APPLY FILE: no documents in ' . basename($filePath));
+
+				return;
+			}
+
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE: documents=' . count($updates));
+			mf_1c_import_apply_updates($updates);
+			$applied[$filePath] = true;
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE: done');
 		}
-
-		Loader::includeModule('highloadblock');
-
-		$updates = mf_1c_import_parse_xml_file($filePath);
-		if ($updates === [])
+		catch (\Throwable $e)
 		{
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE: no documents in ' . basename($filePath));
-
-			return;
+			mf_1c_import_log(
+				'IMPORT STATUSES APPLY FILE FATAL: ' . $e->getMessage()
+				. ' @ ' . $e->getFile() . ':' . $e->getLine()
+			);
 		}
-
-		mf_1c_import_log('IMPORT STATUSES APPLY FILE: documents=' . count($updates));
-		mf_1c_import_apply_updates($updates);
-		mf_1c_import_log('IMPORT STATUSES APPLY FILE: done');
 	}
 }
 

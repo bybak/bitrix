@@ -353,14 +353,28 @@ if (!function_exists('mf_1c_enrich_orders_xml_export'))
 			return $contents;
 		}
 
-		$result = preg_replace_callback(
-			'/<Товар\b[^>]*>.*?<\/Товар>/su',
-			static function (array $matches): string {
-				return mf_1c_export_enrich_single_item_block($matches[0]);
-			},
-			$contents
-		);
+		try
+		{
+			$result = preg_replace_callback(
+				'/<Товар\b[^>]*>.*?<\/Товар>/su',
+				static function (array $matches): string {
+					try
+					{
+						return mf_1c_export_enrich_single_item_block($matches[0]);
+					}
+					catch (\Throwable $e)
+					{
+						return $matches[0];
+					}
+				},
+				$contents
+			);
 
-		return is_string($result) ? $result : $contents;
+			return is_string($result) ? $result : $contents;
+		}
+		catch (\Throwable $e)
+		{
+			return $contents;
+		}
 	}
 }

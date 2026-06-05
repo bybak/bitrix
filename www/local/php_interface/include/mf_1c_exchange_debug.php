@@ -264,22 +264,5 @@ if (!function_exists('mf_on_1c_exchange_debug_log'))
 			});
 		}
 
-		if ($mode === 'import')
-		{
-			$mf1cImportStatusesInclude = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_1c_import_statuses.php';
-			if (is_file($mf1cImportStatusesInclude))
-			{
-				require_once $mf1cImportStatusesInclude;
-			}
-			if (function_exists('mf_1c_import_register_shutdown') && function_exists('mf1c_exchange_resolve_upload_file'))
-			{
-				$exchangeFile = mf1c_exchange_resolve_upload_file($filename);
-				if ($exchangeFile !== '')
-				{
-					mf_1c_exchange_debug_write('MF IMPORT prolog: xml=' . $exchangeFile);
-					mf_1c_import_register_shutdown($exchangeFile);
-				}
-			}
-		}
 	}
 }
