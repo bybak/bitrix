@@ -54,18 +54,29 @@ if ($type === 'sale')
 		require_once $mf1cImportStatusesInclude;
 	}
 
-	if (
-		($_REQUEST['mode'] ?? '') === 'import'
-		&& !empty($_REQUEST['filename'])
-		&& function_exists('mf_1c_import_register_shutdown')
-	)
+	if (function_exists('mf_1c_exchange_log_request'))
 	{
-		$importFile = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . basename((string)$_REQUEST['filename']);
-		if (function_exists('mf_1c_import_log'))
+		mf_1c_exchange_log_request();
+	}
+
+	$exchangeMode = (string)($_REQUEST['mode'] ?? '');
+	$exchangeFilename = !empty($_REQUEST['filename'])
+		? basename((string)$_REQUEST['filename'])
+		: '';
+
+	if ($exchangeFilename !== '')
+	{
+		$exchangeFile = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange/' . $exchangeFilename;
+
+		if ($exchangeMode === 'import' && function_exists('mf_1c_import_register_shutdown'))
 		{
-			mf_1c_import_log('IMPORT REQUEST filename=' . basename((string)$_REQUEST['filename']));
+			mf_1c_import_register_shutdown($exchangeFile);
 		}
-		mf_1c_import_register_shutdown($importFile);
+		elseif ($exchangeMode === 'file' && function_exists('mf_1c_exchange_log_file_shutdown'))
+		{
+			// mode=file: 1С пишет тело в php://input, после компонента смотрим накопленный файл
+			mf_1c_exchange_log_file_shutdown($exchangeFile);
+		}
 	}
 
 	$APPLICATION->IncludeComponent("bitrix:sale.export.1c", "", Array(

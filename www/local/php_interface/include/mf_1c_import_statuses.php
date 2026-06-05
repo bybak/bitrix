@@ -11,7 +11,90 @@ if (!function_exists('mf_1c_import_log'))
 	function mf_1c_import_log(string $message): void
 	{
 		$path = $_SERVER['DOCUMENT_ROOT'] . '/upload/1c_exchange_debug.log';
-		file_put_contents($path, date('Y-m-d H:i:s') . ' ' . $message . "\n", FILE_APPEND);
+		file_put_contents($path, date('Y-m-d H:i:s') . ' ' . $message . "\n", FILE_APPEND | LOCK_EX);
+	}
+}
+
+if (!function_exists('mf_1c_exchange_log_request'))
+{
+	function mf_1c_exchange_log_request(): void
+	{
+		$request = $_REQUEST;
+		foreach (['USER_PASSWORD', 'PASSWORD', 'USER_PASS'] as $secretKey)
+		{
+			if (isset($request[$secretKey]))
+			{
+				$request[$secretKey] = '***';
+			}
+		}
+
+		mf_1c_import_log('EXCHANGE REQUEST: ' . print_r($request, true));
+
+		if (!empty($_FILES))
+		{
+			$files = $_FILES;
+			foreach ($files as &$fileInfo)
+			{
+				if (is_array($fileInfo) && isset($fileInfo['tmp_name']))
+				{
+					$fileInfo['size'] = is_file((string)$fileInfo['tmp_name'])
+						? filesize((string)$fileInfo['tmp_name'])
+						: 0;
+				}
+			}
+			unset($fileInfo);
+			mf_1c_import_log('EXCHANGE FILES: ' . print_r($files, true));
+		}
+	}
+}
+
+if (!function_exists('mf_1c_import_log_xml_dump'))
+{
+	function mf_1c_import_log_xml_dump(string $filePath, ?string $xmlString = null): void
+	{
+		$filePath = trim($filePath);
+		if ($xmlString === null)
+		{
+			if ($filePath === '' || !is_file($filePath))
+			{
+				mf_1c_import_log('XML DUMP: file not found ' . $filePath);
+				return;
+			}
+			$xmlString = file_get_contents($filePath);
+		}
+
+		if ($xmlString === false || trim($xmlString) === '')
+		{
+			mf_1c_import_log('XML DUMP: empty content for ' . basename($filePath));
+			return;
+		}
+
+		$maxLen = 512000;
+		$size = strlen($xmlString);
+		$body = $xmlString;
+		if ($size > $maxLen)
+		{
+			$body = substr($xmlString, 0, $maxLen) . "\n... [truncated, total " . $size . " bytes]";
+		}
+
+		mf_1c_import_log(
+			"==================== XML DUMP: " . basename($filePath) . " (" . $size . " bytes) ====================\n"
+			. $body
+			. "\n================== END XML DUMP =================="
+		);
+	}
+}
+
+if (!function_exists('mf_1c_exchange_log_file_shutdown'))
+{
+	function mf_1c_exchange_log_file_shutdown(string $filePath): void
+	{
+		register_shutdown_function(static function () use ($filePath): void {
+			if (function_exists('mf_1c_import_log_xml_dump'))
+			{
+				mf_1c_import_log_xml_dump($filePath);
+			}
+		});
 	}
 }
 
@@ -269,6 +352,8 @@ if (!function_exists('mf_1c_import_parse_xml_file'))
 			mf_1c_import_log('IMPORT STATUSES: empty XML ' . $filePath);
 			return [];
 		}
+
+		mf_1c_import_log_xml_dump($filePath, $xmlString);
 
 		$xmlString = str_replace(
 			'<Наименование>Статуса заказа ИД</Наименование>',
