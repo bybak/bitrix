@@ -17,6 +17,18 @@ def _soup(html: str) -> BeautifulSoup:
 
 
 @dataclass
+class ListingVariantOffer:
+	"""Один SKU из модалки «размеры/цвета» или «количество зубьев» (отдельный артикул/URL)."""
+	product_url: str
+	article: str
+	stock_qty: int | None
+	stock_label: str
+	price_raw: str
+	sku_id: str
+	variant_label: str
+
+
+@dataclass
 class ListingProduct:
 	bx_id: int | None
 	product_url: str
@@ -28,6 +40,10 @@ class ListingProduct:
 	# AJAX «наличие в магазинах» / «размеры и цвета» с листинга (без захода в карточку)
 	stock_modal_gid: str | None = None
 	stock_modal_id: str | None = None
+	# Кнопка getColorSizeTable — несколько SKU; остаток брать из modal_color_size (сумма вариантов)
+	stock_has_variants: bool = False
+	# Несколько SKU (зубья/размеры): отдельные строки вместо одной карточки-хаба
+	variant_offers: list[ListingVariantOffer] | None = None
 
 
 @dataclass
@@ -245,23 +261,22 @@ def _stock_hint_from_card(card) -> str:
 	return ""
 
 
-def _stock_modal_ids_from_card(card) -> tuple[str | None, str | None]:
+def _stock_modal_ids_from_card(card) -> tuple[str | None, str | None, bool]:
 	"""
 	gid/id для ajax.php load_modal с листинга:
-	- getColorSizeTable(N) на кнопке «В корзину» → gid=N, id пустой;
-	- одиночный SKU (submit add_basket) → data-id на .card-favorite.
+	- getColorSizeTable(N) — варианты (размер/цвет): gid=N, id из .card-favorite (SKU для modal_available);
+	- одиночный SKU (add_basket без getColorSizeTable) → gid=id из .card-favorite.
 	"""
+	fav = card.select_one(".card-favorite")
+	fav_id = (fav.get("data-id") or "").strip() if fav else ""
 	btn = card.select_one('button[onclick*="getColorSizeTable"]')
 	if btn:
 		m = re.search(r"getColorSizeTable\((\d+)\)", btn.get("onclick") or "")
 		if m:
-			return m.group(1), ""
-	fav = card.select_one(".card-favorite")
-	if fav:
-		id_ = (fav.get("data-id") or "").strip()
-		if id_:
-			return id_, id_
-	return None, None
+			return m.group(1), fav_id, True
+	if fav_id:
+		return fav_id, fav_id, False
+	return None, None, False
 
 
 def listing_modal_page_code(html: str) -> str:
@@ -346,7 +361,7 @@ def parse_listing_page(html: str, category_url: str) -> tuple[list[ListingProduc
 		price_raw = pr_el.get_text(" ", strip=True) if pr_el else ""
 		manufacturer = _brand_from_card_specifics(card)
 		stock_mob = _stock_hint_from_card(card)
-		modal_gid, modal_id = _stock_modal_ids_from_card(card)
+		modal_gid, modal_id, has_variants = _stock_modal_ids_from_card(card)
 		lp = _listing_product_from_card(
 			base,
 			href,
@@ -359,6 +374,7 @@ def parse_listing_page(html: str, category_url: str) -> tuple[list[ListingProduc
 		if lp:
 			lp.stock_modal_gid = modal_gid
 			lp.stock_modal_id = modal_id
+			lp.stock_has_variants = has_variants
 		if lp and lp.product_url not in seen_product:
 			seen_product.add(lp.product_url)
 			out.append(lp)
@@ -450,29 +466,181 @@ def _parse_price_rub_from_detail(html: str) -> float | None:
 		return None
 
 
-def _parse_stock_from_detail(html: str) -> tuple[str, str]:
-	soup = _soup(html)
-	label = ""
+def _parse_availability_label_from_soup(soup: BeautifulSoup) -> str:
+	"""«10+», «Нет в наличии» — без текста кнопок и блока «Количество зубьев»."""
+	wrap = soup.select_one(".product-sizes-wrapper")
+	if wrap:
+		for sp in wrap.find_all("span"):
+			if re.search(r"наличие", sp.get_text(" ", strip=True), re.I):
+				parent = sp.parent
+				if parent:
+					m = re.search(r"Наличие\s*:\s*(.+?)$", parent.get_text(" ", strip=True), re.I)
+					if m:
+						return m.group(1).strip()
 	for block in soup.select(".product-specifics .spec-wrapper"):
-		t = block.get_text(" ", strip=True)
-		if re.search(r"Наличие\s*:", t, re.I):
-			m = re.search(r"Наличие\s*:\s*(.+)$", t, re.I)
-			if m:
-				label = m.group(1).strip()
-				break
+		spans = block.find_all("span")
+		if len(spans) < 2:
+			continue
+		label = spans[0].get_text(" ", strip=True).rstrip(":").strip()
+		if label.lower() == "наличие":
+			return spans[1].get_text(" ", strip=True).strip()
+	t = soup.get_text(" ", strip=True)
+	m = re.search(r"Наличие:\s*([^\n]+?)(?:Размер|Цена|Другие|Количество)", t)
+	if m:
+		return m.group(1).strip()
+	return ""
+
+
+def _parse_stock_from_detail(html: str) -> tuple[str, str]:
+	return _parse_availability_label_from_soup(_soup(html)), ""
+
+
+def _variant_url_for_label(url_by_label: dict[str, str], variant_label: str) -> str | None:
+	"""
+	Сопоставление подписи из модалки (50, 320; Правый) со ссылкой на карточке.
+	Составные подписи разбираем по «;» — иначе «320» из диаметра перебивает «Правый».
+	"""
+	label = (variant_label or "").strip()
 	if not label:
-		for block in soup.select(".product-sizes-wrapper, .product-block-wrapper-bottom"):
-			t = block.get_text(" ", strip=True)
-			m = re.search(r"Наличие:\s*([^<\n]+?)(?:\s{2,}|$)", t)
-			if m:
-				label = m.group(1).strip()
-				break
-	if not label:
-		t = soup.get_text(" ", strip=True)
-		m = re.search(r"Наличие:\s*([^\n]+?)(?:Размер|Цена|Другие)", t)
-		if m:
-			label = m.group(1).strip()
-	return label, ""
+		return None
+	if label in url_by_label:
+		return url_by_label[label]
+	for k, v in url_by_label.items():
+		if k.strip() == label:
+			return v
+	parts = [p.strip() for p in re.split(r"[;,]", label) if p.strip()]
+	for part in parts:
+		if part in url_by_label:
+			return url_by_label[part]
+		for k, v in url_by_label.items():
+			if k.strip() == part:
+				return v
+	if re.fullmatch(r"\d+", label):
+		for k, v in url_by_label.items():
+			if k.strip() == label:
+				return v
+	return None
+
+
+def parse_product_variant_url_by_label(
+	html: str,
+	base: str,
+	hub_url: str = "",
+) -> dict[str, str]:
+	"""
+	Ссылки на отдельные карточки SKU с блоков параметров на хаб-странице
+	(зубья, диаметр, расположение и т.п.).
+	Ключ — подпись варианта (например «50», «Правый»), значение — canonical product URL.
+	Ссылка на сам хаб (тот же /item/…) не включается.
+	"""
+	soup = _soup(html)
+	hub_canon = _canonical_product_url(base, hub_url) if hub_url else ""
+	hub_slug = article_slug_from_item_href(hub_url) if hub_url else ""
+	out: dict[str, str] = {}
+	for param in soup.select(
+		".product-apars-wrapper .product-param, .product-params-nd .product-param"
+	):
+		a = param.select_one('a[href*="/item/"]')
+		if not a:
+			continue
+		label = (a.get("title") or "").strip() or param.get_text(" ", strip=True)
+		if not label:
+			continue
+		href = (a.get("href") or "").strip()
+		url = _canonical_product_url(base, href)
+		if not url:
+			continue
+		if hub_canon and url.rstrip("/") == hub_canon.rstrip("/"):
+			continue
+		slug = article_slug_from_item_href(url)
+		if hub_slug and slug == hub_slug:
+			continue
+		out[label] = url
+	return out
+
+
+def parse_color_size_modal_variants(
+	modal_html: str,
+	cfg: dict[str, Any],
+) -> list[dict[str, Any]]:
+	"""
+	Строки из ответа modal_color_size: каждый .cs-item — отдельный SKU (data-id, зубья/размер).
+	"""
+	soup = _soup(modal_html)
+	out: list[dict[str, Any]] = []
+	for item in soup.select(".cs-item"):
+		sku_id = (item.get("data-id") or "").strip()
+		if not sku_id:
+			continue
+		label = ""
+		hd = item.select_one(".hidden_desc")
+		if hd:
+			label = hd.get_text(" ", strip=True)
+		qnt_el = item.select_one("p.cs-qnt")
+		stock_label = qnt_el.get_text(" ", strip=True).replace("\xa0", " ") if qnt_el else ""
+		inp = item.select_one('input[name^="gcnt"]')
+		price_raw = ""
+		if inp and inp.get("data-pr"):
+			price_raw = str(inp.get("data-pr")).strip() + " ₽"
+		stock_qty = resolve_stock_qty(stock_label, "", None, cfg)
+		if stock_qty is None and "red" in (item.get("class") or []):
+			stock_qty = 0
+		out.append({
+			"sku_id": sku_id,
+			"variant_label": label,
+			"stock_label": stock_label,
+			"stock_qty": stock_qty,
+			"price_raw": price_raw,
+		})
+	return out
+
+
+def build_listing_variant_offers(
+	hub: ListingProduct,
+	modal_html: str,
+	product_page_html: str,
+	base: str,
+	cfg: dict[str, Any],
+) -> list[ListingVariantOffer] | None:
+	"""
+	Если в модалке несколько SKU — отдельные предложения с URL/остатком.
+	Артикул и URL — только из ссылок на хаб-странице (сегмент /item/…/).
+	Варианты без отдельной ссылки на хабе пропускаются; синтетические артикулы не создаём.
+	"""
+	raw_variants = parse_color_size_modal_variants(modal_html, cfg)
+	if len(raw_variants) <= 1:
+		return None
+
+	url_by_label = parse_product_variant_url_by_label(
+		product_page_html, base, hub.product_url
+	)
+	if not url_by_label:
+		return None
+
+	hub_slug = article_slug_from_item_href(hub.product_url)
+	offers: list[ListingVariantOffer] = []
+	for v in raw_variants:
+		label = (v.get("variant_label") or "").strip()
+		sku_id = (v.get("sku_id") or "").strip()
+		purl = _variant_url_for_label(url_by_label, label)
+		if not purl:
+			continue
+		article = article_slug_from_item_href(purl)
+		if not article or article == hub_slug:
+			continue
+		price_raw = (v.get("price_raw") or "").strip() or hub.price_raw
+		offers.append(
+			ListingVariantOffer(
+				product_url=purl,
+				article=article,
+				stock_qty=v.get("stock_qty"),
+				stock_label=(v.get("stock_label") or "").strip(),
+				price_raw=price_raw,
+				sku_id=sku_id,
+				variant_label=label,
+			)
+		)
+	return offers if offers else None
 
 
 def parse_product_detail_brand_article(html: str) -> tuple[str, str]:
@@ -499,6 +667,19 @@ def parse_product_detail(html: str) -> ProductDetail:
 		art = soup.select_one(".product-articul .articul-data span")
 		if art:
 			article = art.get_text(" ", strip=True)
+	if not article:
+		for block in soup.select(".product-specifics .spec-wrapper"):
+			spans = block.find_all("span")
+			if len(spans) < 2:
+				continue
+			lbl = spans[0].get_text(" ", strip=True).rstrip(":").strip().lower()
+			if lbl == "артикул":
+				article = spans[1].get_text(" ", strip=True)
+				break
+	if not article:
+		canon = soup.select_one('link[rel="canonical"]')
+		if canon:
+			article = article_slug_from_item_href(canon.get("href") or "")
 
 	pk, av = _parse_ld_json_product_offers(html)
 	if pk is None:
@@ -512,6 +693,38 @@ def parse_product_detail(html: str) -> ProductDetail:
 		stock_label=sl,
 		stock_stack=stk,
 	)
+
+
+def product_has_color_size_variants(html: str) -> bool:
+	"""На карточке или в листинге есть выбор размера/цвета (getColorSizeTable)."""
+	if re.search(r"getColorSizeTable\s*\(\s*\d+\s*\)", html):
+		return True
+	el = _soup(html).select_one("#modal_color_size")
+	return bool(el and (el.get("data-gid") or "").strip())
+
+
+def parse_modal_color_size_params(html: str) -> dict[str, str] | None:
+	"""Параметры для ajax.php?ckmod=modal_color_size (из #modal_color_size на странице)."""
+	soup = _soup(html)
+	el = soup.select_one("#modal_color_size")
+	if not el:
+		return None
+	gid = (el.get("data-gid") or "").strip()
+	if not gid:
+		return None
+	page = (el.get("data-page") or "").strip()
+	if not page:
+		av = soup.select_one("#modal_available")
+		if av and (av.get("data-page") or "").strip():
+			page = str(av.get("data-page")).strip()
+	if not page:
+		block = soup.select_one("#blockItemsNd")
+		if block and (block.get("data-page") or "").strip():
+			page = str(block.get("data-page")).strip()
+	if not page:
+		page = "002"
+	ld = (el.get("data-ld") or "0").strip() or "0"
+	return {"gid": gid, "id": "", "page": page, "ld": ld}
 
 
 def parse_modal_available_params(html: str) -> dict[str, str] | None:
@@ -598,11 +811,11 @@ def resolve_stock_qty(
 	if m:
 		return int(m.group(1))
 
-	m = re.search(r"(\d+)\s*\+", label)
+	m = re.match(r"^(\d+)\s*\+\s*$", label)
 	if m:
 		return int(m.group(1))
 
-	m = re.search(r"(?<!\d)(\d{1,7})(?!\d)", label)
+	m = re.search(r"(\d+)\s*\+", label)
 	if m:
 		return int(m.group(1))
 

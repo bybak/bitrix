@@ -13,9 +13,12 @@ http2: false
 http_max_retries: 5
 http_retry_delay_sec: 0.5
 timeout_seconds: 45
-max_connections: 8
-request_delay_sec: 0.35
-max_concurrent_requests: 4
+max_connections: 20
+request_delay_sec: 0.15
+max_concurrent_requests: 8
+# AJAX остатков на листинге: отдельный лимит и меньшая пауза (самый тяжёлый этап)
+listing_enrichment_concurrency: 16
+listing_request_delay_sec: 0.05
 
 # При sqlite3.OperationalError: disk I/O — поставьте путь вне iCloud/сети, напр. /tmp/pilotmoto_state.sqlite3
 state_db: "data/state.sqlite3"
@@ -33,6 +36,7 @@ stock_text_map:
   "Достаточно": 10
   "Много": 50
   "В наличии": 5
+  "10+": 10
 stock_stack_map: {}
 stock_default_instock: 1
 
@@ -41,6 +45,8 @@ stock_modal_sum_enabled: true
 
 # Остаток с листинга через лёгкий ajax (модалка магазинов), без полной карточки товара.
 listing_stock_modal_enabled: true
+# Хаб-карточки (зубья/размеры): отдельная строка на каждый SKU из modal_color_size
+listing_variant_expansion: true
 listing_stock_color_fallback: true
 
 # Полный обход карточки — только если нужны поля, которых нет на листинге/ajax.

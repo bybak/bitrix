@@ -14,17 +14,20 @@ from pilotmoto_scraper import db as dbmod
 from pilotmoto_scraper.export_csv import parse_kzt_from_price_raw
 from pilotmoto_scraper.parse import (
 	ListingProduct,
+	build_listing_variant_offers,
 	canonical_catalog_url,
 	collect_category_urls_from_html,
 	is_excluded_category,
 	listing_modal_page_code,
 	listing_page_url,
 	listing_stock_modal_ajax_url,
-	modal_available_ajax_url,
+	parse_color_size_modal_variants,
 	parse_listing_page,
 	parse_max_page_pilotmoto,
 	parse_modal_available_params,
+	parse_modal_color_size_params,
 	parse_product_detail,
+	product_has_color_size_variants,
 	resolve_stock_qty,
 	sum_stock_from_color_size_modal,
 	sum_stock_from_modal_available_html,
@@ -109,6 +112,69 @@ def _detail_flag_after_listing(leave_detail_pending: bool) -> int:
 	return 0 if leave_detail_pending else 1
 
 
+async def _fetch_modal_stock_qty(
+	client: httpx.AsyncClient,
+	base: str,
+	cfg: dict[str, Any],
+	gid: str,
+	id_: str,
+	page_code: str,
+	has_variants: bool,
+	*,
+	delay: float,
+	sem: asyncio.Semaphore,
+	max_retries: int,
+	retry_delay_sec: float,
+) -> int | None:
+	"""
+	Остаток через ajax load_modal.
+	Товары с getColorSizeTable: сумма по modal_color_size (все размеры/цвета);
+	modal_available даёт только один SKU и занижает остаток.
+	Одиночный SKU: сначала modal_available; при 0 — modal_color_size (обход блокировки DC IP).
+	"""
+	color_fallback = bool(cfg.get("listing_stock_color_fallback", True))
+
+	async def _load(kind: str) -> int | None:
+		url = listing_stock_modal_ajax_url(
+			base, gid, id_, page_code, kind=kind
+		)
+		html = await fetch_text(
+			client,
+			url,
+			delay=delay,
+			sem=sem,
+			max_retries=max_retries,
+			retry_delay_sec=retry_delay_sec,
+		)
+		if kind == "modal_color_size":
+			return sum_stock_from_color_size_modal(html)
+		return sum_stock_from_modal_available_html(html)
+
+	try:
+		if has_variants:
+			sq_cs = await _load("modal_color_size")
+			if sq_cs is not None:
+				return sq_cs
+			return await _load("modal_available")
+
+		if not color_fallback:
+			return await _load("modal_available")
+
+		sq_av, sq_cs = await asyncio.gather(
+			_load("modal_available"),
+			_load("modal_color_size"),
+		)
+		if sq_av is not None and sq_av > 0:
+			return sq_av
+		if sq_cs is not None and sq_cs > 0:
+			return sq_cs
+		return sq_av if sq_av is not None else sq_cs
+	except _TRANSIENT_HTTP_ERRORS:
+		return None
+	except httpx.HTTPStatusError:
+		return None
+
+
 async def _fetch_listing_stock_qty(
 	client: httpx.AsyncClient,
 	base: str,
@@ -123,46 +189,107 @@ async def _fetch_listing_stock_qty(
 ) -> int | None:
 	if not p.stock_modal_gid:
 		return None
-	gid = p.stock_modal_gid
-	id_ = p.stock_modal_id or ""
+	return await _fetch_modal_stock_qty(
+		client,
+		base,
+		cfg,
+		p.stock_modal_gid,
+		p.stock_modal_id or "",
+		page_code,
+		p.stock_has_variants,
+		delay=delay,
+		sem=sem,
+		max_retries=max_retries,
+		retry_delay_sec=retry_delay_sec,
+	)
+
+
+async def _fetch_modal_color_size_html(
+	client: httpx.AsyncClient,
+	base: str,
+	gid: str,
+	id_: str,
+	page_code: str,
+	*,
+	delay: float,
+	sem: asyncio.Semaphore,
+	max_retries: int,
+	retry_delay_sec: float,
+) -> str:
+	url = listing_stock_modal_ajax_url(
+		base, gid, id_, page_code, kind="modal_color_size"
+	)
+	return await fetch_text(
+		client,
+		url,
+		delay=delay,
+		sem=sem,
+		max_retries=max_retries,
+		retry_delay_sec=retry_delay_sec,
+	)
+
+
+def _apply_modal_variant_stock(p: ListingProduct, raw: list[dict[str, Any]]) -> None:
+	if len(raw) != 1:
+		return
+	v = raw[0]
+	sl = (v.get("stock_label") or "").strip()
+	sq = v.get("stock_qty")
+	if sl:
+		p.stock_mob_raw = sl
+	elif sq is not None:
+		p.stock_mob_raw = f"{sq} шт."
+
+
+async def _enrich_listing_variant_hub(
+	client: httpx.AsyncClient,
+	base: str,
+	cfg: dict[str, Any],
+	p: ListingProduct,
+	page_code: str,
+	*,
+	delay: float,
+	sem: asyncio.Semaphore,
+	max_retries: int,
+	retry_delay_sec: float,
+) -> None:
+	if not p.stock_modal_gid:
+		return
 	try:
-		url = listing_stock_modal_ajax_url(
-			base, gid, id_, page_code, kind="modal_available"
-		)
-		html = await fetch_text(
+		modal_html = await _fetch_modal_color_size_html(
 			client,
-			url,
+			base,
+			p.stock_modal_gid,
+			p.stock_modal_id or "",
+			page_code,
 			delay=delay,
 			sem=sem,
 			max_retries=max_retries,
 			retry_delay_sec=retry_delay_sec,
 		)
-		sq = sum_stock_from_modal_available_html(html)
-		# 0 из modal_available не всегда «нет на сайте»: с IP дата-центра все магазины могут
-		# быть «нет в наличии», тогда остаток есть только в modal_color_size (размеры/цвета).
-		if sq is not None and sq > 0:
-			return sq
-		if not cfg.get("listing_stock_color_fallback", True):
-			return sq
-		url_cs = listing_stock_modal_ajax_url(
-			base, gid, id_, page_code, kind="modal_color_size"
-		)
-		html_cs = await fetch_text(
+	except (_TRANSIENT_HTTP_ERRORS, httpx.HTTPStatusError):
+		return
+
+	raw = parse_color_size_modal_variants(modal_html, cfg)
+	if len(raw) <= 1:
+		_apply_modal_variant_stock(p, raw)
+		return
+
+	try:
+		page_html = await fetch_text(
 			client,
-			url_cs,
+			p.product_url,
 			delay=delay,
 			sem=sem,
 			max_retries=max_retries,
 			retry_delay_sec=retry_delay_sec,
 		)
-		sq_cs = sum_stock_from_color_size_modal(html_cs)
-		if sq_cs is not None and sq_cs > 0:
-			return sq_cs
-		return sq if sq is not None else sq_cs
-	except _TRANSIENT_HTTP_ERRORS:
-		return None
-	except httpx.HTTPStatusError:
-		return None
+	except (_TRANSIENT_HTTP_ERRORS, httpx.HTTPStatusError):
+		page_html = ""
+
+	offers = build_listing_variant_offers(p, modal_html, page_html, base, cfg)
+	if offers:
+		p.variant_offers = offers
 
 
 async def _enrich_listing_stocks_via_modal(
@@ -177,30 +304,55 @@ async def _enrich_listing_stocks_via_modal(
 	max_retries: int,
 	retry_delay_sec: float,
 ) -> None:
-	tasks = [
-		_fetch_listing_stock_qty(
-			client,
-			base,
-			cfg,
-			p,
-			page_code,
-			delay=delay,
-			sem=sem,
-			max_retries=max_retries,
-			retry_delay_sec=retry_delay_sec,
-		)
+	expand_variants = bool(cfg.get("listing_variant_expansion", True))
+	variant_hubs = [
+		p
 		for p in prods
-		if p.stock_modal_gid
+		if p.stock_modal_gid and p.stock_has_variants and expand_variants
 	]
-	if not tasks:
+	simple = [
+		p
+		for p in prods
+		if p.stock_modal_gid and p not in variant_hubs
+	]
+
+	if variant_hubs:
+		await asyncio.gather(
+			*[
+				_enrich_listing_variant_hub(
+					client,
+					base,
+					cfg,
+					p,
+					page_code,
+					delay=delay,
+					sem=sem,
+					max_retries=max_retries,
+					retry_delay_sec=retry_delay_sec,
+				)
+				for p in variant_hubs
+			]
+		)
+
+	if not simple:
 		return
-	results = await asyncio.gather(*tasks)
-	idx = 0
-	for p in prods:
-		if not p.stock_modal_gid:
-			continue
-		sq = results[idx]
-		idx += 1
+	results = await asyncio.gather(
+		*[
+			_fetch_listing_stock_qty(
+				client,
+				base,
+				cfg,
+				p,
+				page_code,
+				delay=delay,
+				sem=sem,
+				max_retries=max_retries,
+				retry_delay_sec=retry_delay_sec,
+			)
+			for p in simple
+		]
+	)
+	for p, sq in zip(simple, results):
 		if sq is not None:
 			p.stock_mob_raw = f"{sq} шт."
 
@@ -226,6 +378,11 @@ async def run_crawl(
 
 	limits = httpx.Limits(max_connections=max_conn, max_keepalive_connections=max_conn)
 	sem = asyncio.Semaphore(concurrency)
+	enrich_concurrency = int(cfg.get("listing_enrichment_concurrency", 0))
+	if enrich_concurrency <= 0:
+		enrich_concurrency = max(concurrency * 2, 12)
+	enrich_sem = asyncio.Semaphore(enrich_concurrency)
+	listing_delay = float(cfg.get("listing_request_delay_sec", delay))
 	http2 = bool(cfg.get("http2", False))
 	max_retries = int(cfg.get("http_max_retries", 5))
 	retry_delay_sec = float(cfg.get("http_retry_delay_sec", 0.5))
@@ -310,6 +467,9 @@ async def run_crawl(
 					dbmod.set_category_meta(conn, cat_url, None, max_pg)
 
 			for pn in range(1, max_pg + 1):
+				if progress:
+					t_cat.set_postfix_str(f"{short} стр {pn}/{max_pg}")
+					t_cat.refresh()
 				if dbmod.is_page_done(conn, cat_url, pn):
 					continue
 				if pn == 1:
@@ -332,12 +492,38 @@ async def run_crawl(
 						cfg,
 						prods,
 						page_code,
-						delay=delay,
-						sem=sem,
+						delay=listing_delay,
+						sem=enrich_sem,
 						max_retries=max_retries,
 						retry_delay_sec=retry_delay_sec,
 					)
 				for p in prods:
+					if p.variant_offers:
+						for vo in p.variant_offers:
+							pk_v = parse_kzt_from_price_raw(vo.price_raw)
+							sl_v = vo.stock_label or (
+								f"{vo.stock_qty} шт." if vo.stock_qty is not None else ""
+							)
+							sq_v = (
+								vo.stock_qty
+								if vo.stock_qty is not None
+								else resolve_stock_qty(sl_v, "", None, cfg)
+							)
+							dbmod.upsert_product(
+								conn,
+								product_url=vo.product_url,
+								bx_id=p.bx_id,
+								name=p.name,
+								manufacturer=p.manufacturer,
+								article=vo.article,
+								price_raw=vo.price_raw,
+								category_url=cat_url,
+								price_kzt=pk_v,
+								stock_qty=sq_v,
+								stock_label=sl_v,
+								detail_done=dd_listing,
+							)
+						continue
 					pk = parse_kzt_from_price_raw(p.price_raw)
 					sq = resolve_stock_qty(p.stock_mob_raw, "", None, cfg)
 					dbmod.upsert_product(
@@ -356,6 +542,12 @@ async def run_crawl(
 					)
 				dbmod.mark_page_done(conn, cat_url, pn, len(prods))
 				dbmod.commit_products(conn)
+				if progress:
+					st = dbmod.stats(conn)
+					t_cat.set_postfix_str(
+						f"{short} стр {pn}/{max_pg} | товаров={st['products']}"
+					)
+					t_cat.refresh()
 
 			st = dbmod.stats(conn)
 			t_cat.set_postfix_str(f"{short} | товаров={st['products']} стр={st['category_pages']}")
@@ -415,21 +607,36 @@ async def run_detail_enrichment(
 				d = parse_product_detail(html)
 				sq = resolve_stock_qty(d.stock_label, d.stock_stack, d.availability, cfg)
 				if stock_modal_sum:
-					params = parse_modal_available_params(html)
-					if params:
+					has_variants = product_has_color_size_variants(html)
+					av_params = parse_modal_available_params(html)
+					cs_params = parse_modal_color_size_params(html)
+					gid = ""
+					id_ = ""
+					page_code = "002"
+					if av_params:
+						gid = av_params["gid"]
+						id_ = av_params.get("id") or ""
+						page_code = av_params.get("page") or page_code
+					elif cs_params:
+						gid = cs_params["gid"]
+						page_code = cs_params.get("page") or page_code
+					if gid:
 						try:
-							ajax_url = modal_available_ajax_url(base, params)
-							modal_html = await fetch_text(
+							modal_sq = await _fetch_modal_stock_qty(
 								client,
-								ajax_url,
+								base,
+								cfg,
+								gid,
+								id_,
+								page_code,
+								has_variants,
 								delay=delay,
 								sem=sem,
 								max_retries=max_retries,
 								retry_delay_sec=retry_delay_sec,
 							)
-							modal_sum = sum_stock_from_modal_available_html(modal_html)
-							if modal_sum is not None:
-								sq = modal_sum
+							if modal_sq is not None:
+								sq = modal_sq
 						except Exception:
 							pass
 				dbmod.apply_product_detail(
