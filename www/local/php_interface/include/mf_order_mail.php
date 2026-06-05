@@ -109,25 +109,81 @@ final class Bootstrap
 
 final class Handlers
 {
-	public static function onOrderNewSendEmail(int $orderId, &$eventName, &$fields): void
+	/** @var array<int, bool> */
+	private static array $sentNewOrderMail = [];
+
+	public static function onOrderNewSendEmail(int $orderId, &$eventName, &$fields): bool
 	{
+		unset($eventName);
+
+		if ($orderId <= 0)
+		{
+			return true;
+		}
+
+		if (isset(self::$sentNewOrderMail[$orderId]))
+		{
+			return false;
+		}
+
 		try
 		{
 			$order = self::loadOrder($orderId);
 			if (!$order)
 			{
-				return;
+				self::log('new order mail: order not loaded id=' . $orderId);
+
+				return true;
 			}
 
 			$display = Renderer::orderDisplayNumber($order);
+			$body = Renderer::renderNewOrder($order);
 			$fields['MF_ORDER_DISPLAY'] = $display;
-			$fields['MF_ORDER_MAIL_BODY'] = Renderer::renderNewOrder($order);
+			$fields['MF_ORDER_MAIL_BODY'] = $body;
 			$fields['ORDER_LIST'] = '';
+
+			$email = self::customerEmail($order);
+			if ($email === '')
+			{
+				$email = trim((string)($fields['EMAIL'] ?? ''));
+			}
+			if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL))
+			{
+				self::log('new order mail: invalid customer email orderId=' . $orderId);
+
+				return true;
+			}
+
+			if (!class_exists(Mail::class))
+			{
+				return true;
+			}
+
+			$sent = Mail::send([
+				'TO' => $email,
+				'SUBJECT' => self::sanitizeSubject('Заказ: ' . $display . ' на motor-force.ru'),
+				'BODY' => $body,
+				'CHARSET' => 'UTF-8',
+				'CONTENT_TYPE' => 'html',
+				'HEADER' => self::clientMailHeader('SALE_NEW_ORDER'),
+			]);
+
+			if ($sent)
+			{
+				self::$sentNewOrderMail[$orderId] = true;
+				self::log('new order mail: sent orderId=' . $orderId . ' to=' . $email);
+
+				return false;
+			}
+
+			self::log('new order mail: Mail::send failed orderId=' . $orderId . ', fallback to CEvent');
 		}
 		catch (\Throwable $e)
 		{
-			self::log($e->getMessage());
+			self::log('new order mail: ' . $e->getMessage());
 		}
+
+		return true;
 	}
 
 	public static function onOrderStatusSendEmail(int $orderId, &$eventName, &$fields, $statusId): bool
@@ -164,8 +220,25 @@ final class Handlers
 			$fields['=Reply-To'] = $clientFrom;
 			$fields['=X-MF-SMTP-Profile'] = 'andrey';
 		}
+		$fields['=X-EVENT-NAME'] = $eventName;
 
 		$body = trim((string)($fields['MF_ORDER_MAIL_BODY'] ?? ''));
+		if ($body === '')
+		{
+			$fallbackOrderId = (int)($fields['ORDER_REAL_ID'] ?? 0);
+			if ($fallbackOrderId > 0)
+			{
+				$order = self::loadOrder($fallbackOrderId);
+				if ($order)
+				{
+					$display = Renderer::orderDisplayNumber($order);
+					$body = Renderer::renderNewOrder($order);
+					$fields['MF_ORDER_DISPLAY'] = $display;
+					$fields['MF_ORDER_MAIL_BODY'] = $body;
+					$fields['ORDER_LIST'] = '';
+				}
+			}
+		}
 		if ($body === '')
 		{
 			return true;
@@ -202,6 +275,73 @@ final class Handlers
 		$order = Order::load($orderId);
 
 		return $order instanceof Order ? $order : null;
+	}
+
+	/** @return array<string, string> */
+	private static function clientMailHeader(string $eventName): array
+	{
+		$header = [
+			'X-EVENT-NAME' => $eventName,
+		];
+		$from = function_exists('mf_mail_default_from_client')
+			? mf_mail_default_from_client()
+			: '';
+		if ($from !== '')
+		{
+			$header['From'] = function_exists('mf_mail_default_from_client_header')
+				? mf_mail_default_from_client_header()
+				: $from;
+			$header['Reply-To'] = $from;
+			$header['X-MF-SMTP-Profile'] = 'andrey';
+		}
+
+		return $header;
+	}
+
+	private static function customerEmail(Order $order): string
+	{
+		try
+		{
+			$pc = $order->getPropertyCollection();
+			if ($pc !== null)
+			{
+				$prop = $pc->getUserEmail();
+				if ($prop !== null)
+				{
+					$email = trim((string)$prop->getValue());
+					if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+					{
+						return $email;
+					}
+				}
+			}
+		}
+		catch (\Throwable $e)
+		{
+		}
+
+		$uid = (int)$order->getUserId();
+		if ($uid > 0 && class_exists(\CUser::class))
+		{
+			$user = \CUser::GetByID($uid)->Fetch();
+			if (is_array($user))
+			{
+				$email = trim((string)($user['EMAIL'] ?? ''));
+				if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+				{
+					return $email;
+				}
+			}
+		}
+
+		return '';
+	}
+
+	private static function sanitizeSubject(string $subject): string
+	{
+		$subject = preg_replace('~[\r\n]+~u', ' ', $subject) ?? $subject;
+
+		return trim(preg_replace('~\s+~u', ' ', $subject) ?? $subject);
 	}
 
 	private static function log(string $message): void
