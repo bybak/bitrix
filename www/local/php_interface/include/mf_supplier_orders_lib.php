@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * Заказы поставщику из UNF HTTP API (supplier_order_get): локальное зеркало в MySQL.
  * Храним только заказы в статусе «в работе»; при исчезновении из выборки — удаляем из БД (без истории).
- * price.unit_price при отсутствии закупа в типе цены склада MOTOR_FORCE_INTERNAL — через mf_ep_set_raw_price_for_catalog_cluster
- *   (в каталог пишется unit_price + наценка MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT%, по умолчанию 50%).
+ * price.unit_price в тип цены склада MOTOR_FORCE_INTERNAL — через mf_ep_set_raw_price_for_catalog_cluster
+ *   (unit_price + наценка MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT%, по умолчанию 50%), только если на этом складе нет остатка.
  * Если валюта договора/заказа не RUB — unit_price пересчитывается в ₽ (mf_ep_convert_to_rub), если 1С ещё не прислала converted/RUB.
  */
 
@@ -731,8 +731,9 @@ if (!function_exists('mf_supplier_orders_internal_store_raw_price_missing'))
 if (!function_exists('mf_supplier_orders_try_set_internal_store_raw_price_from_1c'))
 {
 	/**
-	 * Закуп из 1С (price.unit_price + наценка MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT%) в RAW для склада MOTOR_FORCE_INTERNAL, если в типе цены этого склада ещё пусто.
+	 * Закуп из 1С (price.unit_price + наценка MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT%) в RAW для склада MOTOR_FORCE_INTERNAL.
 	 * Пишет по кластеру каталога, как внешние прайсы (mf_ep_set_raw_price_for_catalog_cluster).
+	 * Не трогает цену, если на складе MOTOR_FORCE_INTERNAL сейчас есть остаток.
 	 *
 	 * @return bool true, если dry-run сработал «бы проставил» или реальная запись без ошибок
 	 */
@@ -756,7 +757,7 @@ if (!function_exists('mf_supplier_orders_try_set_internal_store_raw_price_from_1
 
 			return false;
 		}
-		if (!mf_supplier_orders_internal_store_raw_price_missing($productId, $gid))
+		if (mf_supplier_orders_internal_store_has_stock($productId))
 		{
 			return false;
 		}
@@ -1393,6 +1394,23 @@ if (!function_exists('mf_supplier_orders_cluster_amount_on_store'))
 		}
 
 		return $sum;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_internal_store_has_stock'))
+{
+	/**
+	 * true — на складе MOTOR_FORCE_INTERNAL у кластера товара есть остаток (> 0).
+	 */
+	function mf_supplier_orders_internal_store_has_stock(int $productId): bool
+	{
+		$storeId = mf_supplier_orders_internal_store_id();
+		if ($storeId <= 0)
+		{
+			return false;
+		}
+
+		return mf_supplier_orders_cluster_amount_on_store($productId, $storeId) > 1e-9;
 	}
 }
 
