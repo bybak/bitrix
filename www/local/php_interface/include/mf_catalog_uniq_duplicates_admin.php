@@ -104,18 +104,21 @@ $filterQs = http_build_query([
 $mfCudGroupByLabel = match ($groupBy) {
 	'element_code' => 'символьный код (CODE → /products/…/)',
 	'article_brand_norm' => 'норм. артикул + норм. бренд',
+	'article_norm' => 'норм. артикул (только)',
 	default => 'MF_UNIQ_KEY (свойство)',
 };
 $mfCudEmptyCheckboxLabel = match ($groupBy) {
 	'element_code' => 'Пустой символьный код (CODE)',
-	'article_brand_norm' => 'Пустой артикул (норм / CML2)',
+	'article_brand_norm', 'article_norm' => 'Пустой артикул (норм / CML2)',
 	default => 'Пустой MF_UNIQ_KEY',
 };
 $mfCudGroupFieldLabel = match ($groupBy) {
 	'element_code' => 'Символьный код (CODE)',
 	'article_brand_norm' => 'Ключ (артикул_норм + бренд_норм)',
+	'article_norm' => 'Норм. артикул',
 	default => 'MF_UNIQ_KEY',
 };
+$mfCudShowStoredUniqKey = in_array($groupBy, ['article_brand_norm', 'article_norm'], true);
 
 $APPLICATION->SetTitle('Дубликаты каталога — ' . $mfCudGroupByLabel);
 
@@ -265,6 +268,7 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 	Группы с одинаковым <strong><?= mf_cud_h($mfCudGroupFieldLabel) ?></strong><?= match ($groupBy) {
 		'element_code' => ' — несколько карточек с одним ЧПУ <code>/products/{code}/</code>.',
 		'article_brand_norm' => ' — из <code>MF_ARTICLE_NORM</code> (или CML2_ARTICLE) и <code>MF_BRAND_NORM</code> (или MF_BRAND), как при расчёте ключа. Находит пары с <em>разным</em> сохранённым MF_UNIQ_KEY (битый ключ).',
+		'article_norm' => ' — только <code>MF_ARTICLE_NORM</code> (или CML2_ARTICLE), <em>без учёта бренда</em>. Удобно для дублей вроде Ski-Doo и BRP на одном артикуле.',
 		default => ' — по сохранённому свойству MF_UNIQ_KEY.',
 	} ?>
 	Отметьте галочкой товары на удаление; по умолчанию оставляется одна карточка (не редирект<?= $groupBy === 'element_code' ? ', у которой CODE совпадает с группой' : '' ?>, минимальный ID).
@@ -290,6 +294,7 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 		<select name="group_by">
 			<option value="uniq_key"<?= $groupBy === 'uniq_key' ? ' selected' : '' ?>>MF_UNIQ_KEY (в свойстве)</option>
 			<option value="article_brand_norm"<?= $groupBy === 'article_brand_norm' ? ' selected' : '' ?>>Норм. артикул + норм. бренд</option>
+			<option value="article_norm"<?= $groupBy === 'article_norm' ? ' selected' : '' ?>>Норм. артикул (только)</option>
 			<option value="element_code"<?= $groupBy === 'element_code' ? ' selected' : '' ?>>Символьный код (CODE / URL)</option>
 		</select>
 	</label>
@@ -322,6 +327,7 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 	<p style="color:#666;">Дубликатов не найдено<?= match ($groupBy) {
 		'element_code' => ' (нет двух и более элементов с одинаковым CODE).',
 		'article_brand_norm' => ' (нет двух и более с одной парой артикул+бренд или нет свойств артикула/бренда).',
+		'article_norm' => ' (нет двух и более с одним норм. артикулом или нет свойств артикула).',
 		default => ' (или нет свойства MF_UNIQ_KEY).',
 	} ?></p>
 <?php else: ?>
@@ -380,6 +386,8 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 					<div style="margin-top:6px;color:#a04000;font-size:12px;">⚠ <?= mf_cud_h($groupCorruptHint) ?> Пересчёт ключей: <code>php tools/mf_catalog_fix_uniq_key.php --apply</code> (сначала без <code>--apply</code>).</div>
 				<?php elseif ($groupBy === 'article_brand_norm'): ?>
 					<div style="margin-top:6px;color:#666;font-size:12px;">Сверьте колонку «MF_UNIQ_KEY в карточке»: если отличается от ключа группы — свойство нужно пересчитать.</div>
+				<?php elseif ($groupBy === 'article_norm'): ?>
+					<div style="margin-top:6px;color:#666;font-size:12px;">Сверьте бренды и «MF_UNIQ_KEY в карточке» — при одном артикуле разные бренды должны быть отдельными карточками или редиректами.</div>
 				<?php endif; ?>
 			</div>
 			<table class="internal" style="width:100%;">
@@ -392,7 +400,7 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 					<td>ЧПУ (CODE)</td>
 					<td>Артикул</td>
 					<td>Бренд</td>
-					<?php if ($groupBy === 'article_brand_norm'): ?>
+					<?php if ($mfCudShowStoredUniqKey): ?>
 						<td>MF_UNIQ_KEY в карточке</td>
 					<?php endif; ?>
 					<td>Активен</td>
@@ -449,10 +457,10 @@ $details = mf_cud_fetch_elements_detail($iblockId, $allIds, $opts);
 						<td style="font-size:11px;"><?= is_array($d) && (string)($d['code'] ?? '') !== '' ? mf_cud_h((string)$d['code']) : '—' ?><?= is_array($d) && !empty($d['canonical_code']) ? '<br><span style="color:#666;">→ ' . mf_cud_h((string)$d['canonical_code']) . '</span>' : '' ?></td>
 						<td><?= is_array($d) && (string)$d['article'] !== '' ? mf_cud_h((string)$d['article']) : '—' ?></td>
 						<td><?= is_array($d) && (string)$d['brand'] !== '' ? mf_cud_h((string)$d['brand']) : '—' ?></td>
-						<?php if ($groupBy === 'article_brand_norm'): ?>
+						<?php if ($mfCudShowStoredUniqKey): ?>
 							<?php
 							$storedUk = is_array($d) ? trim((string)($d['uniq_key'] ?? '')) : '';
-							$ukMismatch = $storedUk !== '' && $storedUk !== $uniqKey;
+							$ukMismatch = $groupBy === 'article_brand_norm' && $storedUk !== '' && $storedUk !== $uniqKey;
 							?>
 							<td style="font-size:11px;<?= $ukMismatch ? 'color:#a04000;font-weight:600;' : '' ?>">
 								<?= $storedUk !== '' ? mf_cud_h($storedUk) : '—' ?>

@@ -122,6 +122,65 @@ if (!function_exists('mf_cud_iblock_property_meta'))
 	}
 }
 
+if (!function_exists('mf_cud_sql_norm_article_raw_expr'))
+{
+	/**
+	 * Выражение артикула: MF_ARTICLE_NORM, иначе CML2_ARTICLE (без внешнего TRIM).
+	 *
+	 * @param 'v1_join'|'v2_s' $mode
+	 */
+	function mf_cud_sql_norm_article_raw_expr(array $meta, string $mode = 'v2_s'): string
+	{
+		if ($mode === 'v2_s')
+		{
+			$artNorm = (int)$meta['article_norm_prop_id'];
+			$cml2 = (int)$meta['cml2_article_prop_id'];
+			if ($artNorm > 0 && $cml2 > 0)
+			{
+				return "COALESCE(NULLIF(TRIM(s.PROPERTY_{$artNorm}), ''), NULLIF(TRIM(s.PROPERTY_{$cml2}), ''), '')";
+			}
+			if ($artNorm > 0)
+			{
+				return "COALESCE(NULLIF(TRIM(s.PROPERTY_{$artNorm}), ''), '')";
+			}
+			if ($cml2 > 0)
+			{
+				return "COALESCE(NULLIF(TRIM(s.PROPERTY_{$cml2}), ''), '')";
+			}
+
+			return "''";
+		}
+
+		if ((int)$meta['article_norm_prop_id'] > 0 && (int)$meta['cml2_article_prop_id'] > 0)
+		{
+			return "COALESCE(NULLIF(TRIM(pan.VALUE), ''), NULLIF(TRIM(pc2.VALUE), ''), '')";
+		}
+		if ((int)$meta['article_norm_prop_id'] > 0)
+		{
+			return "COALESCE(NULLIF(TRIM(pan.VALUE), ''), '')";
+		}
+		if ((int)$meta['cml2_article_prop_id'] > 0)
+		{
+			return "COALESCE(NULLIF(TRIM(pc2.VALUE), ''), '')";
+		}
+
+		return "''";
+	}
+}
+
+if (!function_exists('mf_cud_sql_norm_article_expr'))
+{
+	/**
+	 * Нормализованный артикул для GROUP BY (TRIM от MF_ARTICLE_NORM / CML2_ARTICLE).
+	 *
+	 * @param 'v1_join'|'v2_s' $mode
+	 */
+	function mf_cud_sql_norm_article_expr(array $meta, string $mode = 'v2_s'): string
+	{
+		return 'TRIM(' . mf_cud_sql_norm_article_raw_expr($meta, $mode) . ')';
+	}
+}
+
 if (!function_exists('mf_cud_sql_norm_article_brand_key_expr'))
 {
 	/**
@@ -132,25 +191,11 @@ if (!function_exists('mf_cud_sql_norm_article_brand_key_expr'))
 	function mf_cud_sql_norm_article_brand_key_expr(array $meta, string $mode = 'v2_s'): string
 	{
 		$unknownBrand = 'UNKNOWNBRAND';
+		$artExpr = mf_cud_sql_norm_article_raw_expr($meta, $mode);
 		if ($mode === 'v2_s')
 		{
-			$artNorm = (int)$meta['article_norm_prop_id'];
-			$cml2 = (int)$meta['cml2_article_prop_id'];
 			$brandNorm = (int)$meta['brand_norm_prop_id'];
 			$brand = (int)$meta['brand_prop_id'];
-			$artExpr = "''";
-			if ($artNorm > 0 && $cml2 > 0)
-			{
-				$artExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$artNorm}), ''), NULLIF(TRIM(s.PROPERTY_{$cml2}), ''), '')";
-			}
-			elseif ($artNorm > 0)
-			{
-				$artExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$artNorm}), ''), '')";
-			}
-			elseif ($cml2 > 0)
-			{
-				$artExpr = "COALESCE(NULLIF(TRIM(s.PROPERTY_{$cml2}), ''), '')";
-			}
 			$brandExpr = "'{$unknownBrand}'";
 			if ($brandNorm > 0 && $brand > 0)
 			{
@@ -168,19 +213,6 @@ if (!function_exists('mf_cud_sql_norm_article_brand_key_expr'))
 			return "CONCAT(TRIM({$artExpr}), '_', TRIM({$brandExpr}))";
 		}
 
-		$artExpr = "''";
-		if ((int)$meta['article_norm_prop_id'] > 0 && (int)$meta['cml2_article_prop_id'] > 0)
-		{
-			$artExpr = "COALESCE(NULLIF(TRIM(pan.VALUE), ''), NULLIF(TRIM(pc2.VALUE), ''), '')";
-		}
-		elseif ((int)$meta['article_norm_prop_id'] > 0)
-		{
-			$artExpr = "COALESCE(NULLIF(TRIM(pan.VALUE), ''), '')";
-		}
-		elseif ((int)$meta['cml2_article_prop_id'] > 0)
-		{
-			$artExpr = "COALESCE(NULLIF(TRIM(pc2.VALUE), ''), '')";
-		}
 		$brandExpr = "'{$unknownBrand}'";
 		if ((int)$meta['brand_norm_prop_id'] > 0 && (int)$meta['brand_prop_id'] > 0)
 		{
@@ -252,6 +284,15 @@ if (!function_exists('mf_cud_normalize_group_by'))
 		{
 			return 'article_brand_norm';
 		}
+		if (
+			$raw === 'article_norm'
+			|| $raw === 'norm_article'
+			|| $raw === 'article_only'
+			|| $raw === 'article'
+		)
+		{
+			return 'article_norm';
+		}
 
 		return 'uniq_key';
 	}
@@ -271,7 +312,7 @@ if (!function_exists('mf_cud_fetch_duplicate_groups'))
 {
 	/**
 	 * @param array{active_only?: bool, include_redirect?: bool, include_empty_keys?: bool, min_count?: int, group_by?: string} $opts
-	 *   group_by: uniq_key | element_code | article_brand_norm (MF_ARTICLE_NORM/CML2 + MF_BRAND_NORM/MF_BRAND)
+	 *   group_by: uniq_key | element_code | article_brand_norm | article_norm
 	 * @return array{total: int, rows: list<array{uniq_key: string, group_by: string, cnt: int, element_ids: list<int>}>}
 	 */
 	function mf_cud_fetch_duplicate_groups(int $iblockId, array $opts = [], int $limit = 50, int $offset = 0, bool $countOnly = false): array
@@ -325,18 +366,21 @@ WHERE {$eWhere}
 GROUP BY TRIM(e.CODE)
 HAVING COUNT(*) >= {$minCount} AND uniq_key <> ''";
 		}
-		elseif ($groupBy === 'article_brand_norm')
+		elseif ($groupBy === 'article_brand_norm' || $groupBy === 'article_norm')
 		{
 			$hasArticle = (int)$meta['article_norm_prop_id'] > 0 || (int)$meta['cml2_article_prop_id'] > 0;
 			if (!$hasArticle)
 			{
 				return $empty;
 			}
-			$keyExpr = mf_cud_sql_norm_article_brand_key_expr($meta, (int)$meta['version'] === 2 ? 'v2_s' : 'v1_join');
-			$articleSql = $includeEmpty ? '' : 'AND ' . mf_cud_sql_norm_article_nonempty_sql(
-				$meta,
-				(int)$meta['version'] === 2 ? 'v2_s' : 'v1_join'
-			);
+			$sqlMode = (int)$meta['version'] === 2 ? 'v2_s' : 'v1_join';
+			$keyExpr = $groupBy === 'article_norm'
+				? mf_cud_sql_norm_article_expr($meta, $sqlMode)
+				: mf_cud_sql_norm_article_brand_key_expr($meta, $sqlMode);
+			$articleSql = $includeEmpty ? '' : 'AND ' . mf_cud_sql_norm_article_nonempty_sql($meta, $sqlMode);
+			$havingTail = $groupBy === 'article_norm'
+				? "HAVING COUNT(*) >= {$minCount} AND uniq_key <> ''"
+				: "HAVING COUNT(*) >= {$minCount} AND uniq_key <> '' AND uniq_key <> '_UNKNOWNBRAND'";
 			if ((int)$meta['version'] === 2)
 			{
 				$innerSql = "
@@ -350,7 +394,7 @@ WHERE {$eWhere}
 {$redirSql}
 {$articleSql}
 GROUP BY {$keyExpr}
-HAVING COUNT(*) >= {$minCount} AND uniq_key <> '' AND uniq_key <> '_UNKNOWNBRAND'";
+{$havingTail}";
 			}
 			else
 			{
@@ -365,16 +409,22 @@ HAVING COUNT(*) >= {$minCount} AND uniq_key <> '' AND uniq_key <> '_UNKNOWNBRAND
 					$pid = (int)$meta['cml2_article_prop_id'];
 					$joins .= "\nLEFT JOIN b_iblock_element_property pc2 ON pc2.IBLOCK_ELEMENT_ID = e.ID AND pc2.IBLOCK_PROPERTY_ID = {$pid}";
 				}
-				if ((int)$meta['brand_norm_prop_id'] > 0)
+				if ($groupBy === 'article_brand_norm')
 				{
-					$pid = (int)$meta['brand_norm_prop_id'];
-					$joins .= "\nLEFT JOIN b_iblock_element_property pbn ON pbn.IBLOCK_ELEMENT_ID = e.ID AND pbn.IBLOCK_PROPERTY_ID = {$pid}";
+					if ((int)$meta['brand_norm_prop_id'] > 0)
+					{
+						$pid = (int)$meta['brand_norm_prop_id'];
+						$joins .= "\nLEFT JOIN b_iblock_element_property pbn ON pbn.IBLOCK_ELEMENT_ID = e.ID AND pbn.IBLOCK_PROPERTY_ID = {$pid}";
+					}
+					if ((int)$meta['brand_prop_id'] > 0)
+					{
+						$pid = (int)$meta['brand_prop_id'];
+						$joins .= "\nLEFT JOIN b_iblock_element_property pb ON pb.IBLOCK_ELEMENT_ID = e.ID AND pb.IBLOCK_PROPERTY_ID = {$pid}";
+					}
 				}
-				if ((int)$meta['brand_prop_id'] > 0)
-				{
-					$pid = (int)$meta['brand_prop_id'];
-					$joins .= "\nLEFT JOIN b_iblock_element_property pb ON pb.IBLOCK_ELEMENT_ID = e.ID AND pb.IBLOCK_PROPERTY_ID = {$pid}";
-				}
+				$havingTailV1 = $groupBy === 'article_norm'
+					? "HAVING COUNT(DISTINCT e.ID) >= {$minCount} AND uniq_key <> ''"
+					: "HAVING COUNT(DISTINCT e.ID) >= {$minCount} AND uniq_key <> '' AND uniq_key <> '_UNKNOWNBRAND'";
 				$innerSql = "
 SELECT {$keyExpr} AS uniq_key,
        COUNT(DISTINCT e.ID) AS cnt_elements,
@@ -386,7 +436,7 @@ WHERE {$eWhere}
 {$redirSql}
 {$articleSql}
 GROUP BY {$keyExpr}
-HAVING COUNT(DISTINCT e.ID) >= {$minCount} AND uniq_key <> '' AND uniq_key <> '_UNKNOWNBRAND'";
+{$havingTailV1}";
 			}
 		}
 		else
