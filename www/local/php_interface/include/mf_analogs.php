@@ -192,6 +192,11 @@ if (!function_exists('mf_analogs_ensure_hl_meta'))
 					mf_analogs_meta_ensure_indexes($tableName);
 					Option::set('main', $optKey, 'Y');
 				}
+				elseif (Option::get('main', 'mf_analogs_meta_idx_analog_v1', 'N') !== 'Y')
+				{
+					mf_analogs_meta_ensure_indexes($tableName);
+					Option::set('main', 'mf_analogs_meta_idx_analog_v1', 'Y');
+				}
 			}
 			catch (\Throwable $e)
 			{
@@ -429,6 +434,7 @@ if (!function_exists('mf_analogs_meta_ensure_indexes'))
 		$indexes = [
 			'UX_MF_ANALOGS_META' => "CREATE UNIQUE INDEX `UX_MF_ANALOGS_META` ON `" . $tableName . "` (`UF_PRODUCT_ID`, `UF_ANALOG_ID`)",
 			'IX_MF_ANALOGS_META_PRODUCT' => "CREATE INDEX `IX_MF_ANALOGS_META_PRODUCT` ON `" . $tableName . "` (`UF_PRODUCT_ID`)",
+			'IX_MF_ANALOGS_META_ANALOG' => "CREATE INDEX `IX_MF_ANALOGS_META_ANALOG` ON `" . $tableName . "` (`UF_ANALOG_ID`)",
 		];
 		foreach ($indexes as $sql)
 		{
@@ -669,23 +675,23 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 	 * @param int[] $productIds
 	 * @return array<int, int[]> productId => analogIds
 	 */
-	function mf_analogs_related_ids_for_products(array $productIds, int $limitPerProduct = 12): array
+	function mf_analogs_related_ids_for_products(array $productIds, int $limitPerProduct = 12, bool $sortByStock = true): array
 	{
 		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
 		$limitPerProduct = max(1, min(24, (int)$limitPerProduct));
 		$result = [];
-		$lookupByCardId = [];
 		foreach ($productIds as $pid)
 		{
 			$result[$pid] = [];
-			$lookupByCardId[$pid] = function_exists('mf_analogs_primary_product_id_for_analogs')
-				? mf_analogs_primary_product_id_for_analogs($pid)
-				: $pid;
 		}
 		if ($productIds === [])
 		{
 			return $result;
 		}
+
+		$lookupByCardId = function_exists('mf_analogs_primary_product_ids_for_analogs')
+			? mf_analogs_primary_product_ids_for_analogs($productIds)
+			: array_combine($productIds, $productIds);
 
 		$lookupIds = array_values(array_unique(array_filter(array_map('intval', $lookupByCardId))));
 		$direct = [];
@@ -703,7 +709,11 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 			$res = $conn->query("
 				SELECT `UF_P1_ID`, `UF_P2_ID`
 				FROM `" . $table . "`
-				WHERE `UF_P1_ID` IN (" . $in . ") OR `UF_P2_ID` IN (" . $in . ")
+				WHERE `UF_P1_ID` IN (" . $in . ")
+				UNION ALL
+				SELECT `UF_P1_ID`, `UF_P2_ID`
+				FROM `" . $table . "`
+				WHERE `UF_P2_ID` IN (" . $in . ")
 			");
 			while ($r = $res->fetch())
 			{
@@ -811,16 +821,17 @@ if (!function_exists('mf_analogs_related_ids_for_products'))
 				$allCandidateIds[$id] = true;
 			}
 		}
-		if ($allCandidateIds !== [] && function_exists('mf_catalog_batch_products_have_stock'))
+		if ($sortByStock && $allCandidateIds !== [] && function_exists('mf_catalog_batch_products_have_stock'))
 		{
 			$stockMap = mf_catalog_batch_products_have_stock(array_keys($allCandidateIds));
 		}
 
 		foreach ($productIds as $pid)
 		{
-			$ids = array_map('intval', array_keys($related[$pid] ?? []));
-			$ids = array_values(array_filter($ids, static fn($x) => $x > 0 && $x !== $pid));
-			if ($ids !== [] && $stockMap !== [])
+			$lid = (int)($lookupByCardId[$pid] ?? $pid);
+			$ids = array_map('intval', array_keys($related[$lid] ?? []));
+			$ids = array_values(array_filter($ids, static fn($x) => $x > 0 && $x !== $pid && $x !== $lid));
+			if ($sortByStock && $ids !== [] && $stockMap !== [])
 			{
 				$in = [];
 				$out = [];
@@ -1067,6 +1078,132 @@ if (!function_exists('mf_analogs_meta_images_for_product'))
 	}
 }
 
+if (!function_exists('mf_analogs_primary_product_ids_for_analogs'))
+{
+	/**
+	 * Пакетный резолв канонической карточки для поиска/аналогов (вместо N×GetProperty).
+	 *
+	 * @param int[] $productIds
+	 * @return array<int, int> productId => primaryId
+	 */
+	function mf_analogs_primary_product_ids_for_analogs(array $productIds, int $iblockId = 4): array
+	{
+		$productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+		$iblockId = (int)$iblockId;
+		$out = [];
+		foreach ($productIds as $pid)
+		{
+			$out[$pid] = $pid;
+		}
+		if ($productIds === [] || $iblockId <= 0 || !class_exists('CIBlockElement'))
+		{
+			return $out;
+		}
+
+		static $cache = [];
+		$pending = [];
+		foreach ($productIds as $pid)
+		{
+			if (isset($cache[$pid]))
+			{
+				$out[$pid] = $cache[$pid];
+				continue;
+			}
+			$pending[] = $pid;
+		}
+		if ($pending === [])
+		{
+			return $out;
+		}
+
+		$redirectIds = [];
+		$uniqKeysById = [];
+		$rs = \CIBlockElement::GetList(
+			['ID' => 'ASC'],
+			['IBLOCK_ID' => $iblockId, 'ID' => $pending],
+			false,
+			false,
+			['ID', 'PROPERTY_MF_IS_REDIRECT', 'PROPERTY_MF_UNIQ_KEY']
+		);
+		while ($row = $rs->Fetch())
+		{
+			$id = (int)($row['ID'] ?? 0);
+			if ($id <= 0)
+			{
+				continue;
+			}
+			if (mb_strtoupper(trim((string)($row['PROPERTY_MF_IS_REDIRECT_VALUE'] ?? ''))) === 'Y')
+			{
+				$redirectIds[$id] = true;
+			}
+			$uniqKey = trim((string)($row['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
+			if ($uniqKey !== '')
+			{
+				$uniqKeysById[$id] = $uniqKey;
+			}
+			if (!isset($redirectIds[$id]))
+			{
+				$cache[$id] = $id;
+				$out[$id] = $id;
+			}
+		}
+
+		foreach ($pending as $pid)
+		{
+			if (!isset($redirectIds[$pid]))
+			{
+				$cache[$pid] = $pid;
+				$out[$pid] = $pid;
+			}
+		}
+
+		if ($redirectIds === [])
+		{
+			return $out;
+		}
+
+		$uniqKeys = array_values(array_unique(array_filter($uniqKeysById)));
+		$canonByUniqKey = [];
+		if ($uniqKeys !== [])
+		{
+			$rsCanon = \CIBlockElement::GetList(
+				['ID' => 'ASC'],
+				[
+					'IBLOCK_ID' => $iblockId,
+					'ACTIVE' => 'Y',
+					'=PROPERTY_MF_UNIQ_KEY' => $uniqKeys,
+					'!PROPERTY_MF_IS_REDIRECT' => 'Y',
+				],
+				false,
+				false,
+				['ID', 'PROPERTY_MF_UNIQ_KEY']
+			);
+			while ($row = $rsCanon->Fetch())
+			{
+				$uniqKey = trim((string)($row['PROPERTY_MF_UNIQ_KEY_VALUE'] ?? ''));
+				$canonId = (int)($row['ID'] ?? 0);
+				if ($uniqKey === '' || $canonId <= 0 || isset($canonByUniqKey[$uniqKey]))
+				{
+					continue;
+				}
+				$canonByUniqKey[$uniqKey] = $canonId;
+			}
+		}
+
+		foreach (array_keys($redirectIds) as $rid)
+		{
+			$uniqKey = $uniqKeysById[$rid] ?? '';
+			$canon = ($uniqKey !== '' && isset($canonByUniqKey[$uniqKey]))
+				? (int)$canonByUniqKey[$uniqKey]
+				: $rid;
+			$cache[$rid] = $canon;
+			$out[$rid] = $canon;
+		}
+
+		return $out;
+	}
+}
+
 if (!function_exists('mf_analogs_primary_product_id_for_analogs'))
 {
 	/**
@@ -1076,73 +1213,14 @@ if (!function_exists('mf_analogs_primary_product_id_for_analogs'))
 	function mf_analogs_primary_product_id_for_analogs(int $productId, int $iblockId = 4): int
 	{
 		$productId = (int)$productId;
-		$iblockId = (int)$iblockId;
-		if ($productId <= 0 || $iblockId <= 0 || !class_exists('CIBlockElement'))
+		if ($productId <= 0)
 		{
 			return $productId;
 		}
 
-		static $cache = [];
-		if (isset($cache[$productId]))
-		{
-			return $cache[$productId];
-		}
+		$map = mf_analogs_primary_product_ids_for_analogs([$productId], $iblockId);
 
-		$isRedirect = false;
-		$uniqKey = '';
-		$rs = \CIBlockElement::GetProperty($iblockId, $productId, 'sort', 'asc', ['CODE' => 'MF_IS_REDIRECT']);
-		while ($p = $rs->Fetch())
-		{
-			if (mb_strtoupper(trim((string)($p['VALUE'] ?? ''))) === 'Y')
-			{
-				$isRedirect = true;
-				break;
-			}
-		}
-		$rs2 = \CIBlockElement::GetProperty($iblockId, $productId, 'sort', 'asc', ['CODE' => 'MF_UNIQ_KEY']);
-		while ($p = $rs2->Fetch())
-		{
-			$v = trim((string)($p['VALUE'] ?? ''));
-			if ($v !== '')
-			{
-				$uniqKey = $v;
-				break;
-			}
-		}
-
-		if (!$isRedirect)
-		{
-			$cache[$productId] = $productId;
-
-			return $productId;
-		}
-
-		if ($uniqKey !== '')
-		{
-			$row = \CIBlockElement::GetList(
-				['ID' => 'ASC'],
-				[
-					'IBLOCK_ID' => $iblockId,
-					'ACTIVE' => 'Y',
-					'=PROPERTY_MF_UNIQ_KEY' => $uniqKey,
-					'!PROPERTY_MF_IS_REDIRECT' => 'Y',
-				],
-				false,
-				['nTopCount' => 1],
-				['ID']
-			)->Fetch();
-			$canon = (int)($row['ID'] ?? 0);
-			if ($canon > 0)
-			{
-				$cache[$productId] = $canon;
-
-				return $canon;
-			}
-		}
-
-		$cache[$productId] = $productId;
-
-		return $productId;
+		return (int)($map[$productId] ?? $productId);
 	}
 }
 

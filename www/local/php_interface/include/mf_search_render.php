@@ -467,8 +467,8 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 			$missing = [];
 			foreach ($productIds as $pid)
 			{
-				$cacheKey = 'v5_p' . $pid . '_l' . $limit;
-				if ($cache->initCache(3600, $cacheKey, '/mf/search_analogs_p'))
+				$cacheKey = 'v6_p' . $pid . '_l' . $limit;
+				if ($cache->initCache(86400, $cacheKey, '/mf/search_analogs_p'))
 				{
 					$cached = $cache->getVars();
 					if (is_array($cached) && array_key_exists('html', $cached))
@@ -503,7 +503,7 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 
 		if (function_exists('mf_analogs_related_ids_for_products') && class_exists('CIBlockElement'))
 		{
-			$mfAnalogsByProductId = mf_analogs_related_ids_for_products($missing, $limit);
+			$mfAnalogsByProductId = mf_analogs_related_ids_for_products($missing, $limit, false);
 		}
 		elseif ((function_exists('mf_analogs_related_ids_for_product') || function_exists('mf_analogs_ids_for_product')) && class_exists('CIBlockElement'))
 		{
@@ -616,9 +616,9 @@ if (!function_exists('mf_search_analogs_html_for_products'))
 
 			if ($html !== '' && $cache instanceof \Bitrix\Main\Data\Cache)
 			{
-				$cacheKey = 'v5_p' . $pid . '_l' . $limit;
+				$cacheKey = 'v6_p' . $pid . '_l' . $limit;
 				$writeCache = \Bitrix\Main\Data\Cache::createInstance();
-				if ($writeCache->startDataCache(3600, $cacheKey, '/mf/search_analogs_p'))
+				if ($writeCache->startDataCache(86400, $cacheKey, '/mf/search_analogs_p'))
 				{
 					$writeCache->endDataCache(['html' => $html]);
 				}
