@@ -83,8 +83,9 @@ if (!function_exists('mf_jivo_print_canonical_page_script'))
 	function mfCatalogPathNeedsSlash(path) {
 		if (!path || path.charAt(path.length - 1) === '/') return false;
 		if (path === '/products') return true;
+		if (/^\/products\/search\/?$/.test(path)) return false;
 		if (/^\/products\/category\/[^/]+$/.test(path)) return true;
-		if (/^\/products\/(?!category\/|search(?:\/|$))[^/]+$/.test(path)) return true;
+		if (/^\/products\/[^/]+$/.test(path)) return true;
 		return false;
 	}
 	function mfCanonicalCatalogUrl() {

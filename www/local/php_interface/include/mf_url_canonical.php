@@ -3,20 +3,29 @@
 declare(strict_types=1);
 
 /**
- * Канонические URL каталога: /products/{code}/ и /products/category/{code}/ (со слэшем).
- * Без слэша часть ссылок (Jivo, почта) открывается с ошибкой «Элемент не найден».
+ * Канонические URL каталога: только карточки товаров и разделы /products/category/{code}/.
+ * Слэш только ДОБАВЛЯЕМ, никогда не снимаем (иначе /products/search/ → цикл редиректов).
  */
+
+if (!function_exists('mf_url_normalize_request_path'))
+{
+	function mf_url_normalize_request_path(string $path): string
+	{
+		if ($path === '' || $path[0] !== '/')
+		{
+			$path = '/' . ltrim($path, '/');
+		}
+
+		return $path;
+	}
+}
 
 if (!function_exists('mf_url_catalog_path_needs_trailing_slash'))
 {
 	function mf_url_catalog_path_needs_trailing_slash(string $path): bool
 	{
-		$path = '/' . trim($path, '/');
-		if ($path === '/')
-		{
-			return false;
-		}
-		if ($path !== '/' && substr($path, -1) === '/')
+		$path = mf_url_normalize_request_path($path);
+		if ($path === '/' || (strlen($path) > 1 && substr($path, -1) === '/'))
 		{
 			return false;
 		}
@@ -25,11 +34,20 @@ if (!function_exists('mf_url_catalog_path_needs_trailing_slash'))
 		{
 			return true;
 		}
+
+		// Поиск и прочие служебные пути каталога — не трогаем.
+		if (preg_match('#^/products/(search|index\\.php)(?:/|$)#', $path))
+		{
+			return false;
+		}
+
 		if (preg_match('#^/products/category/[^/]+$#', $path))
 		{
 			return true;
 		}
-		if (preg_match('#^/products/(?!category(?:/|$)|search(?:/|$))[^/]+$#', $path))
+
+		// Одна сегментная карточка: /products/{code}
+		if (preg_match('#^/products/[^/]+$#', $path))
 		{
 			return true;
 		}
@@ -42,10 +60,10 @@ if (!function_exists('mf_url_catalog_canonical_path'))
 {
 	function mf_url_catalog_canonical_path(string $path): string
 	{
-		$path = '/' . trim($path, '/');
+		$path = mf_url_normalize_request_path($path);
 		if (!mf_url_catalog_path_needs_trailing_slash($path))
 		{
-			return $path === '/' ? '/' : $path;
+			return $path;
 		}
 
 		return $path . '/';

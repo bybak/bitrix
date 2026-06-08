@@ -35,6 +35,15 @@ $arUrlRewrite=array (
     'PATH' => '/personal/index.php',
     'SORT' => 305,
   ),
+  // Поиск по каталогу: /products/search/ (до правила карточки товара)
+  3 =>
+  array (
+    'CONDITION' => '#^/products/search/?(\\?.*)?$#',
+    'RULE' => '',
+    'ID' => NULL,
+    'PATH' => '/products/search/index.php',
+    'SORT' => 90,
+  ),
   // Правило для категории: /products/category/{категория}/ (должно быть ПЕРВЫМ!)
   4 => 
   array (
