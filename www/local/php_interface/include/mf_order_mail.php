@@ -437,10 +437,10 @@ final class CustomStatusNotifier
 	/** @param list<array{field:string,title:string,old:string,new:string}> $adminChanges */
 	private static function sendAdminNotification(Order $order, int $orderId, array $adminChanges): void
 	{
-		$recipients = self::adminRecipients();
+		$recipients = self::adminRecipientsForOrder($order);
 		if ($recipients === [])
 		{
-			self::log('custom status mail: empty admin recipients orderId=' . $orderId);
+			self::log('custom status mail: no admin recipients after customer filter orderId=' . $orderId);
 
 			return;
 		}
@@ -609,6 +609,22 @@ final class CustomStatusNotifier
 		}
 
 		return ['andrey@motor-force.ru'];
+	}
+
+	/** @return list<string> */
+	private static function adminRecipientsForOrder(Order $order): array
+	{
+		$customerEmail = strtolower(trim(self::customerEmail($order)));
+		$recipients = self::adminRecipients();
+		if ($customerEmail === '')
+		{
+			return $recipients;
+		}
+
+		return array_values(array_filter(
+			$recipients,
+			static fn(string $email): bool => strtolower(trim($email)) !== $customerEmail
+		));
 	}
 
 	private static function customerEmail(Order $order): string
