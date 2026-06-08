@@ -4,6 +4,55 @@
  * Используется на детальной странице товара (аналоги) и может быть подключена из других шаблонов.
  */
 
+if (!function_exists('mf_product_search_card_dual_price_enabled'))
+{
+	function mf_product_search_card_dual_price_enabled(): bool
+	{
+		return function_exists('mf_user_customer_show_dual_price') && mf_user_customer_show_dual_price();
+	}
+}
+
+if (!function_exists('mf_product_search_card_render_stock_price_headers'))
+{
+	function mf_product_search_card_render_stock_price_headers(): void
+	{
+		if (mf_product_search_card_dual_price_enabled())
+		{
+			?>
+			<th class="mf-ta-r">Цена</th>
+			<th class="mf-ta-r">Ваша цена</th>
+			<?php
+			return;
+		}
+		?>
+		<th class="mf-ta-r">Цена</th>
+		<?php
+	}
+}
+
+if (!function_exists('mf_product_search_card_render_stock_price_cells'))
+{
+	/**
+	 * @param array{price_fmt?:string,price_retail_fmt?:string} $storeRow
+	 */
+	function mf_product_search_card_render_stock_price_cells(array $storeRow): void
+	{
+		if (mf_product_search_card_dual_price_enabled())
+		{
+			$retail = trim((string)($storeRow['price_retail_fmt'] ?? ''));
+			$your = trim((string)($storeRow['price_fmt'] ?? ''));
+			?>
+			<td class="mf-ta-r mf-search-stock-table__price mf-price mf-price--retail"><?=htmlspecialcharsbx($retail !== '' ? $retail : '—')?></td>
+			<td class="mf-ta-r mf-search-stock-table__price mf-price mf-price--your"><?=htmlspecialcharsbx($your !== '' ? $your : '—')?></td>
+			<?php
+			return;
+		}
+		?>
+		<td class="mf-ta-r mf-search-stock-table__price mf-price"><?=htmlspecialcharsbx((string)($storeRow['price_fmt'] ?? '—'))?></td>
+		<?php
+	}
+}
+
 if (!function_exists('mf_product_search_card_money'))
 {
 	function mf_product_search_card_money(?float $price): string
@@ -164,9 +213,12 @@ if (!function_exists('mf_product_search_card_stores'))
 				$title = 'Склад ' . $storeId;
 			}
 
+			$priceRetail = function_exists('mf_store_retail_price_for_display')
+				? mf_store_retail_price_for_display($productId, $storeId)
+				: (function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null);
 			$price = function_exists('mf_ep_display_price_for_store')
 				? mf_ep_display_price_for_store($productId, $storeId, 1.0)
-				: (function_exists('mf_calc_store_price') ? mf_calc_store_price($productId, $storeId) : null);
+				: $priceRetail;
 
 			$deliveryTerm = function_exists('mf_store_delivery_term') ? mf_store_delivery_term($storeId) : '—';
 			$isExternal = function_exists('mf_ep_store_is_external_warehouse')
@@ -180,6 +232,8 @@ if (!function_exists('mf_product_search_card_stores'))
 				'amount' => $amt,
 				'price' => $price,
 				'price_fmt' => mf_product_search_card_money($price),
+				'price_retail' => $priceRetail,
+				'price_retail_fmt' => mf_product_search_card_money($priceRetail),
 				'order_only' => $orderOnly,
 				'external_warehouse' => $isExternal,
 			];
@@ -451,7 +505,7 @@ if (!function_exists('mf_product_search_card_render'))
 								<th>Срок доставки</th>
 								<th class="mf-search-stock-table__spb text-center">Доставка</th>
 								<th class="mf-ta-r">Наличие</th>
-								<th class="mf-ta-r">Цена</th>
+								<?php mf_product_search_card_render_stock_price_headers(); ?>
 								<th class="mf-ta-r">Кол-во</th>
 								<th class="mf-ta-r"></th>
 							</tr>
@@ -495,7 +549,7 @@ if (!function_exists('mf_product_search_card_render'))
 										}
 									?></td>
 									<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
-									<td class="mf-ta-r mf-search-stock-table__price mf-price"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
+									<?php mf_product_search_card_render_stock_price_cells($s); ?>
 									<td class="mf-ta-r">
 										<?php
 										$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);

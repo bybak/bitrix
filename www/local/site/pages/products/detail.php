@@ -445,6 +445,7 @@ if ($elementId > 0)
 	{
 		$mfDetailHasStorePrice = function_exists('mf_product_search_card_product_has_store_price')
 			&& mf_product_search_card_product_has_store_price($elementId, $mfOrderedStoreIds);
+		$mfDetailShowDualPrice = function_exists('mf_user_customer_show_dual_price') && mf_user_customer_show_dual_price();
 		ob_start();
 		?>
 		<div class="mf-detail-stock-wrap">
@@ -456,6 +457,9 @@ if ($elementId > 0)
 						<th>Срок доставки</th>
 						<th class="text-center mf-detail-stock-table__spb-col">Доставка</th>
 						<th class="text-right">Цена</th>
+						<?php if ($mfDetailShowDualPrice): ?>
+						<th class="text-right">Ваша цена</th>
+						<?php endif; ?>
 						<th class="text-right">Наличие</th>
 						<th class="text-right">Кол-во</th>
 						<th class="text-right"></th>
@@ -467,10 +471,32 @@ if ($elementId > 0)
 						<?php $amt = (float)($storeAmounts[$sid] ?? 0); ?>
 						<?php
 						$storePrice = null;
+						$storePriceRetail = null;
+						if (function_exists('mf_store_retail_price_for_display'))
+						{
+							$storePriceRetail = mf_store_retail_price_for_display($elementId, (int)$sid);
+						}
 						if (function_exists('mf_ep_display_price_for_store'))
 						{
 							$storePrice = mf_ep_display_price_for_store($elementId, (int)$sid, 1.0);
 						}
+						$mfFormatDetailPrice = static function (?float $price): string {
+							if ($price === null || (float)$price <= 0)
+							{
+								return '—';
+							}
+							if (function_exists('mf_format_display_price_rub'))
+							{
+								return htmlspecialcharsbx(mf_format_display_price_rub((float)$price));
+							}
+
+							return htmlspecialcharsbx(number_format(
+								function_exists('mf_round_price') ? mf_round_price((float)$price) : (float)ceil((float)$price),
+								0,
+								'.',
+								' '
+							)) . ' &#8381;';
+						};
 						?>
 						<tr>
 							<td>
@@ -491,17 +517,14 @@ if ($elementId > 0)
 								}
 								?>
 							</td>
-							<td class="text-right mf-detail-stock-table__price mf-price">
-								<?php if ($storePrice !== null): ?>
-									<?php
-									echo function_exists('mf_format_display_price_rub')
-										? htmlspecialcharsbx(mf_format_display_price_rub((float)$storePrice))
-										: (htmlspecialcharsbx(number_format(function_exists('mf_round_price') ? mf_round_price((float)$storePrice) : (float)ceil((float)$storePrice), 0, '.', ' ')) . ' &#8381;');
-									?>
-								<?php else: ?>
-									—
-								<?php endif; ?>
+							<td class="text-right mf-detail-stock-table__price mf-price<?=($mfDetailShowDualPrice ? ' mf-price--retail' : '')?>">
+								<?=$mfFormatDetailPrice($mfDetailShowDualPrice ? $storePriceRetail : $storePrice)?>
 							</td>
+							<?php if ($mfDetailShowDualPrice): ?>
+							<td class="text-right mf-detail-stock-table__price mf-price mf-price--your">
+								<?=$mfFormatDetailPrice($storePrice)?>
+							</td>
+							<?php endif; ?>
 							<td class="text-right mf-detail-stock-table__qty">
 								<?php
 								$mfCodeRow = mb_strtoupper(trim((string)($s['CODE'] ?? '')));

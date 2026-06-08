@@ -40,7 +40,16 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 						<th>Срок доставки</th>
 						<th class="mf-search-stock-table__spb text-center">Доставка</th>
 						<th class="mf-ta-r">Наличие</th>
-						<th class="mf-ta-r">Цена</th>
+						<?php
+						if (function_exists('mf_product_search_card_render_stock_price_headers'))
+						{
+							mf_product_search_card_render_stock_price_headers();
+						}
+						else
+						{
+							?><th class="mf-ta-r">Цена</th><?php
+						}
+						?>
 						<th class="mf-ta-r">Кол-во</th>
 						<th class="mf-ta-r"></th>
 					</tr>
@@ -84,7 +93,16 @@ if (!function_exists('mf_search_render_card_avail_inner'))
 								}
 							?></td>
 							<td class="mf-ta-r mf-search-stock-table__pending"><?=$mfStockCell?></td>
-							<td class="mf-ta-r mf-search-stock-table__price mf-price"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td>
+							<?php
+							if (function_exists('mf_product_search_card_render_stock_price_cells'))
+							{
+								mf_product_search_card_render_stock_price_cells($s);
+							}
+							else
+							{
+								?><td class="mf-ta-r mf-search-stock-table__price mf-price"><?=htmlspecialcharsbx((string)($s['price_fmt'] ?: '—'))?></td><?php
+							}
+							?>
 							<td class="mf-ta-r">
 								<?php
 								$mfNoPrice = (($s['price'] ?? null) === null || (float)$s['price'] <= 0);

@@ -3290,6 +3290,42 @@ if (!function_exists('mf_user_is_wholesale'))
 	}
 }
 
+if (!function_exists('mf_user_customer_show_dual_price'))
+{
+	/** Две колонки цен (розница + «Ваша цена») только для Опт 1–4. */
+	function mf_user_customer_show_dual_price(): bool
+	{
+		return mf_user_customer_discount_percent() > 0;
+	}
+}
+
+if (!function_exists('mf_store_retail_price_for_display'))
+{
+	/** Розничная цена склада без скидки по типу покупателя. */
+	function mf_store_retail_price_for_display(int $productId, int $storeId): ?float
+	{
+		$productId = (int)$productId;
+		$storeId = (int)$storeId;
+		if ($productId <= 0 || $storeId <= 0 || !function_exists('mf_calc_store_price'))
+		{
+			return null;
+		}
+
+		$computed = mf_calc_store_price($productId, $storeId);
+		if ($computed === null || (float)$computed <= 0)
+		{
+			return null;
+		}
+
+		if (function_exists('mf_round_price'))
+		{
+			$computed = mf_round_price((float)$computed);
+		}
+
+		return (float)$computed > 0 ? (float)$computed : null;
+	}
+}
+
 if (!function_exists('mf_wholesale_optimal_price_result'))
 {
 	function mf_wholesale_optimal_price_result(array &$arResult)
