@@ -173,6 +173,37 @@ def article_slug_from_item_href(href: str) -> str:
 	return (m.group(1).strip() if m else "") or ""
 
 
+def _normalize_article_slug(slug: str) -> str:
+	"""Сегмент URL с буквами (hf-111) — в верхнем регистре, как «Артикул» на карточке."""
+	slug = (slug or "").strip()
+	if not slug or not re.search(r"[A-Za-zА-Яа-я]", slug):
+		return slug
+	return slug.upper()
+
+
+def resolve_listing_article(
+	article_override: str,
+	slug: str,
+	article_from_title: str = "",
+) -> str:
+	"""
+	Артикул для CSV/матчинга с Bitrix.
+	На листинге .card-articul часто «Арт.: 5414» (внутренний id), а в URL /item/hff6012/ — реальный артикул.
+	"""
+	article_override = (article_override or "").strip()
+	slug = (slug or "").strip()
+	article_from_title = (article_from_title or "").strip()
+
+	if slug and article_override.isdigit() and re.search(r"[A-Za-zА-Яа-я]", slug):
+		return _normalize_article_slug(slug)
+
+	if article_override:
+		return article_override
+	if slug:
+		return _normalize_article_slug(slug)
+	return article_from_title
+
+
 def split_name_article(raw: str) -> tuple[str, str]:
 	s = (raw or "").replace("\xa0", " ").strip()
 	if "Артикул:" in s:
@@ -324,8 +355,7 @@ def _listing_product_from_card(
 		return None
 	slug = article_slug_from_item_href(href)
 	name_clean, article_from_title = split_name_article(name)
-	# На листинге название без «Артикул:» — приоритет явного артикула / URL
-	article = (article_override or "").strip() or slug or article_from_title
+	article = resolve_listing_article(article_override, slug, article_from_title)
 	return ListingProduct(
 		bx_id=_parse_item_id_from_url(href),
 		product_url=purl,
