@@ -362,6 +362,9 @@ final class CustomStatusNotifier
 		'SHIPMENT_STATUS' => ['group' => 'shipment', 'title' => 'Статус доставки'],
 	];
 
+	/** @var list<string> */
+	private const ADMIN_NOTIFY_FIELDS = ['ORDER_STATUS', 'PAYMENT_STATUS'];
+
 	public static function notify(int $orderId, ?array $before, array $after): void
 	{
 		if ($orderId <= 0 || self::isDisabled())
@@ -385,33 +388,12 @@ final class CustomStatusNotifier
 				return;
 			}
 
-			$email = self::customerEmail($order);
-			if ($email === '')
+			self::sendCustomerNotification($order, $orderId, $changes);
+
+			$adminChanges = self::filterAdminChanges($changes);
+			if ($adminChanges !== [])
 			{
-				self::log('custom status mail: empty customer email orderId=' . $orderId);
-
-				return;
-			}
-
-			$display = Renderer::orderDisplayNumber($order);
-			$subject = count($changes) === 1
-				? self::sanitizeSubject('Заказ №' . $display . ': ' . (string)$changes[0]['title'])
-				: self::sanitizeSubject('Заказ №' . $display . ': обновление статусов');
-			$body = Renderer::renderMfCustomStatusChanges($order, $changes);
-
-			$header = self::mailHeader();
-			$params = [
-				'TO' => $email,
-				'SUBJECT' => $subject,
-				'BODY' => $body,
-				'CHARSET' => 'UTF-8',
-				'CONTENT_TYPE' => 'html',
-				'HEADER' => $header,
-			];
-
-			if (!class_exists(Mail::class) || !Mail::send($params))
-			{
-				self::log('custom status mail: Mail::send failed orderId=' . $orderId);
+				self::sendAdminNotification($order, $orderId, $adminChanges);
 			}
 		}
 		catch (\Throwable $e)
@@ -420,7 +402,92 @@ final class CustomStatusNotifier
 		}
 	}
 
-	/** @return list<array{title:string,old:string,new:string}> */
+	/** @param list<array{field:string,title:string,old:string,new:string}> $changes */
+	private static function sendCustomerNotification(Order $order, int $orderId, array $changes): void
+	{
+		$email = self::customerEmail($order);
+		if ($email === '')
+		{
+			self::log('custom status mail: empty customer email orderId=' . $orderId);
+
+			return;
+		}
+
+		$display = Renderer::orderDisplayNumber($order);
+		$subject = count($changes) === 1
+			? self::sanitizeSubject('Заказ №' . $display . ': ' . (string)$changes[0]['title'])
+			: self::sanitizeSubject('Заказ №' . $display . ': обновление статусов');
+		$body = Renderer::renderMfCustomStatusChanges($order, $changes);
+
+		$params = [
+			'TO' => $email,
+			'SUBJECT' => $subject,
+			'BODY' => $body,
+			'CHARSET' => 'UTF-8',
+			'CONTENT_TYPE' => 'html',
+			'HEADER' => self::clientMailHeader(),
+		];
+
+		if (!class_exists(Mail::class) || !Mail::send($params))
+		{
+			self::log('custom status mail: Mail::send failed orderId=' . $orderId . ' to=client');
+		}
+	}
+
+	/** @param list<array{field:string,title:string,old:string,new:string}> $adminChanges */
+	private static function sendAdminNotification(Order $order, int $orderId, array $adminChanges): void
+	{
+		$recipients = self::adminRecipients();
+		if ($recipients === [])
+		{
+			self::log('custom status mail: empty admin recipients orderId=' . $orderId);
+
+			return;
+		}
+
+		$display = Renderer::orderDisplayNumber($order);
+		$subject = count($adminChanges) === 1
+			? self::sanitizeSubject('Заказ №' . $display . ': ' . (string)$adminChanges[0]['title'])
+			: self::sanitizeSubject('Заказ №' . $display . ': обновление статусов');
+		$body = Renderer::renderAdminMfCustomStatusChanges($order, $adminChanges);
+
+		$header = self::adminMailHeader($order);
+		$params = [
+			'TO' => implode(', ', $recipients),
+			'SUBJECT' => $subject,
+			'BODY' => $body,
+			'CHARSET' => 'UTF-8',
+			'CONTENT_TYPE' => 'html',
+			'HEADER' => $header,
+		];
+
+		if (!class_exists(Mail::class) || !Mail::send($params))
+		{
+			self::log('custom status mail: Mail::send failed orderId=' . $orderId . ' to=admin');
+		}
+	}
+
+	/**
+	 * @param list<array{field:string,title:string,old:string,new:string}> $changes
+	 * @return list<array{field:string,title:string,old:string,new:string}>
+	 */
+	private static function filterAdminChanges(array $changes): array
+	{
+		$result = [];
+		foreach ($changes as $change)
+		{
+			$field = trim((string)($change['field'] ?? ''));
+			if ($field === '' || !in_array($field, self::ADMIN_NOTIFY_FIELDS, true))
+			{
+				continue;
+			}
+			$result[] = $change;
+		}
+
+		return $result;
+	}
+
+	/** @return list<array{field:string,title:string,old:string,new:string}> */
 	private static function collectChanges(?array $before, array $after): array
 	{
 		$changes = [];
@@ -434,6 +501,7 @@ final class CustomStatusNotifier
 			}
 
 			$changes[] = [
+				'field' => $key,
 				'title' => (string)$meta['title'],
 				'old' => self::statusLabel($meta['group'], $before, $key, $beforeCode),
 				'new' => self::statusLabel($meta['group'], $after, $key, $afterCode),
@@ -472,7 +540,7 @@ final class CustomStatusNotifier
 	}
 
 	/** @return array<string, string> */
-	private static function mailHeader(): array
+	private static function clientMailHeader(): array
 	{
 		$header = [];
 		$from = function_exists('mf_mail_default_from_client')
@@ -488,6 +556,59 @@ final class CustomStatusNotifier
 		}
 
 		return $header;
+	}
+
+	/** @return array<string, string> */
+	private static function adminMailHeader(Order $order): array
+	{
+		$from = function_exists('mf_mail_default_from_admin')
+			? mf_mail_default_from_admin()
+			: (function_exists('mf_mail_default_from') ? mf_mail_default_from() : '');
+		if ($from === '')
+		{
+			$from = trim((string)getenv('MF_SMTP_FROM_ROBOT'));
+		}
+		if ($from === '' && class_exists(Option::class))
+		{
+			$from = trim((string)Option::get('main', 'email_from', ''));
+		}
+
+		$header = ['X-MF-SMTP-Profile' => 'robot'];
+		if ($from !== '' && filter_var($from, FILTER_VALIDATE_EMAIL))
+		{
+			$header['From'] = $from;
+		}
+
+		$customerEmail = self::customerEmail($order);
+		if ($customerEmail !== '')
+		{
+			$header['Reply-To'] = $customerEmail;
+		}
+
+		return $header;
+	}
+
+	/** @return list<string> */
+	private static function adminRecipients(): array
+	{
+		if (function_exists('mf_mail_admin_recipient_emails'))
+		{
+			$emails = mf_mail_admin_recipient_emails();
+			if ($emails !== [])
+			{
+				return $emails;
+			}
+		}
+
+		$one = function_exists('mf_mail_admin_inbox')
+			? mf_mail_admin_inbox()
+			: trim((string)getenv('MF_ORDER_NOTIFY_EMAIL'));
+		if ($one !== '' && filter_var($one, FILTER_VALIDATE_EMAIL))
+		{
+			return [$one];
+		}
+
+		return ['andrey@motor-force.ru'];
 	}
 
 	private static function customerEmail(Order $order): string
@@ -665,6 +786,61 @@ final class Renderer
 		}
 
 		$lines[] = 'Подробности в <a href="' . self::esc($ordersUrl) . '" style="color:' . self::COLOR_LINK . ';">личном кабинете</a>.';
+
+		$html[] = self::block(
+			'<div style="font-size:14px;line-height:1.7;color:#333;">' . implode('<br>', $lines) . '</div>'
+		);
+		$html[] = self::footerBlock(false);
+		$html[] = self::wrapClose();
+
+		return implode("\n", $html);
+	}
+
+	/**
+	 * @param list<array{field?:string,title:string,old:string,new:string}> $changes
+	 */
+	public static function renderAdminMfCustomStatusChanges(Order $order, array $changes): string
+	{
+		$display = self::orderDisplayNumber($order);
+		$adminUrl = rtrim(self::siteUrl($order), '/')
+			. '/bitrix/admin/sale_order_view.php?ID=' . (int)$order->getId() . '&lang=ru';
+
+		$html = [];
+		$html[] = self::wrapOpen();
+		$html[] = self::block(
+			'<div style="text-align:center;margin:0 0 18px 0;">'
+			. '<div style="font-size:24px;font-weight:bold;color:' . self::COLOR_TITLE . ';margin:0 0 8px 0;">'
+			. 'Заказ №' . self::esc($display)
+			. '</div>'
+			. '<div style="font-size:14px;color:#333;">Обновление статусов из 1С</div>'
+			. '</div>'
+		);
+
+		$lines = [];
+		foreach ($changes as $change)
+		{
+			$title = trim((string)($change['title'] ?? ''));
+			$old = trim((string)($change['old'] ?? ''));
+			$new = trim((string)($change['new'] ?? ''));
+			if ($title === '' || $new === '')
+			{
+				continue;
+			}
+			$line = '<strong>' . self::esc($title) . ':</strong> ' . self::esc($new);
+			if ($old !== '' && $old !== $new)
+			{
+				$line = '<strong>' . self::esc($title) . ':</strong> '
+					. self::esc($old) . ' → <strong>' . self::esc($new) . '</strong>';
+			}
+			$lines[] = $line;
+		}
+
+		if ($lines === [])
+		{
+			$lines[] = 'Статусы заказа обновлены.';
+		}
+
+		$lines[] = 'Открыть заказ в <a href="' . self::esc($adminUrl) . '" style="color:' . self::COLOR_LINK . ';">админке</a>.';
 
 		$html[] = self::block(
 			'<div style="font-size:14px;line-height:1.7;color:#333;">' . implode('<br>', $lines) . '</div>'
