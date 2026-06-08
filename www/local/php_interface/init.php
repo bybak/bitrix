@@ -3580,7 +3580,9 @@ if (!function_exists('mf_basket_remove_props_by_codes'))
 if (!function_exists('mf_basket_dedupe_props_for_display'))
 {
 	/**
-	 * Одна строка на подпись в корзине: убирает дубли «Артикул» / «Категория» из разных CODE.
+	 * Свойства корзины для отображения на сайте (не для обмена с 1С).
+	 * — одна строка «Артикул» без дублей по CODE;
+	 * — «Категория» скрыта (в b_sale_basket_props остаётся для выгрузки в 1С).
 	 *
 	 * @param array<int, array<string, mixed>> $props
 	 * @return array<int, array<string, mixed>>
@@ -3592,49 +3594,41 @@ if (!function_exists('mf_basket_dedupe_props_for_display'))
 			return $props;
 		}
 
-		$preferCode = static function (string $nameKey) use ($props): ?string {
-			$prio = [
-				'артикул' => ['CML2_ARTICLE', 'ARTNUMBER', 'ARTICLE'],
-				'категория' => ['Категория', 'MF_CATEGORY', 'MF_BRAND'],
-			];
-			$list = $prio[$nameKey] ?? [];
-			foreach ($list as $code)
+		$hiddenCategoryCodes = ['Категория', 'MF_CATEGORY', 'MF_BRAND'];
+		$isHiddenCategory = static function (array $p) use ($hiddenCategoryCodes): bool {
+			$code = (string)($p['CODE'] ?? '');
+			if (in_array($code, $hiddenCategoryCodes, true))
 			{
-				foreach ($props as $p)
-				{
-					if (!is_array($p))
-					{
-						continue;
-					}
-					if ((string)($p['CODE'] ?? '') === $code)
-					{
-						return $code;
-					}
-				}
+				return true;
 			}
 
-			return null;
+			return mb_strtolower(trim((string)($p['NAME'] ?? ''))) === 'категория';
 		};
 
-		$out = [];
-		$seenName = [];
-
-		foreach (['артикул', 'категория'] as $nameKey)
+		$articleCode = null;
+		foreach (['CML2_ARTICLE', 'ARTNUMBER', 'ARTICLE'] as $code)
 		{
-			$code = $preferCode($nameKey);
-			if ($code === null)
-			{
-				continue;
-			}
 			foreach ($props as $p)
 			{
 				if (!is_array($p) || (string)($p['CODE'] ?? '') !== $code)
 				{
 					continue;
 				}
-				$seenName[$nameKey] = true;
-				$out[] = $p;
-				break;
+				$articleCode = $code;
+				break 2;
+			}
+		}
+
+		$out = [];
+		if ($articleCode !== null)
+		{
+			foreach ($props as $p)
+			{
+				if (is_array($p) && (string)($p['CODE'] ?? '') === $articleCode)
+				{
+					$out[] = $p;
+					break;
+				}
 			}
 		}
 
@@ -3644,9 +3638,12 @@ if (!function_exists('mf_basket_dedupe_props_for_display'))
 			{
 				continue;
 			}
-			$name = trim((string)($p['NAME'] ?? ''));
-			$key = mb_strtolower($name);
-			if ($key === 'артикул' || $key === 'категория')
+			if ($isHiddenCategory($p))
+			{
+				continue;
+			}
+			$nameKey = mb_strtolower(trim((string)($p['NAME'] ?? '')));
+			if ($nameKey === 'артикул' || $nameKey === 'категория')
 			{
 				continue;
 			}
@@ -3774,8 +3771,43 @@ if (!function_exists('mf_catalog_resolve_export_name'))
 	}
 }
 
+if (!function_exists('mf_catalog_product_title'))
+{
+	/**
+	 * Наименование товара для корзины/заказа: поле NAME элемента каталога (без подстановки описания).
+	 */
+	function mf_catalog_product_title(int $productId, string $fallback = ''): string
+	{
+		if ($productId <= 0)
+		{
+			return trim($fallback);
+		}
+		$meta = function_exists('mf_catalog_brand_article_by_product_id')
+			? mf_catalog_brand_article_by_product_id($productId)
+			: ['brand' => '', 'article' => '', 'title' => ''];
+		$title = trim((string)($meta['title'] ?? ''));
+		if ($title !== '')
+		{
+			return $title;
+		}
+		$fallback = trim($fallback);
+		if ($fallback !== '')
+		{
+			return $fallback;
+		}
+		$brand = trim((string)($meta['brand'] ?? ''));
+		$article = trim((string)($meta['article'] ?? ''));
+		$combo = trim($brand . ' ' . $article);
+
+		return $combo !== '' ? $combo : $article;
+	}
+}
+
 if (!function_exists('mf_catalog_product_export_name'))
 {
+	/**
+	 * Расширенное наименование для обмена с 1С: при «голом» артикуле может подставить текст из описания.
+	 */
 	function mf_catalog_product_export_name(int $productId, string $fallback = ''): string
 	{
 		if ($productId <= 0)
@@ -3784,7 +3816,7 @@ if (!function_exists('mf_catalog_product_export_name'))
 		}
 		$meta = function_exists('mf_catalog_brand_article_by_product_id')
 			? mf_catalog_brand_article_by_product_id($productId)
-			: ['brand' => '', 'article' => '', 'name' => ''];
+			: ['brand' => '', 'article' => '', 'name' => '', 'title' => ''];
 		$name = trim((string)($meta['name'] ?? ''));
 		$article = trim((string)($meta['article'] ?? ''));
 		$fallback = trim($fallback);
@@ -3878,14 +3910,14 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 		static $cache = [];
 		if ($productId <= 0)
 		{
-			return ['brand' => '', 'article' => '', 'name' => ''];
+			return ['brand' => '', 'article' => '', 'name' => '', 'title' => ''];
 		}
 		if (array_key_exists($productId, $cache))
 		{
 			return $cache[$productId];
 		}
 
-		$empty = ['brand' => '', 'article' => '', 'name' => ''];
+		$empty = ['brand' => '', 'article' => '', 'name' => '', 'title' => ''];
 		if (!class_exists(\CIBlockElement::class) || !\Bitrix\Main\Loader::includeModule('iblock'))
 		{
 			$cache[$productId] = $empty;
@@ -4018,9 +4050,10 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 			}
 		}
 
+		$title = $name;
 		$name = mf_catalog_resolve_export_name($name, $previewText, $detailText, $article, $brand, '');
 
-		$out = ['brand' => $brand, 'article' => $article, 'name' => $name];
+		$out = ['brand' => $brand, 'article' => $article, 'name' => $name, 'title' => $title];
 		$cache[$productId] = $out;
 
 		return $out;
@@ -4030,7 +4063,7 @@ if (!function_exists('mf_catalog_brand_article_by_product_id'))
 if (!function_exists('mf_basket_item_display_name'))
 {
 	/**
-	 * Наименование позиции заказа/корзины: из строки заказа, иначе из карточки товара каталога.
+	 * Наименование позиции заказа/корзины: NAME карточки каталога (не описание из PREVIEW/DETAIL).
 	 */
 	function mf_basket_item_display_name(array $item): string
 	{
@@ -4046,9 +4079,9 @@ if (!function_exists('mf_basket_item_display_name'))
 		}
 
 		$productId = (int)($item['PRODUCT_ID'] ?? 0);
-		if ($productId > 0 && function_exists('mf_catalog_product_export_name'))
+		if ($productId > 0 && function_exists('mf_catalog_product_title'))
 		{
-			$name = mf_catalog_product_export_name($productId, $basketName);
+			$name = mf_catalog_product_title($productId, $basketName);
 			if ($name !== '')
 			{
 				return $name;
@@ -4093,8 +4126,8 @@ if (!function_exists('mf_basket_product_identity'))
 			return null;
 		}
 
-		$name = function_exists('mf_catalog_product_export_name')
-			? mf_catalog_product_export_name($productId)
+		$name = function_exists('mf_catalog_product_title')
+			? mf_catalog_product_title($productId, trim((string)($product['NAME'] ?? '')))
 			: trim((string)($product['NAME'] ?? ''));
 		$productXmlId = trim((string)($product['XML_ID'] ?? ''));
 
@@ -4322,12 +4355,12 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 		if (is_array($identity))
 		{
 			$fields = [];
-			$exportName = function_exists('mf_catalog_product_export_name')
-				? mf_catalog_product_export_name($productId, trim((string)$item->getField('NAME')))
+			$title = function_exists('mf_catalog_product_title')
+				? mf_catalog_product_title($productId, trim((string)$item->getField('NAME')))
 				: trim((string)($identity['NAME'] ?? ''));
-			if ($exportName !== '')
+			if ($title !== '')
 			{
-				$fields['NAME'] = $exportName;
+				$fields['NAME'] = $title;
 			}
 			if ($identity['PRODUCT_XML_ID'] !== '')
 			{
@@ -4345,7 +4378,7 @@ if (!function_exists('mf_basket_apply_1c_sync_fields'))
 
 		$meta = function_exists('mf_catalog_brand_article_by_product_id')
 			? mf_catalog_brand_article_by_product_id($productId)
-			: ['brand' => '', 'article' => '', 'name' => ''];
+			: ['brand' => '', 'article' => '', 'name' => '', 'title' => ''];
 
 		$props = [];
 		if (is_array($identity))

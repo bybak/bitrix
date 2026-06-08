@@ -2391,7 +2391,13 @@ class SaleOrderAjax extends \CBitrixComponent
 	{
 		$resultHTML = "";
 
-		foreach ($source["PROPS"] as $val)
+		$props = $source["PROPS"] ?? [];
+		if (function_exists('mf_basket_dedupe_props_for_display') && is_array($props))
+		{
+			$props = mf_basket_dedupe_props_for_display($props);
+		}
+
+		foreach ($props as $val)
 		{
 			$resultHTML .= str_replace(" ", "&nbsp;", $val["NAME"].": ".$val["VALUE"])."<br />";
 		}
@@ -3006,6 +3012,15 @@ class SaleOrderAjax extends \CBitrixComponent
 		foreach ($this->calculateBasket as $basketItem)
 		{
 			$arBasketItem = $basketItem->getFieldValues();
+			$productId = (int)($arBasketItem['PRODUCT_ID'] ?? 0);
+			if ($productId > 0 && function_exists('mf_catalog_product_title'))
+			{
+				$title = mf_catalog_product_title($productId, (string)($arBasketItem['NAME'] ?? ''));
+				if ($title !== '')
+				{
+					$arBasketItem['NAME'] = $title;
+				}
+			}
 			if ($basketItem->getVatRate() > 0)
 			{
 				$arResult["bUsingVat"] = "Y";

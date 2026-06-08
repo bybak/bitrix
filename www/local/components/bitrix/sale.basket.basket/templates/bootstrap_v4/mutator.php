@@ -91,15 +91,26 @@ foreach ($this->basketItems as $row)
 
 	$rowData['SHOW_PRICE_FOR'] = (float)$rowData['QUANTITY'] !== (float)$rowData['MEASURE_RATIO'];
 
-	if (trim((string)$rowData['NAME']) === '' && (int)$rowData['PRODUCT_ID'] > 0 && \Bitrix\Main\Loader::includeModule('iblock'))
+	if ((int)$rowData['PRODUCT_ID'] > 0)
 	{
-		$rsEl = \CIBlockElement::GetByID((int)$rowData['PRODUCT_ID']);
-		if ($el = $rsEl->GetNext(false, false))
+		if (function_exists('mf_catalog_product_title'))
 		{
-			$fn = (string)($el['NAME'] ?? '');
-			if ($fn !== '')
+			$title = mf_catalog_product_title((int)$rowData['PRODUCT_ID'], (string)$rowData['NAME']);
+			if ($title !== '')
 			{
-				$rowData['NAME'] = $fn;
+				$rowData['NAME'] = $title;
+			}
+		}
+		elseif (trim((string)$rowData['NAME']) === '' && \Bitrix\Main\Loader::includeModule('iblock'))
+		{
+			$rsEl = \CIBlockElement::GetByID((int)$rowData['PRODUCT_ID']);
+			if ($el = $rsEl->GetNext(false, false))
+			{
+				$fn = (string)($el['NAME'] ?? '');
+				if ($fn !== '')
+				{
+					$rowData['NAME'] = $fn;
+				}
 			}
 		}
 	}
