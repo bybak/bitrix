@@ -66,5 +66,65 @@ if (!function_exists('mf_jivo_print_body_script'))
 
 		$src = 'https://code.jivosite.com/script/widget/' . rawurlencode($id);
 		echo '<script async src="' . htmlspecialcharsbx($src) . '"></script>' . "\n";
+		mf_jivo_print_canonical_page_script();
+	}
+}
+
+if (!function_exists('mf_jivo_print_canonical_page_script'))
+{
+	/**
+	 * В письмах Jivo уходит document.location — приводим путь каталога к виду со слэшем.
+	 */
+	function mf_jivo_print_canonical_page_script(): void
+	{
+		?>
+<script>
+(function () {
+	function mfCatalogPathNeedsSlash(path) {
+		if (!path || path.charAt(path.length - 1) === '/') return false;
+		if (path === '/products') return true;
+		if (/^\/products\/category\/[^/]+$/.test(path)) return true;
+		if (/^\/products\/(?!category\/|search(?:\/|$))[^/]+$/.test(path)) return true;
+		return false;
+	}
+	function mfCanonicalCatalogUrl() {
+		var loc = window.location;
+		var path = loc.pathname || '/';
+		if (!mfCatalogPathNeedsSlash(path)) {
+			return loc.href;
+		}
+		return loc.origin + path + '/' + loc.search + loc.hash;
+	}
+	try {
+		var path = window.location.pathname || '/';
+		if (mfCatalogPathNeedsSlash(path)) {
+			var fixed = path + '/' + (window.location.search || '') + (window.location.hash || '');
+			history.replaceState(null, '', fixed);
+		}
+	} catch (e) {}
+	function mfJivoPatchPageUrl() {
+		try {
+			if (!window.jivo_api || typeof window.jivo_api.setCustomData !== 'function') {
+				return;
+			}
+			var url = mfCanonicalCatalogUrl();
+			if (!url) return;
+			window.jivo_api.setCustomData([{title: 'Страница', content: url}]);
+		} catch (e2) {}
+	}
+	window.jivo_onLoadCallback = (function (prev) {
+		return function () {
+			if (typeof prev === 'function') {
+				try { prev(); } catch (e3) {}
+			}
+			mfJivoPatchPageUrl();
+		};
+	})(window.jivo_onLoadCallback);
+	if (window.jivo_api) {
+		mfJivoPatchPageUrl();
+	}
+})();
+</script>
+<?php
 	}
 }

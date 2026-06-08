@@ -19,4 +19,15 @@ if (is_file($mfStatisticDefence))
 }
 unset($mfStatisticDefence);
 
+$mfUrlCanonical = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_url_canonical.php';
+if (is_file($mfUrlCanonical))
+{
+	require_once $mfUrlCanonical;
+	if (function_exists('mf_url_apply_catalog_trailing_slash_redirect'))
+	{
+		mf_url_apply_catalog_trailing_slash_redirect();
+	}
+}
+unset($mfUrlCanonical);
+
 mb_internal_encoding("UTF-8");
