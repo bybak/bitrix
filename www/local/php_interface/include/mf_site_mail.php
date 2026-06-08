@@ -27,13 +27,28 @@ final class Bootstrap
 
 final class Handlers
 {
-	public static function onBeforeEventSend(array &$fields, array &$eventMessage, $context, array &$result): void
+	public static function onBeforeEventSend(array &$fields, array &$eventMessage, $context, array &$result): bool
 	{
 		unset($context, $result);
 
-		if (($eventMessage['EVENT_NAME'] ?? '') !== 'NEW_USER')
+		$eventName = (string)($eventMessage['EVENT_NAME'] ?? '');
+		if ($eventName === 'STATISTIC_ACTIVITY_EXCEEDING')
 		{
-			return;
+			$defenceFile = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_statistic_defence.php';
+			if (is_file($defenceFile))
+			{
+				require_once $defenceFile;
+			}
+			if (function_exists('mf_statistic_should_suppress_activity_exceeding_mail')
+				&& mf_statistic_should_suppress_activity_exceeding_mail($fields))
+			{
+				return false;
+			}
+		}
+
+		if ($eventName !== 'NEW_USER')
+		{
+			return true;
 		}
 
 		$serverName = trim((string)($fields['SERVER_NAME'] ?? Renderer::SITE_HOST));
@@ -62,6 +77,8 @@ final class Handlers
 		$eventMessage['SITE_TEMPLATE_ID'] = '';
 		$eventMessage['MESSAGE'] = $html;
 		unset($eventMessage['MESSAGE_PHP']);
+
+		return true;
 	}
 }
 

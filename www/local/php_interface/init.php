@@ -5006,3 +5006,13 @@ if (is_file($mfSiteMailInclude))
 		\Mf\SiteMail\Bootstrap::init();
 	}
 }
+
+$mfStatisticDefenceInclude = __DIR__ . '/include/mf_statistic_defence.php';
+if (is_file($mfStatisticDefenceInclude))
+{
+	require_once $mfStatisticDefenceInclude;
+	if (function_exists('mf_statistic_ensure_bot_searchers_no_activity_check'))
+	{
+		mf_statistic_ensure_bot_searchers_no_activity_check();
+	}
+}
