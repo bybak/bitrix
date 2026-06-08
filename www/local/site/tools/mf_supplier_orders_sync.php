@@ -15,6 +15,8 @@
  *
  * Строки JSON: price.unit_price; при сопоставлении с товаром, если на складе MOTOR_FORCE_INTERNAL нет остатка —
  * пишется RAW = unit_price + MARKUP_PCT% (тип цены склада, mf_supplier_store_to_price_group) для кластера товара.
+ * Для supplier.name MotoParts/MotorParts к unit_price добавляется вес×тариф доставки склада MotoParts (UF склада, в ₽).
+ *   MF_SUPPLIER_ORDERS_MOTOPARTS_STORE_CODE — CODE склада (по умолчанию MotoParts).
  * В --dry-run каталог не меняется, в JSON — prices_would_fill.
  *
  * Прогресс (по умолчанию вкл., в STDERR; JSON результата — в STDOUT):

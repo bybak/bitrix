@@ -7,6 +7,8 @@ declare(strict_types=1);
  * Храним только заказы в статусе «в работе»; при исчезновении из выборки — удаляем из БД (без истории).
  * price.unit_price в тип цены склада MOTOR_FORCE_INTERNAL — через mf_ep_set_raw_price_for_catalog_cluster
  *   (unit_price + наценка MF_SUPPLIER_ORDERS_PRICE_MARKUP_PCT%, по умолчанию 50%), только если на этом складе нет остатка.
+ * Для supplier.name MotoParts / MotorParts к unit_price добавляется доставка склада MotoParts: вес×тариф за кг
+ *   (UF_MF_EXT_WEIGHT_* на складе, валюта тарифа → ₽ через mf_ep_convert_to_rub), только если цена реально обновится.
  * Если валюта договора/заказа не RUB — unit_price пересчитывается в ₽ (mf_ep_convert_to_rub), если 1С ещё не прислала converted/RUB.
  */
 
@@ -687,6 +689,376 @@ if (!function_exists('mf_supplier_orders_catalog_ids_for_store_raw_price'))
 	}
 }
 
+if (!function_exists('mf_supplier_orders_is_motoparts_supplier'))
+{
+	/** supplier.name из 1С: MotoParts / MotorParts (без учёта регистра и пунктуации). */
+	function mf_supplier_orders_is_motoparts_supplier(string $supplierName): bool
+	{
+		$s = mb_strtoupper(trim($supplierName));
+		$s = (string)preg_replace('~[^A-Z0-9]+~', '', $s);
+
+		return in_array($s, ['MOTOPARTS', 'MOTORPARTS'], true);
+	}
+}
+
+if (!function_exists('mf_supplier_orders_motoparts_store_id'))
+{
+	/**
+	 * Склад MotoParts: CODE из MF_SUPPLIER_ORDERS_MOTOPARTS_STORE_CODE или опции motoparts_store_code (по умолчанию MotoParts).
+	 */
+	function mf_supplier_orders_motoparts_store_id(): int
+	{
+		static $cached = null;
+		if ($cached !== null)
+		{
+			return $cached;
+		}
+		$cached = 0;
+		if (!Loader::includeModule('catalog') || !class_exists(\CCatalogStore::class))
+		{
+			return $cached;
+		}
+
+		$env = getenv('MF_SUPPLIER_ORDERS_MOTOPARTS_STORE_CODE');
+		$code = ($env !== false && trim((string)$env) !== '')
+			? trim((string)$env)
+			: trim(Option::get('mf.supplier_orders', 'motoparts_store_code', 'MotoParts'));
+
+		$candidates = array_values(array_unique(array_filter([
+			$code,
+			mb_strtoupper($code),
+			'MotoParts',
+			'MOTOPARTS',
+		])));
+
+		foreach ($candidates as $tryCode)
+		{
+			$row = \CCatalogStore::GetList(
+				[],
+				['=CODE' => $tryCode, 'ACTIVE' => 'Y'],
+				false,
+				['nTopCount' => 1],
+				['ID']
+			)->Fetch();
+			if ($row && (int)($row['ID'] ?? 0) > 0)
+			{
+				$cached = (int)$row['ID'];
+
+				return $cached;
+			}
+		}
+
+		$rs = \CCatalogStore::GetList(['ID' => 'ASC'], ['ACTIVE' => 'Y'], false, false, ['ID', 'CODE', 'XML_ID']);
+		while ($row = $rs->Fetch())
+		{
+			$hay = mb_strtoupper(trim((string)($row['CODE'] ?? '') . ' ' . (string)($row['XML_ID'] ?? '')));
+			if (str_contains($hay, 'MOTOPARTS') || str_contains($hay, 'MOTORPARTS'))
+			{
+				$cached = (int)($row['ID'] ?? 0);
+
+				return $cached;
+			}
+		}
+
+		return $cached;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_catalog_weight_kg'))
+{
+	/**
+	 * Вес единицы (кг): элемент, кластер SKU и торговый ID каталога.
+	 */
+	function mf_supplier_orders_catalog_weight_kg(int $productId): float
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || !Loader::includeModule('catalog') || !class_exists(\CCatalogProduct::class))
+		{
+			return 0.0;
+		}
+
+		$ids = [$productId];
+		if (function_exists('mf_catalog_product_cluster_ids'))
+		{
+			$ids = array_merge($ids, mf_catalog_product_cluster_ids($productId));
+		}
+		if (function_exists('mf_ep_resolve_catalog_trade_product_id'))
+		{
+			$trade = mf_ep_resolve_catalog_trade_product_id($productId);
+			if ($trade > 0)
+			{
+				$ids[] = $trade;
+			}
+		}
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+		$koef = 1.0;
+		if (class_exists(Option::class))
+		{
+			try
+			{
+				$koef = (float)Option::get('sale', 'weight_koef', 1);
+			}
+			catch (\Throwable $e)
+			{
+				$koef = 1.0;
+			}
+		}
+		if ($koef <= 0.0)
+		{
+			$koef = 1.0;
+		}
+
+		foreach ($ids as $cid)
+		{
+			$row = \CCatalogProduct::GetByID($cid);
+			if (!is_array($row))
+			{
+				continue;
+			}
+			$w = (float)($row['WEIGHT'] ?? 0);
+			if ($w > 0.0)
+			{
+				return ($w * 1.0) / $koef;
+			}
+		}
+
+		return 0.0;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_motoparts_delivery_rub_per_kg'))
+{
+	/**
+	 * Тариф доставки MotoParts в ₽/кг (UF склада; валюта → ₽). Чекбокс UF «учитывать вес» не обязателен.
+	 */
+	function mf_supplier_orders_motoparts_delivery_rub_per_kg(): float
+	{
+		$storeId = mf_supplier_orders_motoparts_store_id();
+		if ($storeId <= 0 || !function_exists('mf_ep_store_weight_uf_raw'))
+		{
+			return 0.0;
+		}
+
+		$raw = mf_ep_store_weight_uf_raw($storeId);
+		if ($raw['amount_per_kg'] <= 0.0 || !function_exists('mf_ep_convert_to_rub'))
+		{
+			return 0.0;
+		}
+
+		try
+		{
+			return mf_ep_convert_to_rub($raw['amount_per_kg'], $raw['currency']);
+		}
+		catch (\Throwable $e)
+		{
+			return 0.0;
+		}
+	}
+}
+
+if (!function_exists('mf_supplier_orders_motoparts_weight_surcharge_rub'))
+{
+	function mf_supplier_orders_motoparts_weight_surcharge_rub(int $productId): float
+	{
+		$rubPerKg = mf_supplier_orders_motoparts_delivery_rub_per_kg();
+		if ($rubPerKg <= 0.0)
+		{
+			return 0.0;
+		}
+		$kg = mf_supplier_orders_catalog_weight_kg($productId);
+		if ($kg <= 0.0)
+		{
+			return 0.0;
+		}
+		$calc = $kg * $rubPerKg;
+
+		return function_exists('mf_round_price') ? mf_round_price($calc) : (float)ceil($calc);
+	}
+}
+
+if (!function_exists('mf_supplier_orders_explain_motoparts_price_fill'))
+{
+	/**
+	 * Диагностика: почему к unit_price из 1С не добавилась доставка / не обновилась цена.
+	 *
+	 * @return array<string, mixed>
+	 */
+	function mf_supplier_orders_explain_motoparts_price_fill(
+		int $productId,
+		?float $unitPriceRub,
+		string $supplierName
+	): array {
+		$productId = (int)$productId;
+		$storeId = mf_supplier_orders_motoparts_store_id();
+		$rawUf = ($storeId > 0 && function_exists('mf_ep_store_weight_uf_raw'))
+			? mf_ep_store_weight_uf_raw($storeId)
+			: ['use' => false, 'amount_per_kg' => 0.0, 'currency' => 'RUB'];
+
+		$out = [
+			'product_id' => $productId,
+			'supplier_name' => $supplierName,
+			'is_motoparts_supplier' => mf_supplier_orders_is_motoparts_supplier($supplierName),
+			'fill_base_price_enabled' => mf_supplier_orders_fill_base_price_enabled(),
+			'internal_store_has_stock' => $productId > 0 ? mf_supplier_orders_internal_store_has_stock($productId) : false,
+			'motoparts_store_id' => $storeId,
+			'store_weight_uf' => $rawUf,
+			'rub_per_kg' => mf_supplier_orders_motoparts_delivery_rub_per_kg(),
+			'weight_kg' => $productId > 0 ? mf_supplier_orders_catalog_weight_kg($productId) : 0.0,
+			'delivery_surcharge_rub' => $productId > 0 ? mf_supplier_orders_motoparts_weight_surcharge_rub($productId) : 0.0,
+			'unit_price_in_rub' => $unitPriceRub,
+			'unit_price_with_delivery' => $unitPriceRub,
+			'would_update_catalog_price' => false,
+			'blockers' => [],
+		];
+
+		if ($unitPriceRub !== null && $unitPriceRub > 0.0 && $out['delivery_surcharge_rub'] > 0.0)
+		{
+			$out['unit_price_with_delivery'] = $unitPriceRub + (float)$out['delivery_surcharge_rub'];
+		}
+
+		if (!$out['is_motoparts_supplier'])
+		{
+			$out['blockers'][] = 'supplier_not_motoparts';
+		}
+		if (!$out['fill_base_price_enabled'])
+		{
+			$out['blockers'][] = 'fill_base_price_disabled';
+		}
+		if ($out['internal_store_has_stock'])
+		{
+			$out['blockers'][] = 'internal_store_has_stock';
+		}
+		if ($storeId <= 0)
+		{
+			$out['blockers'][] = 'motoparts_store_not_found';
+		}
+		if ($out['rub_per_kg'] <= 0.0)
+		{
+			$out['blockers'][] = 'motoparts_tariff_missing_or_zero';
+		}
+		if ($out['weight_kg'] <= 0.0)
+		{
+			$out['blockers'][] = 'product_weight_missing';
+		}
+		if ($unitPriceRub === null || $unitPriceRub <= 0.0)
+		{
+			$out['blockers'][] = 'unit_price_missing';
+		}
+
+		$adjusted = $unitPriceRub;
+		if (
+			$unitPriceRub !== null
+			&& $unitPriceRub > 0.0
+			&& $out['is_motoparts_supplier']
+			&& $out['fill_base_price_enabled']
+			&& !$out['internal_store_has_stock']
+		)
+		{
+			$adjusted = mf_supplier_orders_add_motoparts_delivery_to_unit_price($productId, $unitPriceRub);
+		}
+		$out['adjusted_unit_price_rub'] = $adjusted;
+		$out['would_update_catalog_price'] = $productId > 0
+			&& $adjusted !== null
+			&& $adjusted > 0.0
+			&& mf_supplier_orders_try_set_internal_store_raw_price_from_1c($productId, $adjusted, true);
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_add_motoparts_delivery_to_unit_price'))
+{
+	/**
+	 * unit_price в ₽ + доставка MotoParts (вес единицы × тариф склада в ₽).
+	 */
+	function mf_supplier_orders_add_motoparts_delivery_to_unit_price(int $productId, float $unitPriceRub): float
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0 || $unitPriceRub <= 0.0)
+		{
+			return $unitPriceRub;
+		}
+
+		$storeId = mf_supplier_orders_motoparts_store_id();
+		$surcharge = mf_supplier_orders_motoparts_weight_surcharge_rub($productId);
+		if ($surcharge <= 0.0)
+		{
+			mf_supplier_orders_log('motoparts delivery skipped: zero surcharge', [
+				'product_id' => $productId,
+				'store_id' => $storeId,
+				'rub_per_kg' => mf_supplier_orders_motoparts_delivery_rub_per_kg(),
+				'weight_kg' => mf_supplier_orders_catalog_weight_kg($productId),
+				'store_weight_uf' => ($storeId > 0 && function_exists('mf_ep_store_weight_uf_raw'))
+					? mf_ep_store_weight_uf_raw($storeId)
+					: null,
+			]);
+
+			return $unitPriceRub;
+		}
+
+		$total = $unitPriceRub + $surcharge;
+		mf_supplier_orders_log('motoparts delivery added to unit_price', [
+			'product_id' => $productId,
+			'store_id' => $storeId,
+			'unit_price_rub' => $unitPriceRub,
+			'weight_kg' => mf_supplier_orders_catalog_weight_kg($productId),
+			'rub_per_kg' => mf_supplier_orders_motoparts_delivery_rub_per_kg(),
+			'delivery_rub' => $surcharge,
+			'total_rub' => $total,
+		]);
+
+		return $total;
+	}
+}
+
+if (!function_exists('mf_supplier_orders_adjust_unit_price_rub_for_fill'))
+{
+	/**
+	 * Цена для записи в каталог: для MotoParts добавляет доставку по весу, если закуп из 1С будет обновлён.
+	 */
+	function mf_supplier_orders_adjust_unit_price_rub_for_fill(
+		int $productId,
+		?float $unitPriceRub,
+		string $supplierName
+	): ?float {
+		if ($unitPriceRub === null || $unitPriceRub <= 0.0 || $productId <= 0)
+		{
+			return $unitPriceRub;
+		}
+		if (!mf_supplier_orders_is_motoparts_supplier($supplierName))
+		{
+			return $unitPriceRub;
+		}
+		if (!mf_supplier_orders_fill_base_price_enabled() || mf_supplier_orders_internal_store_has_stock($productId))
+		{
+			mf_supplier_orders_log('motoparts price fill skipped before delivery', [
+				'product_id' => $productId,
+				'fill_base_price' => mf_supplier_orders_fill_base_price_enabled(),
+				'internal_store_has_stock' => mf_supplier_orders_internal_store_has_stock($productId),
+				'supplier_name' => $supplierName,
+			]);
+
+			return $unitPriceRub;
+		}
+
+		$before = $unitPriceRub;
+		$after = mf_supplier_orders_add_motoparts_delivery_to_unit_price($productId, $unitPriceRub);
+		if ($after <= $before)
+		{
+			mf_supplier_orders_log('motoparts price unchanged after delivery step', [
+				'product_id' => $productId,
+				'unit_price_rub' => $before,
+				'rub_per_kg' => mf_supplier_orders_motoparts_delivery_rub_per_kg(),
+				'weight_kg' => mf_supplier_orders_catalog_weight_kg($productId),
+				'motoparts_store_id' => mf_supplier_orders_motoparts_store_id(),
+			]);
+		}
+
+		return $after;
+	}
+}
+
 if (!function_exists('mf_supplier_orders_internal_store_raw_price_missing'))
 {
 	/**
@@ -1022,6 +1394,8 @@ if (!function_exists('mf_supplier_orders_sync'))
 				}
 				$docDtOrd = mf_supplier_orders_parse_datetime(trim((string)($ord['date'] ?? '')));
 				$orderCur = mf_supplier_orders_order_currency_code($ord);
+				$supDry = is_array($ord['supplier'] ?? null) ? $ord['supplier'] : [];
+				$supNameDry = trim((string)($supDry['name'] ?? ''));
 				foreach ($linesArr as $ln)
 				{
 					if (!is_array($ln))
@@ -1046,6 +1420,10 @@ if (!function_exists('mf_supplier_orders_sync'))
 					}
 					$unitDry = mf_supplier_orders_line_unit_price_rub($ln, $orderCur);
 					$pidDry = isset($m['product_id']) ? (int)$m['product_id'] : 0;
+					if ($pidDry > 0)
+					{
+						$unitDry = mf_supplier_orders_adjust_unit_price_rub_for_fill($pidDry, $unitDry, $supNameDry);
+					}
 					if ($pidDry > 0 && mf_supplier_orders_try_set_internal_store_raw_price_from_1c($pidDry, $unitDry, true))
 					{
 						$out['prices_would_fill']++;
@@ -1188,11 +1566,17 @@ if (!function_exists('mf_supplier_orders_sync'))
 					}
 
 					$unitPrice = mf_supplier_orders_line_unit_price_rub($ln, $orderCur);
-					$uPriceSql = $unitPrice !== null ? sprintf('%.4F', $unitPrice) : 'NULL';
 
 					$match = mf_supplier_orders_match_product_id($iblockId, $article, $brand);
 					$pid = $match['product_id'];
 					$mstat = $match['status'];
+
+					if ($pid !== null && (int)$pid > 0)
+					{
+						$unitPrice = mf_supplier_orders_adjust_unit_price_rub_for_fill((int)$pid, $unitPrice, $supName);
+					}
+
+					$uPriceSql = $unitPrice !== null ? sprintf('%.4F', $unitPrice) : 'NULL';
 
 					$rdSql = $rd !== null ? "'" . $helper->forSql($rd->format('Y-m-d')) . "'" : 'NULL';
 
