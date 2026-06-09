@@ -6,6 +6,7 @@ use Bitrix\Main\Application;
 use Bitrix\Main\Config\Option;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Type\DateTime;
+use Bitrix\Sale\Order;
 
 /**
  * Кастомные статусы заказа (заказ / оплата / доставка) из 1С.
@@ -408,6 +409,31 @@ if (!function_exists('mf_order_custom_status_format_row'))
 	}
 }
 
+if (!function_exists('mf_order_custom_status_apply_payment_truth'))
+{
+	/**
+	 * HL мог получить «paid» из 1С без фактической оплаты в Bitrix — подменяем при чтении.
+	 */
+	function mf_order_custom_status_apply_payment_truth(array $status): array
+	{
+		$orderId = (int)($status['ORDER_ID'] ?? 0);
+		if ($orderId <= 0 || ($status['PAYMENT_STATUS'] ?? '') !== 'paid')
+		{
+			return $status;
+		}
+
+		if (mf_order_custom_status_order_has_bitrix_payment_by_id($orderId))
+		{
+			return $status;
+		}
+
+		$status['PAYMENT_STATUS'] = 'not_paid';
+		$status['PAYMENT_STATUS_LABEL'] = mf_order_custom_status_label('payment', 'not_paid');
+
+		return $status;
+	}
+}
+
 if (!function_exists('mf_order_custom_status_get'))
 {
 	function mf_order_custom_status_get(int $orderId): ?array
@@ -431,7 +457,7 @@ if (!function_exists('mf_order_custom_status_get'))
 			return null;
 		}
 
-		return mf_order_custom_status_format_row($row);
+		return mf_order_custom_status_apply_payment_truth(mf_order_custom_status_format_row($row));
 	}
 }
 
@@ -463,7 +489,7 @@ if (!function_exists('mf_order_custom_status_get_bulk'))
 			{
 				continue;
 			}
-			$formatted = mf_order_custom_status_format_row($row);
+			$formatted = mf_order_custom_status_apply_payment_truth(mf_order_custom_status_format_row($row));
 			$result[(int)$formatted['ORDER_ID']] = $formatted;
 		}
 
@@ -522,6 +548,10 @@ if (!function_exists('mf_order_custom_status_set'))
 			}
 			else
 			{
+				if ($code === 'paid' && !mf_order_custom_status_order_has_bitrix_payment_by_id($orderId))
+				{
+					$code = 'not_paid';
+				}
 				$fields['UF_PAYMENT_STATUS'] = $code;
 			}
 		}
@@ -638,6 +668,39 @@ if (!function_exists('mf_order_custom_status_is_cancelled'))
 	}
 }
 
+if (!function_exists('mf_order_custom_status_order_has_bitrix_payment_by_id'))
+{
+	function mf_order_custom_status_order_has_bitrix_payment_by_id(int $orderId): bool
+	{
+		if ($orderId <= 0 || !Loader::includeModule('sale'))
+		{
+			return false;
+		}
+
+		$order = Order::load($orderId);
+		if (!$order)
+		{
+			return false;
+		}
+
+		$paymentCollection = $order->getPaymentCollection();
+		if (!$paymentCollection)
+		{
+			return false;
+		}
+
+		foreach ($paymentCollection as $payment)
+		{
+			if ($payment && $payment->isPaid())
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
 if (!function_exists('mf_order_custom_status_order_has_bitrix_payment'))
 {
 	function mf_order_custom_status_order_has_bitrix_payment(array $paymentRows): bool
@@ -667,9 +730,9 @@ if (!function_exists('mf_order_custom_status_display_payment_for_list'))
 	 */
 	function mf_order_custom_status_display_payment_for_list(?array $mfStatus, array $paymentRows): array
 	{
+		$hasBitrixPayment = mf_order_custom_status_order_has_bitrix_payment($paymentRows);
 		if (
-			mf_order_custom_status_is_cancelled($mfStatus)
-			&& !mf_order_custom_status_order_has_bitrix_payment($paymentRows)
+			!$hasBitrixPayment
 			&& is_array($mfStatus)
 			&& ($mfStatus['PAYMENT_STATUS'] ?? '') === 'paid'
 		)

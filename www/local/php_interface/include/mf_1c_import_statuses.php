@@ -306,22 +306,47 @@ if (!function_exists('mf_1c_import_is_cancelled_mf'))
 			return true;
 		}
 
-		return strtoupper(trim((string)$statusId)) === 'C';
+		if (strtoupper(trim((string)$statusId)) === 'C')
+		{
+			return true;
+		}
+
+		$completionVariant = mb_strtolower(trim((string)($mf['completion_variant'] ?? '')));
+		if ($completionVariant !== '' && preg_match('/отмен/u', $completionVariant))
+		{
+			return true;
+		}
+
+		$raw = is_array($mf['raw'] ?? null) ? $mf['raw'] : [];
+		if (mf_1c_import_parse_bool($raw['ОтмененMF'] ?? null))
+		{
+			return true;
+		}
+
+		foreach (['СтатусЗаказаMF', 'КомментарийЗавершенияMF', 'КомментарийОтменыMF'] as $rawKey)
+		{
+			$text = mb_strtolower(trim((string)($raw[$rawKey] ?? '')));
+			if ($text !== '' && preg_match('/отмен/u', $text))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
 
 if (!function_exists('mf_1c_import_order_is_paid_in_bitrix'))
 {
+	/**
+	 * Фактическая оплата — только оплаченные платежи в Bitrix.
+	 * Поле заказа PAYED=Y стандартный импорт 1С выставляет по ложному «Оплачен» в XML.
+	 */
 	function mf_1c_import_order_is_paid_in_bitrix(?Order $order): bool
 	{
 		if (!$order)
 		{
 			return false;
-		}
-
-		if ((string)$order->getField('PAYED') === 'Y')
-		{
-			return true;
 		}
 
 		$paymentCollection = $order->getPaymentCollection();
@@ -342,6 +367,29 @@ if (!function_exists('mf_1c_import_order_is_paid_in_bitrix'))
 	}
 }
 
+if (!function_exists('mf_1c_import_reset_false_order_paid'))
+{
+	/**
+	 * Сбрасывает PAYED=Y у заказа, если платежи в Bitrix не оплачены (ложный флаг из стандартного импорта 1С).
+	 */
+	function mf_1c_import_reset_false_order_paid(Order $order): bool
+	{
+		if (mf_1c_import_order_is_paid_in_bitrix($order))
+		{
+			return false;
+		}
+
+		$changed = false;
+		if ((string)$order->getField('PAYED') === 'Y')
+		{
+			$order->setField('PAYED', 'N');
+			$changed = true;
+		}
+
+		return $changed;
+	}
+}
+
 if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
 {
 	/**
@@ -355,20 +403,21 @@ if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
 	): ?string
 	{
 		$explicit = $mf['payment_status'] ?? null;
+		$hasBitrixPayment = mf_1c_import_order_is_paid_in_bitrix($order);
+
+		if ($explicit === 'PAID' && !$hasBitrixPayment)
+		{
+			return 'NOT_PAID';
+		}
 
 		if ($explicit !== null)
 		{
-			if ($isCancelled && $explicit === 'PAID' && !mf_1c_import_order_is_paid_in_bitrix($order))
-			{
-				return 'NOT_PAID';
-			}
-
 			return $explicit;
 		}
 
 		if ($isCancelled)
 		{
-			return mf_1c_import_order_is_paid_in_bitrix($order) ? 'PAID' : 'NOT_PAID';
+			return $hasBitrixPayment ? 'PAID' : 'NOT_PAID';
 		}
 
 		return null;
@@ -1387,6 +1436,11 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				}
 			}
 
+			if (mf_1c_import_reset_false_order_paid($order))
+			{
+				$changedFields[] = 'PAYED=N';
+			}
+
 			if ($ufPaymentStatus !== null)
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_PAYMENT_STATUS', $ufPaymentStatus))
@@ -1396,6 +1450,7 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				if (
 					($mf['payment_status'] ?? null) === 'PAID'
 					&& $ufPaymentStatus === 'PAID'
+					&& mf_1c_import_order_is_paid_in_bitrix($order)
 					&& mf_1c_import_mark_order_paid($order)
 				)
 				{
@@ -1521,7 +1576,7 @@ if (!function_exists('mf_1c_import_apply_file'))
 				return;
 			}
 
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260519a: start ' . $filePath);
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260519b: start ' . $filePath);
 
 			if (!Loader::includeModule('sale'))
 			{
