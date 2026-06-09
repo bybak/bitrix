@@ -18,6 +18,12 @@ if (is_file($mfOrderCustomStatusInclude))
 	require_once $mfOrderCustomStatusInclude;
 }
 
+$mfOrderAccountDisplayInclude = __DIR__ . '/mf_order_account_display.php';
+if (is_file($mfOrderAccountDisplayInclude))
+{
+	require_once $mfOrderAccountDisplayInclude;
+}
+
 if (!function_exists('mf_1c_import_xml_bool'))
 {
 	function mf_1c_import_xml_bool(?string $value): ?bool
@@ -47,11 +53,12 @@ if (!function_exists('mf_1c_import_order_number_candidates'))
 	/**
 	 * Варианты сопоставления номера из 1С с заказом Bitrix.
 	 *
-	 * UNF может присылать:
+	 * Новый формат выгрузки: 28-313 = {USER_ID}-{ACCOUNT_NUMBER}.
+	 *
+	 * Legacy UNF / CommerceML:
 	 * - s1291   -> заказ 291   (префикс сайта s1 + лишняя ведущая 1)
 	 * - s11234  -> заказ 1234  (s1 + 1 + номер)
 	 * - s1234   -> заказ 1234  (s1 + номер без лишней 1)
-	 * - s112345 -> заказ 12345
 	 *
 	 * @return string[]
 	 */
@@ -61,6 +68,14 @@ if (!function_exists('mf_1c_import_order_number_candidates'))
 		if ($xmlNumber === '')
 		{
 			return [];
+		}
+
+		$parsedDisplay = function_exists('mf_order_account_number_parse_display')
+			? mf_order_account_number_parse_display($xmlNumber)
+			: null;
+		if (is_array($parsedDisplay))
+		{
+			return [$xmlNumber, $parsedDisplay[1]];
 		}
 
 		$digits = preg_replace('/\D+/', '', $xmlNumber);
@@ -121,7 +136,7 @@ if (!function_exists('mf_1c_import_order_number_candidates'))
 if (!function_exists('mf_1c_import_number_1c_candidates'))
 {
 	/**
-	 * Кандидаты из реквизита «Номер по 1С», например 1c-001295 → 295, 1-295.
+	 * Кандидаты из реквизита «Номер по 1С»: 28-313, 1c-001295 → 295, legacy s1….
 	 *
 	 * @return string[]
 	 */
@@ -131,6 +146,14 @@ if (!function_exists('mf_1c_import_number_1c_candidates'))
 		if ($number1c === '')
 		{
 			return [];
+		}
+
+		$parsedDisplay = function_exists('mf_order_account_number_parse_display')
+			? mf_order_account_number_parse_display($number1c)
+			: null;
+		if (is_array($parsedDisplay))
+		{
+			return [$number1c, $parsedDisplay[1]];
 		}
 
 		$ordered = [];
@@ -716,6 +739,52 @@ if (!function_exists('mf_1c_import_get_order_loader'))
 	}
 }
 
+if (!function_exists('mf_1c_import_find_order_id_by_display_number'))
+{
+	/**
+	 * Поиск по печатному номеру {USER_ID}-{ACCOUNT_NUMBER} (как на сайте и в новой выгрузке).
+	 */
+	function mf_1c_import_find_order_id_by_display_number(string $displayNumber): ?int
+	{
+		if (!Loader::includeModule('sale'))
+		{
+			return null;
+		}
+
+		$parsedDisplay = function_exists('mf_order_account_number_parse_display')
+			? mf_order_account_number_parse_display(trim($displayNumber))
+			: null;
+		if (!is_array($parsedDisplay))
+		{
+			return null;
+		}
+
+		$rows = [];
+		$rs = Order::getList([
+			'filter' => [
+				'=USER_ID' => $parsedDisplay[0],
+				'=ACCOUNT_NUMBER' => $parsedDisplay[1],
+			],
+			'select' => ['ID', 'ACCOUNT_NUMBER'],
+			'limit' => 2,
+		]);
+		while ($row = $rs->fetch())
+		{
+			if (is_array($row))
+			{
+				$rows[] = $row;
+			}
+		}
+
+		if (count($rows) !== 1)
+		{
+			return null;
+		}
+
+		return (int)($rows[0]['ID'] ?? 0) > 0 ? (int)$rows[0]['ID'] : null;
+	}
+}
+
 if (!function_exists('mf_1c_import_find_order_id_by_code'))
 {
 	function mf_1c_import_find_order_id_by_code(string $orderCode): ?int
@@ -791,6 +860,17 @@ if (!function_exists('mf_1c_import_find_order_id'))
 
 		foreach ($lookupCodes as $orderCode)
 		{
+			$orderId = mf_1c_import_find_order_id_by_display_number($orderCode);
+			if ($orderId !== null && $orderId > 0)
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES MATCH: method=USER_ACCOUNT value=' . $orderCode
+					. ' order_id=' . $orderId
+				);
+
+				return $orderId;
+			}
+
 			$orderId = mf_1c_import_find_order_id_by_code($orderCode);
 			if ($orderId !== null && $orderId > 0)
 			{
@@ -814,6 +894,9 @@ if (!function_exists('mf_1c_import_find_order_id'))
 			return null;
 		}
 
+		$xmlIsDisplayFormat = function_exists('mf_order_account_number_parse_display')
+			&& is_array(mf_order_account_number_parse_display($xmlNumber));
+
 		$filter = ['LOGIC' => 'OR'];
 		foreach ($candidates as $candidate)
 		{
@@ -823,7 +906,7 @@ if (!function_exists('mf_1c_import_find_order_id'))
 				continue;
 			}
 
-			if (ctype_digit($candidate))
+			if (!$xmlIsDisplayFormat && ctype_digit($candidate))
 			{
 				$filter[] = ['=ID' => (int)$candidate];
 			}
@@ -832,6 +915,11 @@ if (!function_exists('mf_1c_import_find_order_id'))
 
 		if (count($filter) === 1)
 		{
+			mf_1c_import_log(
+				'IMPORT STATUSES LOOKUP MISS: display_only xml_number=' . $xmlNumber
+				. ' candidates=' . implode(',', $candidates)
+			);
+
 			return null;
 		}
 

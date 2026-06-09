@@ -38,7 +38,7 @@ final class Config
 
 	/**
 	 * Endpoint for payment updates. If empty, uses the main endpoint().
-	 * Payload: external_id = unf_order_number = "{USER_ID}-{ORDER_ID}" (печатный ключ и номер в УНФ; без legacy).
+	 * Payload: external_id = unf_order_number = "{USER_ID}-{ACCOUNT_NUMBER}" (как на сайте и в CommerceML).
 	 */
 	public static function paidEndpoint(): string
 	{
@@ -1223,7 +1223,7 @@ final class Payload
 	}
 
 	/**
-	 * Внешний ключ заказа для УНФ и номер как на сайте: {USER_ID}-{ORDER_ID} (гость → 0-123).
+	 * Внешний ключ заказа для УНФ и номер как на сайте: {USER_ID}-{ACCOUNT_NUMBER} (гость → 0-313).
 	 */
 	private static function orderExternalIdForUnf(Order $order): string
 	{
@@ -1239,6 +1239,26 @@ final class Payload
 		if ($uid < 0)
 		{
 			$uid = 0;
+		}
+
+		$accountNumber = '';
+		try
+		{
+			$accountNumber = trim((string)$order->getField('ACCOUNT_NUMBER'));
+		}
+		catch (\Throwable $e)
+		{
+			$accountNumber = '';
+		}
+
+		if ($accountNumber !== '' && function_exists('mf_order_account_number_for_display'))
+		{
+			return mf_order_account_number_for_display($uid, $accountNumber);
+		}
+
+		if ($accountNumber !== '')
+		{
+			return $uid . '-' . $accountNumber;
 		}
 
 		return $uid . '-' . (int)$order->getId();

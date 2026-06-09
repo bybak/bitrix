@@ -331,10 +331,112 @@ if (!function_exists('mf_1c_export_enrich_single_item_block'))
 	}
 }
 
+if (!function_exists('mf_1c_export_order_display_number_by_id'))
+{
+	function mf_1c_export_order_display_number_by_id(int $orderId): string
+	{
+		if ($orderId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return '';
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return '';
+		}
+
+		$accountNumber = trim((string)$order->getField('ACCOUNT_NUMBER'));
+		if ($accountNumber === '')
+		{
+			return '';
+		}
+
+		$uid = (int)$order->getUserId();
+		if (function_exists('mf_order_account_number_for_display'))
+		{
+			return mf_order_account_number_for_display($uid, $accountNumber);
+		}
+
+		return $uid . '-' . $accountNumber;
+	}
+}
+
+if (!function_exists('mf_1c_export_rewrite_order_document_number'))
+{
+	/**
+	 * В CommerceML вместо s1{ACCOUNT_NUMBER} подставляет печатный номер {USER_ID}-{ACCOUNT_NUMBER}.
+	 */
+	function mf_1c_export_rewrite_order_document_number(string $documentBlock): string
+	{
+		if (!preg_match('/<Ид\b[^>]*>(.*?)<\/Ид>/su', $documentBlock, $idMatch))
+		{
+			return $documentBlock;
+		}
+
+		$orderId = (int)trim(strip_tags($idMatch[1]));
+		$displayNumber = mf_1c_export_order_display_number_by_id($orderId);
+		if ($displayNumber === '' || !preg_match('/<Номер\b[^>]*>.*?<\/Номер>/su', $documentBlock))
+		{
+			return $documentBlock;
+		}
+
+		$updated = preg_replace(
+			'/<Номер\b[^>]*>.*?<\/Номер>/su',
+			'<Номер>' . mf_1c_export_xml_escape($displayNumber) . '</Номер>',
+			$documentBlock,
+			1
+		);
+
+		return is_string($updated) ? $updated : $documentBlock;
+	}
+}
+
+if (!function_exists('mf_1c_rewrite_order_numbers_xml_export'))
+{
+	function mf_1c_rewrite_order_numbers_xml_export(string $contents): string
+	{
+		if (!mf_1c_export_is_query_request())
+		{
+			return $contents;
+		}
+
+		$trimmed = ltrim($contents);
+		if ($trimmed === '' || $trimmed[0] !== '<' || stripos($contents, '<Документ') === false)
+		{
+			return $contents;
+		}
+
+		try
+		{
+			$result = preg_replace_callback(
+				'/<Документ\b[^>]*>.*?<\/Документ>/su',
+				static function (array $matches): string {
+					try
+					{
+						return mf_1c_export_rewrite_order_document_number($matches[0]);
+					}
+					catch (\Throwable $e)
+					{
+						return $matches[0];
+					}
+				},
+				$contents
+			);
+
+			return is_string($result) ? $result : $contents;
+		}
+		catch (\Throwable $e)
+		{
+			return $contents;
+		}
+	}
+}
+
 if (!function_exists('mf_1c_enrich_orders_xml_export'))
 {
 	/**
-	 * Добавляет в XML заказов теги <Артикул> и <ТорговаяМарка> (бренд) на уровне строки <Товар>.
+	 * Обогащение XML заказов перед выгрузкой в 1С: номер {USER_ID}-{ACCOUNT_NUMBER}, артикул и бренд в строках.
 	 */
 	function mf_1c_enrich_orders_xml_export(string $contents): string
 	{
@@ -342,6 +444,8 @@ if (!function_exists('mf_1c_enrich_orders_xml_export'))
 		{
 			return $contents;
 		}
+
+		$contents = mf_1c_rewrite_order_numbers_xml_export($contents);
 
 		$trimmed = ltrim($contents);
 		if ($trimmed === '' || $trimmed[0] !== '<')
