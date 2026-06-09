@@ -1762,16 +1762,18 @@ final class Payload
 				'source' => 'bitrix',
 				'site_id' => $siteId,
 				'sent_at' => (new DateTime())->format(\DateTimeInterface::ATOM),
-				'schema_version' => 5,
+				'schema_version' => 6,
 			],
 			'order' => [
+				// Первый приоритет в MfOrderNumberFromBitrixJson (УНФ): печатный номер как на сайте.
+				'doc_number' => $accountNumberDisplay !== '' ? $accountNumberDisplay : $unfOrderKey,
 				'external_id' => $unfOrderKey,
-				// Явный номер для реквизита «Номер» в УНФ (= external_id, формат USER-ORDER).
 				'unf_order_number' => $unfOrderKey,
 				'bitrix_order_id' => $orderId,
-				// Номер заказа для 1С (см. MfOrderNumberFromBitrixJson в HTTP-обработчике УНФ)
 				'account_number' => $accountNumberRaw !== '' ? $accountNumberRaw : null,
 				'account_number_display' => $accountNumberDisplay !== '' ? $accountNumberDisplay : null,
+				'order_account_number' => $accountNumberDisplay !== '' ? $accountNumberDisplay : null,
+				'bitrix_account_number' => $accountNumberDisplay !== '' ? $accountNumberDisplay : null,
 				'date_insert' => $order->getDateInsert() ? $order->getDateInsert()->format(\DateTimeInterface::ATOM) : null,
 				'status_id' => (string)$order->getField('STATUS_ID'),
 				// UNF-required fields (names duplicated for compatibility with custom HS handlers)

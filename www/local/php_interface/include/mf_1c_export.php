@@ -387,8 +387,65 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 			$documentBlock,
 			1
 		);
+		if (!is_string($updated))
+		{
+			return $documentBlock;
+		}
 
-		return is_string($updated) ? $updated : $documentBlock;
+		return mf_1c_export_inject_order_document_requisites($updated, $displayNumber);
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_document_requisites'))
+{
+	/**
+	 * Реквизиты для УНФ при CommerceML-обмене: явный печатный номер заказа.
+	 */
+	function mf_1c_export_inject_order_document_requisites(string $documentBlock, string $displayNumber): string
+	{
+		$displayNumber = trim($displayNumber);
+		if ($displayNumber === '')
+		{
+			return $documentBlock;
+		}
+
+		$requisiteNames = ['Номер по 1С', 'Номер заказа сайта', 'Номер заказа MF'];
+		$requisites = '';
+		foreach ($requisiteNames as $name)
+		{
+			if (mb_stripos($documentBlock, '<Наименование>' . $name . '</Наименование>') !== false)
+			{
+				continue;
+			}
+			$requisites .= '<ЗначениеРеквизита>'
+				. '<Наименование>' . mf_1c_export_xml_escape($name) . '</Наименование>'
+				. '<Значение>' . mf_1c_export_xml_escape($displayNumber) . '</Значение>'
+				. '</ЗначениеРеквизита>';
+		}
+		if ($requisites === '')
+		{
+			return $documentBlock;
+		}
+
+		$block = '<ЗначенияРеквизитов>' . $requisites . '</ЗначенияРеквизитов>';
+		if (preg_match('/<ЗначенияРеквизитов\b[^>]*>/su', $documentBlock))
+		{
+			$updated = preg_replace(
+				'/(<ЗначенияРеквизитов\b[^>]*>)/su',
+				'$1' . $requisites,
+				$documentBlock,
+				1
+			);
+
+			return is_string($updated) ? $updated : $documentBlock;
+		}
+
+		if (preg_match('/<\/Документ>/su', $documentBlock))
+		{
+			return preg_replace('/<\/Документ>/su', $block . '</Документ>', $documentBlock, 1) ?? $documentBlock;
+		}
+
+		return $documentBlock . $block;
 	}
 }
 
