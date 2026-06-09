@@ -5069,11 +5069,20 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!data)
 				return;
 
-			var logoNode, logotype;
+			var logoNode, logotype, mfImageUrl;
 
 			logoNode = BX.create('DIV', {props: {className: 'bx-soa-item-imgcontainer'}});
 
-			if (data.PREVIEW_PICTURE_SRC && data.PREVIEW_PICTURE_SRC.length)
+			mfImageUrl = (data.MF_IMAGE_URL && data.MF_IMAGE_URL.length) ? String(data.MF_IMAGE_URL) : '';
+			if (mfImageUrl)
+			{
+				logotype = {
+					src_1x: mfImageUrl,
+					src_2x: mfImageUrl,
+					src_orig: mfImageUrl
+				};
+			}
+			else if (data.PREVIEW_PICTURE_SRC && data.PREVIEW_PICTURE_SRC.length)
 			{
 				logotype = this.getImageSources(data, 'PREVIEW_PICTURE');
 				if (!logotype || !logotype.src_1x)

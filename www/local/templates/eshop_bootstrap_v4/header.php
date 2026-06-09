@@ -204,6 +204,8 @@ if (function_exists('mf_seo_apply_for_current_page'))
 		// Стили карточек MF-чекаута (.mf-checkout-meta / .mf-checkout-choice) — всегда с канонического пути компонента.
 		$soaCss = '/local/components/bitrix/sale.order.ajax/templates/bootstrap_v4/style.css';
 		echo '<link rel="stylesheet" href="' . htmlspecialcharsbx($mfAssetVer($soaCss)) . '" />' . "\n";
+		$jsOrder = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-order.js");
+		echo '<script src="'.htmlspecialcharsbx($jsOrder).'" defer></script>'."\n";
 	}
 	if ($isPayment)
 	{

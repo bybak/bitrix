@@ -168,6 +168,10 @@
 .mf-order .bx-soa-item-imgcontainer[style*="background-image"]{
   background-size: contain !important;
 }
+.mf-order .bx-soa-item-imgcontainer.mf-soa-item-img--product[style*="background-image"]{
+  background-size: cover !important;
+  background-position: center !important;
+}
 .mf-order .bx-soa-item-title{
   font-weight: 900;
   line-height: 1.25;

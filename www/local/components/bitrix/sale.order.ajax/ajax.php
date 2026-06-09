@@ -144,6 +144,6 @@ global $APPLICATION;
 
 $APPLICATION->IncludeComponent(
 	'bitrix:sale.order.ajax',
-	'.default',
+	'bootstrap_v4',
 	$params
 );

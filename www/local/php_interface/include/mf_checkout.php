@@ -2550,7 +2550,7 @@ if (!function_exists('mf_catalog_element_code_for_basket_row'))
 	 */
 	function mf_catalog_element_code_for_basket_row(int $productId, array $d): string
 	{
-		$detailUrl = (string)($d['DETAIL_PAGE_URL'] ?? '');
+		$detailUrl = (string)($d['~DETAIL_PAGE_URL'] ?? $d['DETAIL_PAGE_URL'] ?? '');
 		if ($detailUrl !== '' && preg_match('#/products/([^/]+)/?#', $detailUrl, $m))
 		{
 			return (string)$m[1];
@@ -2610,20 +2610,108 @@ if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 	}
 
 	/**
+	 * Масштабирование превью для sale.order.ajax без зависимости от SaleOrderAjax::resizeImage.
+	 */
+	function mf_sale_order_ajax_resize_row_picture(array &$rowData, string $picKey, string $srcKey): void
+	{
+		$fid = (int)($rowData[$picKey] ?? 0);
+		if ($fid <= 0 || trim((string)($rowData[$srcKey] ?? '')) !== '')
+		{
+			return;
+		}
+		$rImg = \CFile::ResizeImageGet(
+			$fid,
+			['width' => 110, 'height' => 110],
+			BX_RESIZE_IMAGE_PROPORTIONAL,
+			true
+		);
+		if (!empty($rImg['src']))
+		{
+			$rowData[$srcKey] = (string)$rImg['src'];
+			$rowData[$srcKey . '_2X'] = (string)$rImg['src'];
+			$rowData[$srcKey . '_ORIGINAL'] = (string)\CFile::GetPath($fid);
+		}
+	}
+
+	/**
+	 * Как в корзине: MF_EXT_IMAGES / mf-img вместо устаревших /upload/iblock/.
+	 */
+	function mf_sale_order_ajax_row_image_src(int $productId, array $rowData): string
+	{
+		$productId = (int)$productId;
+		if ($productId <= 0)
+		{
+			return '';
+		}
+
+		$currentSrc = trim((string)($rowData['PREVIEW_PICTURE_SRC'] ?? ''));
+		if ($currentSrc === '')
+		{
+			$currentSrc = trim((string)($rowData['DETAIL_PICTURE_SRC'] ?? ''));
+		}
+		if (
+			$currentSrc !== ''
+			&& function_exists('mf_is_legacy_bitrix_upload_image_url')
+			&& mf_is_legacy_bitrix_upload_image_url($currentSrc)
+		)
+		{
+			$currentSrc = '';
+		}
+
+		if (function_exists('mf_catalog_basket_canonical_image_url'))
+		{
+			$mfSrc = trim((string)mf_catalog_basket_canonical_image_url($productId, $rowData, $currentSrc));
+			if ($mfSrc !== '')
+			{
+				return $mfSrc;
+			}
+		}
+
+		if ($currentSrc !== '')
+		{
+			return $currentSrc;
+		}
+
+		$catalogCode = mf_catalog_element_code_for_basket_row($productId, $rowData);
+		if (function_exists('mf_mf_product_card_preview_src'))
+		{
+			$mfSrc = trim((string)mf_mf_product_card_preview_src($productId, $catalogCode));
+			if ($mfSrc !== '')
+			{
+				return $mfSrc;
+			}
+		}
+		if ($catalogCode !== '' && function_exists('mf_mf_product_img_url'))
+		{
+			$mfSrc = trim((string)mf_mf_product_img_url($catalogCode, 1));
+			if ($mfSrc !== '')
+			{
+				return $mfSrc;
+			}
+		}
+		if (function_exists('mf_mf_placeholder_img_url'))
+		{
+			return trim((string)mf_mf_placeholder_img_url());
+		}
+
+		return '';
+	}
+
+	/**
 	 * Строки корзины в sale.order.ajax: восстанавливаем пустое NAME из каталога и SRC превью,
 	 * если файл есть, а масштабирование по какой-то причине не выполнилось.
 	 */
 	function mf_sale_order_ajax_enrich_grid_rows(array &$rows, string $basketImagesScaling): void
 	{
-		if ($rows === [] || !class_exists('SaleOrderAjax'))
+		if ($rows === [])
 		{
 			return;
 		}
+		unset($basketImagesScaling);
 		if (!\Bitrix\Main\Loader::includeModule('iblock'))
 		{
 			return;
 		}
-		$basketImagesScaling = $basketImagesScaling !== '' ? $basketImagesScaling : 'adaptive';
 		foreach ($rows as &$row)
 		{
 			if (!isset($row['data']) || !is_array($row['data']))
@@ -2649,73 +2737,16 @@ if (!function_exists('mf_sale_order_ajax_enrich_grid_rows'))
 					}
 				}
 			}
-			foreach (['PREVIEW_PICTURE' => 'PREVIEW_PICTURE_SRC', 'DETAIL_PICTURE' => 'DETAIL_PICTURE_SRC'] as $picKey => $srcKey)
+			mf_sale_order_ajax_resize_row_picture($d, 'PREVIEW_PICTURE', 'PREVIEW_PICTURE_SRC');
+			mf_sale_order_ajax_resize_row_picture($d, 'DETAIL_PICTURE', 'DETAIL_PICTURE_SRC');
+
+			$imageSrc = mf_sale_order_ajax_row_image_src($productId, $d);
+			if ($imageSrc !== '')
 			{
-				$fid = (int)($d[$picKey] ?? 0);
-				if ($fid <= 0 || trim((string)($d[$srcKey] ?? '')) !== '')
-				{
-					continue;
-				}
-				$arImage = \CFile::GetFileArray($fid);
-				if (empty($arImage))
-				{
-					continue;
-				}
-				\SaleOrderAjax::resizeImage(
-					$d,
-					$picKey,
-					$arImage,
-					['width' => 320, 'height' => 320],
-					['width' => 110, 'height' => 110],
-					$basketImagesScaling
-				);
-			}
-			// Как на витрине: MF_EXT_IMAGES / mf-img вместо устаревших /upload/iblock/.
-			if (function_exists('mf_catalog_basket_canonical_image_url'))
-			{
-				$currentSrc = trim((string)($d['PREVIEW_PICTURE_SRC'] ?? ''));
-				$mfSrc = (string)mf_catalog_basket_canonical_image_url($productId, $d, $currentSrc);
-				if ($mfSrc !== '')
-				{
-					$d['PREVIEW_PICTURE_SRC'] = $mfSrc;
-					$d['PREVIEW_PICTURE_SRC_2X'] = $mfSrc;
-					$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $mfSrc;
-				}
-			}
-			elseif (trim((string)($d['PREVIEW_PICTURE_SRC'] ?? '')) === '' && function_exists('mf_mf_product_card_preview_src'))
-			{
-				$catalogCode = mf_catalog_element_code_for_basket_row($productId, $d);
-				$mfSrc = (string)mf_mf_product_card_preview_src($productId, $catalogCode);
-				if ($mfSrc !== '')
-				{
-					$d['PREVIEW_PICTURE_SRC'] = $mfSrc;
-					$d['PREVIEW_PICTURE_SRC_2X'] = $mfSrc;
-					$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $mfSrc;
-				}
-			}
-			elseif (trim((string)($d['PREVIEW_PICTURE_SRC'] ?? '')) === '' && function_exists('mf_mf_product_img_url'))
-			{
-				$catalogCode = mf_catalog_element_code_for_basket_row($productId, $d);
-				if ($catalogCode !== '')
-				{
-					$mfSrc = (string)mf_mf_product_img_url($catalogCode, 1);
-					if ($mfSrc !== '')
-					{
-						$d['PREVIEW_PICTURE_SRC'] = $mfSrc;
-						$d['PREVIEW_PICTURE_SRC_2X'] = $mfSrc;
-						$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $mfSrc;
-					}
-				}
-			}
-			if (trim((string)($d['PREVIEW_PICTURE_SRC'] ?? '')) === '' && function_exists('mf_mf_placeholder_img_url'))
-			{
-				$ph = (string)mf_mf_placeholder_img_url();
-				if ($ph !== '')
-				{
-					$d['PREVIEW_PICTURE_SRC'] = $ph;
-					$d['PREVIEW_PICTURE_SRC_2X'] = $ph;
-					$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $ph;
-				}
+				$d['MF_IMAGE_URL'] = $imageSrc;
+				$d['PREVIEW_PICTURE_SRC'] = $imageSrc;
+				$d['PREVIEW_PICTURE_SRC_2X'] = $imageSrc;
+				$d['PREVIEW_PICTURE_SRC_ORIGINAL'] = $imageSrc;
 			}
 			// Срок доставки в checkout, как в корзине: по выбранному складу (MF_STORE_ID).
 			$storeId = mf_sale_order_ajax_row_store_id($d);

@@ -5067,6 +5067,17 @@ class SaleOrderAjax extends \CBitrixComponent
 			$this->order = $this->createOrder($this->getUserId() ?? 0);
 			$this->prepareResultArray();
 			self::scaleImages($this->arResult['JS_DATA'], $this->arParams['SERVICES_IMAGES_SCALING']);
+			if (
+				function_exists('mf_sale_order_ajax_enrich_grid_rows')
+				&& !empty($this->arResult['JS_DATA']['GRID']['ROWS'])
+				&& is_array($this->arResult['JS_DATA']['GRID']['ROWS'])
+			)
+			{
+				mf_sale_order_ajax_enrich_grid_rows(
+					$this->arResult['JS_DATA']['GRID']['ROWS'],
+					(string)($this->arParams['BASKET_IMAGES_SCALING'] ?? 'adaptive')
+				);
+			}
 
 			// Motor-Force debug: log resulting location/zip values on localhost.
 			try
