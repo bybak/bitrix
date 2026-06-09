@@ -696,11 +696,55 @@ else
 	$signer = new Main\Security\Sign\Signer;
 	$signedParams = $signer->sign(base64_encode(serialize($arParams)), 'sale.order.ajax');
 	$messages = Loc::loadLanguageFile(__FILE__);
+
+	if (function_exists('mf_sale_order_ajax_enrich_grid_rows'))
+	{
+		$basketImgScaleTpl = (string)($arParams['BASKET_IMAGES_SCALING'] ?? 'adaptive');
+		if (!empty($arResult['JS_DATA']['GRID']['ROWS']) && is_array($arResult['JS_DATA']['GRID']['ROWS']))
+		{
+			mf_sale_order_ajax_enrich_grid_rows($arResult['JS_DATA']['GRID']['ROWS'], $basketImgScaleTpl);
+		}
+		if (!empty($arResult['GRID']['ROWS']) && is_array($arResult['GRID']['ROWS']))
+		{
+			mf_sale_order_ajax_enrich_grid_rows($arResult['GRID']['ROWS'], $basketImgScaleTpl);
+		}
+	}
+
+	$mfCheckoutProductImages = [];
+	if (
+		!empty($arResult['JS_DATA']['GRID']['ROWS'])
+		&& is_array($arResult['JS_DATA']['GRID']['ROWS'])
+		&& function_exists('mf_sale_order_ajax_row_image_src')
+	)
+	{
+		foreach ($arResult['JS_DATA']['GRID']['ROWS'] as $mfCheckoutRow)
+		{
+			if (!is_array($mfCheckoutRow) || empty($mfCheckoutRow['data']) || !is_array($mfCheckoutRow['data']))
+			{
+				continue;
+			}
+			$mfCheckoutPid = (int)($mfCheckoutRow['data']['PRODUCT_ID'] ?? 0);
+			if ($mfCheckoutPid <= 0)
+			{
+				continue;
+			}
+			$mfCheckoutSrc = trim((string)($mfCheckoutRow['data']['MF_IMAGE_URL'] ?? $mfCheckoutRow['data']['PREVIEW_PICTURE_SRC'] ?? ''));
+			if ($mfCheckoutSrc === '')
+			{
+				$mfCheckoutSrc = mf_sale_order_ajax_row_image_src($mfCheckoutPid, $mfCheckoutRow['data']);
+			}
+			if ($mfCheckoutSrc !== '')
+			{
+				$mfCheckoutProductImages[$mfCheckoutPid] = $mfCheckoutSrc;
+			}
+		}
+	}
 	?>
 	<script>
 		<?php if (function_exists('mf_mf_placeholder_img_url')): ?>
 		window.MF_PLACEHOLDER_IMG_URL = <?=CUtil::PhpToJSObject(mf_mf_placeholder_img_url())?>;
 		<?php endif; ?>
+		window.MF_CHECKOUT_PRODUCT_IMAGES = <?=CUtil::PhpToJSObject($mfCheckoutProductImages)?>;
 		BX.message(<?=CUtil::PhpToJSObject($messages)?>);
 		BX.Sale.OrderAjaxComponent.init({
 			result: <?=CUtil::PhpToJSObject($arResult['JS_DATA'])?>,

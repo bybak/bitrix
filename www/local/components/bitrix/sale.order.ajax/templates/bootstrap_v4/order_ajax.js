@@ -201,6 +201,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			if (!this.result.IS_AUTHORIZED || typeof this.result.LAST_ORDER_DATA.FAIL !== 'undefined' || this.isMfCustomCheckout())
 				this.initFirstSection();
 
+			this.syncCheckoutProductImages();
 			this.initOptions();
 			this.editOrder();
 			this.bindEvents();
@@ -447,6 +448,7 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 				this.initialized = {};
 				this.clearHiddenBlocks();
 
+				this.syncCheckoutProductImages();
 				this.initOptions();
 				this.editOrder();
 				if (this.__mfPendingRegisterSuccess && this.result && this.result.IS_AUTHORIZED)
@@ -1601,6 +1603,12 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 					if (headers[i].id === 'NOTES')
 						this.options.showPriceNotesInBasket = true;
 				}
+			}
+
+			// Motor-Force: превью товара всегда в блоке «Товары в заказе».
+			if (this.result.GRID && this.result.GRID.ROWS)
+			{
+				this.options.showPreviewPicInBasket = true;
 			}
 
 			if (this.result.TOTAL)
@@ -5064,69 +5072,89 @@ BX.namespace('BX.Sale.OrderAjaxComponent');
 			return BX.PreventDefault(event);
 		},
 
+		syncCheckoutProductImages: function()
+		{
+			var map = (typeof window !== 'undefined' && window.MF_CHECKOUT_PRODUCT_IMAGES) ? window.MF_CHECKOUT_PRODUCT_IMAGES : {},
+				i, row, src, pid;
+
+			if (!this.result || !this.result.GRID || !this.result.GRID.ROWS)
+				return;
+
+			for (i in this.result.GRID.ROWS)
+			{
+				if (!this.result.GRID.ROWS.hasOwnProperty(i))
+					continue;
+
+				row = this.result.GRID.ROWS[i];
+				if (!row || !row.data)
+					continue;
+
+				src = this.resolveBasketItemImageSrc(row.data, true);
+				if (!src)
+					continue;
+
+				row.data.MF_IMAGE_URL = src;
+				row.data.PREVIEW_PICTURE_SRC = src;
+				row.data.PREVIEW_PICTURE_SRC_2X = src;
+				row.data.PREVIEW_PICTURE_SRC_ORIGINAL = src;
+				pid = parseInt(row.data.PRODUCT_ID || 0, 10);
+				if (pid > 0)
+					map[pid] = src;
+			}
+
+			if (typeof window !== 'undefined')
+				window.MF_CHECKOUT_PRODUCT_IMAGES = map;
+		},
+
+		resolveBasketItemImageSrc: function(data, skipFallbackLogo)
+		{
+			if (!data)
+				return skipFallbackLogo ? '' : this.defaultBasketItemLogo;
+
+			var pid = parseInt(data.PRODUCT_ID || 0, 10),
+				src = '',
+				map = (typeof window !== 'undefined' && window.MF_CHECKOUT_PRODUCT_IMAGES) ? window.MF_CHECKOUT_PRODUCT_IMAGES : null;
+
+			if (data.MF_IMAGE_URL && String(data.MF_IMAGE_URL).length)
+				src = String(data.MF_IMAGE_URL);
+			else if (data.PREVIEW_PICTURE_SRC && String(data.PREVIEW_PICTURE_SRC).length)
+				src = String(data.PREVIEW_PICTURE_SRC);
+			else if (data.DETAIL_PICTURE_SRC && String(data.DETAIL_PICTURE_SRC).length)
+				src = String(data.DETAIL_PICTURE_SRC);
+			else if (pid > 0 && map && map[pid])
+				src = String(map[pid]);
+
+			if (src && /\/upload\/iblock\//i.test(src))
+				src = '';
+
+			if (src)
+				return src;
+
+			return skipFallbackLogo ? '' : this.defaultBasketItemLogo;
+		},
+
 		createBasketItemImg: function(data)
 		{
 			if (!data)
 				return;
 
-			var logoNode, logotype, mfImageUrl;
-
-			logoNode = BX.create('DIV', {props: {className: 'bx-soa-item-imgcontainer'}});
-
-			mfImageUrl = (data.MF_IMAGE_URL && data.MF_IMAGE_URL.length) ? String(data.MF_IMAGE_URL) : '';
-			if (mfImageUrl)
-			{
-				logotype = {
-					src_1x: mfImageUrl,
-					src_2x: mfImageUrl,
-					src_orig: mfImageUrl
-				};
-			}
-			else if (data.PREVIEW_PICTURE_SRC && data.PREVIEW_PICTURE_SRC.length)
-			{
-				logotype = this.getImageSources(data, 'PREVIEW_PICTURE');
-				if (!logotype || !logotype.src_1x)
-				{
-					logotype = {
-						src_1x: data.PREVIEW_PICTURE_SRC,
-						src_2x: (data.PREVIEW_PICTURE_SRC_2X && data.PREVIEW_PICTURE_SRC_2X.length)
-							? data.PREVIEW_PICTURE_SRC_2X
-							: data.PREVIEW_PICTURE_SRC,
-						src_orig: (data.PREVIEW_PICTURE_SRC_ORIGINAL && data.PREVIEW_PICTURE_SRC_ORIGINAL.length)
-							? data.PREVIEW_PICTURE_SRC_ORIGINAL
-							: data.PREVIEW_PICTURE_SRC
-					};
-				}
-			}
-			else if (data.DETAIL_PICTURE_SRC && data.DETAIL_PICTURE_SRC.length)
-			{
-				logotype = this.getImageSources(data, 'DETAIL_PICTURE');
-				if (!logotype || !logotype.src_1x)
-				{
-					logotype = {
-						src_1x: data.DETAIL_PICTURE_SRC,
-						src_2x: (data.DETAIL_PICTURE_SRC_2X && data.DETAIL_PICTURE_SRC_2X.length)
-							? data.DETAIL_PICTURE_SRC_2X
-							: data.DETAIL_PICTURE_SRC,
-						src_orig: (data.DETAIL_PICTURE_SRC_ORIGINAL && data.DETAIL_PICTURE_SRC_ORIGINAL.length)
-							? data.DETAIL_PICTURE_SRC_ORIGINAL
-							: data.DETAIL_PICTURE_SRC
-					};
-				}
-			}
-
-			if (logotype && logotype.src_2x)
-			{
-				logoNode.setAttribute('style',
-					'background-image: url("' + logotype.src_1x + '");' +
-					'background-image: -webkit-image-set(url("' + logotype.src_1x + '") 1x, url("' + logotype.src_2x + '") 2x)'
-				);
-			}
-			else
-			{
-				logotype = logotype && logotype.src_1x || this.defaultBasketItemLogo;
-				logoNode.setAttribute('style', 'background-image: url("' + logotype + '");');
-			}
+			var imgSrc = this.resolveBasketItemImageSrc(data),
+				imgNode = BX.create('IMG', {
+					props: {
+						className: 'bx-soa-item-img-el',
+						src: imgSrc,
+						alt: data.NAME || ''
+					},
+					attrs: {
+						'data-product-id': data.PRODUCT_ID || '',
+						loading: 'lazy',
+						decoding: 'async'
+					}
+				}),
+				logoNode = BX.create('DIV', {
+					props: {className: 'bx-soa-item-imgcontainer'},
+					children: [imgNode]
+				});
 
 			if (this.params.HIDE_DETAIL_PAGE_URL !== 'Y' && data.DETAIL_PAGE_URL && data.DETAIL_PAGE_URL.length)
 			{

@@ -160,17 +160,26 @@
   border-radius: 12px;
   background-color: #fff;
   border: 1px solid rgba(0,0,0,.06);
-  background-image: url("/bitrix/templates/eshop_bootstrap_v4/images/mf-no-photo.svg?v=2");
-  background-size: 48px 48px !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
+  background-image: none !important;
+  padding-top: 0 !important;
+  overflow: hidden;
+  width: 72px;
+  height: 72px;
 }
-.mf-order .bx-soa-item-imgcontainer[style*="background-image"]{
-  background-size: contain !important;
+.mf-order .bx-step-completed .bx-soa-item-imgcontainer{
+  width: 56px;
+  height: 56px;
 }
-.mf-order .bx-soa-item-imgcontainer.mf-soa-item-img--product[style*="background-image"]{
-  background-size: cover !important;
-  background-position: center !important;
+.mf-order .bx-soa-item-imgcontainer .bx-soa-item-img-el{
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #fff;
+}
+.mf-order .bx-soa-item-imgcontainer .bx-soa-item-img-el.mf-soa-item-img--product{
+  object-fit: cover;
 }
 .mf-order .bx-soa-item-title{
   font-weight: 900;

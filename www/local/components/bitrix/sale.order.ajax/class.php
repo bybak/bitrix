@@ -3422,6 +3422,18 @@ class SaleOrderAjax extends \CBitrixComponent
 				"editable" => true,
 			];
 		}
+
+		if (
+			function_exists('mf_sale_order_ajax_enrich_grid_rows')
+			&& !empty($arResult['GRID']['ROWS'])
+			&& is_array($arResult['GRID']['ROWS'])
+		)
+		{
+			mf_sale_order_ajax_enrich_grid_rows(
+				$arResult['GRID']['ROWS'],
+				(string)($this->arParams['BASKET_IMAGES_SCALING'] ?? 'adaptive')
+			);
+		}
 	}
 
 	/**
