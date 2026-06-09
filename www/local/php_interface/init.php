@@ -4467,11 +4467,13 @@ if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 		{
 			$qty = 1.0;
 		}
+		$lockedPrice = (float)str_replace(',', '.', (string)(mf_basket_get_prop($item, 'MF_ORDER_UNIT_PRICE') ?? '0'));
+		$isPriceLocked = ((string)(mf_basket_get_prop($item, 'MF_CUSTOM_PRICE_LOCK') ?? '') === 'Y') && $lockedPrice > 0;
 		if (!function_exists('mf_ep_display_price_for_store'))
 		{
 			return;
 		}
-		$computed = mf_ep_display_price_for_store($productId, $storeId, $qty);
+		$computed = $isPriceLocked ? $lockedPrice : mf_ep_display_price_for_store($productId, $storeId, $qty);
 		if ($computed === null || $computed <= 0)
 		{
 			return;
@@ -4501,7 +4503,7 @@ if (!function_exists('mf_assign_store_and_price_to_basket_item'))
 
 		// Не выставляем CUSTOM_PRICE=Y: в sale позиции с «ручной» ценой не участвуют в правилах корзины
 		// и купонах (Discount\Actions::filterBasketForAction). Цена со склада задаётся через PRICE/BASE_PRICE.
-		$item->setField('CUSTOM_PRICE', 'N');
+		$item->setField('CUSTOM_PRICE', $isPriceLocked ? 'Y' : 'N');
 		$item->setField('PRICE', $computed);
 		$item->setField('BASE_PRICE', $computed);
 		$item->setField('CURRENCY', 'RUB');

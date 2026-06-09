@@ -601,6 +601,7 @@ if ($elementId > 0)
 										class="btn btn-sm btn-warning js-mf-add-store"
 										data-product-id="<?= (int)$elementId ?>"
 										data-store-id="<?= (int)$sid ?>"
+										data-unit-price="<?=htmlspecialcharsbx((string)(float)$storePrice)?>"
 									>В корзину</button>
 								<?php else: ?>
 									<span class="text-muted">—</span>
@@ -991,6 +992,7 @@ if ($elementId > 0)
 		function addToBasket(btn){
 			var pid = btn.getAttribute('data-product-id');
 			var sid = btn.getAttribute('data-store-id');
+			var unitPrice = btn.getAttribute('data-unit-price') || '';
 			if(!pid || !sid) return;
 			var qty = '1';
 			var row = btn.closest ? btn.closest('tr') : null;
@@ -1032,7 +1034,7 @@ if ($elementId > 0)
 					url: '/ajax/mf_add_to_basket_store.php',
 					method: 'POST',
 					dataType: 'json',
-					data: {productId: pid, storeId: sid, qty: qty},
+					data: {productId: pid, storeId: sid, qty: qty, unitPrice: unitPrice},
 					onsuccess: function(resp){
 						if (!resp || !resp.ok) {
 							alert((resp && resp.error) ? resp.error : 'Ошибка');
@@ -1052,6 +1054,7 @@ if ($elementId > 0)
 			fd.append('productId', pid);
 			fd.append('storeId', sid);
 			fd.append('qty', qty);
+			fd.append('unitPrice', unitPrice);
 			fetch('/ajax/mf_add_to_basket_store.php', { method: 'POST', credentials: 'same-origin', body: fd })
 				.then(function(r){ return r.json(); })
 				.then(function(data){

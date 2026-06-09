@@ -21,6 +21,7 @@ try
 	$productId = (int)($_REQUEST['productId'] ?? 0);
 	$storeId = (int)($_REQUEST['storeId'] ?? 0);
 	$qty = (float)($_REQUEST['qty'] ?? 1);
+	$postedUnitPrice = (float)str_replace(',', '.', (string)($_REQUEST['unitPrice'] ?? '0'));
 	if ($qty <= 0) $qty = 1;
 
 	if ($productId <= 0 || $storeId <= 0)
@@ -36,6 +37,11 @@ try
 	$price = function_exists('mf_ep_basket_unit_price_with_fallback')
 		? mf_ep_basket_unit_price_with_fallback($productId, $storeId, $qty)
 		: mf_ep_display_price_for_store($productId, $storeId, $qty);
+	if ($postedUnitPrice > 0)
+	{
+		// Цена с кнопки уже учитывает тип покупателя ("Ваша цена").
+		$price = function_exists('mf_round_price') ? mf_round_price($postedUnitPrice) : (float)round($postedUnitPrice, 0);
+	}
 	if ($price === null || $price <= 0)
 	{
 		throw new RuntimeException('No price for store');
@@ -115,6 +121,8 @@ try
 		$props = [
 			'MF_STORE_ID' => (string)$storeId,
 			'MF_STORE_IDS' => $idsCsv,
+			'MF_ORDER_UNIT_PRICE' => (string)$price,
+			'MF_CUSTOM_PRICE_LOCK' => 'Y',
 		];
 		if ($s)
 		{
