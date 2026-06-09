@@ -2,3 +2,7 @@
 2026-06-09 14:52:46 EXPORT NUMBER: order_id=207 old=s11-207 new=1-207
 2026-06-09 14:52:46 EXPORT PREPARE: accountNumberPrefix cleared for CommerceML query
 2026-06-09 16:11:57 EXPORT NUMBER: order_id=207 old=s1320 new=1-207
+2026-06-09 16:32:32 EXPORT ITEM PRICE: order_id=207 row=1 old=999999 new=10 qty=1
+2026-06-09 16:32:32 EXPORT NUMBER: order_id=207 old=s1207 new=1-207
+2026-06-09 16:33:36 EXPORT ITEM PRICE: order_id=207 row=1 old=999999 new=10 qty=1
+2026-06-09 16:33:36 EXPORT NUMBER: order_id=207 old=s1207 new=1-207

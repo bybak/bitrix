@@ -476,7 +476,198 @@ if (!function_exists('mf_1c_export_rewrite_order_document_currency'))
 			1
 		);
 
-		return is_string($updated) ? $updated : $documentBlock;
+		if (!is_string($updated))
+		{
+			return $documentBlock;
+		}
+
+		return mf_1c_export_rewrite_document_header_tag($updated, 'Курс', '1');
+	}
+}
+
+if (!function_exists('mf_1c_export_format_float'))
+{
+	function mf_1c_export_format_float(float $value): string
+	{
+		$formatted = number_format($value, 4, '.', '');
+
+		return rtrim(rtrim($formatted, '0'), '.');
+	}
+}
+
+if (!function_exists('mf_1c_export_rewrite_xml_tag'))
+{
+	function mf_1c_export_rewrite_xml_tag(string $xml, string $tagName, string $value): string
+	{
+		$escaped = mf_1c_export_xml_escape($value);
+		if (preg_match('/<' . preg_quote($tagName, '/') . '\b[^>]*>.*?<\/' . preg_quote($tagName, '/') . '>/su', $xml))
+		{
+			return preg_replace(
+				'/<' . preg_quote($tagName, '/') . '\b[^>]*>.*?<\/' . preg_quote($tagName, '/') . '>/su',
+				'<' . $tagName . '>' . $escaped . '</' . $tagName . '>',
+				$xml,
+				1
+			) ?? $xml;
+		}
+
+		return $xml;
+	}
+}
+
+if (!function_exists('mf_1c_export_rewrite_document_header_tag'))
+{
+	function mf_1c_export_rewrite_document_header_tag(string $documentBlock, string $tagName, string $value): string
+	{
+		$header = mf_1c_export_document_header($documentBlock);
+		$updatedHeader = mf_1c_export_rewrite_xml_tag($header, $tagName, $value);
+		if ($updatedHeader === $header)
+		{
+			return $documentBlock;
+		}
+
+		return $updatedHeader . substr($documentBlock, strlen($header));
+	}
+}
+
+if (!function_exists('mf_1c_export_order_basket_prices'))
+{
+	/**
+	 * @return array<int, array{price: float, quantity: float, sum: float, name: string}>
+	 */
+	function mf_1c_export_order_basket_prices(int $orderId): array
+	{
+		if ($orderId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return [];
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return [];
+		}
+
+		$items = [];
+		$basket = $order->getBasket();
+		if (!$basket)
+		{
+			return [];
+		}
+
+		foreach ($basket as $basketItem)
+		{
+			if (!$basketItem instanceof \Bitrix\Sale\BasketItemBase)
+			{
+				continue;
+			}
+			$name = trim((string)$basketItem->getField('NAME'));
+			if ($name !== '' && mb_stripos($name, 'доставка') !== false)
+			{
+				continue;
+			}
+
+			$quantity = (float)$basketItem->getQuantity();
+			if ($quantity <= 0)
+			{
+				$quantity = 1.0;
+			}
+			$price = (float)$basketItem->getPrice();
+			if ($price <= 0)
+			{
+				$price = (float)$basketItem->getBasePrice();
+			}
+			if ($price <= 0)
+			{
+				continue;
+			}
+
+			$items[] = [
+				'price' => $price,
+				'quantity' => $quantity,
+				'sum' => $price * $quantity,
+				'name' => $name,
+			];
+		}
+
+		return $items;
+	}
+}
+
+if (!function_exists('mf_1c_export_rewrite_order_item_prices'))
+{
+	function mf_1c_export_rewrite_order_item_prices(string $documentBlock, int $orderId): string
+	{
+		$prices = mf_1c_export_order_basket_prices($orderId);
+		if (empty($prices) || stripos($documentBlock, '<Товар') === false)
+		{
+			return $documentBlock;
+		}
+		$itemsTotal = 0.0;
+		foreach ($prices as $row)
+		{
+			$itemsTotal += (float)$row['sum'];
+		}
+
+		$rowIndex = 0;
+		$result = preg_replace_callback(
+			'/<Товар\b[^>]*>.*?<\/Товар>/su',
+			static function (array $matches) use (&$rowIndex, $prices, $orderId): string {
+				$itemBlock = $matches[0];
+				if (preg_match('/<Ид\b[^>]*>\s*ORDER_DELIVERY\s*<\/Ид>/su', $itemBlock))
+				{
+					return $itemBlock;
+				}
+				if (!isset($prices[$rowIndex]))
+				{
+					return $itemBlock;
+				}
+
+				$row = $prices[$rowIndex];
+				$rowIndex++;
+
+				$oldPrice = '';
+				if (preg_match('/<ЦенаЗаЕдиницу\b[^>]*>(.*?)<\/ЦенаЗаЕдиницу>/su', $itemBlock, $priceMatch))
+				{
+					$oldPrice = trim(html_entity_decode(strip_tags($priceMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+				}
+
+				$price = mf_1c_export_format_float((float)$row['price']);
+				$quantity = mf_1c_export_format_float((float)$row['quantity']);
+				$sum = mf_1c_export_format_float((float)$row['sum']);
+
+				$itemBlock = mf_1c_export_rewrite_xml_tag($itemBlock, 'ЦенаЗаЕдиницу', $price);
+				$itemBlock = mf_1c_export_rewrite_xml_tag($itemBlock, 'Цена', $price);
+				$itemBlock = mf_1c_export_rewrite_xml_tag($itemBlock, 'Количество', $quantity);
+				$itemBlock = mf_1c_export_rewrite_xml_tag($itemBlock, 'Сумма', $sum);
+
+				if ($oldPrice !== '' && $oldPrice !== $price)
+				{
+					mf_1c_export_log(
+						'EXPORT ITEM PRICE: order_id=' . $orderId
+						. ' row=' . $rowIndex
+						. ' old=' . $oldPrice
+						. ' new=' . $price
+						. ' qty=' . $quantity
+					);
+				}
+
+				return $itemBlock;
+			},
+			$documentBlock
+		);
+
+		if (!is_string($result))
+		{
+			return $documentBlock;
+		}
+
+		$result = mf_1c_export_rewrite_document_header_tag(
+			$result,
+			'Сумма',
+			mf_1c_export_format_float($itemsTotal)
+		);
+
+		return $result;
 	}
 }
 
@@ -604,6 +795,10 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		if ($orderId <= 0 && $oldNumber !== '')
 		{
 			$orderId = mf_1c_export_order_id_by_xml_number($oldNumber);
+		}
+		if ($orderId > 0)
+		{
+			$documentBlock = mf_1c_export_rewrite_order_item_prices($documentBlock, $orderId);
 		}
 
 		$displayNumber = mf_1c_export_order_display_number_by_id($orderId);
