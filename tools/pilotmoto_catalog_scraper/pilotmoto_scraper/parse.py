@@ -787,6 +787,23 @@ def modal_available_ajax_url(base_url: str, params: dict[str, str]) -> str:
 	return f"{base}/ajax.php?{q}"
 
 
+def _qty_from_green_span_text(t: str) -> int | None:
+	"""Число из span.green: «2 шт.», «2 &nbspшт.» (битый entity на pilotmoto), «10+»."""
+	t = (t or "").replace("\xa0", " ")
+	t = re.sub(r"&nbsp;?", " ", t, flags=re.I)
+	t = re.sub(r"\s+", " ", t).strip()
+	m = re.search(r"(\d+)\s*шт", t, re.I)
+	if m:
+		return int(m.group(1))
+	m = re.search(r"(\d+)\s*\+", t)
+	if m:
+		return int(m.group(1))
+	m = re.match(r"^(\d+)$", t)
+	if m:
+		return int(m.group(1))
+	return None
+
+
 def sum_stock_from_modal_available_html(html: str) -> int | None:
 	"""Сумма «N шт.» из модалки «Проверить наличие в магазинах» (ответ load_modal)."""
 	soup = _soup(html)
@@ -796,10 +813,9 @@ def sum_stock_from_modal_available_html(html: str) -> int | None:
 	total = 0
 	found_green = False
 	for span in ul.select("span.green"):
-		t = span.get_text(" ", strip=True).replace("\xa0", " ")
-		m = re.search(r"(\d+)\s*шт", t, re.I)
-		if m:
-			total += int(m.group(1))
+		q = _qty_from_green_span_text(span.get_text(" ", strip=True))
+		if q is not None:
+			total += q
 			found_green = True
 	if found_green:
 		return total

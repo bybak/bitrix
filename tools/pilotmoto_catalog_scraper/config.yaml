@@ -48,6 +48,8 @@ listing_stock_modal_enabled: true
 # Хаб-карточки (зубья/размеры): отдельная строка на каждый SKU из modal_color_size
 listing_variant_expansion: true
 listing_stock_color_fallback: true
+# Если ajax «наличие в магазинах» вернул 0, а на карточке «N шт.» — взять остаток с карточки (ложный 0 с DC IP).
+listing_stock_detail_fallback: true
 
 # Полный обход карточки — только если нужны поля, которых нет на листинге/ajax.
 detail_enrichment: false

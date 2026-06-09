@@ -112,6 +112,47 @@ def _detail_flag_after_listing(leave_detail_pending: bool) -> int:
 	return 0 if leave_detail_pending else 1
 
 
+def _merge_stock_qty(text_sq: int | None, modal_sq: int | None) -> int | None:
+	"""
+	Сначала положительный остаток (модалка или текст карточки).
+	Иначе модалка (в т.ч. 0). Иначе текст.
+	Нужно, когда modal_available с DC IP отдаёт «везде нет», а на карточке «N шт.».
+	"""
+	if modal_sq is not None and modal_sq > 0:
+		return modal_sq
+	if text_sq is not None and text_sq > 0:
+		return text_sq
+	if modal_sq is not None:
+		return modal_sq
+	return text_sq
+
+
+async def _fetch_detail_stock_qty(
+	client: httpx.AsyncClient,
+	product_url: str,
+	cfg: dict[str, Any],
+	*,
+	delay: float,
+	sem: asyncio.Semaphore,
+	max_retries: int,
+	retry_delay_sec: float,
+) -> int | None:
+	"""Остаток с полной карточки (блок «Наличие: N шт.»), если ajax-модалка недостоверна."""
+	try:
+		html = await fetch_text(
+			client,
+			product_url,
+			delay=delay,
+			sem=sem,
+			max_retries=max_retries,
+			retry_delay_sec=retry_delay_sec,
+		)
+	except (_TRANSIENT_HTTP_ERRORS, httpx.HTTPStatusError):
+		return None
+	d = parse_product_detail(html)
+	return resolve_stock_qty(d.stock_label, d.stock_stack, d.availability, cfg)
+
+
 async def _fetch_modal_stock_qty(
 	client: httpx.AsyncClient,
 	base: str,
@@ -352,9 +393,23 @@ async def _enrich_listing_stocks_via_modal(
 			for p in simple
 		]
 	)
+	detail_fallback = bool(cfg.get("listing_stock_detail_fallback", True))
 	for p, sq in zip(simple, results):
-		if sq is not None:
-			p.stock_mob_raw = f"{sq} шт."
+		text_sq = resolve_stock_qty(p.stock_mob_raw, "", None, cfg)
+		final_sq = _merge_stock_qty(text_sq, sq)
+		if final_sq == 0 and detail_fallback and p.product_url:
+			detail_sq = await _fetch_detail_stock_qty(
+				client,
+				p.product_url,
+				cfg,
+				delay=delay,
+				sem=sem,
+				max_retries=max_retries,
+				retry_delay_sec=retry_delay_sec,
+			)
+			final_sq = _merge_stock_qty(detail_sq, final_sq)
+		if final_sq is not None:
+			p.stock_mob_raw = f"{final_sq} шт."
 
 
 async def run_crawl(
@@ -605,7 +660,10 @@ async def run_detail_enrichment(
 					retry_delay_sec=retry_delay_sec,
 				)
 				d = parse_product_detail(html)
-				sq = resolve_stock_qty(d.stock_label, d.stock_stack, d.availability, cfg)
+				text_sq = resolve_stock_qty(
+					d.stock_label, d.stock_stack, d.availability, cfg
+				)
+				sq = text_sq
 				if stock_modal_sum:
 					has_variants = product_has_color_size_variants(html)
 					av_params = parse_modal_available_params(html)
@@ -635,8 +693,7 @@ async def run_detail_enrichment(
 								max_retries=max_retries,
 								retry_delay_sec=retry_delay_sec,
 							)
-							if modal_sq is not None:
-								sq = modal_sq
+							sq = _merge_stock_qty(text_sq, modal_sq)
 						except Exception:
 							pass
 				dbmod.apply_product_detail(
