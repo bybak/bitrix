@@ -529,6 +529,67 @@ if (!function_exists('mf_1c_export_rewrite_document_header_tag'))
 	}
 }
 
+if (!function_exists('mf_1c_export_item_requisite_xml'))
+{
+	function mf_1c_export_item_requisite_xml(string $name, string $value): string
+	{
+		return '<ЗначениеРеквизита>'
+			. '<Наименование>' . mf_1c_export_xml_escape($name) . '</Наименование>'
+			. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
+			. '</ЗначениеРеквизита>';
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_item_requisites'))
+{
+	/**
+	 * Отдельные реквизиты строки нужны УНФ: типовая загрузка может пересчитать <Цена>,
+	 * а расширение 1С сможет восстановить цену заказа сайта из этих реквизитов.
+	 *
+	 * @param array<string, string> $requisites
+	 */
+	function mf_1c_export_inject_item_requisites(string $itemBlock, array $requisites): string
+	{
+		$xml = '';
+		foreach ($requisites as $name => $value)
+		{
+			$name = trim((string)$name);
+			$value = trim((string)$value);
+			if ($name === '' || $value === '')
+			{
+				continue;
+			}
+			if (mb_stripos($itemBlock, '<Наименование>' . $name . '</Наименование>') !== false)
+			{
+				continue;
+			}
+			$xml .= mf_1c_export_item_requisite_xml($name, $value);
+		}
+		if ($xml === '')
+		{
+			return $itemBlock;
+		}
+
+		if (preg_match('/<ЗначенияРеквизитов\b[^>]*>/su', $itemBlock))
+		{
+			return preg_replace(
+				'/(<ЗначенияРеквизитов\b[^>]*>)/su',
+				'$1' . $xml,
+				$itemBlock,
+				1
+			) ?? $itemBlock;
+		}
+
+		$block = '<ЗначенияРеквизитов>' . $xml . '</ЗначенияРеквизитов>';
+		if (preg_match('/<\/Товар>/su', $itemBlock))
+		{
+			return preg_replace('/<\/Товар>/su', $block . '</Товар>', $itemBlock, 1) ?? $itemBlock;
+		}
+
+		return $itemBlock . $block;
+	}
+}
+
 if (!function_exists('mf_1c_export_order_basket_prices'))
 {
 	/**
@@ -639,6 +700,12 @@ if (!function_exists('mf_1c_export_rewrite_order_item_prices'))
 				$itemBlock = mf_1c_export_rewrite_xml_tag($itemBlock, 'Цена', $price);
 				$itemBlock = mf_1c_export_rewrite_xml_tag($itemBlock, 'Количество', $quantity);
 				$itemBlock = mf_1c_export_rewrite_xml_tag($itemBlock, 'Сумма', $sum);
+				$itemBlock = mf_1c_export_inject_item_requisites($itemBlock, [
+					'Цена заказа сайта MF' => $price,
+					'Сумма строки сайта MF' => $sum,
+					'Количество заказа сайта MF' => $quantity,
+					'Номер строки заказа сайта MF' => (string)$rowIndex,
+				]);
 
 				if ($oldPrice !== '' && $oldPrice !== $price)
 				{
