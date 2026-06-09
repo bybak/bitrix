@@ -818,8 +818,6 @@ final class Renderer
 	public static function renderAdminMfCustomStatusChanges(Order $order, array $changes): string
 	{
 		$display = self::orderDisplayNumber($order);
-		$adminUrl = rtrim(self::siteUrl($order), '/')
-			. '/bitrix/admin/sale_order_view.php?ID=' . (int)$order->getId() . '&lang=ru';
 
 		$html = [];
 		$html[] = self::wrapOpen();
@@ -855,8 +853,6 @@ final class Renderer
 		{
 			$lines[] = 'Статусы заказа обновлены.';
 		}
-
-		$lines[] = 'Открыть заказ в <a href="' . self::esc($adminUrl) . '" style="color:' . self::COLOR_LINK . ';">админке</a>.';
 
 		$html[] = self::block(
 			'<div style="font-size:14px;line-height:1.7;color:#333;">' . implode('<br>', $lines) . '</div>'
