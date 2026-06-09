@@ -813,7 +813,12 @@ if (!function_exists('mf_1c_import_map_order_status'))
 
 if (!function_exists('mf_1c_import_detect_payment_status_from_mf_sums'))
 {
-	function mf_1c_import_detect_payment_status_from_mf_sums(?string $orderSumRaw, ?string $paidSumRaw): ?string
+	/**
+	 * Суммы из 1С не считаем доказательством полной оплаты: при завершении/отмене заказа
+	 * «СуммаОплаченоMF» часто дублирует сумму заказа без фактической оплаты.
+	 * PAID — только при явном флаге «Оплачен» в XML.
+	 */
+	function mf_1c_import_detect_payment_status_from_mf_sums(?string $orderSumRaw, ?string $paidSumRaw, ?bool $paidFlag = null): ?string
 	{
 		$orderSumRaw = trim((string)$orderSumRaw);
 		$paidSumRaw = trim((string)$paidSumRaw);
@@ -834,7 +839,7 @@ if (!function_exists('mf_1c_import_detect_payment_status_from_mf_sums'))
 		}
 		if ($paidSum + 0.001 >= $orderSum)
 		{
-			return 'PAID';
+			return $paidFlag === true ? 'PAID' : null;
 		}
 
 		return 'PARTIAL_PAID';
@@ -845,16 +850,6 @@ if (!function_exists('mf_1c_import_detect_payment_status'))
 {
 	function mf_1c_import_detect_payment_status(?bool $paid, float $paymentSum, float $orderPrice): ?string
 	{
-		if ($paymentSum > 0 && $orderPrice > 0)
-		{
-			if ($paymentSum + 0.001 < $orderPrice)
-			{
-				return 'PARTIAL_PAID';
-			}
-
-			return 'PAID';
-		}
-
 		if ($paid === false)
 		{
 			return 'NOT_PAID';
@@ -863,6 +858,12 @@ if (!function_exists('mf_1c_import_detect_payment_status'))
 		if ($paid === true)
 		{
 			return 'PAID';
+		}
+
+		// Без явного «Оплачен» в XML не выставляем PAID по совпадению сумм/подчинённых документов.
+		if ($paymentSum > 0 && $orderPrice > 0 && $paymentSum + 0.001 < $orderPrice)
+		{
+			return 'PARTIAL_PAID';
 		}
 
 		if ($paymentSum > 0 && $orderPrice <= 0)
@@ -1149,20 +1150,24 @@ if (!function_exists('mf_1c_import_resolve_status_codes'))
 			$paymentSum = (float)str_replace(',', '.', (string)$raw['СуммаОплаченоMF']);
 		}
 
-		$paymentStatus = mf_1c_import_detect_payment_status_from_mf_sums(
-			(string)($raw['СуммаЗаказаMF'] ?? ''),
-			(string)($raw['СуммаОплаченоMF'] ?? '')
-		);
-		if ($paymentStatus === null)
-		{
-			$paymentStatus = $mf['payment_status'] ?? null;
-		}
-		if ($paymentStatus === null)
+		// Явный код из 1С (КодСтатусаОплатыMF) важнее эвристик по суммам.
+		$paymentStatus = $mf['payment_status'] ?? null;
+		$skipPaymentHeuristics = mf_1c_import_is_cancelled_mf($mf);
+
+		if ($paymentStatus === null && !$skipPaymentHeuristics)
 		{
 			$paymentStatus = mf_1c_import_detect_payment_status(
 				$parsed['paid'] ?? null,
 				$paymentSum,
 				$orderPrice
+			);
+		}
+		if ($paymentStatus === null && !$skipPaymentHeuristics)
+		{
+			$paymentStatus = mf_1c_import_detect_payment_status_from_mf_sums(
+				(string)($raw['СуммаЗаказаMF'] ?? ''),
+				(string)($raw['СуммаОплаченоMF'] ?? ''),
+				$parsed['paid'] ?? null
 			);
 		}
 
@@ -1233,7 +1238,16 @@ if (!function_exists('mf_1c_import_apply_updates'))
 			}
 
 			$orderId = $resolvedOrderId;
-			$statusCodes = mf_1c_import_resolve_status_codes($parsed);
+			$order = Order::load($orderId);
+			if (!$order)
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES APPLY: Order::load failed id=' . $orderId
+				);
+				continue;
+			}
+
+			$statusCodes = mf_1c_import_resolve_status_codes($parsed, $order);
 			$ufOrderStatus = $statusCodes['order'] ?? null;
 			$ufPaymentStatus = $statusCodes['payment'] ?? null;
 			$ufShipmentStatus = $statusCodes['shipment'] ?? null;
@@ -1256,15 +1270,6 @@ if (!function_exists('mf_1c_import_apply_updates'))
 			}
 
 			$changedFields = $hlChanged;
-			$order = Order::load($orderId);
-			if (!$order)
-			{
-				mf_1c_import_log(
-					'IMPORT STATUSES APPLY: Order::load failed id=' . $orderId
-					. ' hl=' . implode(', ', $hlChanged)
-				);
-				continue;
-			}
 
 			$statusId = strtoupper(trim((string)($parsed['status_id'] ?? '')));
 			if ($ufOrderStatus !== null)
