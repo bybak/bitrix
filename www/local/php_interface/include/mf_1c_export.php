@@ -70,8 +70,9 @@ if (!function_exists('mf_1c_export_prepare_exchange'))
 
 			$settings['accountNumberPrefix']['ORDER'] = '';
 			$settings['accountNumberPrefix']['INVOICE'] = '';
+			$settings['export']['CURRENCY'] = 'руб';
 			$prop->setValue(null, $settings);
-			mf_1c_export_log('EXPORT PREPARE: accountNumberPrefix cleared for CommerceML query');
+			mf_1c_export_log('EXPORT PREPARE: accountNumberPrefix cleared, currency=руб for CommerceML query');
 		}
 		catch (\Throwable $e)
 		{
@@ -451,6 +452,34 @@ if (!function_exists('mf_1c_export_document_order_id'))
 	}
 }
 
+if (!function_exists('mf_1c_export_rewrite_order_document_currency'))
+{
+	/**
+	 * УНФ иначе может принять цену заказа как USD и умножить её на курс при создании заказа.
+	 */
+	function mf_1c_export_rewrite_order_document_currency(string $documentBlock): string
+	{
+		if (!mf_1c_export_is_order_document($documentBlock))
+		{
+			return $documentBlock;
+		}
+
+		if (!preg_match('/<Валюта\b[^>]*>.*?<\/Валюта>/su', $documentBlock))
+		{
+			return $documentBlock;
+		}
+
+		$updated = preg_replace(
+			'/<Валюта\b[^>]*>.*?<\/Валюта>/su',
+			'<Валюта>руб</Валюта>',
+			$documentBlock,
+			1
+		);
+
+		return is_string($updated) ? $updated : $documentBlock;
+	}
+}
+
 if (!function_exists('mf_1c_export_order_id_by_xml_number'))
 {
 	function mf_1c_export_order_id_by_xml_number(string $xmlNumber): int
@@ -564,6 +593,7 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		{
 			return $documentBlock;
 		}
+		$documentBlock = mf_1c_export_rewrite_order_document_currency($documentBlock);
 
 		$orderId = mf_1c_export_document_order_id($documentBlock);
 		$oldNumber = '';

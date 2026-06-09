@@ -4589,6 +4589,10 @@ if (!function_exists('mf_on_order_before_saved'))
 				mf_assign_store_and_price_to_basket_item($item);
 			}
 		}
+		if ((string)$order->getCurrency() !== 'RUB')
+		{
+			$order->setField('CURRENCY', 'RUB');
+		}
 
 		// Motor-Force customization:
 		// Save selected eDost delivery tariff into manager comment (hidden from customer).
