@@ -319,11 +319,33 @@ else
 		if($_SESSION["BX_CML2_EXPORT"]["cmlVersion"] >= doubleval(\Bitrix\Sale\Exchange\ExportOneCBase::SHEM_VERSION_2_10))
 		{
 			//region schema Documents or Document.Subordinate
+			if (function_exists('mf_1c_export_prepare_exchange'))
+			{
+				mf_1c_export_prepare_exchange();
+			}
 		    $r = $export->export(array(
 					'filter'=>$arFilter,
 					'limit'=>$arParams["INTERVAL"])
 			);
-		    echo $r->getData()[0];
+			$exportXml = (string)($r->getData()[0] ?? '');
+			if ($exportXml !== '' && function_exists('mf_1c_enrich_orders_xml_export'))
+			{
+				try
+				{
+					$exportXml = mf_1c_enrich_orders_xml_export($exportXml);
+				}
+				catch (\Throwable $e)
+				{
+					if (function_exists('mf_1c_import_log'))
+					{
+						mf_1c_import_log(
+							'EXPORT ENRICH INLINE ERROR: ' . $e->getMessage()
+							. ' @ ' . $e->getFile() . ':' . $e->getLine()
+						);
+					}
+				}
+			}
+		    echo $exportXml;
 			//endregion
         }
         else

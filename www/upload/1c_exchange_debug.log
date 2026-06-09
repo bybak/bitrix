@@ -1,1 +1,3 @@
 2026-06-05 08:00:52 IMPORT STATUSES PARSED: xml_number=s1291 resolved=291 status_id=F paid=true shipped=true payment_sum=9820 shipped_qty=0
+2026-06-09 14:52:46 EXPORT NUMBER: order_id=207 old=s11-207 new=1-207
+2026-06-09 14:52:46 EXPORT PREPARE: accountNumberPrefix cleared for CommerceML query

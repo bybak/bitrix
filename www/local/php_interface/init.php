@@ -4827,6 +4827,11 @@ if (!function_exists('mf_on_1c_exchange_backfill'))
 		}
 		$done = true;
 
+		if (function_exists('mf_1c_export_prepare_exchange'))
+		{
+			mf_1c_export_prepare_exchange();
+		}
+
 		try
 		{
 			$rs = \Bitrix\Sale\Internals\OrderTable::getList([

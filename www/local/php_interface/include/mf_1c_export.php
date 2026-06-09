@@ -8,6 +8,78 @@
  * поэтому обогащаем каждый блок <Товар> отдельно через regex.
  */
 
+$mfOrderAccountDisplayInclude = __DIR__ . '/mf_order_account_display.php';
+if (is_file($mfOrderAccountDisplayInclude))
+{
+	require_once $mfOrderAccountDisplayInclude;
+}
+unset($mfOrderAccountDisplayInclude);
+
+if (!function_exists('mf_1c_export_log'))
+{
+	function mf_1c_export_log(string $message): void
+	{
+		if (function_exists('mf_1c_import_log'))
+		{
+			mf_1c_import_log($message);
+			return;
+		}
+		if (function_exists('mf1c_exchange_debug_log'))
+		{
+			mf1c_exchange_debug_log($message);
+		}
+	}
+}
+
+if (!function_exists('mf_1c_export_prepare_exchange'))
+{
+	/**
+	 * Перед CommerceML-выгрузкой: сброс кэша ExportSettings и пустой префикс s1 (номер задаём в post-process).
+	 */
+	function mf_1c_export_prepare_exchange(): void
+	{
+		if (!mf_1c_export_is_query_request())
+		{
+			return;
+		}
+		if (!class_exists(\Bitrix\Sale\Exchange\OneC\ExportSettings::class))
+		{
+			return;
+		}
+
+		static $done = false;
+		if ($done)
+		{
+			return;
+		}
+		$done = true;
+
+		try
+		{
+			$ref = new \ReflectionClass(\Bitrix\Sale\Exchange\OneC\ExportSettings::class);
+			$prop = $ref->getProperty('currentSettings');
+			$prop->setAccessible(true);
+			$prop->setValue(null, null);
+
+			\Bitrix\Sale\Exchange\OneC\ExportSettings::getCurrent();
+			$settings = $prop->getValue();
+			if (!is_array($settings))
+			{
+				return;
+			}
+
+			$settings['accountNumberPrefix']['ORDER'] = '';
+			$settings['accountNumberPrefix']['INVOICE'] = '';
+			$prop->setValue(null, $settings);
+			mf_1c_export_log('EXPORT PREPARE: accountNumberPrefix cleared for CommerceML query');
+		}
+		catch (\Throwable $e)
+		{
+			mf_1c_export_log('EXPORT PREPARE ERROR: ' . $e->getMessage());
+		}
+	}
+}
+
 if (!function_exists('mf_1c_export_is_query_request'))
 {
 	function mf_1c_export_is_query_request(): bool
@@ -331,6 +403,125 @@ if (!function_exists('mf_1c_export_enrich_single_item_block'))
 	}
 }
 
+if (!function_exists('mf_1c_export_document_header'))
+{
+	function mf_1c_export_document_header(string $documentBlock): string
+	{
+		$headerEnd = strlen($documentBlock);
+		foreach (['<Товары', '<Контрагенты', '<Подчиненные', '<Подчиненный', '<Скидки'] as $marker)
+		{
+			$pos = stripos($documentBlock, $marker);
+			if ($pos !== false && $pos < $headerEnd)
+			{
+				$headerEnd = $pos;
+			}
+		}
+
+		return substr($documentBlock, 0, $headerEnd);
+	}
+}
+
+if (!function_exists('mf_1c_export_is_order_document'))
+{
+	function mf_1c_export_is_order_document(string $documentBlock): bool
+	{
+		$header = mf_1c_export_document_header($documentBlock);
+		if (!preg_match('/<ХозОперация\b[^>]*>(.*?)<\/ХозОперация>/su', $header, $opMatch))
+		{
+			return true;
+		}
+
+		$operation = trim(html_entity_decode(strip_tags($opMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+		return $operation === '' || mb_stripos($operation, 'заказ') !== false;
+	}
+}
+
+if (!function_exists('mf_1c_export_document_order_id'))
+{
+	function mf_1c_export_document_order_id(string $documentBlock): int
+	{
+		$header = mf_1c_export_document_header($documentBlock);
+		if (preg_match('/<Ид\b[^>]*>\s*(\d+)\s*<\/Ид>/su', $header, $idMatch))
+		{
+			return (int)$idMatch[1];
+		}
+
+		return 0;
+	}
+}
+
+if (!function_exists('mf_1c_export_order_id_by_xml_number'))
+{
+	function mf_1c_export_order_id_by_xml_number(string $xmlNumber): int
+	{
+		$xmlNumber = trim($xmlNumber);
+		if ($xmlNumber === '' || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return 0;
+		}
+
+		if (function_exists('mf_order_account_number_parse_display'))
+		{
+			$parsed = mf_order_account_number_parse_display($xmlNumber);
+			if (is_array($parsed))
+			{
+				$row = \Bitrix\Sale\Internals\OrderTable::getList([
+					'filter' => [
+						'=USER_ID' => $parsed[0],
+						'=ACCOUNT_NUMBER' => $parsed[1],
+					],
+					'select' => ['ID'],
+					'order' => ['ID' => 'DESC'],
+					'limit' => 1,
+				])->fetch();
+				if (is_array($row))
+				{
+					return (int)($row['ID'] ?? 0);
+				}
+			}
+		}
+
+		$accountNumber = $xmlNumber;
+		if (preg_match('/^s1(\d+)$/iu', $xmlNumber, $prefixed))
+		{
+			$accountNumber = $prefixed[1];
+		}
+		elseif (preg_match('/^(\d+)-(\d+)$/u', $xmlNumber, $display))
+		{
+			$row = \Bitrix\Sale\Internals\OrderTable::getList([
+				'filter' => [
+					'=USER_ID' => (int)$display[1],
+					'=ACCOUNT_NUMBER' => $display[2],
+				],
+				'select' => ['ID'],
+				'order' => ['ID' => 'DESC'],
+				'limit' => 1,
+			])->fetch();
+			if (is_array($row))
+			{
+				return (int)($row['ID'] ?? 0);
+			}
+
+			$accountNumber = $display[2];
+		}
+
+		if (!ctype_digit($accountNumber))
+		{
+			return 0;
+		}
+
+		$row = \Bitrix\Sale\Internals\OrderTable::getList([
+			'filter' => ['=ACCOUNT_NUMBER' => $accountNumber],
+			'select' => ['ID'],
+			'order' => ['ID' => 'DESC'],
+			'limit' => 1,
+		])->fetch();
+
+		return is_array($row) ? (int)($row['ID'] ?? 0) : 0;
+	}
+}
+
 if (!function_exists('mf_1c_export_order_display_number_by_id'))
 {
 	function mf_1c_export_order_display_number_by_id(int $orderId): string
@@ -369,16 +560,30 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 	 */
 	function mf_1c_export_rewrite_order_document_number(string $documentBlock): string
 	{
-		if (!preg_match('/<Ид\b[^>]*>(.*?)<\/Ид>/su', $documentBlock, $idMatch))
+		if (!mf_1c_export_is_order_document($documentBlock))
 		{
 			return $documentBlock;
 		}
 
-		$orderId = (int)trim(strip_tags($idMatch[1]));
+		$orderId = mf_1c_export_document_order_id($documentBlock);
+		$oldNumber = '';
+		if (preg_match('/<Номер\b[^>]*>(.*?)<\/Номер>/su', $documentBlock, $numberMatch))
+		{
+			$oldNumber = trim(html_entity_decode(strip_tags($numberMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+		}
+		if ($orderId <= 0 && $oldNumber !== '')
+		{
+			$orderId = mf_1c_export_order_id_by_xml_number($oldNumber);
+		}
+
 		$displayNumber = mf_1c_export_order_display_number_by_id($orderId);
-		if ($displayNumber === '' || !preg_match('/<Номер\b[^>]*>.*?<\/Номер>/su', $documentBlock))
+		if ($displayNumber === '' || $oldNumber === '' || !preg_match('/<Номер\b[^>]*>.*?<\/Номер>/su', $documentBlock))
 		{
 			return $documentBlock;
+		}
+		if ($oldNumber === $displayNumber)
+		{
+			return mf_1c_export_inject_order_document_requisites($documentBlock, $displayNumber);
 		}
 
 		$updated = preg_replace(
@@ -391,6 +596,22 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		{
 			return $documentBlock;
 		}
+
+		if (!preg_match('/<Номер1С\b[^>]*>/su', $updated))
+		{
+			$updated = preg_replace(
+				'/(<Номер\b[^>]*>.*?<\/Номер>)/su',
+				'$1' . '<Номер1С>' . mf_1c_export_xml_escape($displayNumber) . '</Номер1С>',
+				$updated,
+				1
+			) ?? $updated;
+		}
+
+		mf_1c_export_log(
+			'EXPORT NUMBER: order_id=' . $orderId
+			. ' old=' . $oldNumber
+			. ' new=' . $displayNumber
+		);
 
 		return mf_1c_export_inject_order_document_requisites($updated, $displayNumber);
 	}
@@ -409,7 +630,14 @@ if (!function_exists('mf_1c_export_inject_order_document_requisites'))
 			return $documentBlock;
 		}
 
-		$requisiteNames = ['Номер по 1С', 'Номер заказа сайта', 'Номер заказа MF'];
+		$requisiteNames = [
+			'Номер по 1С',
+			'Номер заказа сайта',
+			'Номер заказа на сайте',
+			'Номер на сайте',
+			'Номер заказа MF',
+			'Идентификатор заказа',
+		];
 		$requisites = '';
 		foreach ($requisiteNames as $name)
 		{
