@@ -70,9 +70,9 @@ if (!function_exists('mf_1c_export_prepare_exchange'))
 
 			$settings['accountNumberPrefix']['ORDER'] = '';
 			$settings['accountNumberPrefix']['INVOICE'] = '';
-			$settings['export']['CURRENCY'] = 'руб';
+			$settings['export']['CURRENCY'] = 'RUB';
 			$prop->setValue(null, $settings);
-			mf_1c_export_log('EXPORT PREPARE: accountNumberPrefix cleared, currency=руб for CommerceML query');
+			mf_1c_export_log('EXPORT PREPARE: accountNumberPrefix cleared, currency=RUB for CommerceML query');
 		}
 		catch (\Throwable $e)
 		{
@@ -471,7 +471,7 @@ if (!function_exists('mf_1c_export_rewrite_order_document_currency'))
 
 		$updated = preg_replace(
 			'/<Валюта\b[^>]*>.*?<\/Валюта>/su',
-			'<Валюта>руб</Валюта>',
+			'<Валюта>RUB</Валюта>',
 			$documentBlock,
 			1
 		);
