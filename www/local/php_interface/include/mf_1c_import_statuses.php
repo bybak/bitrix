@@ -285,14 +285,93 @@ if (!function_exists('mf_1c_import_parse_bool'))
 
 if (!function_exists('mf_1c_import_is_cancelled_mf'))
 {
-	function mf_1c_import_is_cancelled_mf(array $mf): bool
+	function mf_1c_import_is_cancelled_mf(
+		array $mf,
+		?string $statusId = null,
+		?string $resolvedOrderStatus = null
+	): bool
 	{
 		if (mf_1c_import_parse_bool($mf['is_cancelled'] ?? false))
 		{
 			return true;
 		}
 
-		return (string)($mf['order_status'] ?? '') === 'CANCELED';
+		if ((string)($mf['order_status'] ?? '') === 'CANCELED')
+		{
+			return true;
+		}
+
+		if ($resolvedOrderStatus === 'CANCELED')
+		{
+			return true;
+		}
+
+		return strtoupper(trim((string)$statusId)) === 'C';
+	}
+}
+
+if (!function_exists('mf_1c_import_order_is_paid_in_bitrix'))
+{
+	function mf_1c_import_order_is_paid_in_bitrix(?Order $order): bool
+	{
+		if (!$order)
+		{
+			return false;
+		}
+
+		if ((string)$order->getField('PAYED') === 'Y')
+		{
+			return true;
+		}
+
+		$paymentCollection = $order->getPaymentCollection();
+		if (!$paymentCollection)
+		{
+			return false;
+		}
+
+		foreach ($paymentCollection as $payment)
+		{
+			if ($payment && $payment->isPaid())
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
+{
+	/**
+	 * Статус оплаты для HL: только явный КодСтатусаОплатыMF из 1С.
+	 * Поле CommerceML «Оплачен» и суммы не используем — при завершении/отмене 1С часто шлёт ложный paid=true.
+	 */
+	function mf_1c_import_resolve_payment_status_for_import(
+		array $mf,
+		?Order $order,
+		bool $isCancelled
+	): ?string
+	{
+		$explicit = $mf['payment_status'] ?? null;
+
+		if ($explicit !== null)
+		{
+			if ($isCancelled && $explicit === 'PAID' && !mf_1c_import_order_is_paid_in_bitrix($order))
+			{
+				return 'NOT_PAID';
+			}
+
+			return $explicit;
+		}
+
+		if ($isCancelled)
+		{
+			return mf_1c_import_order_is_paid_in_bitrix($order) ? 'PAID' : 'NOT_PAID';
+		}
+
+		return null;
 	}
 }
 
@@ -303,7 +382,7 @@ if (!function_exists('mf_1c_import_resolve_cancel_reason_text'))
 	 */
 	function mf_1c_import_resolve_cancel_reason_text(array $mf): string
 	{
-		if (!mf_1c_import_is_cancelled_mf($mf))
+		if (empty($mf['_is_cancelled']) && !mf_1c_import_is_cancelled_mf($mf))
 		{
 			return '';
 		}
@@ -1006,7 +1085,11 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 			$payload['SHIPMENT_STATUS'] = $shipmentStatus;
 		}
 
-		$isCancelled = mf_1c_import_is_cancelled_mf($mf);
+		$isCancelled = !empty($mf['_is_cancelled']);
+		if (!$isCancelled)
+		{
+			$isCancelled = mf_1c_import_is_cancelled_mf($mf);
+		}
 		$payload['IS_CANCELED'] = $isCancelled;
 		$payload['CANCEL_REASON'] = mf_1c_import_resolve_cancel_reason_text($mf);
 
@@ -1107,7 +1190,7 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 if (!function_exists('mf_1c_import_resolve_status_codes'))
 {
 	/**
-	 * @return array{order:?string,payment:?string,shipment:?string}
+	 * @return array{order:?string,payment:?string,shipment:?string,is_cancelled:bool}
 	 */
 	function mf_1c_import_resolve_status_codes(array $parsed, ?Order $order = null): array
 	{
@@ -1120,11 +1203,11 @@ if (!function_exists('mf_1c_import_resolve_status_codes'))
 			$orderStatus = mf_1c_import_map_order_status($statusId);
 		}
 
-		$orderPrice = 0.0;
+		$isCancelled = mf_1c_import_is_cancelled_mf($mf, $statusId, $orderStatus);
+
 		$orderQty = 0.0;
 		if ($order)
 		{
-			$orderPrice = (float)$order->getPrice();
 			$basket = $order->getBasket();
 			if ($basket)
 			{
@@ -1135,41 +1218,12 @@ if (!function_exists('mf_1c_import_resolve_status_codes'))
 			}
 		}
 		$raw = is_array($mf['raw'] ?? null) ? $mf['raw'] : [];
-		if ($orderPrice <= 0 && ($raw['СуммаЗаказаMF'] ?? '') !== '')
-		{
-			$orderPrice = (float)str_replace(',', '.', (string)$raw['СуммаЗаказаMF']);
-		}
 		if ($orderQty <= 0 && ($raw['КоличествоЗаказаноMF'] ?? '') !== '')
 		{
 			$orderQty = (float)str_replace(',', '.', (string)$raw['КоличествоЗаказаноMF']);
 		}
 
-		$paymentSum = (float)($parsed['payment_sum'] ?? 0);
-		if ($paymentSum <= 0 && ($raw['СуммаОплаченоMF'] ?? '') !== '')
-		{
-			$paymentSum = (float)str_replace(',', '.', (string)$raw['СуммаОплаченоMF']);
-		}
-
-		// Явный код из 1С (КодСтатусаОплатыMF) важнее эвристик по суммам.
-		$paymentStatus = $mf['payment_status'] ?? null;
-		$skipPaymentHeuristics = mf_1c_import_is_cancelled_mf($mf);
-
-		if ($paymentStatus === null && !$skipPaymentHeuristics)
-		{
-			$paymentStatus = mf_1c_import_detect_payment_status(
-				$parsed['paid'] ?? null,
-				$paymentSum,
-				$orderPrice
-			);
-		}
-		if ($paymentStatus === null && !$skipPaymentHeuristics)
-		{
-			$paymentStatus = mf_1c_import_detect_payment_status_from_mf_sums(
-				(string)($raw['СуммаЗаказаMF'] ?? ''),
-				(string)($raw['СуммаОплаченоMF'] ?? ''),
-				$parsed['paid'] ?? null
-			);
-		}
+		$paymentStatus = mf_1c_import_resolve_payment_status_for_import($mf, $order, $isCancelled);
 
 		$shipmentStatus = $mf['shipment_status'] ?? null;
 		if ($shipmentStatus === null)
@@ -1190,6 +1244,7 @@ if (!function_exists('mf_1c_import_resolve_status_codes'))
 			'order' => $orderStatus,
 			'payment' => $paymentStatus,
 			'shipment' => $shipmentStatus,
+			'is_cancelled' => $isCancelled,
 		];
 	}
 }
@@ -1251,6 +1306,15 @@ if (!function_exists('mf_1c_import_apply_updates'))
 			$ufOrderStatus = $statusCodes['order'] ?? null;
 			$ufPaymentStatus = $statusCodes['payment'] ?? null;
 			$ufShipmentStatus = $statusCodes['shipment'] ?? null;
+			$mf['_is_cancelled'] = !empty($statusCodes['is_cancelled']);
+			mf_1c_import_log(
+				'IMPORT STATUSES PAYMENT: order_id=' . $orderId
+				. ' resolved=' . (string)$ufPaymentStatus
+				. ' explicit=' . (string)($mf['payment_status'] ?? '')
+				. ' cancelled=' . (!empty($mf['_is_cancelled']) ? 'Y' : 'N')
+				. ' xml_paid=' . var_export($parsed['paid'] ?? null, true)
+				. ' bitrix_paid=' . (mf_1c_import_order_is_paid_in_bitrix($order) ? 'Y' : 'N')
+			);
 
 			$hlChanged = mf_1c_import_sync_hl_statuses(
 				$orderId,
@@ -1329,7 +1393,11 @@ if (!function_exists('mf_1c_import_apply_updates'))
 				{
 					$changedFields[] = 'UF_1C_PAYMENT_STATUS=' . $ufPaymentStatus;
 				}
-				if ($ufPaymentStatus === 'PAID' && mf_1c_import_mark_order_paid($order))
+				if (
+					($mf['payment_status'] ?? null) === 'PAID'
+					&& $ufPaymentStatus === 'PAID'
+					&& mf_1c_import_mark_order_paid($order)
+				)
 				{
 					$changedFields[] = 'PAYED=Y';
 				}
@@ -1371,7 +1439,7 @@ if (!function_exists('mf_1c_import_apply_updates'))
 					$changedFields[] = 'UF_1C_CANCEL_COMMENT=' . $cancelComment;
 				}
 			}
-			elseif (mf_1c_import_is_cancelled_mf($mf))
+			elseif (!empty($mf['_is_cancelled']) || mf_1c_import_is_cancelled_mf($mf, $statusId, $ufOrderStatus))
 			{
 				if (mf_1c_import_set_order_uf($order, 'UF_1C_CANCEL_COMMENT', ''))
 				{
@@ -1453,7 +1521,7 @@ if (!function_exists('mf_1c_import_apply_file'))
 				return;
 			}
 
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260605d: start ' . $filePath);
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260519a: start ' . $filePath);
 
 			if (!Loader::includeModule('sale'))
 			{

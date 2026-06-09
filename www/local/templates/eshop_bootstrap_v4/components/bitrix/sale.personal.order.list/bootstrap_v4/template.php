@@ -379,9 +379,11 @@ else
 			$mfOrderStatusDisplay = function_exists('mf_order_custom_status_display_for_list')
 				? mf_order_custom_status_display_for_list($mfCustomStatus, 'order')
 				: ['text' => '—', 'badge_class' => 'mf-order-badge_status', 'has_status' => false];
-			$mfPaymentStatusDisplay = function_exists('mf_order_custom_status_display_for_list')
-				? mf_order_custom_status_display_for_list($mfCustomStatus, 'payment')
-				: ['text' => '—', 'badge_class' => 'mf-order-badge mf-order-badge_status', 'has_status' => false];
+			$mfPaymentStatusDisplay = function_exists('mf_order_custom_status_display_payment_for_list')
+				? mf_order_custom_status_display_payment_for_list($mfCustomStatus, $order['PAYMENT'] ?? [])
+				: (function_exists('mf_order_custom_status_display_for_list')
+					? mf_order_custom_status_display_for_list($mfCustomStatus, 'payment')
+					: ['text' => '—', 'badge_class' => 'mf-order-badge mf-order-badge_status', 'has_status' => false]);
 			$mfShipmentStatusDisplay = function_exists('mf_order_custom_status_display_for_list')
 				? mf_order_custom_status_display_for_list($mfCustomStatus, 'shipment')
 				: ['text' => '—', 'badge_class' => 'mf-order-badge mf-order-badge_status', 'has_status' => false];

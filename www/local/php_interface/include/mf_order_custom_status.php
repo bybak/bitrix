@@ -638,6 +638,53 @@ if (!function_exists('mf_order_custom_status_is_cancelled'))
 	}
 }
 
+if (!function_exists('mf_order_custom_status_order_has_bitrix_payment'))
+{
+	function mf_order_custom_status_order_has_bitrix_payment(array $paymentRows): bool
+	{
+		foreach ($paymentRows as $payment)
+		{
+			if (!is_array($payment))
+			{
+				continue;
+			}
+			if (($payment['PAID'] ?? '') === 'Y')
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_order_custom_status_display_payment_for_list'))
+{
+	/**
+	 * Статус оплаты в карточке заказа: не показываем «Оплачен» для отменённого заказа без фактической оплаты в Bitrix.
+	 *
+	 * @return array{text:string,badge_class:string,has_status:bool}
+	 */
+	function mf_order_custom_status_display_payment_for_list(?array $mfStatus, array $paymentRows): array
+	{
+		if (
+			mf_order_custom_status_is_cancelled($mfStatus)
+			&& !mf_order_custom_status_order_has_bitrix_payment($paymentRows)
+			&& is_array($mfStatus)
+			&& ($mfStatus['PAYMENT_STATUS'] ?? '') === 'paid'
+		)
+		{
+			$corrected = $mfStatus;
+			$corrected['PAYMENT_STATUS'] = 'not_paid';
+			$corrected['PAYMENT_STATUS_LABEL'] = '';
+
+			return mf_order_custom_status_display_for_list($corrected, 'payment');
+		}
+
+		return mf_order_custom_status_display_for_list($mfStatus, 'payment');
+	}
+}
+
 if (!function_exists('mf_order_custom_status_display_for_list'))
 {
 	/**
