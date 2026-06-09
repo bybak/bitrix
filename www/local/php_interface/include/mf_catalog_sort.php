@@ -26,11 +26,11 @@ if (!function_exists('mf_catalog_listing_in_stock'))
 if (!function_exists('mf_catalog_listing_has_display_price'))
 {
 	/**
-	 * Как на карточке каталога: цена показывается только при наличии на складе.
+	 * Как на карточке каталога: «От …» при любой витринной цене (в т.ч. внешние «Под заказ»).
 	 */
 	function mf_catalog_listing_has_display_price(int $productId): bool
 	{
-		if (!mf_catalog_listing_in_stock($productId) || !function_exists('mf_catalog_listing_display_price'))
+		if (!function_exists('mf_catalog_listing_display_price'))
 		{
 			return false;
 		}
@@ -135,6 +135,11 @@ if (!function_exists('mf_catalog_listing_compare_items'))
 
 			case 'default':
 			default:
+				// 2) Внутри группы: сначала с ценой, «Запросить цену» — в конце.
+				if ($metaA['has_price'] !== $metaB['has_price'])
+				{
+					return $metaA['has_price'] ? -1 : 1;
+				}
 				if ($metaA['sort'] !== $metaB['sort'])
 				{
 					return $metaA['sort'] <=> $metaB['sort'];
@@ -224,7 +229,7 @@ if (!function_exists('mf_catalog_section_sorted_product_ids'))
 			$mode = 'default';
 		}
 
-		$cacheVersion = '3';
+		$cacheVersion = '4';
 		$cacheKey = md5(json_encode([$cacheVersion, $sectionId, $iblockId, $extraFilter, $mode], JSON_UNESCAPED_UNICODE));
 		$cacheDir = '/mf_catalog_sort';
 		$cacheTtl = 600;
