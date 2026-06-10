@@ -3077,6 +3077,14 @@ class SaleOrderAjax extends \CBitrixComponent
 				$prop = array_filter($prop, ["CSaleBasketHelper", "filterFields"]);
 				$arBasketItem["PROPS"][] = $prop;
 			}
+			if (
+				!empty($arBasketItem["PROPS"])
+				&& is_array($arBasketItem["PROPS"])
+				&& function_exists('mf_basket_dedupe_props_for_display')
+			)
+			{
+				$arBasketItem["PROPS"] = mf_basket_dedupe_props_for_display($arBasketItem["PROPS"]);
+			}
 
 			$this->arElementId[] = $arBasketItem["PRODUCT_ID"];
 			$arBasketItem["SUM_NUM"] = $basketItem->getPrice() * $basketItem->getQuantity();

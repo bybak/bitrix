@@ -3594,7 +3594,13 @@ if (!function_exists('mf_basket_dedupe_props_for_display'))
 			return $props;
 		}
 
-		$hiddenCategoryCodes = ['Категория', 'MF_CATEGORY', 'MF_BRAND'];
+		$hiddenCategoryCodes = [
+			'Категория',
+			'MF_CATEGORY',
+			'MF_BRAND',
+			'MF_ORDER_UNIT_PRICE',
+			'MF_CUSTOM_PRICE_LOCK',
+		];
 		$isHiddenCategory = static function (array $p) use ($hiddenCategoryCodes): bool {
 			$code = (string)($p['CODE'] ?? '');
 			if (in_array($code, $hiddenCategoryCodes, true))
@@ -3602,7 +3608,13 @@ if (!function_exists('mf_basket_dedupe_props_for_display'))
 				return true;
 			}
 
-			return mb_strtolower(trim((string)($p['NAME'] ?? ''))) === 'категория';
+			$nameKey = mb_strtolower(trim((string)($p['NAME'] ?? '')));
+
+			return in_array($nameKey, [
+				'категория',
+				'mf_order_unit_price',
+				'mf_custom_price_lock',
+			], true);
 		};
 
 		$articleCode = null;
