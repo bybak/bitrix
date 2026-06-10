@@ -136,6 +136,10 @@ if (function_exists('mf_seo_apply_for_current_page'))
 {
 	mf_seo_apply_for_current_page();
 }
+if (function_exists('mf_seo_apply_default_meta'))
+{
+	mf_seo_apply_default_meta();
+}
 
 ?><!DOCTYPE html>
 <html xml:lang="<?=LANGUAGE_ID?>" lang="<?=LANGUAGE_ID?>">

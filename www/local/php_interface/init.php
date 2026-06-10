@@ -1127,6 +1127,7 @@ if (!function_exists('mf_seo_apply_for_path'))
 					'<meta property="' . mf_seo_escape_attr($prop) . '" content="' . mf_seo_escape_attr($val) . '" />',
 					true
 				);
+				$APPLICATION->SetPageProperty('mf_has_meta_' . str_replace([':', '-'], '_', mb_strtolower($prop)), 'Y');
 			}
 		}
 	}
@@ -1144,6 +1145,133 @@ if (!function_exists('mf_seo_apply_for_current_page'))
 		$path = method_exists($APPLICATION, 'GetCurPage') ? (string)$APPLICATION->GetCurPage(false) : (string)($_SERVER['REQUEST_URI'] ?? '/');
 		$path = preg_replace('~\\?.*$~', '', $path);
 		mf_seo_apply_for_path((string)$path);
+	}
+}
+
+if (!function_exists('mf_seo_default_description'))
+{
+	function mf_seo_default_description(): string
+	{
+		return 'Motor-Force - запчасти и аксессуары для квадроциклов, снегоходов, мотоциклов и другой мототехники в Санкт-Петербурге с доставкой по России.';
+	}
+}
+
+if (!function_exists('mf_seo_default_image'))
+{
+	function mf_seo_default_image(): string
+	{
+		return 'https://i.siteapi.org/YJfa7Z7Cw75cOwfMDEDecsgPzU0=/0x0:860x335/fit-in/215x128/s.siteapi.org/ccdb0156d66a088.ru/logo/4six32irno6ckwwow0kg8gokcwo0k4';
+	}
+}
+
+if (!function_exists('mf_seo_has_head_meta'))
+{
+	function mf_seo_has_head_meta(string $name): bool
+	{
+		global $APPLICATION;
+		if (!is_object($APPLICATION))
+		{
+			return false;
+		}
+
+		$flag = 'mf_has_meta_' . str_replace([':', '-'], '_', mb_strtolower($name));
+		if ((string)$APPLICATION->GetPageProperty($flag) === 'Y')
+		{
+			return true;
+		}
+
+		$headStrings = [];
+		if (property_exists($APPLICATION, 'sDocPath2')
+			&& isset($APPLICATION->sDocPath2)
+			&& is_array($APPLICATION->sDocPath2))
+		{
+			$headStrings = $APPLICATION->sDocPath2;
+		}
+
+		$needle = mb_strtolower($name);
+		foreach ($headStrings as $html)
+		{
+			$html = mb_strtolower((string)$html);
+			if (
+				str_contains($html, 'property="' . $needle . '"')
+				|| str_contains($html, "property='" . $needle . "'")
+				|| str_contains($html, 'name="' . $needle . '"')
+				|| str_contains($html, "name='" . $needle . "'")
+			)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_seo_apply_default_meta'))
+{
+	function mf_seo_apply_default_meta(): void
+	{
+		global $APPLICATION;
+		if (!is_object($APPLICATION))
+		{
+			return;
+		}
+
+		$description = trim((string)$APPLICATION->GetPageProperty('description'));
+		if ($description === '')
+		{
+			$description = mf_seo_default_description();
+			$APPLICATION->SetPageProperty('description', $description);
+		}
+
+		$title = trim((string)$APPLICATION->GetPageProperty('title'));
+		if ($title === '')
+		{
+			$title = trim((string)$APPLICATION->GetTitle());
+		}
+		if ($title === '')
+		{
+			$title = 'Motor-Force';
+		}
+
+		$base = mf_seo_base_url();
+		$requestUri = (string)($_SERVER['REQUEST_URI'] ?? '/');
+		$path = preg_replace('~[#].*$~', '', $requestUri);
+		$url = $base !== '' ? ($base . ($path !== '' ? $path : '/')) : ($path !== '' ? $path : '/');
+		$image = mf_seo_default_image();
+		if ($base !== '' && str_starts_with($image, '/'))
+		{
+			$image = $base . $image;
+		}
+
+		if (!mf_seo_has_head_meta('og:title'))
+		{
+			$APPLICATION->AddHeadString('<meta property="og:title" content="' . mf_seo_escape_attr($title) . '" />', true);
+		}
+		if (!mf_seo_has_head_meta('og:description'))
+		{
+			$APPLICATION->AddHeadString('<meta property="og:description" content="' . mf_seo_escape_attr($description) . '" />', true);
+		}
+		if (!mf_seo_has_head_meta('og:type'))
+		{
+			$APPLICATION->AddHeadString('<meta property="og:type" content="website" />', true);
+		}
+		if (!mf_seo_has_head_meta('og:url'))
+		{
+			$APPLICATION->AddHeadString('<meta property="og:url" content="' . mf_seo_escape_attr($url) . '" />', true);
+		}
+		if (!mf_seo_has_head_meta('og:image'))
+		{
+			$APPLICATION->AddHeadString('<meta property="og:image" content="' . mf_seo_escape_attr($image) . '" />', true);
+		}
+		if (!mf_seo_has_head_meta('twitter:card'))
+		{
+			$APPLICATION->AddHeadString('<meta name="twitter:card" content="summary_large_image" />', true);
+		}
+		if (!mf_seo_has_head_meta('twitter:description'))
+		{
+			$APPLICATION->AddHeadString('<meta name="twitter:description" content="' . mf_seo_escape_attr($description) . '" />', true);
+		}
 	}
 }
 

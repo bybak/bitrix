@@ -121,6 +121,19 @@ return [
 		'description' => 'Контакты',
 		'keywords' => 'motor-force адрес,салова запчасти,спб запчасти на снегоход,салова 57 к 1,motor-force,запчасти спб',
 	],
+	'/search/' => [
+		'source_url' => 'https://motor-force.ru/search/',
+		'title' => 'Поиск запчастей - Motor-Force',
+		'description' => 'Поиск запчастей для квадроциклов, снегоходов, мотоциклов и другой мототехники в интернет-магазине Motor-Force.',
+		'keywords' => 'поиск запчастей,запчасти для мототехники,запчасти для квадроциклов,запчасти для снегоходов,Motor-Force',
+		'og' => [
+			'og:title' => 'Поиск запчастей - Motor-Force',
+			'og:type' => 'website',
+			'og:image' => 'https://i.siteapi.org/YJfa7Z7Cw75cOwfMDEDecsgPzU0=/0x0:860x335/fit-in/215x128/s.siteapi.org/ccdb0156d66a088.ru/logo/4six32irno6ckwwow0kg8gokcwo0k4',
+			'og:url' => 'https://motor-force.ru/search/',
+			'og:description' => 'Поиск запчастей для квадроциклов, снегоходов, мотоциклов и другой мототехники в интернет-магазине Motor-Force.',
+		],
+	],
 	'/posts/' => [
 		'source_url' => 'https://motor-force.ru/posts',
 		'title' => 'Motor-Force - Новости',
