@@ -194,7 +194,9 @@ def resolve_listing_article(
 	slug = (slug or "").strip()
 	article_from_title = (article_from_title or "").strip()
 
-	if slug and article_override.isdigit() and re.search(r"[A-Za-zА-Яа-я]", slug):
+	# card-articul «Арт.: …» на листинге — часто внутренний id (5414, 1685541307),
+	# реальный артикул — в сегменте URL /item/…/ (hff6012 или 112088).
+	if slug and article_override.isdigit() and slug != article_override:
 		return _normalize_article_slug(slug)
 
 	if article_override:
