@@ -520,6 +520,9 @@ if (!function_exists('mf_order_custom_status_set'))
 			throw new \InvalidArgumentException('ORDER_ID must be positive.');
 		}
 
+		$trustPaymentFrom1c = !empty($statuses['TRUST_PAYMENT_FROM_1C']);
+		unset($statuses['TRUST_PAYMENT_FROM_1C']);
+
 		$hl = mf_order_custom_status_ensure_hl();
 		$dataClass = $hl['DATA_CLASS'];
 
@@ -548,7 +551,11 @@ if (!function_exists('mf_order_custom_status_set'))
 			}
 			else
 			{
-				if ($code === 'paid' && !mf_order_custom_status_order_has_bitrix_payment_by_id($orderId))
+				if (
+					$code === 'paid'
+					&& !$trustPaymentFrom1c
+					&& !mf_order_custom_status_order_has_bitrix_payment_by_id($orderId)
+				)
 				{
 					$code = 'not_paid';
 				}

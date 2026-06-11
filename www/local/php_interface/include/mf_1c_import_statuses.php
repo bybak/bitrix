@@ -426,13 +426,8 @@ if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
 	): ?string
 	{
 		$explicit = $mf['payment_status'] ?? null;
-		$hasBitrixPayment = mf_1c_import_order_is_paid_in_bitrix($order);
 
-		if ($explicit === 'PAID' && !$hasBitrixPayment)
-		{
-			return 'NOT_PAID';
-		}
-
+		// Явный КодСтатусаОплатыMF из 1С — источник истины (в т.ч. PAID при оплате в 1С).
 		if ($explicit !== null)
 		{
 			return $explicit;
@@ -440,6 +435,8 @@ if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
 
 		if ($isCancelled)
 		{
+			$hasBitrixPayment = mf_1c_import_order_is_paid_in_bitrix($order);
+
 			return $hasBitrixPayment ? 'PAID' : 'NOT_PAID';
 		}
 
@@ -1216,6 +1213,10 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 		if ($paymentStatus !== null && $paymentStatus !== '')
 		{
 			$payload['PAYMENT_STATUS'] = $paymentStatus;
+			if ($paymentStatus === 'PAID')
+			{
+				$payload['TRUST_PAYMENT_FROM_1C'] = true;
+			}
 		}
 		if ($shipmentStatus !== null && $shipmentStatus !== '')
 		{
@@ -1536,13 +1537,14 @@ if (!function_exists('mf_1c_import_apply_updates'))
 					$changedFields[] = 'UF_1C_PAYMENT_STATUS=' . $ufPaymentStatus;
 				}
 				if (
-					($mf['payment_status'] ?? null) === 'PAID'
-					&& $ufPaymentStatus === 'PAID'
-					&& mf_1c_import_order_is_paid_in_bitrix($order)
-					&& mf_1c_import_mark_order_paid($order)
+					$ufPaymentStatus === 'PAID'
+					|| ($mf['payment_status'] ?? null) === 'PAID'
 				)
 				{
-					$changedFields[] = 'PAYED=Y';
+					if (mf_1c_import_mark_order_paid($order))
+					{
+						$changedFields[] = 'PAYED=Y';
+					}
 				}
 			}
 
