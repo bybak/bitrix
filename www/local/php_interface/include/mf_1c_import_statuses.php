@@ -485,21 +485,112 @@ if (!function_exists('mf_1c_import_reset_false_order_paid'))
 	}
 }
 
+if (!function_exists('mf_1c_import_parse_money'))
+{
+	function mf_1c_import_parse_money(mixed $value): float
+	{
+		$value = trim((string)$value);
+		if ($value === '')
+		{
+			return 0.0;
+		}
+
+		return (float)str_replace([' ', "\xc2\xa0", ','], ['', '', '.'], $value);
+	}
+}
+
+if (!function_exists('mf_1c_import_collect_payment_amounts'))
+{
+	/**
+	 * @return array{order_sum:float,paid_sum:float,has_order_sum:bool,has_paid_sum:bool}
+	 */
+	function mf_1c_import_collect_payment_amounts(array $mf, ?Order $order, array $parsed = []): array
+	{
+		$raw = is_array($mf['raw'] ?? null) ? $mf['raw'] : [];
+		$orderSum = 0.0;
+		$paidSum = 0.0;
+		$hasOrderSum = false;
+		$hasPaidSum = false;
+
+		if (($raw['СуммаЗаказаMF'] ?? '') !== '')
+		{
+			$orderSum = mf_1c_import_parse_money($raw['СуммаЗаказаMF']);
+			$hasOrderSum = $orderSum > 0;
+		}
+		if (!$hasOrderSum && $order)
+		{
+			$orderSum = (float)$order->getPrice();
+			$hasOrderSum = $orderSum > 0;
+		}
+
+		if (($raw['СуммаОплаченоMF'] ?? '') !== '')
+		{
+			$paidSum = mf_1c_import_parse_money($raw['СуммаОплаченоMF']);
+			$hasPaidSum = true;
+		}
+		if (!$hasPaidSum && (float)($parsed['payment_sum'] ?? 0) > 0)
+		{
+			$paidSum = (float)$parsed['payment_sum'];
+			$hasPaidSum = true;
+		}
+
+		return [
+			'order_sum' => $orderSum,
+			'paid_sum' => $paidSum,
+			'has_order_sum' => $hasOrderSum,
+			'has_paid_sum' => $hasPaidSum,
+		];
+	}
+}
+
+if (!function_exists('mf_1c_import_resolve_payment_status_from_amounts'))
+{
+	function mf_1c_import_resolve_payment_status_from_amounts(float $orderSum, float $paidSum): ?string
+	{
+		if ($orderSum <= 0)
+		{
+			return null;
+		}
+		if ($paidSum <= 0)
+		{
+			return 'NOT_PAID';
+		}
+		if ($paidSum + 0.01 >= $orderSum)
+		{
+			return 'PAID';
+		}
+
+		return 'PARTIAL_PAID';
+	}
+}
+
 if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
 {
 	/**
-	 * Статус оплаты для HL: только явный КодСтатусаОплатыMF из 1С.
-	 * Поле CommerceML «Оплачен» и суммы не используем — при завершении/отмене 1С часто шлёт ложный paid=true.
+	 * Статус оплаты для HL: в первую очередь сравниваем поступление и сумму заказа.
+	 * Если поступление >= суммы заказа — PAID (как для частичной оплаты при paid < order).
 	 */
 	function mf_1c_import_resolve_payment_status_for_import(
 		array $mf,
 		?Order $order,
-		bool $isCancelled
+		bool $isCancelled,
+		array $parsed = []
 	): ?string
 	{
-		$explicit = $mf['payment_status'] ?? null;
+		$amounts = mf_1c_import_collect_payment_amounts($mf, $order, $parsed);
+		if ($amounts['has_order_sum'] && $amounts['has_paid_sum'])
+		{
+			$fromAmounts = mf_1c_import_resolve_payment_status_from_amounts(
+				$amounts['order_sum'],
+				$amounts['paid_sum']
+			);
+			if ($fromAmounts !== null)
+			{
+				return $fromAmounts;
+			}
+		}
 
-		// Явный КодСтатусаОплатыMF из 1С — источник истины (в т.ч. PAID при оплате в 1С).
+		$explicit = $mf['payment_status'] ?? null;
 		if ($explicit !== null)
 		{
 			return $explicit;
@@ -510,17 +601,6 @@ if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
 		if ($fromLabel !== null)
 		{
 			return $fromLabel;
-		}
-
-		$fromSums = mf_1c_import_detect_payment_status_from_mf_sums(
-			$raw['СуммаЗаказаMF'] ?? '',
-			$raw['СуммаОплаченоMF'] ?? '',
-			null,
-			$raw['СтатусОплатыMF'] ?? ''
-		);
-		if ($fromSums !== null)
-		{
-			return $fromSums;
 		}
 
 		if ($isCancelled)
@@ -1116,11 +1196,6 @@ if (!function_exists('mf_1c_import_map_order_status'))
 
 if (!function_exists('mf_1c_import_detect_payment_status_from_mf_sums'))
 {
-	/**
-	 * Суммы из 1С не считаем доказательством полной оплаты: при завершении/отмене заказа
-	 * «СуммаОплаченоMF» часто дублирует сумму заказа без фактической оплаты.
-	 * PAID — только при явном флаге «Оплачен» в XML.
-	 */
 	function mf_1c_import_detect_payment_status_from_mf_sums(
 		?string $orderSumRaw,
 		?string $paidSumRaw,
@@ -1128,6 +1203,8 @@ if (!function_exists('mf_1c_import_detect_payment_status_from_mf_sums'))
 		?string $paymentLabel = null
 	): ?string
 	{
+		unset($paidFlag, $paymentLabel);
+
 		$orderSumRaw = trim((string)$orderSumRaw);
 		$paidSumRaw = trim((string)$paidSumRaw);
 		if ($orderSumRaw === '' || $paidSumRaw === '')
@@ -1135,29 +1212,10 @@ if (!function_exists('mf_1c_import_detect_payment_status_from_mf_sums'))
 			return null;
 		}
 
-		$orderSum = (float)str_replace([' ', ','], ['', '.'], $orderSumRaw);
-		$paidSum = (float)str_replace([' ', ','], ['', '.'], $paidSumRaw);
-		if ($orderSum <= 0)
-		{
-			return null;
-		}
-		if ($paidSum <= 0)
-		{
-			return 'NOT_PAID';
-		}
-		if ($paidSum + 0.001 >= $orderSum)
-		{
-			if ($paidFlag === true)
-			{
-				return 'PAID';
-			}
-
-			return mf_1c_import_resolve_payment_status_from_mf_label($paymentLabel) === 'PAID'
-				? 'PAID'
-				: null;
-		}
-
-		return 'PARTIAL_PAID';
+		return mf_1c_import_resolve_payment_status_from_amounts(
+			mf_1c_import_parse_money($orderSumRaw),
+			mf_1c_import_parse_money($paidSumRaw)
+		);
 	}
 }
 
@@ -1468,7 +1526,7 @@ if (!function_exists('mf_1c_import_resolve_status_codes'))
 			$orderQty = (float)str_replace(',', '.', (string)$raw['КоличествоЗаказаноMF']);
 		}
 
-		$paymentStatus = mf_1c_import_resolve_payment_status_for_import($mf, $order, $isCancelled);
+		$paymentStatus = mf_1c_import_resolve_payment_status_for_import($mf, $order, $isCancelled, $parsed);
 		if ($paymentStatus === null)
 		{
 			$orderPrice = 0.0;
@@ -1478,7 +1536,7 @@ if (!function_exists('mf_1c_import_resolve_status_codes'))
 			}
 			if ($orderPrice <= 0 && ($raw['СуммаЗаказаMF'] ?? '') !== '')
 			{
-				$orderPrice = (float)str_replace([' ', ','], ['', '.'], (string)$raw['СуммаЗаказаMF']);
+				$orderPrice = mf_1c_import_parse_money($raw['СуммаЗаказаMF']);
 			}
 			$paymentStatus = mf_1c_import_detect_payment_status(
 				$parsed['paid'] ?? null,
@@ -1575,10 +1633,14 @@ if (!function_exists('mf_1c_import_apply_updates'))
 			{
 				$ufPaymentStatus = $paymentLabelStatus;
 			}
+			$paymentAmounts = mf_1c_import_collect_payment_amounts($mf, $order, $parsed);
 			mf_1c_import_log(
 				'IMPORT STATUSES PAYMENT: order_id=' . $orderId
 				. ' resolved=' . (string)$ufPaymentStatus
 				. ' explicit=' . (string)($mf['payment_status'] ?? '')
+				. ' order_sum=' . $paymentAmounts['order_sum']
+				. ' paid_sum=' . $paymentAmounts['paid_sum']
+				. ' payment_sum_xml=' . (float)($parsed['payment_sum'] ?? 0)
 				. ' cancelled=' . (!empty($mf['_is_cancelled']) ? 'Y' : 'N')
 				. ' xml_paid=' . var_export($parsed['paid'] ?? null, true)
 				. ' bitrix_paid=' . (mf_1c_import_order_is_paid_in_bitrix($order) ? 'Y' : 'N')
@@ -1799,7 +1861,7 @@ if (!function_exists('mf_1c_import_apply_file'))
 				return;
 			}
 
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260519b: start ' . $filePath);
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260611a: start ' . $filePath);
 
 			if (!Loader::includeModule('sale'))
 			{
