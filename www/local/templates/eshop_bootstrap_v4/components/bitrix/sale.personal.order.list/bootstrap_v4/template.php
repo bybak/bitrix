@@ -396,6 +396,8 @@ else
 			$deliveryStatusClass = (string)$mfShipmentStatusDisplay['badge_class'];
 			$mfIsCancelled = function_exists('mf_order_custom_status_is_cancelled')
 				&& mf_order_custom_status_is_cancelled($mfCustomStatus);
+			$mfIsPaidByStatus = is_array($mfCustomStatus)
+				&& (string)($mfCustomStatus['PAYMENT_STATUS'] ?? '') === 'paid';
 			$mfCancelReasonText = $mfIsCancelled
 				? trim((string)($mfCustomStatus['CANCEL_REASON'] ?? ''))
 				: '';
@@ -514,6 +516,7 @@ else
 													$payment
 												);
 											$mfCanPayOnline = !$mfHideJurInvoicePayUi
+												&& !$mfIsPaidByStatus
 												&& ($payment['PAID'] === 'N' && $payment['IS_CASH'] !== 'Y' && $payment['ACTION_FILE'] !== 'cash');
 											if (!$mfCanPayOnline)
 											{

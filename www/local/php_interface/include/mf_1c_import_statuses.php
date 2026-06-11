@@ -499,6 +499,27 @@ if (!function_exists('mf_1c_import_parse_money'))
 	}
 }
 
+if (!function_exists('mf_1c_import_first_money_from_requisites'))
+{
+	function mf_1c_import_first_money_from_requisites(array $reqs, array $names): float
+	{
+		foreach ($names as $name)
+		{
+			if (($reqs[$name] ?? '') === '')
+			{
+				continue;
+			}
+			$value = mf_1c_import_parse_money($reqs[$name]);
+			if ($value > 0)
+			{
+				return $value;
+			}
+		}
+
+		return 0.0;
+	}
+}
+
 if (!function_exists('mf_1c_import_collect_payment_amounts'))
 {
 	/**
@@ -507,32 +528,50 @@ if (!function_exists('mf_1c_import_collect_payment_amounts'))
 	function mf_1c_import_collect_payment_amounts(array $mf, ?Order $order, array $parsed = []): array
 	{
 		$raw = is_array($mf['raw'] ?? null) ? $mf['raw'] : [];
+		$reqs = is_array($parsed['all_reqs'] ?? null) ? $parsed['all_reqs'] : [];
 		$orderSum = 0.0;
 		$paidSum = 0.0;
 		$hasOrderSum = false;
 		$hasPaidSum = false;
 
-		if (($raw['СуммаЗаказаMF'] ?? '') !== '')
+		$orderSum = mf_1c_import_first_money_from_requisites($reqs, [
+			'СуммаЗаказаMF',
+			'Сумма заказа MF',
+			'СуммаЗаказа',
+			'Сумма заказа',
+		]);
+		if ($orderSum <= 0 && ($raw['СуммаЗаказаMF'] ?? '') !== '')
 		{
 			$orderSum = mf_1c_import_parse_money($raw['СуммаЗаказаMF']);
-			$hasOrderSum = $orderSum > 0;
 		}
-		if (!$hasOrderSum && $order)
+		if ($orderSum <= 0 && (float)($parsed['document_sum'] ?? 0) > 0)
+		{
+			$orderSum = (float)$parsed['document_sum'];
+		}
+		if ($orderSum <= 0 && $order)
 		{
 			$orderSum = (float)$order->getPrice();
-			$hasOrderSum = $orderSum > 0;
 		}
+		$hasOrderSum = $orderSum > 0;
 
-		if (($raw['СуммаОплаченоMF'] ?? '') !== '')
+		$paidSum = mf_1c_import_first_money_from_requisites($reqs, [
+			'СуммаОплаченоMF',
+			'Сумма оплачено MF',
+			'СуммаОплачено',
+			'Сумма оплачено',
+			'Оплачено',
+			'Сумма оплаты',
+			'СуммаПлатежей',
+		]);
+		if ($paidSum <= 0 && ($raw['СуммаОплаченоMF'] ?? '') !== '')
 		{
 			$paidSum = mf_1c_import_parse_money($raw['СуммаОплаченоMF']);
-			$hasPaidSum = true;
 		}
-		if (!$hasPaidSum && (float)($parsed['payment_sum'] ?? 0) > 0)
+		if ($paidSum <= 0 && (float)($parsed['payment_sum'] ?? 0) > 0)
 		{
 			$paidSum = (float)$parsed['payment_sum'];
-			$hasPaidSum = true;
 		}
+		$hasPaidSum = $paidSum > 0;
 
 		return [
 			'order_sum' => $orderSum,
@@ -588,6 +627,19 @@ if (!function_exists('mf_1c_import_resolve_payment_status_for_import'))
 			{
 				return $fromAmounts;
 			}
+		}
+
+		if (
+			!$isCancelled
+			&& ($parsed['paid'] ?? null) === true
+			&& $amounts['has_order_sum']
+			&& (
+				!$amounts['has_paid_sum']
+				|| $amounts['paid_sum'] + 0.01 >= $amounts['order_sum']
+			)
+		)
+		{
+			return 'PAID';
 		}
 
 		$explicit = $mf['payment_status'] ?? null;
@@ -734,6 +786,11 @@ if (!function_exists('mf_1c_import_parse_document'))
 		$mf = mf_1c_import_extract_mf_fields($allReqs);
 		$statusId = strtoupper(trim((string)($allReqs['Статус заказа ИД'] ?? '')));
 
+		$documentSumNode = $xpath->query('cml:Сумма', $docNode)->item(0);
+		$documentSum = $documentSumNode
+			? mf_1c_import_parse_money(trim($documentSumNode->nodeValue))
+			: 0.0;
+
 		$paid = mf_1c_import_xml_bool($allReqs['Оплачен'] ?? null);
 		$shipped = mf_1c_import_xml_bool($allReqs['Отгружен'] ?? null);
 		$paymentSum = 0.0;
@@ -771,7 +828,8 @@ if (!function_exists('mf_1c_import_parse_document'))
 				$sumNode = $xpath->query('cml:Сумма', $subNode)->item(0);
 				$sum = $sumNode ? (float)str_replace(',', '.', trim($sumNode->nodeValue)) : 0.0;
 
-				if ($sum > 0 && preg_match('/(выплат|оплат)/iu', $operation))
+				$isPaymentOperation = $operation !== '' && preg_match('/(выплат|оплат|поступл|платеж|перевод)/iu', $operation);
+				if ($sum > 0 && ($isPaymentOperation || $subPaid === true))
 				{
 					$paymentSum += $sum;
 				}
@@ -804,6 +862,8 @@ if (!function_exists('mf_1c_import_parse_document'))
 			'resolved_number' => $candidates[0] ?? '',
 			'status_id' => $statusId,
 			'mf' => $mf,
+			'all_reqs' => $allReqs,
+			'document_sum' => $documentSum,
 			'paid' => $paid,
 			'shipped' => $shipped,
 			'payment_sum' => $paymentSum,
@@ -817,7 +877,7 @@ if (!function_exists('mf_1c_import_parse_xml_file'))
 	/**
 	 * @return array<int, array>
 	 */
-	function mf_1c_import_parse_xml_file(string $filePath): array
+	function mf_1c_import_parse_xml_file(string $filePath, bool $logDump = true): array
 	{
 		if (!is_file($filePath))
 		{
@@ -832,7 +892,10 @@ if (!function_exists('mf_1c_import_parse_xml_file'))
 			return [];
 		}
 
-		mf_1c_import_log_xml_dump($filePath, $xmlString);
+		if ($logDump)
+		{
+			mf_1c_import_log_xml_dump($filePath, $xmlString);
+		}
 
 		$xmlString = str_replace(
 			'<Наименование>Статуса заказа ИД</Наименование>',
@@ -867,12 +930,16 @@ if (!function_exists('mf_1c_import_parse_xml_file'))
 			}
 			$updates[] = $parsed;
 			$mf = is_array($parsed['mf'] ?? null) ? $parsed['mf'] : [];
+			$amounts = mf_1c_import_collect_payment_amounts($mf, null, $parsed);
 			mf_1c_import_log(
 				'IMPORT STATUSES PARSED: xml_number=' . $parsed['xml_number']
 				. ' bitrix_id=' . $parsed['resolved_number']
 				. ' candidates=' . implode(',', $parsed['order_candidates'] ?? [])
 				. ' legacy_status_id=' . $parsed['status_id']
 				. ' mf_fields=' . mf_1c_import_format_mf_log($mf)
+				. ' order_sum=' . $amounts['order_sum']
+				. ' paid_sum=' . $amounts['paid_sum']
+				. ' payment_sum_xml=' . (float)($parsed['payment_sum'] ?? 0)
 				. ' paid=' . var_export($parsed['paid'], true)
 				. ' shipped=' . var_export($parsed['shipped'], true)
 			);
@@ -1847,7 +1914,17 @@ if (!function_exists('mf_1c_import_apply_file'))
 	{
 		static $applied = [];
 		$filePath = trim($filePath);
-		if ($filePath === '' || isset($applied[$filePath]))
+		if ($filePath === '')
+		{
+			return;
+		}
+
+		$fileKey = $filePath;
+		if (is_file($filePath))
+		{
+			$fileKey .= ':' . (string)filemtime($filePath) . ':' . (string)filesize($filePath);
+		}
+		if (isset($applied[$fileKey]))
 		{
 			return;
 		}
@@ -1861,7 +1938,7 @@ if (!function_exists('mf_1c_import_apply_file'))
 				return;
 			}
 
-			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260611a: start ' . $filePath);
+			mf_1c_import_log('IMPORT STATUSES APPLY FILE v20260611b: start ' . $filePath);
 
 			if (!Loader::includeModule('sale'))
 			{
@@ -1882,7 +1959,7 @@ if (!function_exists('mf_1c_import_apply_file'))
 
 			mf_1c_import_log('IMPORT STATUSES APPLY FILE: documents=' . count($updates));
 			mf_1c_import_apply_updates($updates);
-			$applied[$filePath] = true;
+			$applied[$fileKey] = true;
 			mf_1c_import_log('IMPORT STATUSES APPLY FILE: done');
 		}
 		catch (\Throwable $e)
@@ -1914,5 +1991,190 @@ if (!function_exists('mf_1c_import_register_shutdown'))
 			mf_1c_import_apply_file($filePath);
 			mf_1c_import_log('IMPORT STATUSES: shutdown fallback done');
 		});
+	}
+}
+
+if (!function_exists('mf_1c_import_is_exchange_import_request'))
+{
+	function mf_1c_import_is_exchange_import_request(): bool
+	{
+		if (PHP_SAPI === 'cli')
+		{
+			return false;
+		}
+
+		$script = (string)($_SERVER['SCRIPT_NAME'] ?? '');
+		if (stripos($script, '1c_exchange.php') === false)
+		{
+			return false;
+		}
+
+		return (string)($_REQUEST['type'] ?? '') === 'sale'
+			&& (string)($_REQUEST['mode'] ?? $_GET['mode'] ?? $_POST['mode'] ?? '') === 'import';
+	}
+}
+
+if (!function_exists('mf_1c_import_collect_exchange_xml_files'))
+{
+	/**
+	 * @return string[]
+	 */
+	function mf_1c_import_collect_exchange_xml_files(): array
+	{
+		$dirs = [];
+		$docRoot = rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+		if ($docRoot !== '')
+		{
+			$dirs[] = $docRoot . '/upload/1c_exchange';
+		}
+		if (function_exists('mf1c_exchange_www_root'))
+		{
+			$dirs[] = mf1c_exchange_www_root() . '/upload/1c_exchange';
+		}
+
+		$files = [];
+		foreach (array_values(array_unique($dirs)) as $dir)
+		{
+			if (!is_dir($dir))
+			{
+				continue;
+			}
+			foreach (glob($dir . '/*.xml') ?: [] as $filePath)
+			{
+				if (is_file($filePath))
+				{
+					$files[] = $filePath;
+				}
+			}
+		}
+
+		usort($files, static function (string $a, string $b): int {
+			return (int)filemtime($b) <=> (int)filemtime($a);
+		});
+
+		return $files;
+	}
+}
+
+if (!function_exists('mf_1c_import_get_cached_exchange_updates'))
+{
+	/**
+	 * @return array<int, array>
+	 */
+	function mf_1c_import_get_cached_exchange_updates(): array
+	{
+		static $cache = null;
+		if (is_array($cache))
+		{
+			return $cache;
+		}
+
+		$cache = [];
+		foreach (mf_1c_import_collect_exchange_xml_files() as $filePath)
+		{
+			$fileKey = $filePath . ':' . (string)filemtime($filePath) . ':' . (string)filesize($filePath);
+			$updates = mf_1c_import_parse_xml_file($filePath, false);
+			foreach ($updates as $parsed)
+			{
+				if (is_array($parsed))
+				{
+					$parsed['_source_file'] = $fileKey;
+					$cache[] = $parsed;
+				}
+			}
+		}
+
+		return $cache;
+	}
+}
+
+if (!function_exists('mf_1c_import_reapply_order_from_exchange_files'))
+{
+	function mf_1c_import_reapply_order_from_exchange_files(int $orderId): void
+	{
+		if ($orderId <= 0 || !function_exists('mf_1c_import_apply_updates'))
+		{
+			return;
+		}
+
+		static $done = [];
+		if (isset($done[$orderId]))
+		{
+			return;
+		}
+
+		foreach (mf_1c_import_get_cached_exchange_updates() as $parsed)
+		{
+			if (!is_array($parsed))
+			{
+				continue;
+			}
+			$matchedOrderId = mf_1c_import_find_order_id($parsed);
+			if ($matchedOrderId !== $orderId)
+			{
+				continue;
+			}
+
+			$done[$orderId] = true;
+			mf_1c_import_log(
+				'IMPORT STATUSES REAPPLY: order_id=' . $orderId
+				. ' xml=' . basename((string)($parsed['_source_file'] ?? ''))
+			);
+			mf_1c_import_apply_updates([$parsed]);
+
+			return;
+		}
+	}
+}
+
+if (!function_exists('mf_1c_import_on_sale_order_saved'))
+{
+	function mf_1c_import_on_sale_order_saved(\Bitrix\Main\Event $event): void
+	{
+		if (!mf_1c_import_is_exchange_import_request())
+		{
+			return;
+		}
+		if ((bool)$event->getParameter('IS_NEW'))
+		{
+			return;
+		}
+
+		$order = $event->getParameter('ENTITY');
+		if (!$order instanceof Order)
+		{
+			$order = $event->getParameter('ORDER');
+		}
+		if (!$order instanceof Order)
+		{
+			return;
+		}
+
+		$orderId = (int)$order->getId();
+		if ($orderId <= 0)
+		{
+			return;
+		}
+
+		mf_1c_import_reapply_order_from_exchange_files($orderId);
+	}
+}
+
+if (!function_exists('mf_1c_import_register_event_handlers'))
+{
+	function mf_1c_import_register_event_handlers(): void
+	{
+		static $registered = false;
+		if ($registered || !class_exists(\Bitrix\Main\EventManager::class))
+		{
+			return;
+		}
+		$registered = true;
+
+		\Bitrix\Main\EventManager::getInstance()->addEventHandler(
+			'sale',
+			'OnSaleOrderSaved',
+			'mf_1c_import_on_sale_order_saved'
+		);
 	}
 }

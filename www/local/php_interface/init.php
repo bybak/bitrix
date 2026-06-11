@@ -5028,6 +5028,17 @@ if (is_file($mf1cExportInclude))
 	require_once $mf1cExportInclude;
 }
 
+$mf1cImportStatusesInit = __DIR__ . '/include/mf_1c_import_statuses.php';
+if (is_file($mf1cImportStatusesInit))
+{
+	require_once $mf1cImportStatusesInit;
+	if (function_exists('mf_1c_import_register_event_handlers'))
+	{
+		mf_1c_import_register_event_handlers();
+	}
+}
+unset($mf1cImportStatusesInit);
+
 // --- Custom order statuses from 1C (HL mf_order_custom_status) --------------
 $mfOrderCustomStatusInclude = __DIR__ . '/include/mf_order_custom_status.php';
 if (is_file($mfOrderCustomStatusInclude))
