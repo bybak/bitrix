@@ -723,6 +723,8 @@ final class Renderer
 
 	private static function renderOrderMail(Order $order): string
 	{
+		self::ensureMfOrderStatusDefaults($order);
+
 		$display = self::orderDisplayNumber($order);
 		$siteUrl = self::siteUrl($order);
 		$siteLink = '<a href="' . self::esc($siteUrl) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;">'
@@ -1811,29 +1813,67 @@ final class Renderer
 		return '';
 	}
 
-	private static function orderStatusLabel(Order $order): string
+	private static function ensureMfOrderStatusDefaults(Order $order): void
 	{
-		$statusId = trim((string)$order->getField('STATUS_ID'));
-		if ($statusId === '')
+		$orderId = (int)$order->getId();
+		if ($orderId <= 0 || !function_exists('mf_order_custom_status_set_defaults_for_new_order'))
 		{
-			return '';
+			return;
 		}
 
-		if (Loader::includeModule('sale') && class_exists(\CSaleStatus::class))
+		try
 		{
-			$lang = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
-			$row = \CSaleStatus::GetByID($statusId, $lang);
-			if (is_array($row))
+			mf_order_custom_status_set_defaults_for_new_order($orderId);
+		}
+		catch (\Throwable $e)
+		{
+			self::log('ensure mf order status defaults: orderId=' . $orderId . ' ' . $e->getMessage());
+		}
+	}
+
+	private static function orderStatusLabel(Order $order): string
+	{
+		$orderId = (int)$order->getId();
+		if ($orderId > 0 && function_exists('mf_order_custom_status_get'))
+		{
+			try
 			{
-				$name = trim((string)($row['NAME'] ?? ''));
-				if ($name !== '')
+				$mfStatus = mf_order_custom_status_get($orderId);
+				if (is_array($mfStatus))
 				{
-					return $name;
+					$label = trim((string)($mfStatus['ORDER_STATUS_LABEL'] ?? ''));
+					if ($label !== '')
+					{
+						return $label;
+					}
+
+					$code = trim((string)($mfStatus['ORDER_STATUS'] ?? ''));
+					if ($code !== '' && function_exists('mf_order_custom_status_label'))
+					{
+						$label = trim((string)mf_order_custom_status_label('order', $code));
+						if ($label !== '')
+						{
+							return $label;
+						}
+					}
 				}
+			}
+			catch (\Throwable $e)
+			{
+				self::log('order status label from 1C: orderId=' . $orderId . ' ' . $e->getMessage());
 			}
 		}
 
-		return $statusId;
+		if (function_exists('mf_order_custom_status_label'))
+		{
+			$fallback = trim((string)mf_order_custom_status_label('order', 'in_progress'));
+			if ($fallback !== '')
+			{
+				return $fallback;
+			}
+		}
+
+		return 'В работе';
 	}
 
 	private static function basketItemProductUrl(int $productId, Order $order): string
