@@ -427,6 +427,15 @@ if (!function_exists('mf_order_custom_status_apply_payment_truth'))
 			return $status;
 		}
 
+		if (Loader::includeModule('sale'))
+		{
+			$order = Order::load($orderId);
+			if ($order && (string)$order->getField('UF_1C_PAYMENT_STATUS') === 'PAID')
+			{
+				return $status;
+			}
+		}
+
 		$status['PAYMENT_STATUS'] = 'not_paid';
 		$status['PAYMENT_STATUS_LABEL'] = mf_order_custom_status_label('payment', 'not_paid');
 
@@ -744,11 +753,21 @@ if (!function_exists('mf_order_custom_status_display_payment_for_list'))
 			&& ($mfStatus['PAYMENT_STATUS'] ?? '') === 'paid'
 		)
 		{
-			$corrected = $mfStatus;
-			$corrected['PAYMENT_STATUS'] = 'not_paid';
-			$corrected['PAYMENT_STATUS_LABEL'] = '';
+			$trustedFrom1c = false;
+			$orderId = (int)($mfStatus['ORDER_ID'] ?? 0);
+			if ($orderId > 0 && Loader::includeModule('sale'))
+			{
+				$order = Order::load($orderId);
+				$trustedFrom1c = $order && (string)$order->getField('UF_1C_PAYMENT_STATUS') === 'PAID';
+			}
+			if (!$trustedFrom1c)
+			{
+				$corrected = $mfStatus;
+				$corrected['PAYMENT_STATUS'] = 'not_paid';
+				$corrected['PAYMENT_STATUS_LABEL'] = '';
 
-			return mf_order_custom_status_display_for_list($corrected, 'payment');
+				return mf_order_custom_status_display_for_list($corrected, 'payment');
+			}
 		}
 
 		return mf_order_custom_status_display_for_list($mfStatus, 'payment');
