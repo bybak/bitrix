@@ -870,6 +870,10 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		{
 			$orderId = mf_1c_export_order_id_by_xml_number($displayNumber);
 		}
+		if ($orderId <= 0 && $oldNumber !== '')
+		{
+			$orderId = mf_1c_export_order_id_by_xml_number($oldNumber);
+		}
 
 		if ($orderId > 0)
 		{
@@ -1746,7 +1750,31 @@ if (!function_exists('mf_1c_export_inject_order_cancel_requisite'))
 
 		mf_1c_export_log('EXPORT CANCEL: order_id=' . $orderId . ' requisites=' . count($requisites));
 
-		return mf_1c_export_upsert_document_requisites($documentBlock, $requisites);
+		$documentBlock = mf_1c_export_upsert_document_requisites($documentBlock, $requisites);
+
+		return mf_1c_export_inject_order_cancel_document_flags($documentBlock);
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_cancel_document_flags'))
+{
+	function mf_1c_export_inject_order_cancel_document_flags(string $documentBlock): string
+	{
+		if (preg_match('/<Отменен\b[^>]*>/su', $documentBlock))
+		{
+			$documentBlock = preg_replace('/<Отменен\b[^>]*>.*?<\/Отменен>/su', '<Отменен>true</Отменен>', $documentBlock, 1) ?? $documentBlock;
+		}
+		elseif (preg_match('/<\/Номер>/su', $documentBlock))
+		{
+			$documentBlock = preg_replace('/(<\/Номер>)/su', '$1<Отменен>true</Отменен>', $documentBlock, 1) ?? $documentBlock;
+		}
+
+		if (!preg_match('/<CANCELED\b[^>]*>/su', $documentBlock) && preg_match('/<\/Документ>/su', $documentBlock))
+		{
+			$documentBlock = preg_replace('/<\/Документ>/su', '<CANCELED>Y</CANCELED></Документ>', $documentBlock, 1) ?? $documentBlock;
+		}
+
+		return $documentBlock;
 	}
 }
 

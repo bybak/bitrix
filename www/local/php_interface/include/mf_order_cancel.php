@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Отмена заказа на сайте:
  * - MF-статус «Отменен» сразу в HL
- * - push в 1С (HTTP order_cancelled)
+ * - VERSION_1C touch → повторная выгрузка в 1С через CommerceML (без HTTP)
  * - без стандартного SALE_ORDER_CANCEL (письма — через MF CustomStatusNotifier)
  */
 
@@ -22,6 +22,7 @@ if (!function_exists('mf_order_cancel_push_enabled'))
 			return false;
 		}
 
+		// HTTP /hs/orders/update не используется — только CommerceML + хуки 1С.
 		return \Bitrix\Main\Config\Option::get('main', 'mf_order_cancel_push_1c', 'N') === 'Y';
 	}
 }
