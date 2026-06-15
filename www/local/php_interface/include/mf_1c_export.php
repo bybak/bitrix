@@ -868,6 +868,7 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		{
 			$documentBlock = mf_1c_export_rewrite_order_item_prices($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_order_pay_system_requisite($documentBlock, $orderId);
+			$documentBlock = mf_1c_export_inject_order_email_requisite($documentBlock, $orderId);
 		}
 
 		$documentBlock = mf_1c_export_inject_order_pay_system_requisite_from_xml($documentBlock);
@@ -1098,6 +1099,116 @@ if (!function_exists('mf_1c_export_order_pay_system_code'))
 		$meta = mf_1c_export_order_payment_meta($orderId);
 
 		return (string)($meta['code'] ?? '');
+	}
+}
+
+if (!function_exists('mf_1c_export_order_customer_email'))
+{
+	function mf_1c_export_order_customer_email(int $orderId): string
+	{
+		if ($orderId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return '';
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return '';
+		}
+
+		$email = '';
+		$propCollection = $order->getPropertyCollection();
+		if ($propCollection)
+		{
+			foreach (['EMAIL', 'email', 'E_MAIL', 'MAIL'] as $code)
+			{
+				$prop = $propCollection->getItemByOrderPropertyCode($code);
+				if (!$prop)
+				{
+					continue;
+				}
+				$email = trim((string)$prop->getValue());
+				if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+				{
+					return $email;
+				}
+			}
+		}
+
+		$userId = (int)$order->getUserId();
+		if ($userId > 0)
+		{
+			try
+			{
+				$user = \CUser::GetByID($userId)->Fetch();
+				if (is_array($user))
+				{
+					$email = trim((string)($user['EMAIL'] ?? ''));
+					if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+					{
+						return $email;
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_email_requisite'))
+{
+	function mf_1c_export_inject_order_email_requisite(string $documentBlock, int $orderId): string
+	{
+		$email = mf_1c_export_order_customer_email($orderId);
+		if ($email === '')
+		{
+			return $documentBlock;
+		}
+
+		$requisiteNames = ['Email', 'E-mail', 'E-Mail'];
+		$xml = '';
+		foreach ($requisiteNames as $name)
+		{
+			if (mb_stripos($documentBlock, '<Наименование>' . $name . '</Наименование>') !== false)
+			{
+				continue;
+			}
+			$xml .= '<ЗначениеРеквизита>'
+				. '<Наименование>' . mf_1c_export_xml_escape($name) . '</Наименование>'
+				. '<Значение>' . mf_1c_export_xml_escape($email) . '</Значение>'
+				. '</ЗначениеРеквизита>';
+		}
+
+		if ($xml === '')
+		{
+			return $documentBlock;
+		}
+
+		if (preg_match('/<ЗначенияРеквизитов\b[^>]*>/su', $documentBlock))
+		{
+			$updated = preg_replace(
+				'/(<ЗначенияРеквизитов\b[^>]*>)/su',
+				'$1' . $xml,
+				$documentBlock,
+				1
+			);
+
+			return is_string($updated) ? $updated : $documentBlock;
+		}
+
+		$block = '<ЗначенияРеквизитов>' . $xml . '</ЗначенияРеквизитов>';
+		if (preg_match('/<\/Документ>/su', $documentBlock))
+		{
+			return preg_replace('/<\/Документ>/su', $block . '</Документ>', $documentBlock, 1) ?? $documentBlock;
+		}
+
+		return $documentBlock . $block;
 	}
 }
 
