@@ -1670,9 +1670,30 @@ if (!function_exists('mf_1c_export_inject_order_cancel_requisite'))
 			'MF_ОтмененНаСайте' => 'Да',
 			'Отменен' => 'true',
 			'CANCELED' => 'Y',
-			'ПричинаОтменыНаСайте' => 'Отказ покупателя',
+			'ПричинаОтменыНаСайте' => mf_1c_export_order_cancel_reason($orderId),
 			'Статус заказа ИД' => 'C',
 		]);
+	}
+}
+
+if (!function_exists('mf_1c_export_order_cancel_reason'))
+{
+	function mf_1c_export_order_cancel_reason(int $orderId): string
+	{
+		if ($orderId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return 'Отказ покупателя';
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return 'Отказ покупателя';
+		}
+
+		$reason = trim((string)$order->getField('REASON_CANCELED'));
+
+		return $reason !== '' ? $reason : 'Отказ покупателя';
 	}
 }
 

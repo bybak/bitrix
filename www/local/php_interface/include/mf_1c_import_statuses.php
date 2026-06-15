@@ -1511,6 +1511,32 @@ if (!function_exists('mf_1c_import_sync_hl_statuses'))
 		$payload['IS_CANCELED'] = $isCancelled;
 		$payload['CANCEL_REASON'] = mf_1c_import_resolve_cancel_reason_text($mf);
 
+		// Отмена на сайте важнее статуса из 1С: иначе HL откатывается «Отменен → В работе» и уходят лишние письма.
+		if (function_exists('mf_order_is_cancelled_on_site_by_id') && mf_order_is_cancelled_on_site_by_id($orderId))
+		{
+			$incomingOrder = null;
+			if ($orderStatus !== null && $orderStatus !== '')
+			{
+				$incomingOrder = function_exists('mf_order_custom_status_normalize')
+					? mf_order_custom_status_normalize('order', $orderStatus)
+					: null;
+			}
+			if ($incomingOrder !== null && $incomingOrder !== 'cancelled')
+			{
+				mf_1c_import_log(
+					'IMPORT STATUSES HL GUARD: site-cancelled order_id=' . $orderId
+					. ' ignore_1c_order_status=' . (string)$orderStatus
+				);
+				$payload['ORDER_STATUS'] = 'CANCELED';
+				$payload['IS_CANCELED'] = true;
+			}
+			elseif ($incomingOrder === null && ($orderStatus === null || $orderStatus === ''))
+			{
+				$payload['ORDER_STATUS'] = 'CANCELED';
+				$payload['IS_CANCELED'] = true;
+			}
+		}
+
 		$completionVariant = trim((string)($mf['completion_variant'] ?? ''));
 		if ($completionVariant !== '')
 		{

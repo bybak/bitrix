@@ -382,6 +382,28 @@ final class CustomStatusNotifier
 			return;
 		}
 
+		static $sent = [];
+		$changes = array_values(array_filter(
+			$changes,
+			static function (array $change) use ($orderId, &$sent): bool {
+				$key = $orderId
+					. ':' . (string)($change['field'] ?? '')
+					. ':' . (string)($change['old'] ?? '')
+					. '>' . (string)($change['new'] ?? '');
+				if (isset($sent[$key]))
+				{
+					return false;
+				}
+				$sent[$key] = true;
+
+				return true;
+			}
+		));
+		if ($changes === [])
+		{
+			return;
+		}
+
 		try
 		{
 			$order = Handlers::loadOrderPublic($orderId);

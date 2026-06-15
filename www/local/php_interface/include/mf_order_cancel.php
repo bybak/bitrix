@@ -13,6 +13,19 @@ use Bitrix\Main\Loader;
 use Bitrix\Main\Web\HttpClient;
 use Bitrix\Sale\Order;
 
+if (!function_exists('mf_order_cancel_push_enabled'))
+{
+	function mf_order_cancel_push_enabled(): bool
+	{
+		if (!class_exists(\Bitrix\Main\Config\Option::class))
+		{
+			return false;
+		}
+
+		return \Bitrix\Main\Config\Option::get('main', 'mf_order_cancel_push_1c', 'N') === 'Y';
+	}
+}
+
 if (!function_exists('mf_order_cancel_log'))
 {
 	function mf_order_cancel_log(string $message): void
@@ -53,6 +66,11 @@ if (!function_exists('mf_order_cancel_push_to_1c'))
 {
 	function mf_order_cancel_push_to_1c(Order $order, string $reason = 'Отказ покупателя'): void
 	{
+		if (!mf_order_cancel_push_enabled())
+		{
+			mf_order_cancel_log('1C push disabled (mf_order_cancel_push_1c!=Y) order_id=' . (int)$order->getId());
+			return;
+		}
 		if (!class_exists(\Mf\Unf\Config::class))
 		{
 			mf_order_cancel_log('UNF Config missing, skip 1C push order_id=' . (int)$order->getId());
@@ -152,10 +170,18 @@ if (!function_exists('mf_order_handle_cancelled'))
 			return;
 		}
 
+		static $handled = [];
+		if (!empty($handled[$orderId]))
+		{
+			mf_order_cancel_log('duplicate handler skip order_id=' . $orderId);
+			return;
+		}
+		$handled[$orderId] = true;
+
 		if (function_exists('mf_order_custom_status_get') && function_exists('mf_order_custom_status_is_cancelled'))
 		{
 			$before = mf_order_custom_status_get($orderId);
-			if (mf_order_custom_status_is_cancelled($before))
+			if (mf_order_custom_status_is_cancelled($before) && mf_order_is_cancelled_on_site($order))
 			{
 				mf_order_cancel_log('already cancelled in HL order_id=' . $orderId);
 				mf_order_cancel_push_to_1c($order, $reason);
@@ -205,10 +231,24 @@ if (!function_exists('mf_order_cancel_on_sale_order_saved'))
 			return;
 		}
 
-		if ((string)$order->getField('CANCELED') !== 'Y'
-			&& (string)$order->getField('STATUS_ID') !== 'C')
+		if (!mf_order_is_cancelled_on_site($order))
 		{
 			return;
+		}
+
+		$orderId = (int)$order->getId();
+		if ($orderId <= 0)
+		{
+			return;
+		}
+
+		if (function_exists('mf_order_custom_status_get') && function_exists('mf_order_custom_status_is_cancelled'))
+		{
+			$current = mf_order_custom_status_get($orderId);
+			if (mf_order_custom_status_is_cancelled($current))
+			{
+				return;
+			}
 		}
 
 		$values = $event->getParameter('VALUES');

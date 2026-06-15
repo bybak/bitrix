@@ -516,7 +516,8 @@ if (!function_exists('mf_order_custom_status_set'))
 	 *   CANCEL_REASON?:string|null,
 	 *   COMPLETION_VARIANT?:string|null,
 	 *   COMPLETION_COMMENT?:string|null,
-	 *   UPDATED_AT?:string|DateTime|null
+	 *   UPDATED_AT?:string|DateTime|null,
+	 *   _SKIP_NOTIFY?:bool
 	 * } $statuses
 	 */
 	function mf_order_custom_status_set(int $orderId, array $statuses): array
@@ -525,6 +526,9 @@ if (!function_exists('mf_order_custom_status_set'))
 		{
 			throw new \InvalidArgumentException('ORDER_ID must be positive.');
 		}
+
+		$skipNotify = !empty($statuses['_SKIP_NOTIFY']);
+		unset($statuses['_SKIP_NOTIFY']);
 
 		$trustPaymentFrom1c = !empty($statuses['TRUST_PAYMENT_FROM_1C']);
 		unset($statuses['TRUST_PAYMENT_FROM_1C']);
@@ -654,12 +658,45 @@ if (!function_exists('mf_order_custom_status_set'))
 			throw new \RuntimeException('Order custom status was saved but cannot be read back.');
 		}
 
-		if (class_exists(\Mf\OrderMail\CustomStatusNotifier::class))
+		if (!$skipNotify && class_exists(\Mf\OrderMail\CustomStatusNotifier::class))
 		{
 			\Mf\OrderMail\CustomStatusNotifier::notify($orderId, $before, $result);
 		}
 
 		return $result;
+	}
+}
+
+if (!function_exists('mf_order_is_cancelled_on_site'))
+{
+	function mf_order_is_cancelled_on_site(?Order $order): bool
+	{
+		if (!$order instanceof Order)
+		{
+			return false;
+		}
+
+		if ((string)$order->getField('CANCELED') === 'Y')
+		{
+			return true;
+		}
+
+		return strtoupper(trim((string)$order->getField('STATUS_ID'))) === 'C';
+	}
+}
+
+if (!function_exists('mf_order_is_cancelled_on_site_by_id'))
+{
+	function mf_order_is_cancelled_on_site_by_id(int $orderId): bool
+	{
+		if ($orderId <= 0 || !Loader::includeModule('sale'))
+		{
+			return false;
+		}
+
+		$order = Order::load($orderId);
+
+		return mf_order_is_cancelled_on_site($order);
 	}
 }
 
