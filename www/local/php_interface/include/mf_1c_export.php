@@ -1245,6 +1245,73 @@ if (!function_exists('mf_1c_export_order_customer_phone'))
 	}
 }
 
+if (!function_exists('mf_1c_export_upsert_document_requisite'))
+{
+	/**
+	 * Заменить значение существующего реквизита или добавить новый блок.
+	 */
+	function mf_1c_export_upsert_document_requisite(string $documentBlock, string $name, string $value): string
+	{
+		$name = trim($name);
+		$value = trim($value);
+		if ($name === '' || $value === '')
+		{
+			return $documentBlock;
+		}
+
+		if (preg_match_all(
+			'/<ЗначениеРеквизита\b[^>]*>(.*?)<\/ЗначениеРеквизита>/su',
+			$documentBlock,
+			$matches,
+			PREG_OFFSET_CAPTURE
+		))
+		{
+			foreach ($matches[0] as $index => $match)
+			{
+				$inner = $matches[1][$index][0];
+				if (!preg_match('/<Наименование\b[^>]*>(.*?)<\/Наименование>/su', $inner, $nameMatch))
+				{
+					continue;
+				}
+				$existingName = trim(html_entity_decode(strip_tags($nameMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+				if (mb_strtolower($existingName) !== mb_strtolower($name))
+				{
+					continue;
+				}
+
+				$replacement = '<ЗначениеРеквизита>'
+					. '<Наименование>' . mf_1c_export_xml_escape($name) . '</Наименование>'
+					. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
+					. '</ЗначениеРеквизита>';
+
+				$offset = (int)$match[1];
+				$length = strlen($match[0]);
+
+				return substr($documentBlock, 0, $offset) . $replacement . substr($documentBlock, $offset + $length);
+			}
+		}
+
+		return mf_1c_export_inject_document_requisites($documentBlock, [$name => $value]);
+	}
+}
+
+if (!function_exists('mf_1c_export_upsert_document_requisites'))
+{
+	function mf_1c_export_upsert_document_requisites(string $documentBlock, array $requisites): string
+	{
+		foreach ($requisites as $name => $value)
+		{
+			$documentBlock = mf_1c_export_upsert_document_requisite(
+				$documentBlock,
+				trim((string)$name),
+				trim((string)$value)
+			);
+		}
+
+		return $documentBlock;
+	}
+}
+
 if (!function_exists('mf_1c_export_inject_document_requisites'))
 {
 	function mf_1c_export_inject_document_requisites(string $documentBlock, array $requisites): string
@@ -1665,14 +1732,21 @@ if (!function_exists('mf_1c_export_inject_order_cancel_requisite'))
 			return $documentBlock;
 		}
 
-		return mf_1c_export_inject_document_requisites($documentBlock, [
+		$requisites = [
 			'ОтмененНаСайте' => 'Да',
 			'MF_ОтмененНаСайте' => 'Да',
 			'Отменен' => 'true',
 			'CANCELED' => 'Y',
+			'CANCEL' => 'Y',
 			'ПричинаОтменыНаСайте' => mf_1c_export_order_cancel_reason($orderId),
+			'Причина отмены' => mf_1c_export_order_cancel_reason($orderId),
 			'Статус заказа ИД' => 'C',
-		]);
+			'Статуса заказа ИД' => 'C',
+		];
+
+		mf_1c_export_log('EXPORT CANCEL: order_id=' . $orderId . ' requisites=' . count($requisites));
+
+		return mf_1c_export_upsert_document_requisites($documentBlock, $requisites);
 	}
 }
 
