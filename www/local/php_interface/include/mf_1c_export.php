@@ -1124,6 +1124,10 @@ if (!function_exists('mf_1c_export_inject_order_pay_system_requisite'))
 		{
 			$requisites['Метод оплаты ИД'] = (string)$meta['id'];
 		}
+		if (($meta['code'] ?? '') === 'paykeeper')
+		{
+			$requisites['MF_PAYKEEPER'] = '1';
+		}
 
 		$xml = '';
 		foreach ($requisites as $name => $value)
@@ -1210,6 +1214,10 @@ if (!function_exists('mf_1c_export_inject_order_pay_system_requisite_from_xml'))
 		}
 
 		$requisites = ['MF_PAY_SYSTEM' => $code];
+		if ($code === 'paykeeper')
+		{
+			$requisites['MF_PAYKEEPER'] = '1';
+		}
 		if ($name !== '' && mb_stripos($documentBlock, '<Наименование>Метод оплаты</Наименование>') === false)
 		{
 			$requisites['Метод оплаты'] = $name;
