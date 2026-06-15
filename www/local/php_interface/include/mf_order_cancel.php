@@ -198,7 +198,6 @@ if (!function_exists('mf_order_handle_cancelled'))
 					'ORDER_STATUS' => 'CANCELED',
 					'IS_CANCELED' => true,
 					'CANCEL_REASON' => $reason,
-					'PAYMENT_STATUS' => 'not_paid',
 				]);
 				mf_order_cancel_log('HL status cancelled order_id=' . $orderId);
 			}

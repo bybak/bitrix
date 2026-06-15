@@ -412,30 +412,10 @@ if (!function_exists('mf_order_custom_status_format_row'))
 if (!function_exists('mf_order_custom_status_apply_payment_truth'))
 {
 	/**
-	 * Для активных заказов HL — источник истины (оплата из 1С).
-	 * Для отменённых без фактической оплаты в Bitrix не показываем ложный «Оплачен».
+	 * Возвращает статус как есть — оплата/отгрузка не меняются при отмене заказа.
 	 */
 	function mf_order_custom_status_apply_payment_truth(array $status): array
 	{
-		if (($status['PAYMENT_STATUS'] ?? '') !== 'paid')
-		{
-			return $status;
-		}
-
-		if (!mf_order_custom_status_is_cancelled($status))
-		{
-			return $status;
-		}
-
-		$orderId = (int)($status['ORDER_ID'] ?? 0);
-		if ($orderId <= 0 || mf_order_custom_status_order_has_bitrix_payment_by_id($orderId))
-		{
-			return $status;
-		}
-
-		$status['PAYMENT_STATUS'] = 'not_paid';
-		$status['PAYMENT_STATUS_LABEL'] = mf_order_custom_status_label('payment', 'not_paid');
-
 		return $status;
 	}
 }
@@ -780,20 +760,6 @@ if (!function_exists('mf_order_custom_status_display_payment_for_list'))
 	 */
 	function mf_order_custom_status_display_payment_for_list(?array $mfStatus, array $paymentRows): array
 	{
-		if (
-			is_array($mfStatus)
-			&& ($mfStatus['PAYMENT_STATUS'] ?? '') === 'paid'
-			&& mf_order_custom_status_is_cancelled($mfStatus)
-			&& !mf_order_custom_status_order_has_bitrix_payment($paymentRows)
-		)
-		{
-			$corrected = $mfStatus;
-			$corrected['PAYMENT_STATUS'] = 'not_paid';
-			$corrected['PAYMENT_STATUS_LABEL'] = mf_order_custom_status_label('payment', 'not_paid');
-
-			return mf_order_custom_status_display_for_list($corrected, 'payment');
-		}
-
 		return mf_order_custom_status_display_for_list($mfStatus, 'payment');
 	}
 }
