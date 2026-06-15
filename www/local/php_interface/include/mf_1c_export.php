@@ -869,6 +869,8 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 			$documentBlock = mf_1c_export_rewrite_order_item_prices($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_order_pay_system_requisite($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_order_email_requisite($documentBlock, $orderId);
+			$documentBlock = mf_1c_export_inject_order_phone_requisite($documentBlock, $orderId);
+			$documentBlock = mf_1c_export_inject_counterparty_contacts($documentBlock, $orderId);
 		}
 
 		$documentBlock = mf_1c_export_inject_order_pay_system_requisite_from_xml($documentBlock);
@@ -1102,6 +1104,45 @@ if (!function_exists('mf_1c_export_order_pay_system_code'))
 	}
 }
 
+if (!function_exists('mf_1c_export_order_property_value'))
+{
+	function mf_1c_export_order_property_value(int $orderId, array $codes): string
+	{
+		if ($orderId <= 0 || $codes === [] || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return '';
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return '';
+		}
+
+		$propCollection = $order->getPropertyCollection();
+		if (!$propCollection)
+		{
+			return '';
+		}
+
+		foreach ($codes as $code)
+		{
+			$prop = $propCollection->getItemByOrderPropertyCode((string)$code);
+			if (!$prop)
+			{
+				continue;
+			}
+			$value = trim((string)$prop->getValue());
+			if ($value !== '')
+			{
+				return $value;
+			}
+		}
+
+		return '';
+	}
+}
+
 if (!function_exists('mf_1c_export_order_customer_email'))
 {
 	function mf_1c_export_order_customer_email(int $orderId): string
@@ -1117,23 +1158,10 @@ if (!function_exists('mf_1c_export_order_customer_email'))
 			return '';
 		}
 
-		$email = '';
-		$propCollection = $order->getPropertyCollection();
-		if ($propCollection)
+		$email = mf_1c_export_order_property_value($orderId, ['EMAIL', 'email', 'E_MAIL', 'MAIL']);
+		if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
 		{
-			foreach (['EMAIL', 'email', 'E_MAIL', 'MAIL'] as $code)
-			{
-				$prop = $propCollection->getItemByOrderPropertyCode($code);
-				if (!$prop)
-				{
-					continue;
-				}
-				$email = trim((string)$prop->getValue());
-				if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
-				{
-					return $email;
-				}
-			}
+			return $email;
 		}
 
 		$userId = (int)$order->getUserId();
@@ -1161,27 +1189,75 @@ if (!function_exists('mf_1c_export_order_customer_email'))
 	}
 }
 
-if (!function_exists('mf_1c_export_inject_order_email_requisite'))
+if (!function_exists('mf_1c_export_order_customer_phone'))
 {
-	function mf_1c_export_inject_order_email_requisite(string $documentBlock, int $orderId): string
+	function mf_1c_export_order_customer_phone(int $orderId): string
 	{
-		$email = mf_1c_export_order_customer_email($orderId);
-		if ($email === '')
+		if ($orderId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
 		{
-			return $documentBlock;
+			return '';
 		}
 
-		$requisiteNames = ['Email', 'E-mail', 'E-Mail'];
-		$xml = '';
-		foreach ($requisiteNames as $name)
+		$phone = mf_1c_export_order_property_value($orderId, ['PHONE', 'phone', 'TEL', 'MOBILE', 'PERSONAL_PHONE']);
+		if ($phone !== '')
 		{
+			return $phone;
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return '';
+		}
+
+		$userId = (int)$order->getUserId();
+		if ($userId > 0)
+		{
+			try
+			{
+				$user = \CUser::GetByID($userId)->Fetch();
+				if (is_array($user))
+				{
+					foreach (['PERSONAL_PHONE', 'PERSONAL_MOBILE', 'WORK_PHONE'] as $field)
+					{
+						$phone = trim((string)($user[$field] ?? ''));
+						if ($phone !== '')
+						{
+							return $phone;
+						}
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				// ignore
+			}
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_document_requisites'))
+{
+	function mf_1c_export_inject_document_requisites(string $documentBlock, array $requisites): string
+	{
+		$xml = '';
+		foreach ($requisites as $name => $value)
+		{
+			$name = trim((string)$name);
+			$value = trim((string)$value);
+			if ($name === '' || $value === '')
+			{
+				continue;
+			}
 			if (mb_stripos($documentBlock, '<Наименование>' . $name . '</Наименование>') !== false)
 			{
 				continue;
 			}
 			$xml .= '<ЗначениеРеквизита>'
 				. '<Наименование>' . mf_1c_export_xml_escape($name) . '</Наименование>'
-				. '<Значение>' . mf_1c_export_xml_escape($email) . '</Значение>'
+				. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
 				. '</ЗначениеРеквизита>';
 		}
 
@@ -1209,6 +1285,174 @@ if (!function_exists('mf_1c_export_inject_order_email_requisite'))
 		}
 
 		return $documentBlock . $block;
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_email_requisite'))
+{
+	function mf_1c_export_inject_order_email_requisite(string $documentBlock, int $orderId): string
+	{
+		$email = mf_1c_export_order_customer_email($orderId);
+		if ($email === '')
+		{
+			return $documentBlock;
+		}
+
+		$requisites = [];
+		foreach (['Email', 'E-mail', 'E-Mail'] as $name)
+		{
+			$requisites[$name] = $email;
+		}
+
+		return mf_1c_export_inject_document_requisites($documentBlock, $requisites);
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_phone_requisite'))
+{
+	function mf_1c_export_inject_order_phone_requisite(string $documentBlock, int $orderId): string
+	{
+		$phone = mf_1c_export_order_customer_phone($orderId);
+		if ($phone === '')
+		{
+			return $documentBlock;
+		}
+
+		$requisites = [];
+		foreach (['Телефон', 'PHONE', 'Phone', 'Контактный телефон'] as $name)
+		{
+			$requisites[$name] = $phone;
+		}
+
+		return mf_1c_export_inject_document_requisites($documentBlock, $requisites);
+	}
+}
+
+if (!function_exists('mf_1c_export_counterparty_contact_exists'))
+{
+	function mf_1c_export_counterparty_contact_exists(string $contragentBlock, string $kind): bool
+	{
+		$kind = mb_strtolower(trim($kind));
+		if ($kind === '' || !preg_match_all('/<Контакт\b[^>]*>(.*?)<\/Контакт>/su', $contragentBlock, $matches))
+		{
+			return false;
+		}
+
+		foreach ($matches[1] as $inner)
+		{
+			if (!preg_match('/<Тип\b[^>]*>(.*?)<\/Тип>/su', $inner, $typeMatch))
+			{
+				continue;
+			}
+			$type = mb_strtolower(trim(html_entity_decode(strip_tags($typeMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+			if ($kind === 'phone' && (mb_strpos($type, 'тел') !== false || mb_strpos($type, 'phone') !== false))
+			{
+				return true;
+			}
+			if ($kind === 'email' && (mb_strpos($type, 'почт') !== false || mb_strpos($type, 'mail') !== false || mb_strpos($type, 'e-mail') !== false))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_1c_export_build_counterparty_contact_xml'))
+{
+	function mf_1c_export_build_counterparty_contact_xml(string $type, string $value): string
+	{
+		return '<Контакт>'
+			. '<Тип>' . mf_1c_export_xml_escape($type) . '</Тип>'
+			. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
+			. '</Контакт>';
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_counterparty_contacts_block'))
+{
+	function mf_1c_export_inject_counterparty_contacts_block(string $contragentBlock, string $phone, string $email): string
+	{
+		$contactsXml = '';
+		if ($phone !== '' && !mf_1c_export_counterparty_contact_exists($contragentBlock, 'phone'))
+		{
+			$contactsXml .= mf_1c_export_build_counterparty_contact_xml('Телефон рабочий', $phone);
+		}
+		if ($email !== '' && !mf_1c_export_counterparty_contact_exists($contragentBlock, 'email'))
+		{
+			$contactsXml .= mf_1c_export_build_counterparty_contact_xml('Электронная почта', $email);
+		}
+		if ($contactsXml === '')
+		{
+			return $contragentBlock;
+		}
+
+		if (preg_match('/<Контакты\b[^>]*>/su', $contragentBlock))
+		{
+			$updated = preg_replace(
+				'/(<Контакты\b[^>]*>)/su',
+				'$1' . $contactsXml,
+				$contragentBlock,
+				1
+			);
+
+			return is_string($updated) ? $updated : $contragentBlock;
+		}
+
+		$block = '<Контакты>' . $contactsXml . '</Контакты>';
+		if (preg_match('/<Роль\b[^>]*>/su', $contragentBlock))
+		{
+			$updated = preg_replace('/(<Роль\b[^>]*>)/su', $block . '$1', $contragentBlock, 1);
+
+			return is_string($updated) ? $updated : $contragentBlock;
+		}
+
+		if (preg_match('/<\/Контрагент>/su', $contragentBlock))
+		{
+			$updated = preg_replace('/<\/Контрагент>/su', $block . '</Контрагент>', $contragentBlock, 1);
+
+			return is_string($updated) ? $updated : $contragentBlock;
+		}
+
+		return $contragentBlock . $block;
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_counterparty_contacts'))
+{
+	function mf_1c_export_inject_counterparty_contacts(string $documentBlock, int $orderId): string
+	{
+		if ($orderId <= 0 || stripos($documentBlock, '<Контрагент') === false)
+		{
+			return $documentBlock;
+		}
+
+		$phone = mf_1c_export_order_customer_phone($orderId);
+		$email = mf_1c_export_order_customer_email($orderId);
+		if ($phone === '' && $email === '')
+		{
+			return $documentBlock;
+		}
+
+		$updated = preg_replace_callback(
+			'/<Контрагенты\b[^>]*>.*?<\/Контрагенты>/su',
+			static function (array $matches) use ($phone, $email): string {
+				$block = $matches[0];
+				if (!preg_match('/<Контрагент\b[^>]*>.*?<\/Контрагент>/su', $block, $agentMatch))
+				{
+					return $block;
+				}
+
+				$newAgent = mf_1c_export_inject_counterparty_contacts_block($agentMatch[0], $phone, $email);
+
+				return str_replace($agentMatch[0], $newAgent, $block);
+			},
+			$documentBlock,
+			1
+		);
+
+		return is_string($updated) ? $updated : $documentBlock;
 	}
 }
 
