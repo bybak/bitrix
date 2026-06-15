@@ -864,6 +864,13 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		{
 			$orderId = mf_1c_export_order_id_by_xml_number($oldNumber);
 		}
+
+		$displayNumber = mf_1c_export_order_display_number_by_id($orderId);
+		if ($orderId <= 0 && $displayNumber !== '')
+		{
+			$orderId = mf_1c_export_order_id_by_xml_number($displayNumber);
+		}
+
 		if ($orderId > 0)
 		{
 			$documentBlock = mf_1c_export_rewrite_order_item_prices($documentBlock, $orderId);
@@ -875,7 +882,6 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 
 		$documentBlock = mf_1c_export_inject_order_pay_system_requisite_from_xml($documentBlock);
 
-		$displayNumber = mf_1c_export_order_display_number_by_id($orderId);
 		if ($displayNumber === '' || $oldNumber === '' || !preg_match('/<Номер\b[^>]*>.*?<\/Номер>/su', $documentBlock))
 		{
 			return $documentBlock;
