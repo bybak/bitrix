@@ -878,6 +878,7 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 			$documentBlock = mf_1c_export_inject_order_email_requisite($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_order_phone_requisite($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_counterparty_contacts($documentBlock, $orderId);
+			$documentBlock = mf_1c_export_inject_order_cancel_requisite($documentBlock, $orderId);
 		}
 
 		$documentBlock = mf_1c_export_inject_order_pay_system_requisite_from_xml($documentBlock);
@@ -1625,6 +1626,51 @@ if (!function_exists('mf_1c_export_inject_order_pay_system_requisite_from_xml'))
 		}
 
 		return $documentBlock . $block;
+	}
+}
+
+if (!function_exists('mf_1c_export_order_is_cancelled'))
+{
+	function mf_1c_export_order_is_cancelled(int $orderId): bool
+	{
+		if ($orderId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return false;
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return false;
+		}
+
+		if ((string)$order->getField('CANCELED') === 'Y')
+		{
+			return true;
+		}
+
+		return strtoupper(trim((string)$order->getField('STATUS_ID'))) === 'C';
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_cancel_requisite'))
+{
+	/**
+	 * При отмене на сайте — реквизиты для 1С (хук MF_ПрименитьОтменуЗаказаССайта).
+	 */
+	function mf_1c_export_inject_order_cancel_requisite(string $documentBlock, int $orderId): string
+	{
+		if ($orderId <= 0 || !mf_1c_export_order_is_cancelled($orderId))
+		{
+			return $documentBlock;
+		}
+
+		return mf_1c_export_inject_document_requisites($documentBlock, [
+			'ОтмененНаСайте' => 'Да',
+			'MF_ОтмененНаСайте' => 'Да',
+			'ПричинаОтменыНаСайте' => 'Отказ покупателя',
+			'Статус заказа ИД' => 'C',
+		]);
 	}
 }
 
