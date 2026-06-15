@@ -207,7 +207,39 @@ if (!function_exists('mf_order_handle_cancelled'))
 			}
 		}
 
+		mf_order_cancel_touch_1c_export($orderId);
+
 		mf_order_cancel_push_to_1c($order, $reason);
+	}
+}
+
+if (!function_exists('mf_order_cancel_touch_1c_export'))
+{
+	/**
+	 * Сброс VERSION_1C — чтобы отменённый заказ снова попал в выгрузку CommerceML.
+	 */
+	function mf_order_cancel_touch_1c_export(int $orderId): void
+	{
+		if ($orderId <= 0 || !Loader::includeModule('sale'))
+		{
+			return;
+		}
+
+		try
+		{
+			$version = 'mf-cancel-' . gmdate('YmdHis') . '-' . $orderId;
+			if (class_exists(\Bitrix\Sale\Internals\OrderTable::class))
+			{
+				\Bitrix\Sale\Internals\OrderTable::update($orderId, [
+					'VERSION_1C' => $version,
+				]);
+				mf_order_cancel_log('VERSION_1C touched order_id=' . $orderId);
+			}
+		}
+		catch (\Throwable $e)
+		{
+			mf_order_cancel_log('VERSION_1C touch error order_id=' . $orderId . ' ' . $e->getMessage());
+		}
 	}
 }
 
