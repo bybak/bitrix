@@ -701,5 +701,53 @@ final class mf_paykeeperHandler extends PaySystem\ServiceHandler
 		}
 		return $decoded;
 	}
+
+	/** PayKeeper: оплата уходит письмом из 1С, не со страницы сайта. */
+	public static function isPaykeeperPaySystemId(int $paySystemId): bool
+	{
+		if ($paySystemId <= 0)
+		{
+			return false;
+		}
+
+		try
+		{
+			if (!\Bitrix\Main\Loader::includeModule('sale'))
+			{
+				return false;
+			}
+
+			$service = PaySystem\Manager::getObjectById($paySystemId);
+			if (!$service)
+			{
+				return false;
+			}
+
+			$actionFile = mb_strtolower(trim((string)$service->getField('ACTION_FILE')));
+			return $actionFile === 'mf_paykeeper' || $actionFile === 'mfpaykeeper';
+		}
+		catch (\Throwable $e)
+		{
+			return false;
+		}
+	}
+
+	public static function awaitingPaymentEmailMessageHtml(string $sumLabel = ''): string
+	{
+		$sumLabel = trim($sumLabel);
+		$html = '<div class="mf-paykeeper-awaiting" style="font-size:14px;line-height:1.6;color:#333;">'
+			. '<p><strong>Заказ успешно оформлен.</strong></p>'
+			. '<p>В течение нескольких минут на вашу электронную почту придёт письмо со ссылкой на оплату.</p>';
+
+		if ($sumLabel !== '')
+		{
+			$html .= '<p>Сумма к оплате: <strong>' . htmlspecialcharsbx($sumLabel) . '</strong>.</p>';
+		}
+
+		$html .= '<p style="font-size:13px;color:#666;">Если письмо не пришло в течение 10–15 минут, проверьте папку «Спам» или свяжитесь с менеджером магазина.</p>'
+			. '</div>';
+
+		return $html;
+	}
 }
 

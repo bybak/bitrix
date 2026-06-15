@@ -69,9 +69,22 @@ if ($mfPersonTypeId > 0 && function_exists('mf_checkout_person_type_map'))
 						{
 							$mfIsCard2Card = class_exists(\Mf\Card2Card\TemplateRenderer::class)
 								&& \Mf\Card2Card\TemplateRenderer::isCard2CardPaySystemId((int)($payment['PAY_SYSTEM_ID'] ?? 0));
+							$mfPaySystemAction = mb_strtolower(trim((string)($arPaySystem['ACTION_FILE'] ?? '')));
+							$mfIsPaykeeper = ($mfPaySystemAction === 'mf_paykeeper' || $mfPaySystemAction === 'mfpaykeeper')
+								|| (
+									class_exists(\Sale\Handlers\PaySystem\mf_paykeeperHandler::class, false)
+									&& \Sale\Handlers\PaySystem\mf_paykeeperHandler::isPaykeeperPaySystemId((int)($payment['PAY_SYSTEM_ID'] ?? 0))
+								);
+							$mfPaykeeperSumLabel = '';
+							if ($mfIsPaykeeper)
+							{
+								$mfPaykeeperSumLabel = function_exists('mf_sale_format_currency')
+									? mf_sale_format_currency((float)($payment['SUM'] ?? 0), (string)($payment['CURRENCY'] ?? ''))
+									: SaleFormatCurrency((float)($payment['SUM'] ?? 0), (string)($payment['CURRENCY'] ?? ''));
+							}
 							?>
 
-							<? if (!$mfIsCard2Card): ?>
+							<? if (!$mfIsCard2Card && !$mfIsPaykeeper): ?>
 							<div class="row mb-2">
 								<div class="col">
 									<h3 class="pay_name"><?=Loc::getMessage("SOA_PAY") ?></h3>
@@ -83,8 +96,28 @@ if ($mfPersonTypeId > 0 && function_exists('mf_checkout_person_type_map'))
 							</div>
 							<? endif; ?>
 							<div class="row mb-2">
-								<div class="col<?=$mfIsCard2Card ? ' mf-order-confirm-card2card' : ''?>">
-									<? if ($arPaySystem["ACTION_FILE"] <> '' && $arPaySystem["NEW_WINDOW"] == "Y" && $arPaySystem["IS_CASH"] != "Y"): ?>
+								<div class="col<?=$mfIsCard2Card ? ' mf-order-confirm-card2card' : ($mfIsPaykeeper ? ' mf-order-confirm-paykeeper' : '')?>">
+									<? if ($mfIsPaykeeper): ?>
+										<?php
+										if (class_exists(\Sale\Handlers\PaySystem\mf_paykeeperHandler::class, false))
+										{
+											echo \Sale\Handlers\PaySystem\mf_paykeeperHandler::awaitingPaymentEmailMessageHtml($mfPaykeeperSumLabel);
+										}
+										else
+										{
+											?>
+											<div class="mf-paykeeper-awaiting" style="font-size:14px;line-height:1.6;color:#333;">
+												<p><strong>Заказ успешно оформлен.</strong></p>
+												<p>В течение нескольких минут на вашу электронную почту придёт письмо со ссылкой на оплату.</p>
+												<?php if ($mfPaykeeperSumLabel !== ''): ?>
+													<p>Сумма к оплате: <strong><?=htmlspecialcharsbx($mfPaykeeperSumLabel)?></strong>.</p>
+												<?php endif; ?>
+												<p style="font-size:13px;color:#666;">Если письмо не пришло в течение 10–15 минут, проверьте папку «Спам» или свяжитесь с менеджером магазина.</p>
+											</div>
+											<?php
+										}
+										?>
+									<? elseif ($arPaySystem["ACTION_FILE"] <> '' && $arPaySystem["NEW_WINDOW"] == "Y" && $arPaySystem["IS_CASH"] != "Y"): ?>
 									<?
 										$orderAccountNumber = urlencode(urlencode($arResult["ORDER"]["ACCOUNT_NUMBER"]));
 										$paymentAccountNumber = $payment["ACCOUNT_NUMBER"];

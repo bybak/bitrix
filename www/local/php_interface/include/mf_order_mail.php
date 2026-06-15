@@ -1230,32 +1230,16 @@ final class Renderer
 		string $sumLabel
 	): string
 	{
-		unset($order);
-
-		$payLink = self::paykeeperPayLink($payment);
+		unset($order, $payment);
 
 		$name = $paySystemName !== '' ? $paySystemName : 'PayKeeper';
-		$html = '<div style="font-size:14px;line-height:1.6;color:#333;">'
+
+		return '<div style="font-size:14px;line-height:1.6;color:#333;">'
 			. '<p>Вы выбрали способ оплаты <strong>' . self::esc($name) . '</strong>.</p>'
-			. '<p>Пожалуйста, оплатите заказ на сумму <strong>' . self::esc($sumLabel) . '</strong>.</p>';
-
-		if ($payLink !== '')
-		{
-			$html .= '<p><a href="' . self::esc($payLink) . '" style="color:' . self::COLOR_LINK . ';text-decoration:underline;font-weight:bold;">'
-				. 'Перейти к оплате на PayKeeper'
-				. '</a></p>';
-			$html .= '<p style="font-size:13px;color:#666;">Если ссылка не открывается, скопируйте адрес:<br>'
-				. self::esc($payLink)
-				. '</p>';
-		}
-		else
-		{
-			$html .= '<p>Не удалось сформировать ссылку на оплату автоматически. Пожалуйста, свяжитесь с менеджером или перейдите к оплате из личного кабинета.</p>';
-		}
-
-		$html .= '</div>';
-
-		return $html;
+			. '<p>В течение нескольких минут на вашу электронную почту придёт <strong>письмо со ссылкой на оплату</strong>.</p>'
+			. '<p>Сумма к оплате: <strong>' . self::esc($sumLabel) . '</strong>.</p>'
+			. '<p style="font-size:13px;color:#666;">Если письмо не пришло в течение 10–15 минут, проверьте папку «Спам» или свяжитесь с менеджером магазина.</p>'
+			. '</div>';
 	}
 
 	private static function cashPaymentHtml(string $paySystemName, string $sumLabel): string
