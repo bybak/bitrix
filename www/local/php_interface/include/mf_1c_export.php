@@ -852,6 +852,7 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 			return $documentBlock;
 		}
 		$documentBlock = mf_1c_export_rewrite_order_document_currency($documentBlock);
+		$documentBlock = mf_1c_export_normalize_payment_requisite_names($documentBlock);
 
 		$orderId = mf_1c_export_document_order_id($documentBlock);
 		$oldNumber = '';
@@ -866,7 +867,10 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		if ($orderId > 0)
 		{
 			$documentBlock = mf_1c_export_rewrite_order_item_prices($documentBlock, $orderId);
+			$documentBlock = mf_1c_export_inject_order_pay_system_requisite($documentBlock, $orderId);
 		}
+
+		$documentBlock = mf_1c_export_inject_order_pay_system_requisite_from_xml($documentBlock);
 
 		$displayNumber = mf_1c_export_order_display_number_by_id($orderId);
 		if ($displayNumber === '' || $oldNumber === '' || !preg_match('/<Номер\b[^>]*>.*?<\/Номер>/su', $documentBlock))
@@ -906,6 +910,352 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 		);
 
 		return mf_1c_export_inject_order_document_requisites($updated, $displayNumber);
+	}
+}
+
+if (!function_exists('mf_1c_export_extract_document_requisite'))
+{
+	function mf_1c_export_extract_document_requisite(string $documentBlock, string $name): string
+	{
+		$name = trim($name);
+		if ($name === '' || !preg_match_all(
+			'/<ЗначениеРеквизита\b[^>]*>(.*?)<\/ЗначениеРеквизита>/su',
+			$documentBlock,
+			$matches
+		))
+		{
+			return '';
+		}
+
+		foreach ($matches[1] as $inner)
+		{
+			if (!preg_match('/<Наименование\b[^>]*>(.*?)<\/Наименование>/su', $inner, $nameMatch))
+			{
+				continue;
+			}
+			if (!preg_match('/<Значение\b[^>]*>(.*?)<\/Значение>/su', $inner, $valueMatch))
+			{
+				continue;
+			}
+
+			$propName = trim(html_entity_decode(strip_tags($nameMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+			if ($propName !== $name)
+			{
+				continue;
+			}
+
+			return trim(html_entity_decode(strip_tags($valueMatch[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_1c_export_normalize_payment_requisite_names'))
+{
+	/**
+	 * Bitrix export с setLanguage('en') отдаёт PaymentSystem, а 1С ждёт «Метод оплаты».
+	 */
+	function mf_1c_export_normalize_payment_requisite_names(string $documentBlock): string
+	{
+		$map = [
+			'PaymentSystem' => 'Метод оплаты',
+			'Payment system ID' => 'Метод оплаты ИД',
+			'PaymentSystemID' => 'Метод оплаты ИД',
+		];
+
+		foreach ($map as $from => $to)
+		{
+			if (mb_stripos($documentBlock, '<Наименование>' . $to . '</Наименование>') !== false)
+			{
+				continue;
+			}
+
+			$value = mf_1c_export_extract_document_requisite($documentBlock, $from);
+			if ($value === '')
+			{
+				continue;
+			}
+
+			if (mb_stripos($documentBlock, '<Наименование>' . $to . '</Наименование>') !== false)
+			{
+				continue;
+			}
+
+			$requisite = '<ЗначениеРеквизита>'
+				. '<Наименование>' . mf_1c_export_xml_escape($to) . '</Наименование>'
+				. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
+				. '</ЗначениеРеквизита>';
+
+			if (preg_match('/<ЗначенияРеквизитов\b[^>]*>/su', $documentBlock))
+			{
+				$updated = preg_replace(
+					'/(<ЗначенияРеквизитов\b[^>]*>)/su',
+					'$1' . $requisite,
+					$documentBlock,
+					1
+				);
+				$documentBlock = is_string($updated) ? $updated : $documentBlock;
+			}
+			else
+			{
+				$block = '<ЗначенияРеквизитов>' . $requisite . '</ЗначенияРеквизитов>';
+				if (preg_match('/<\/Документ>/su', $documentBlock))
+				{
+					$documentBlock = preg_replace('/<\/Документ>/su', $block . '</Документ>', $documentBlock, 1) ?? $documentBlock;
+				}
+				else
+				{
+					$documentBlock .= $block;
+				}
+			}
+		}
+
+		return $documentBlock;
+	}
+}
+
+if (!function_exists('mf_1c_export_order_payment_meta'))
+{
+	/**
+	 * @return array{code: string, name: string, id: string}
+	 */
+	function mf_1c_export_order_payment_meta(int $orderId): array
+	{
+		$empty = ['code' => '', 'name' => '', 'id' => ''];
+		if ($orderId <= 0 || !class_exists(\Bitrix\Main\Loader::class) || !\Bitrix\Main\Loader::includeModule('sale'))
+		{
+			return $empty;
+		}
+
+		$order = \Bitrix\Sale\Order::load($orderId);
+		if (!$order)
+		{
+			return $empty;
+		}
+
+		$paymentCollection = $order->getPaymentCollection();
+		if (!$paymentCollection)
+		{
+			return $empty;
+		}
+
+		foreach ($paymentCollection as $payment)
+		{
+			if (!$payment instanceof \Bitrix\Sale\Payment || $payment->isInner())
+			{
+				continue;
+			}
+
+			$paySystemId = (int)$payment->getPaymentSystemId();
+			if ($paySystemId <= 0)
+			{
+				continue;
+			}
+
+			$service = \Bitrix\Sale\PaySystem\Manager::getObjectById($paySystemId);
+			if (!$service)
+			{
+				continue;
+			}
+
+			$name = trim((string)$payment->getPaymentSystemName());
+			if ($name === '')
+			{
+				$name = trim((string)$service->getField('NAME'));
+			}
+
+			$actionFile = mb_strtolower(trim((string)$service->getField('ACTION_FILE')));
+			$code = '';
+			if ($actionFile === 'mf_paykeeper' || $actionFile === 'mfpaykeeper')
+			{
+				$code = 'paykeeper';
+			}
+			elseif ($actionFile === 'mf_card2card')
+			{
+				$code = 'card2card';
+			}
+			elseif ($actionFile === 'bill')
+			{
+				$code = 'bill';
+			}
+
+			return [
+				'code' => $code,
+				'name' => $name,
+				'id' => (string)$paySystemId,
+			];
+		}
+
+		return $empty;
+	}
+}
+
+if (!function_exists('mf_1c_export_order_pay_system_code'))
+{
+	function mf_1c_export_order_pay_system_code(int $orderId): string
+	{
+		$meta = mf_1c_export_order_payment_meta($orderId);
+
+		return (string)($meta['code'] ?? '');
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_pay_system_requisite'))
+{
+	function mf_1c_export_inject_order_pay_system_requisite(string $documentBlock, int $orderId): string
+	{
+		$meta = mf_1c_export_order_payment_meta($orderId);
+		if (($meta['code'] ?? '') === '' && ($meta['name'] ?? '') === '' && ($meta['id'] ?? '') === '')
+		{
+			return $documentBlock;
+		}
+
+		$requisites = [];
+		if (($meta['code'] ?? '') !== '')
+		{
+			$requisites['MF_PAY_SYSTEM'] = (string)$meta['code'];
+		}
+		if (($meta['name'] ?? '') !== '')
+		{
+			$requisites['Метод оплаты'] = (string)$meta['name'];
+		}
+		if (($meta['id'] ?? '') !== '')
+		{
+			$requisites['Метод оплаты ИД'] = (string)$meta['id'];
+		}
+
+		$xml = '';
+		foreach ($requisites as $name => $value)
+		{
+			if (mb_stripos($documentBlock, '<Наименование>' . $name . '</Наименование>') !== false)
+			{
+				continue;
+			}
+			$xml .= '<ЗначениеРеквизита>'
+				. '<Наименование>' . mf_1c_export_xml_escape($name) . '</Наименование>'
+				. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
+				. '</ЗначениеРеквизита>';
+		}
+
+		if ($xml === '')
+		{
+			return $documentBlock;
+		}
+
+		if (preg_match('/<ЗначенияРеквизитов\b[^>]*>/su', $documentBlock))
+		{
+			$updated = preg_replace(
+				'/(<ЗначенияРеквизитов\b[^>]*>)/su',
+				'$1' . $xml,
+				$documentBlock,
+				1
+			);
+
+			return is_string($updated) ? $updated : $documentBlock;
+		}
+
+		$block = '<ЗначенияРеквизитов>' . $xml . '</ЗначенияРеквизитов>';
+		if (preg_match('/<\/Документ>/su', $documentBlock))
+		{
+			return preg_replace('/<\/Документ>/su', $block . '</Документ>', $documentBlock, 1) ?? $documentBlock;
+		}
+
+		return $documentBlock . $block;
+	}
+}
+
+if (!function_exists('mf_1c_export_detect_pay_code'))
+{
+	function mf_1c_export_detect_pay_code(string $name, string $id): string
+	{
+		$hay = mb_strtolower($name . ' ' . $id);
+		if (mb_strpos($hay, 'paykeeper') !== false || mb_strpos($hay, 'пейкипер') !== false)
+		{
+			return 'paykeeper';
+		}
+		if (mb_strpos($hay, 'карт') !== false && mb_strpos($hay, 'перевод') !== false)
+		{
+			return 'card2card';
+		}
+		if (mb_strpos($hay, 'безнал') !== false || mb_strpos($hay, 'bill') !== false || mb_strpos($hay, 'счет') !== false)
+		{
+			return 'bill';
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_pay_system_requisite_from_xml'))
+{
+	function mf_1c_export_inject_order_pay_system_requisite_from_xml(string $documentBlock): string
+	{
+		$name = mf_1c_export_extract_document_requisite($documentBlock, 'Метод оплаты');
+		if ($name === '')
+		{
+			$name = mf_1c_export_extract_document_requisite($documentBlock, 'PaymentSystem');
+		}
+
+		$id = mf_1c_export_extract_document_requisite($documentBlock, 'Метод оплаты ИД');
+		if ($id === '')
+		{
+			$id = mf_1c_export_extract_document_requisite($documentBlock, 'Payment system ID');
+		}
+
+		$code = mf_1c_export_detect_pay_code($name, $id);
+		if ($code === '')
+		{
+			return $documentBlock;
+		}
+
+		$requisites = ['MF_PAY_SYSTEM' => $code];
+		if ($name !== '' && mb_stripos($documentBlock, '<Наименование>Метод оплаты</Наименование>') === false)
+		{
+			$requisites['Метод оплаты'] = $name;
+		}
+		if ($id !== '' && mb_stripos($documentBlock, '<Наименование>Метод оплаты ИД</Наименование>') === false)
+		{
+			$requisites['Метод оплаты ИД'] = $id;
+		}
+
+		$xml = '';
+		foreach ($requisites as $reqName => $value)
+		{
+			if (mb_stripos($documentBlock, '<Наименование>' . $reqName . '</Наименование>') !== false)
+			{
+				continue;
+			}
+			$xml .= '<ЗначениеРеквизита>'
+				. '<Наименование>' . mf_1c_export_xml_escape($reqName) . '</Наименование>'
+				. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
+				. '</ЗначениеРеквизита>';
+		}
+
+		if ($xml === '')
+		{
+			return $documentBlock;
+		}
+
+		if (preg_match('/<ЗначенияРеквизитов\b[^>]*>/su', $documentBlock))
+		{
+			$updated = preg_replace(
+				'/(<ЗначенияРеквизитов\b[^>]*>)/su',
+				'$1' . $xml,
+				$documentBlock,
+				1
+			);
+
+			return is_string($updated) ? $updated : $documentBlock;
+		}
+
+		$block = '<ЗначенияРеквизитов>' . $xml . '</ЗначенияРеквизитов>';
+		if (preg_match('/<\/Документ>/su', $documentBlock))
+		{
+			return preg_replace('/<\/Документ>/su', $block . '</Документ>', $documentBlock, 1) ?? $documentBlock;
+		}
+
+		return $documentBlock . $block;
 	}
 }
 

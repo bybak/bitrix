@@ -296,7 +296,7 @@ else
 			if($_SESSION["BX_CML2_EXPORT"]["version"] <> '' && intval($arParams["INTERVAL"]) <= 0)
 				$arParams["INTERVAL"] = 30;
 
-			$export::setLanguage('en');
+			$export::setLanguage('ru');
 		}
 
 		if($_SESSION["BX_CML2_EXPORT"]["version"] == '')
