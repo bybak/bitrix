@@ -208,6 +208,24 @@ if (!function_exists('mf_order_handle_cancelled'))
 			}
 		}
 
+		if (trim((string)$order->getField('REASON_CANCELED')) === '' && Loader::includeModule('sale'))
+		{
+			try
+			{
+				if (class_exists(\Bitrix\Sale\Internals\OrderTable::class))
+				{
+					\Bitrix\Sale\Internals\OrderTable::update($orderId, [
+						'REASON_CANCELED' => $reason,
+					]);
+					mf_order_cancel_log('REASON_CANCELED set order_id=' . $orderId);
+				}
+			}
+			catch (\Throwable $e)
+			{
+				mf_order_cancel_log('REASON_CANCELED error order_id=' . $orderId . ' ' . $e->getMessage());
+			}
+		}
+
 		mf_order_cancel_touch_1c_export($orderId);
 
 		mf_order_cancel_push_to_1c($order, $reason);

@@ -1744,6 +1744,8 @@ if (!function_exists('mf_1c_export_inject_order_cancel_requisite'))
 			'CANCEL' => 'Y',
 			'ПричинаОтменыНаСайте' => mf_1c_export_order_cancel_reason($orderId),
 			'Причина отмены' => mf_1c_export_order_cancel_reason($orderId),
+			'CANCEL_REASON' => mf_1c_export_order_cancel_reason($orderId),
+			'Заметки' => mf_1c_export_order_cancel_reason($orderId),
 			'Статус заказа ИД' => 'C',
 			'Статуса заказа ИД' => 'C',
 		];
@@ -1794,8 +1796,25 @@ if (!function_exists('mf_1c_export_order_cancel_reason'))
 		}
 
 		$reason = trim((string)$order->getField('REASON_CANCELED'));
+		if ($reason !== '')
+		{
+			return $reason;
+		}
 
-		return $reason !== '' ? $reason : 'Отказ покупателя';
+		if (function_exists('mf_order_custom_status_get'))
+		{
+			$status = mf_order_custom_status_get($orderId);
+			if (is_array($status))
+			{
+				$fromHl = trim((string)($status['CANCEL_REASON'] ?? ''));
+				if ($fromHl !== '')
+				{
+					return $fromHl;
+				}
+			}
+		}
+
+		return 'Отказ покупателя';
 	}
 }
 
