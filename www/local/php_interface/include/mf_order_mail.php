@@ -203,6 +203,10 @@ final class Handlers
 		{
 			return false;
 		}
+		if ($eventName === 'SALE_ORDER_CANCEL')
+		{
+			return false;
+		}
 		if (!in_array($eventName, self::mailEventNames(), true))
 		{
 			return true;

@@ -1668,6 +1668,8 @@ if (!function_exists('mf_1c_export_inject_order_cancel_requisite'))
 		return mf_1c_export_inject_document_requisites($documentBlock, [
 			'ОтмененНаСайте' => 'Да',
 			'MF_ОтмененНаСайте' => 'Да',
+			'Отменен' => 'true',
+			'CANCELED' => 'Y',
 			'ПричинаОтменыНаСайте' => 'Отказ покупателя',
 			'Статус заказа ИД' => 'C',
 		]);

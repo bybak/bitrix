@@ -5175,6 +5175,16 @@ if (is_file($mfOrderMailInclude))
 	}
 }
 
+$mfOrderCancelInclude = __DIR__ . '/include/mf_order_cancel.php';
+if (is_file($mfOrderCancelInclude))
+{
+	require_once $mfOrderCancelInclude;
+	if (function_exists('mf_order_cancel_bootstrap'))
+	{
+		mf_order_cancel_bootstrap();
+	}
+}
+
 // --- Новый заказ: полное описание на e-mail -----------------------------------
 $mfOrderNotifyInclude = __DIR__ . '/include/mf_order_notify.php';
 if (is_file($mfOrderNotifyInclude))
