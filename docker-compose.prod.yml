@@ -3,6 +3,11 @@
 # Запуск: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # Reload:  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec nginx nginx -s reload
 #
+# Сертификат (НЕ certbot --nginx — порт 80 занят Docker):
+#   certbot certonly --webroot -w /www/bitrix_motor_force/certbot/www \
+#     -d motor-force.ru -d www.motor-force.ru -d opt.motor-force.ru --expand
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml exec nginx nginx -s reload
+#
 # conf.d монтируется по файлам (не каталогом :ro) — иначе ssl.conf не примонтируется.
 
 services:
