@@ -9,8 +9,9 @@ services:
     volumes:
       - ./www:/var/www/html
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      # includes/bitrix.conf подключается из default.conf (локально) и ssl.conf (прод)
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/conf.d/includes:/etc/nginx/conf.d/includes:ro
+      # ssl.conf — только на проде (docker-compose.prod.yml), не монтировать conf.d целиком:ro
       - ./logs/nginx:/var/log/nginx
       - ./certbot/www:/var/www/certbot:ro
       # /etc/letsencrypt — только на проде, см. docker-compose.prod.yml

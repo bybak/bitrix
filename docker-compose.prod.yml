@@ -1,5 +1,9 @@
 # Продакшен: HTTPS motor-force.ru + сертификаты Let's Encrypt на хосте.
+# ВАЖНО: без ssl.conf сайт на :443 не поднимется (ERR_CONNECTION_REFUSED).
 # Запуск: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Reload:  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec nginx nginx -s reload
+#
+# conf.d монтируется по файлам (не каталогом :ro) — иначе ssl.conf не примонтируется.
 
 services:
   nginx:
