@@ -881,6 +881,8 @@ if (!function_exists('mf_1c_export_rewrite_order_document_number'))
 			$documentBlock = mf_1c_export_inject_order_pay_system_requisite($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_order_email_requisite($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_order_phone_requisite($documentBlock, $orderId);
+			$documentBlock = mf_1c_export_inject_order_contact_properties($documentBlock, $orderId);
+			$documentBlock = mf_1c_export_inject_document_email_field($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_counterparty_contacts($documentBlock, $orderId);
 			$documentBlock = mf_1c_export_inject_order_cancel_requisite($documentBlock, $orderId);
 		}
@@ -1363,6 +1365,131 @@ if (!function_exists('mf_1c_export_inject_document_requisites'))
 		}
 
 		return $documentBlock . $block;
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_document_properties'))
+{
+	/**
+	 * Добавить phone/email в ЗначенияСвойств (1С читает и реквизиты, и свойства заказа).
+	 */
+	function mf_1c_export_inject_document_properties(string $documentBlock, array $properties): string
+	{
+		$xml = '';
+		foreach ($properties as $name => $value)
+		{
+			$name = trim((string)$name);
+			$value = trim((string)$value);
+			if ($name === '' || $value === '')
+			{
+				continue;
+			}
+			if (mb_stripos($documentBlock, '<Наименование>' . $name . '</Наименование>') !== false)
+			{
+				continue;
+			}
+			$xml .= '<ЗначениеСвойства>'
+				. '<Наименование>' . mf_1c_export_xml_escape($name) . '</Наименование>'
+				. '<Значение>' . mf_1c_export_xml_escape($value) . '</Значение>'
+				. '</ЗначениеСвойства>';
+		}
+
+		if ($xml === '')
+		{
+			return $documentBlock;
+		}
+
+		if (preg_match('/<ЗначенияСвойств\b[^>]*>/su', $documentBlock))
+		{
+			$updated = preg_replace(
+				'/(<ЗначенияСвойств\b[^>]*>)/su',
+				'$1' . $xml,
+				$documentBlock,
+				1
+			);
+
+			return is_string($updated) ? $updated : $documentBlock;
+		}
+
+		$block = '<ЗначенияСвойств>' . $xml . '</ЗначенияСвойств>';
+		if (preg_match('/<\/Документ>/su', $documentBlock))
+		{
+			return preg_replace('/<\/Документ>/su', $block . '</Документ>', $documentBlock, 1) ?? $documentBlock;
+		}
+
+		return $documentBlock . $block;
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_order_contact_properties'))
+{
+	function mf_1c_export_inject_order_contact_properties(string $documentBlock, int $orderId): string
+	{
+		if ($orderId <= 0)
+		{
+			return $documentBlock;
+		}
+
+		$phone = mf_1c_export_order_customer_phone($orderId);
+		$email = mf_1c_export_order_customer_email($orderId);
+		$properties = [];
+
+		if ($phone !== '')
+		{
+			foreach (['Телефон', 'PHONE', 'Phone', 'Контактный телефон', 'Телефон рабочий'] as $name)
+			{
+				$properties[$name] = $phone;
+			}
+		}
+		if ($email !== '')
+		{
+			foreach (['Email', 'E-mail', 'E-Mail', 'Адрес электронной почты'] as $name)
+			{
+				$properties[$name] = $email;
+			}
+		}
+
+		if ($properties === [])
+		{
+			return $documentBlock;
+		}
+
+		return mf_1c_export_inject_document_properties($documentBlock, $properties);
+	}
+}
+
+if (!function_exists('mf_1c_export_inject_document_email_field'))
+{
+	/**
+	 * Поле АдресЭП в шапке документа — 1С читает его напрямую из XDTO.
+	 */
+	function mf_1c_export_inject_document_email_field(string $documentBlock, int $orderId): string
+	{
+		if ($orderId <= 0)
+		{
+			return $documentBlock;
+		}
+
+		if (preg_match('/<АдресЭП\b[^>]*>.*?<\/АдресЭП>/su', $documentBlock))
+		{
+			$existing = '';
+			if (preg_match('/<АдресЭП\b[^>]*>(.*?)<\/АдресЭП>/su', $documentBlock, $match))
+			{
+				$existing = trim(html_entity_decode(strip_tags($match[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+			}
+			if ($existing !== '' && mb_strpos($existing, '@') !== false)
+			{
+				return $documentBlock;
+			}
+		}
+
+		$email = mf_1c_export_order_customer_email($orderId);
+		if ($email === '')
+		{
+			return $documentBlock;
+		}
+
+		return mf_1c_export_rewrite_document_header_tag($documentBlock, 'АдресЭП', $email);
 	}
 }
 
