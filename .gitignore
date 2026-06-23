@@ -40,3 +40,8 @@ tools/outdoorworld_catalog_scraper/data/
 tools/*_catalog_scraper/**/*.sqlite3
 tools/*_catalog_scraper/**/*.sqlite3-wal
 tools/*_catalog_scraper/**/*.sqlite3-shm
+
+# OEM Schemas Catalog runtime assets
+storage/oem-diagrams/*
+!storage/oem-diagrams/.gitkeep
+storage/remotors_crawl.log

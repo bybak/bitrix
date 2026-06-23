@@ -14,6 +14,7 @@ services:
       # ssl.conf — только на проде (docker-compose.prod.yml), не монтировать conf.d целиком:ro
       - ./logs/nginx:/var/log/nginx
       - ./certbot/www:/var/www/certbot:ro
+      - ./storage/oem-diagrams:/var/www/oem-diagrams:ro
       # /etc/letsencrypt — только на проде, см. docker-compose.prod.yml
     depends_on:
       - php
@@ -108,6 +109,46 @@ services:
           sleep 60
         done
 
+  oem_backend:
+    build:
+      context: ./oem_backend
+      dockerfile: Dockerfile
+    container_name: oem_backend
+    restart: unless-stopped
+    environment:
+      OEM_DATABASE_DSN: postgresql://oem_user:oem_password@oem_db:5432/oem_catalog
+      OEM_ASSET_ROOT: /app/storage/oem-diagrams
+      OEM_PUBLIC_ASSET_BASE_URL: /oem-assets
+      OEM_HTTP_TIMEOUT: "20"
+    volumes:
+      - ./storage/oem-diagrams:/app/storage/oem-diagrams
+    ports:
+      - "8088:8000"
+    depends_on:
+      oem_db:
+        condition: service_healthy
+    networks:
+      - bitrix
+
+  oem_db:
+    image: postgres:16-alpine
+    container_name: oem_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oem_catalog
+      POSTGRES_USER: oem_user
+      POSTGRES_PASSWORD: oem_password
+    volumes:
+      - oem_pg_data:/var/lib/postgresql/data
+      - ./oem_backend/db/schema_postgres.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oem_user -d oem_catalog"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - bitrix
+
   mysql:
     image: mysql:8.0
     container_name: bitrix_mysql
@@ -157,5 +198,7 @@ volumes:
   mysql_data:
     driver: local
   redis_data:
+    driver: local
+  oem_pg_data:
     driver: local
 

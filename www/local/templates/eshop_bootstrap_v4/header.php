@@ -34,6 +34,10 @@ $isCatalog = (
 	strpos($curPage, SITE_DIR . 'catalog/') === 0
 	|| strpos($curDir, SITE_DIR . 'catalog') === 0
 );
+$isOemCatalog = (
+	strpos($curPage, SITE_DIR . 'oem-catalog/') === 0
+	|| strpos($curDir, SITE_DIR . 'oem-catalog') === 0
+);
 $isProducts = (strpos($curPage, SITE_DIR."products/") === 0) || $isKatalogZapchastey || $isCatalog;
 $isSearch = (strpos($curPage, SITE_DIR."search/") === 0);
 $cartPathPrefix = SITE_DIR . "personal/cart/";
@@ -194,6 +198,14 @@ if (function_exists('mf_seo_apply_default_meta'))
 		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-cart.css");
 		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
 		$js = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-cart.js");
+		echo '<script src="'.htmlspecialcharsbx($js).'" defer></script>'."\n";
+	}
+	if ($isOemCatalog)
+	{
+		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-oem-catalog.css");
+		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
+		echo '<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js" defer></script>'."\n";
+		$js = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-oem-catalog.js");
 		echo '<script src="'.htmlspecialcharsbx($js).'" defer></script>'."\n";
 	}
 	if ($showDeliverySpbLegend)

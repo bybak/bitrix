@@ -1,0 +1,9 @@
+beautifulsoup4
+fastapi
+httpx
+lxml
+Pillow
+psycopg[binary,pool]
+pydantic-settings
+python-slugify
+uvicorn[standard]

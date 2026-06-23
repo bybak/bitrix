@@ -15,6 +15,13 @@ $aMenuLinks = Array(
 		""
 	),
 	Array(
+		"Каталог",
+		"/oem-catalog/",
+		Array(),
+		Array(),
+		""
+	),
+	Array(
 		"Новости",
 		"/posts/",
 		Array(),
