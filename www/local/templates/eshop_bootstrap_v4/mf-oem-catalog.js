@@ -407,6 +407,22 @@
 				}
 				return parts.join(' · ') || variant.source_designation || ('Вариант #' + variant.id);
 			},
+			variantSubtitle: function (variant) {
+				if (!variant) {
+					return '';
+				}
+				var section = String(variant.variant_section || '').toLowerCase();
+				if (section === 'chassis') {
+					return 'Шасси';
+				}
+				if (section === 'engine') {
+					return 'Двигатель';
+				}
+				if (variant.source_designation) {
+					return String(variant.source_designation);
+				}
+				return '';
+			},
 			assetUrl: function (path) {
 				if (!path) {
 					return '';

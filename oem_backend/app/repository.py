@@ -1,6 +1,9 @@
 from typing import Any
 
 from app.db import get_conn
+from app.importers.remotors_catalog import HIDDEN_CANONICAL_BRANDS
+
+_HIDDEN_BRANDS_SQL = tuple(sorted(HIDDEN_CANONICAL_BRANDS))
 
 
 def fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -28,6 +31,7 @@ def list_vehicle_types() -> list[dict[str, Any]]:
 
 
 def list_brands(vehicle_type: str | None = None) -> list[dict[str, Any]]:
+    hidden = list(_HIDDEN_BRANDS_SQL)
     if vehicle_type:
         return fetch_all(
             """
@@ -36,19 +40,22 @@ def list_brands(vehicle_type: str | None = None) -> list[dict[str, Any]]:
             JOIN oem_model_families mf ON mf.brand_id = b.id
             JOIN oem_vehicle_types vt ON vt.id = mf.vehicle_type_id
             WHERE vt.code = %s
+              AND b.normalized_name <> ALL(%s)
             GROUP BY b.id, b.name
             ORDER BY b.name
             """,
-            (vehicle_type,),
+            (vehicle_type, hidden),
         )
     return fetch_all(
         """
         SELECT b.id, b.name, COUNT(DISTINCT mf.id) AS model_count
         FROM oem_brands b
         LEFT JOIN oem_model_families mf ON mf.brand_id = b.id
+        WHERE b.normalized_name <> ALL(%s)
         GROUP BY b.id, b.name
         ORDER BY b.name
-        """
+        """,
+        (hidden,),
     )
 
 

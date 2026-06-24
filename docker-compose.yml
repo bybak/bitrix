@@ -121,7 +121,7 @@ services:
       OEM_PUBLIC_ASSET_BASE_URL: /oem-assets
       OEM_HTTP_TIMEOUT: "20"
     volumes:
-      - ./storage/oem-diagrams:/app/storage/oem-diagrams
+      - ./storage:/app/storage
     ports:
       - "8088:8000"
     depends_on:

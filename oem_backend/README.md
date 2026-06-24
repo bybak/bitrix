@@ -71,6 +71,41 @@ docker compose exec -T oem_backend python -m app.cli crawl-remotors --brands KTM
 docker compose exec -T oem_backend python -m app.cli crawl-remotors --brands KTM --year 2025 --max-models 1 --confirm-full-crawl
 ```
 
+Default brand list no longer includes deprecated `BRP_SEA` / `BRP_SKI` — use umbrella `BRP` only.
+
+## Fix existing Remotors catalog (no full re-crawl)
+
+After importing a dump or discovering classification gaps:
+
+```bash
+# 1. Backup + diagnose + dry-run fix + generate gap re-crawl script
+bash scripts/oem-fix-remotors-catalog.sh
+
+# Or step by step:
+docker compose exec -T oem_db pg_dump -U oem_user -d oem_catalog -Fc > storage/oem_backup.dump
+docker compose exec -T oem_backend python -m app.cli diagnose-remotors --output storage/remotors-diagnose.json
+docker compose exec -T oem_backend python -m app.cli fix-remotors-catalog          # dry-run
+docker compose exec -T oem_backend python -m app.cli fix-remotors-catalog --apply  # apply SQL fixes
+docker compose exec -T oem_backend python -m app.cli plan-recrawl-remotors --output storage/remotors-recrawl-gaps.sh
+```
+
+Gap re-crawl (local, then pg_dump to prod):
+
+```bash
+bash storage/remotors-recrawl-gaps.sh 2>&1 | tee -a storage/remotors-recrawl-gaps.log
+# After re-crawl:
+docker compose exec -T oem_backend python -m app.cli cleanup-remotors-orphans --apply
+```
+
+Fixes covered:
+
+- Lynx → snowmobile
+- false ATV matches (e.g. ATVA in snowmobile names)
+- BRP umbrella split → Can-Am / Sea-Doo / Ski-Doo
+- hide BRP / BRP_SEA / BRP_SKI from UI
+- assembly skip key uses slug (not bare aria) for future crawls
+- targeted `--force` re-crawl for thin variants (missing assemblies)
+
 ## API Checks
 
 ```bash

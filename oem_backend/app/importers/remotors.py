@@ -13,6 +13,13 @@ from app.config import get_settings
 from app.importers import writer
 from app.importers.assets import download_image
 from app.importers.progress import ProgressReporter
+from app.importers.remotors_catalog import (
+    BRAND_NAMES,
+    DEFAULT_BRANDS,
+    assembly_external_id,
+    canonical_brand_and_type,
+    filter_brand_codes,
+)
 
 
 SOURCE_CODE = "remotors_ari"
@@ -21,19 +28,6 @@ BASE_PAGE_URL = "https://remotors.fi/eng/partfinder"
 STREAM_ENDPOINT = "https://partstream.arinet.com"
 GET_ASSEMBLY_URL = f"{STREAM_ENDPOINT}/Parts/GetAssembly"
 GET_DETAILS_URL = f"{STREAM_ENDPOINT}/Parts/GetDetails"
-DEFAULT_BRANDS = ["HUM", "KTM", "LNX", "BRP_SEA", "BRP_SKI", "BRP"]
-BRAND_NAMES = {
-    "HUM": "Husqvarna",
-    "KTM": "KTM",
-    "LNX": "Lynx",
-    "BRP_SEA": "Sea-Doo",
-    "BRP_SKI": "Ski-Doo",
-    "BRP": "BRP",
-}
-BRAND_VEHICLE_TYPE_HINTS = {
-    "BRP_SEA": "jetski",
-    "BRP_SKI": "snowmobile",
-}
 RETRYABLE_HTTP_ERRORS = (
     httpx.ConnectError,
     httpx.ConnectTimeout,
@@ -145,21 +139,6 @@ def _parse_variant_section(path: list[str]) -> str | None:
     return None
 
 
-def _vehicle_type_for(arib: str, path: list[str]) -> str:
-    if arib in BRAND_VEHICLE_TYPE_HINTS:
-        return BRAND_VEHICLE_TYPE_HINTS[arib]
-    joined = " ".join(path).lower()
-    if "sxs" in joined or "side-by-side" in joined:
-        return "ssv"
-    if "atv" in joined:
-        return "atv"
-    if "watercraft" in joined or "sea-doo" in joined:
-        return "jetski"
-    if "ski-doo" in joined or "snowmobile" in joined:
-        return "snowmobile"
-    return "motorcycle"
-
-
 def _currency_and_price(text: str) -> tuple[str | None, Decimal | None]:
     text = _clean_text(text)
     currency = "EUR" if "€" in text else None
@@ -195,16 +174,12 @@ def _source_url_for(arib: str, slug: str | None) -> str:
     return f"{BASE_PAGE_URL}?aribrand={quote(arib)}#{slug or ''}"
 
 
-def _assembly_external_id(node: AriNode) -> str:
-    return f"{node.arib}:{node.aria or node.slug}"
-
-
 def _ensure_catalog_context(node: AriNode) -> tuple[int, int, int, int]:
-    brand_name = BRAND_NAMES.get(node.arib, node.arib)
-    vehicle_type = _vehicle_type_for(node.arib, node.path)
-    year = _parse_year(node.path)
     model_name = _parse_model_title(node.path)
     source_designation = node.path[-2] if len(node.path) >= 2 else model_name
+    extra = f"{model_name} {source_designation}"
+    brand_name, vehicle_type = canonical_brand_and_type(node.arib, node.path, extra_text=extra)
+    year = _parse_year(node.path)
 
     brand_id = writer.ensure_brand(brand_name)
     writer.ensure_brand_alias(brand_id, SOURCE_CODE, node.arib)
@@ -233,7 +208,7 @@ def _import_assembly_detail(
     if not node.slug:
         return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 0}
 
-    external_id = _assembly_external_id(node)
+    external_id = assembly_external_id(arib=node.arib, aria=node.aria, slug=node.slug, path=node.path)
     if not force:
         status = writer.assembly_import_status(SOURCE_CODE, external_id)
         if status["is_complete"]:
@@ -351,6 +326,107 @@ def _import_assembly_detail(
     return {"assemblies": 1, "diagrams": 1, "parts": parts, "hotspots": hotspots, "skipped": 0, "errors": 0}
 
 
+def _is_year_title(title: str) -> bool:
+    return bool(re.fullmatch(r"\d{4}", title))
+
+
+def _apply_year_filter(children: list[dict[str, Any]], allowed_years: set[str] | None) -> list[dict[str, Any]]:
+    """Keep only requested years when this level of the tree exposes year nodes.
+
+    BRP exposes category folders at brand level (Can-Am ATV, …), years deeper.
+    KTM/HUM/LNX expose years directly under the brand node.
+    """
+    if not allowed_years:
+        return children
+    titles = [_clean_text(child.get("data")) for child in children]
+    if not any(_is_year_title(title) for title in titles):
+        return children
+    return [child for child in children if _clean_text(child.get("data")) in allowed_years]
+
+
+def _node_type_for(node: AriNode) -> str:
+    if node.rel == "assembly":
+        return "assembly"
+    if _is_year_title(node.title):
+        return "year"
+    return "model_node"
+
+
+def _walk_catalog_tree(
+    client: httpx.Client,
+    queue: list[AriNode],
+    *,
+    progress: ProgressReporter,
+    counters: dict[str, int],
+    allowed_years: set[str] | None,
+    max_models: int | None,
+    max_assemblies: int | None,
+    download_images: bool,
+    force: bool,
+) -> None:
+    processed_assemblies = 0
+    processed_models = 0
+    while queue:
+        node = queue.pop(0)
+        if node.rel == "assembly":
+            if max_assemblies is not None and processed_assemblies >= max_assemblies:
+                progress.advance(f"assembly limit reached, skipped {node.title}")
+                continue
+            try:
+                detail_counts = _import_assembly_detail(client, node, progress, download_images, force)
+                for key, value in detail_counts.items():
+                    counters[key] += value
+            except Exception as exc:
+                counters["errors"] += 1
+                progress.advance(f"ERROR skipped assembly {node.arib} / {' / '.join(node.path)}: {exc}")
+            processed_assemblies += 1
+            continue
+
+        node_type = _node_type_for(node)
+        if node_type == "model_node":
+            if max_models is not None and processed_models >= max_models:
+                progress.advance(f"model limit reached, skipped {' / '.join(node.path)}")
+                continue
+            processed_models += 1
+        source_node_id = writer.ensure_source_node(
+            source_code=SOURCE_CODE,
+            node_type=node_type,
+            title=node.title,
+            external_id=f"{node.arib}:{node.aria or node.slug or '/'.join(node.path)}",
+            parent_id=node.parent_id,
+            source_url=_source_url_for(node.arib, node.slug) if node.slug else None,
+            arib=node.arib,
+            aria=node.aria,
+            slug=node.slug,
+        )
+        counters["source_nodes"] += 1
+
+        try:
+            children = _list_children(client, node.arib, node.aria)
+        except Exception as exc:
+            counters["errors"] += 1
+            progress.advance(f"ERROR skipped node {node.arib} / {' / '.join(node.path)}: {exc}")
+            continue
+        children = _apply_year_filter(children, allowed_years)
+        progress.add_total(len(children))
+        for child in children:
+            attr = child.get("attr") or {}
+            title = _clean_text(child.get("data"))
+            queue.append(
+                AriNode(
+                    title=title,
+                    arib=attr.get("arib") or node.arib,
+                    aria=attr.get("aria"),
+                    rel=attr.get("rel") or "",
+                    slug=attr.get("slug") or None,
+                    parent_id=source_node_id,
+                    depth=node.depth + 1,
+                    path=[*node.path, title],
+                )
+            )
+        progress.advance(f"node {node.arib} / {' / '.join(node.path)} children={len(children)}")
+
+
 def crawl(
     *,
     brands: list[str] | None = None,
@@ -373,11 +449,13 @@ def crawl(
     }
 
     with _client() as client:
-        brand_codes = brands or _fetch_brand_codes(client)
+        fetched = brands or _fetch_brand_codes(client)
+        brand_codes = filter_brand_codes(fetched, explicit=brands is not None)
         progress.set_stage("brands", len(brand_codes))
         progress.add_total(len(brand_codes))
 
         queue: list[AriNode] = []
+        allowed_years = {str(year) for year in years} if years else None
         for arib in brand_codes:
             brand_name = BRAND_NAMES.get(arib, arib)
             brand_node_id = writer.ensure_source_node(
@@ -389,10 +467,7 @@ def crawl(
             )
             counters["brands"] += 1
             counters["source_nodes"] += 1
-            children = _list_children(client, arib)
-            if years:
-                allowed_years = {str(year) for year in years}
-                children = [child for child in children if _clean_text(child.get("data")) in allowed_years]
+            children = _apply_year_filter(_list_children(client, arib), allowed_years)
             progress.add_total(len(children))
             for child in children:
                 attr = child.get("attr") or {}
@@ -411,66 +486,76 @@ def crawl(
             progress.advance(f"brand {arib} discovered children={len(children)}")
 
         progress.set_stage("catalog tree", max(len(queue), 1))
-        processed_assemblies = 0
-        processed_models = 0
-        while queue:
-            node = queue.pop(0)
-            if node.rel == "assembly":
-                if max_assemblies is not None and processed_assemblies >= max_assemblies:
-                    progress.advance(f"assembly limit reached, skipped {node.title}")
-                    continue
-                try:
-                    detail_counts = _import_assembly_detail(client, node, progress, download_images, force)
-                    for key, value in detail_counts.items():
-                        counters[key] += value
-                except Exception as exc:
-                    counters["errors"] += 1
-                    progress.advance(f"ERROR skipped assembly {node.arib} / {' / '.join(node.path)}: {exc}")
-                processed_assemblies += 1
-                continue
-
-            node_type = "assembly" if node.rel == "assembly" else ("year" if node.depth == 1 and re.fullmatch(r"\d{4}", node.title) else "model_node")
-            if node_type == "model_node":
-                if max_models is not None and processed_models >= max_models:
-                    progress.advance(f"model limit reached, skipped {' / '.join(node.path)}")
-                    continue
-                processed_models += 1
-            source_node_id = writer.ensure_source_node(
-                source_code=SOURCE_CODE,
-                node_type=node_type,
-                title=node.title,
-                external_id=f"{node.arib}:{node.aria or node.slug or '/'.join(node.path)}",
-                parent_id=node.parent_id,
-                source_url=_source_url_for(node.arib, node.slug) if node.slug else None,
-                arib=node.arib,
-                aria=node.aria,
-                slug=node.slug,
-            )
-            counters["source_nodes"] += 1
-
-            try:
-                children = _list_children(client, node.arib, node.aria)
-            except Exception as exc:
-                counters["errors"] += 1
-                progress.advance(f"ERROR skipped node {node.arib} / {' / '.join(node.path)}: {exc}")
-                continue
-            progress.add_total(len(children))
-            for child in children:
-                attr = child.get("attr") or {}
-                title = _clean_text(child.get("data"))
-                queue.append(
-                    AriNode(
-                        title=title,
-                        arib=attr.get("arib") or node.arib,
-                        aria=attr.get("aria"),
-                        rel=attr.get("rel") or "",
-                        slug=attr.get("slug") or None,
-                        parent_id=source_node_id,
-                        depth=node.depth + 1,
-                        path=[*node.path, title],
-                    )
-                )
-            progress.advance(f"node {node.arib} / {' / '.join(node.path)} children={len(children)}")
+        _walk_catalog_tree(
+            client,
+            queue,
+            progress=progress,
+            counters=counters,
+            allowed_years=allowed_years,
+            max_models=max_models,
+            max_assemblies=max_assemblies,
+            download_images=download_images,
+            force=force,
+        )
 
     progress.finish("remotors crawl finished")
+    return counters
+
+
+def repair_variants(
+    *,
+    variant_ids: list[int],
+    download_images: bool = True,
+    force: bool = True,
+    max_assemblies: int | None = None,
+) -> dict[str, int]:
+    from app.importers.catalog_fix import variant_repair_roots
+
+    progress = ProgressReporter(total=1, label="remotors_variants")
+    counters = {
+        "variants": 0,
+        "source_nodes": 0,
+        "assemblies": 0,
+        "diagrams": 0,
+        "parts": 0,
+        "hotspots": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+    roots = variant_repair_roots(variant_ids)
+    counters["variants"] = len(roots)
+    progress.set_stage("variant repair", max(len(roots), 1))
+    progress.add_total(len(roots))
+
+    with _client() as client:
+        queue: list[AriNode] = []
+        for root in roots:
+            queue.append(
+                AriNode(
+                    title=root["title"],
+                    arib=root["arib"],
+                    aria=root["aria"],
+                    rel="",
+                    slug=root.get("slug"),
+                    parent_id=root["parent_id"],
+                    depth=root["depth"],
+                    path=root["path"],
+                )
+            )
+            progress.advance(
+                f"variant {root['variant_id']} root {root['arib']} / {' / '.join(root['path'])}"
+            )
+        _walk_catalog_tree(
+            client,
+            queue,
+            progress=progress,
+            counters=counters,
+            allowed_years=None,
+            max_models=None,
+            max_assemblies=max_assemblies,
+            download_images=download_images,
+            force=force,
+        )
+
+    progress.finish("variant repair finished")
     return counters

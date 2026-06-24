@@ -140,7 +140,7 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 				<div class="mf-oem-list">
 					<button class="mf-oem-list-item" type="button" v-for="variant in variants" :key="variant.id" @click="selectVariant(variant)">
 						<strong>{{ variantTitle(variant) }}</strong>
-						<span>{{ variant.region || variant.variant_section || 'Без региона' }}</span>
+						<span>{{ variantSubtitle(variant) }}</span>
 					</button>
 				</div>
 			</section>
