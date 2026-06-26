@@ -1,12 +1,50 @@
 import hashlib
 import json
-from typing import Any
+import threading
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from app.db import get_conn
+from app.importers.remotors_catalog import assembly_compare_key, canonical_assembly_arib
 from app.normalization import normalize_part_number, normalize_text
+
+_local = threading.local()
+_source_ids: dict[str, int] = {}
+_vehicle_type_ids: dict[str, int] = {}
+_lookup_lock = threading.Lock()
+
+
+def _active_conn():
+    return getattr(_local, "conn", None)
+
+
+@contextmanager
+def batch_conn() -> Iterator[None]:
+    """Reuse one PostgreSQL connection + single commit per assembly import."""
+    if _active_conn() is not None:
+        yield
+        return
+    with get_conn() as conn:
+        _local.conn = conn
+        try:
+            yield
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            _local.conn = None
 
 
 def _one(query: str, params: tuple[Any, ...]) -> dict[str, Any]:
+    conn = _active_conn()
+    if conn is not None:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError(f"No row returned for query: {query}")
+            return row
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(query, params)
@@ -17,7 +55,14 @@ def _one(query: str, params: tuple[Any, ...]) -> dict[str, Any]:
 
 
 def source_id(code: str) -> int:
-    return _one("SELECT id FROM oem_sources WHERE code = %s", (code,))["id"]
+    with _lookup_lock:
+        cached = _source_ids.get(code)
+    if cached is not None:
+        return cached
+    row = _one("SELECT id FROM oem_sources WHERE code = %s", (code,))
+    with _lookup_lock:
+        _source_ids[code] = row["id"]
+        return row["id"]
 
 
 def ensure_brand(name: str) -> int:
@@ -47,7 +92,14 @@ def ensure_brand_alias(brand_id: int, source_code: str, alias: str) -> None:
 
 
 def vehicle_type_id(code: str) -> int:
-    return _one("SELECT id FROM oem_vehicle_types WHERE code = %s", (code,))["id"]
+    with _lookup_lock:
+        cached = _vehicle_type_ids.get(code)
+    if cached is not None:
+        return cached
+    row = _one("SELECT id FROM oem_vehicle_types WHERE code = %s", (code,))
+    with _lookup_lock:
+        _vehicle_type_ids[code] = row["id"]
+        return row["id"]
 
 
 def ensure_model_family(vehicle_type: str, brand_id: int, name: str) -> int:
@@ -202,8 +254,22 @@ def link_source_node(source_node_id: int, entity_type: str, entity_id: int, conf
     )
 
 
-def assembly_import_status(source_code: str, external_id: str) -> dict[str, Any]:
+def assembly_import_status(
+    source_code: str,
+    external_id: str,
+    *,
+    arib: str | None = None,
+    aria: str | None = None,
+    slug: str | None = None,
+) -> dict[str, Any]:
     sid = source_id(source_code)
+    lookup_ids = {external_id}
+    canonical_key = assembly_compare_key(arib=arib, aria=aria, slug=slug, external_id=external_id)
+    if canonical_key:
+        lookup_ids.add(canonical_key)
+
+    aria_value = (aria or "").strip() or None
+    lookup_arib = canonical_assembly_arib(arib) or (arib or "").upper()
     row = _one(
         """
         SELECT
@@ -216,17 +282,427 @@ def assembly_import_status(source_code: str, external_id: str) -> dict[str, Any]
         LEFT JOIN oem_source_node_links snl
           ON snl.source_node_id = sn.id
           AND snl.entity_type = 'assembly'
-        LEFT JOIN oem_assemblies a ON a.id = snl.entity_id
+        LEFT JOIN oem_assemblies a
+          ON a.id = snl.entity_id
+          OR a.source_node_id = sn.id
         LEFT JOIN oem_diagrams d ON d.assembly_id = a.id
         LEFT JOIN oem_assembly_parts ap ON ap.assembly_id = a.id
         LEFT JOIN oem_diagram_hotspots h ON h.diagram_id = d.id
         WHERE sn.source_id = %s
-          AND sn.external_id = %s
+          AND sn.node_type = 'assembly'
+          AND (
+            sn.external_id = ANY(%s)
+            OR (
+              NULLIF(%s::text, '') IS NOT NULL
+              AND sn.aria = %s::text
+              AND UPPER(COALESCE(sn.arib, '')) IN ('BRP', 'BRP_SKI', 'BRP_SEA', %s::text)
+            )
+          )
         """,
-        (sid, external_id),
+        (
+            sid,
+            list(lookup_ids),
+            aria_value,
+            aria_value,
+            lookup_arib,
+        ),
     )
     row["is_complete"] = bool(row["assembly_id"] and row["diagram_count"] and row["part_count"])
     return row
+
+
+def assembly_diagram_image_status(assembly_id: int) -> dict[str, Any]:
+    """Diagram row for an existing assembly (image sync checks local_path on disk)."""
+    from pathlib import Path
+
+    from app.config import get_settings
+
+    row = _one(
+        """
+        SELECT
+          a.id AS assembly_id,
+          a.source_node_id,
+          d.id AS diagram_id,
+          d.local_path,
+          d.original_url,
+          sn.arib
+        FROM oem_assemblies a
+        LEFT JOIN oem_diagrams d ON d.assembly_id = a.id
+        LEFT JOIN oem_source_nodes sn ON sn.id = a.source_node_id
+        WHERE a.id = %s
+        ORDER BY d.id NULLS LAST
+        LIMIT 1
+        """,
+        (assembly_id,),
+    )
+    local_path = row.get("local_path")
+    has_file = False
+    if local_path:
+        has_file = (Path(get_settings().asset_root) / local_path).is_file()
+    row["has_local_file"] = has_file
+    return row
+
+
+def _source_node_compare_rank(*, arib: str | None, aria: str | None, slug: str | None, external_id: str | None) -> tuple[int, int]:
+    key = assembly_compare_key(arib=arib, aria=aria, slug=slug, external_id=external_id)
+    if not key:
+        return (2, 0)
+    _canon_arib, rest = key.split(":", 1)
+    prefers_aria = bool(rest) and not rest.startswith("/")
+    return (0 if prefers_aria else 1, len(key))
+
+
+def _upgrade_assembly_source_node(assembly_id: int, source_node_id: int | None) -> None:
+    if not source_node_id:
+        return
+    current = _one(
+        """
+        SELECT a.source_node_id, sn.arib, sn.aria, sn.slug, sn.external_id
+        FROM oem_assemblies a
+        LEFT JOIN oem_source_nodes sn ON sn.id = a.source_node_id
+        WHERE a.id = %s
+        """,
+        (assembly_id,),
+    )
+    if not current:
+        return
+    if not current.get("source_node_id"):
+        _one(
+            """
+            UPDATE oem_assemblies
+            SET source_node_id = %s, updated_at = now()
+            WHERE id = %s
+            RETURNING id
+            """,
+            (source_node_id, assembly_id),
+        )
+        return
+    if int(current["source_node_id"]) == int(source_node_id):
+        return
+    candidate = _one(
+        """
+        SELECT arib, aria, slug, external_id
+        FROM oem_source_nodes
+        WHERE id = %s
+        """,
+        (source_node_id,),
+    )
+    if not candidate:
+        return
+    current_rank = _source_node_compare_rank(
+        arib=current.get("arib"),
+        aria=current.get("aria"),
+        slug=current.get("slug"),
+        external_id=current.get("external_id"),
+    )
+    candidate_rank = _source_node_compare_rank(
+        arib=candidate.get("arib"),
+        aria=candidate.get("aria"),
+        slug=candidate.get("slug"),
+        external_id=candidate.get("external_id"),
+    )
+    if candidate_rank >= current_rank:
+        return
+    _one(
+        """
+        UPDATE oem_assemblies
+        SET source_node_id = %s, updated_at = now()
+        WHERE id = %s
+        RETURNING id
+        """,
+        (source_node_id, assembly_id),
+    )
+
+
+def _all(query: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+    conn = _active_conn()
+    if conn is not None:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return list(cur.fetchall())
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return list(cur.fetchall())
+
+
+def _run(query: str, params: tuple[Any, ...] = ()) -> None:
+    conn = _active_conn()
+    if conn is not None:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+        conn.commit()
+
+
+def _assembly_is_complete(assembly_id: int) -> bool:
+    row = _one(
+        """
+        SELECT
+          COUNT(DISTINCT d.id) AS diagram_count,
+          COUNT(DISTINCT ap.id) AS part_count
+        FROM oem_assemblies a
+        LEFT JOIN oem_diagrams d ON d.assembly_id = a.id
+        LEFT JOIN oem_assembly_parts ap ON ap.assembly_id = a.id
+        WHERE a.id = %s
+        GROUP BY a.id
+        """,
+        (assembly_id,),
+    )
+    return bool(int(row["diagram_count"] or 0) and int(row["part_count"] or 0))
+
+
+def _find_assembly_on_variant(
+    variant_id: int,
+    *,
+    source_node_id: int | None,
+    normalized_title: str | None = None,
+) -> int | None:
+    row = _one(
+        """
+        SELECT COALESCE((
+          SELECT id FROM oem_assemblies
+          WHERE vehicle_variant_id = %s
+            AND (
+              (%s::bigint IS NOT NULL AND source_node_id = %s)
+              OR (%s::text IS NOT NULL AND normalized_title = %s)
+            )
+          ORDER BY CASE WHEN source_node_id = %s THEN 0 ELSE 1 END, id
+          LIMIT 1
+        ), 0) AS id
+        """,
+        (
+            variant_id,
+            source_node_id,
+            source_node_id,
+            normalized_title,
+            normalized_title,
+            source_node_id,
+        ),
+    )
+    return int(row["id"]) if row["id"] else None
+
+
+def clone_assembly_contents(*, donor_assembly_id: int, target_assembly_id: int) -> None:
+    """Copy diagram, parts, hotspots, and price snapshots onto an empty target assembly."""
+    if donor_assembly_id == target_assembly_id:
+        return
+    if _assembly_is_complete(target_assembly_id):
+        return
+
+    donor_diagram = _one(
+        """
+        SELECT COALESCE((
+          SELECT id FROM oem_diagrams WHERE assembly_id = %s ORDER BY sort_order, id LIMIT 1
+        ), 0) AS id
+        """,
+        (donor_assembly_id,),
+    )
+    target_diagram = _one(
+        """
+        SELECT COALESCE((
+          SELECT id FROM oem_diagrams WHERE assembly_id = %s ORDER BY sort_order, id LIMIT 1
+        ), 0) AS id
+        """,
+        (target_assembly_id,),
+    )
+    target_diagram_id = int(target_diagram["id"] or 0)
+    if not target_diagram_id and donor_diagram["id"]:
+        copied = _one(
+            """
+            INSERT INTO oem_diagrams (
+              assembly_id, source_node_id, original_url, local_path, public_url,
+              source_image_id, width, height, mime_type, checksum_sha256, sort_order
+            )
+            SELECT
+              %s, source_node_id, original_url, local_path, public_url,
+              source_image_id, width, height, mime_type, checksum_sha256, sort_order
+            FROM oem_diagrams
+            WHERE id = %s
+            RETURNING id
+            """,
+            (target_assembly_id, int(donor_diagram["id"])),
+        )
+        target_diagram_id = int(copied["id"])
+
+    donor_diagram_id = int(donor_diagram["id"] or 0)
+    if not target_diagram_id or not donor_diagram_id:
+        return
+
+    donor_part_count = _one(
+        "SELECT COUNT(*) AS cnt FROM oem_assembly_parts WHERE assembly_id = %s",
+        (donor_assembly_id,),
+    )
+    if int(donor_part_count["cnt"] or 0) <= 0:
+        return
+
+    _run(
+        """
+        WITH donor_parts AS (
+          SELECT id, part_id, source_node_id, ref, quantity, row_kind,
+                 source_row_id, source_items_list_id, raw_payload
+          FROM oem_assembly_parts
+          WHERE assembly_id = %s
+        ),
+        inserted_parts AS (
+          INSERT INTO oem_assembly_parts (
+            assembly_id, part_id, source_node_id, ref, quantity, row_kind,
+            source_row_id, source_items_list_id, raw_payload
+          )
+          SELECT
+            %s, part_id, source_node_id, ref, quantity, row_kind,
+            source_row_id, source_items_list_id, raw_payload
+          FROM donor_parts
+          ORDER BY id
+          RETURNING id
+        ),
+        part_map AS (
+          SELECT dp.id AS donor_part_id, ip.id AS target_part_id
+          FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+            FROM donor_parts
+          ) dp
+          JOIN (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+            FROM inserted_parts
+          ) ip USING (rn)
+        ),
+        inserted_hotspots AS (
+          INSERT INTO oem_diagram_hotspots (
+            diagram_id, assembly_part_id, shape, raw_coords, x, y, width, height,
+            polygon_json, ref, source_items_list_id, raw_payload
+          )
+          SELECT
+            %s,
+            pm.target_part_id,
+            h.shape, h.raw_coords, h.x, h.y, h.width, h.height,
+            h.polygon_json, h.ref, h.source_items_list_id, h.raw_payload
+          FROM oem_diagram_hotspots h
+          LEFT JOIN part_map pm ON pm.donor_part_id = h.assembly_part_id
+          WHERE h.diagram_id = %s
+          RETURNING id
+        )
+        INSERT INTO oem_source_price_snapshots (
+          source_id, part_id, assembly_part_id, source_price_id, price, currency,
+          min_qty, raw_payload
+        )
+        SELECT
+          p.source_id, p.part_id, pm.target_part_id, p.source_price_id, p.price, p.currency,
+          p.min_qty, p.raw_payload
+        FROM oem_source_price_snapshots p
+        JOIN part_map pm ON pm.donor_part_id = p.assembly_part_id
+        """,
+        (
+            donor_assembly_id,
+            target_assembly_id,
+            target_diagram_id,
+            donor_diagram_id,
+        ),
+    )
+
+
+def ensure_assembly_linked_on_variant(
+    variant_id: int,
+    title: str,
+    source_node_id: int | None,
+    *,
+    donor_assembly_id: int,
+) -> tuple[int, str]:
+    """Ensure variant has its own complete assembly row for a shared Remotors aria."""
+    normalized = normalize_text(title)
+    existing_id = _find_assembly_on_variant(
+        variant_id,
+        source_node_id=source_node_id,
+        normalized_title=normalized,
+    )
+    if existing_id and _assembly_is_complete(existing_id):
+        _upgrade_assembly_source_node(existing_id, source_node_id)
+        return existing_id, "exists"
+
+    if existing_id:
+        _upgrade_assembly_source_node(existing_id, source_node_id)
+        clone_assembly_contents(donor_assembly_id=donor_assembly_id, target_assembly_id=existing_id)
+        return existing_id, "filled"
+
+    target_id = ensure_assembly(variant_id, title, source_node_id)
+    clone_assembly_contents(donor_assembly_id=donor_assembly_id, target_assembly_id=target_id)
+    return target_id, "cloned"
+
+
+def ensure_assembly_variant_link(
+    variant_id: int,
+    title: str,
+    source_node_id: int | None,
+    *,
+    existing_assembly_id: int | None = None,
+) -> tuple[int, str]:
+    """Attach imported assembly content to the variant from the crawl path.
+
+    When repair skips a complete assembly, it may still be linked to the wrong
+    vehicle_variant_id. Snapshot assigns each assembly_key to one variant only,
+    so moving the row is safe.
+
+    When ``existing_assembly_id`` is set (align/relink), always move that row
+    unless it is already on ``variant_id``. Do not treat a different assembly on
+    the target with the same normalized title as "already linked" — that stub
+    blocked global align and left thin variants (e.g. Maverick 7XTD).
+    """
+    normalized = normalize_text(title)
+
+    if existing_assembly_id:
+        row = _one(
+            """
+            SELECT COALESCE((
+              SELECT vehicle_variant_id FROM oem_assemblies WHERE id = %s
+            ), 0) AS vehicle_variant_id
+            """,
+            (existing_assembly_id,),
+        )
+        current_variant_id = int(row["vehicle_variant_id"] or 0)
+        if current_variant_id == variant_id:
+            _upgrade_assembly_source_node(existing_assembly_id, source_node_id)
+            return existing_assembly_id, "exists"
+        if not current_variant_id:
+            return ensure_assembly(variant_id, title, source_node_id), "created"
+
+        _one(
+            """
+            UPDATE oem_assemblies
+            SET vehicle_variant_id = %s,
+                source_node_id = COALESCE(%s, source_node_id),
+                title = %s,
+                normalized_title = %s,
+                updated_at = now()
+            WHERE id = %s
+            RETURNING id
+            """,
+            (variant_id, source_node_id, title, normalized, existing_assembly_id),
+        )
+        return existing_assembly_id, "moved"
+
+    existing_on_target = _one(
+        """
+        SELECT COALESCE((
+          SELECT id FROM oem_assemblies
+          WHERE vehicle_variant_id = %s
+            AND (
+              normalized_title = %s
+              OR (%s::bigint IS NOT NULL AND source_node_id = %s)
+            )
+          LIMIT 1
+        ), 0) AS id
+        """,
+        (variant_id, normalized, source_node_id, source_node_id),
+    )
+    if existing_on_target["id"]:
+        assembly_id = int(existing_on_target["id"])
+        _upgrade_assembly_source_node(assembly_id, source_node_id)
+        return assembly_id, "exists"
+
+    return ensure_assembly(variant_id, title, source_node_id), "created"
 
 
 def ensure_assembly(variant_id: int, title: str, source_node_id: int | None = None, sort_order: int = 500) -> int:
@@ -241,7 +717,8 @@ def ensure_assembly(variant_id: int, title: str, source_node_id: int | None = No
         (variant_id, normalize_text(title)),
     )
     if existing["id"]:
-        return existing["id"]
+        _upgrade_assembly_source_node(int(existing["id"]), source_node_id)
+        return int(existing["id"])
     row = _one(
         """
         INSERT INTO oem_assemblies (vehicle_variant_id, source_node_id, title, normalized_title, sort_order)

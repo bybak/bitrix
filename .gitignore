@@ -44,4 +44,7 @@ tools/*_catalog_scraper/**/*.sqlite3-shm
 # OEM Schemas Catalog runtime assets
 storage/oem-diagrams/*
 !storage/oem-diagrams/.gitkeep
+storage/remotors-snapshot-*.db
+storage/remotors-snapshot-*.db-shm
+storage/remotors-snapshot-*.db-wal
 storage/remotors_crawl.log

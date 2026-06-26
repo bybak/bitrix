@@ -122,6 +122,8 @@ services:
       OEM_HTTP_TIMEOUT: "20"
     volumes:
       - ./storage:/app/storage
+      - ./oem_backend/app:/app/app:ro
+      - ./oem_backend/db:/app/db:ro
     ports:
       - "8088:8000"
     depends_on:

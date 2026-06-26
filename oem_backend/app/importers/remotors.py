@@ -17,6 +17,7 @@ from app.importers.remotors_catalog import (
     BRAND_NAMES,
     DEFAULT_BRANDS,
     assembly_external_id,
+    canonical_assembly_arib,
     canonical_brand_and_type,
     filter_brand_codes,
 )
@@ -210,8 +211,32 @@ def _import_assembly_detail(
 
     external_id = assembly_external_id(arib=node.arib, aria=node.aria, slug=node.slug, path=node.path)
     if not force:
-        status = writer.assembly_import_status(SOURCE_CODE, external_id)
+        status = writer.assembly_import_status(
+            SOURCE_CODE,
+            external_id,
+            arib=node.arib,
+            aria=node.aria,
+            slug=node.slug,
+        )
         if status["is_complete"]:
+            brand_id, _model_id, variant_id, _year = _ensure_catalog_context(node)
+            assembly_title = node.title
+            source_node_id = int(status["source_node_id"] or 0) or None
+            existing_assembly_id = int(status["assembly_id"] or 0) or None
+            _linked_id, action = writer.ensure_assembly_variant_link(
+                variant_id,
+                assembly_title,
+                source_node_id,
+                existing_assembly_id=existing_assembly_id,
+            )
+            if action == "moved":
+                progress.advance(
+                    (
+                        f"relinked assembly to variant {variant_id} {node.arib} / "
+                        f"{' / '.join(node.path)} parts={status['part_count']}"
+                    )
+                )
+                return {"assemblies": 1, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 0}
             progress.advance(
                 (
                     f"skip already imported {node.arib} / {' / '.join(node.path)} "
@@ -219,23 +244,6 @@ def _import_assembly_detail(
                 )
             )
             return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 1, "errors": 0}
-
-    brand_id, _model_id, variant_id, _year = _ensure_catalog_context(node)
-    assembly_title = node.title
-    source_url = _source_url_for(node.arib, node.slug)
-    assembly_node_id = writer.ensure_source_node(
-        source_code=SOURCE_CODE,
-        node_type="assembly",
-        title=assembly_title,
-        external_id=external_id,
-        parent_id=node.parent_id,
-        source_url=source_url,
-        arib=node.arib,
-        aria=node.aria,
-        slug=node.slug,
-    )
-    assembly_id = writer.ensure_assembly(variant_id, assembly_title, assembly_node_id)
-    writer.link_source_node(assembly_node_id, "assembly", assembly_id)
 
     payload = _jsonp_get(client, GET_DETAILS_URL, {"ariq": _details_slug(node.slug)})
     html = payload.get("html") or ""
@@ -249,81 +257,190 @@ def _import_assembly_detail(
             image_url = image_url.rstrip("/") + "/Max"
 
     asset: dict[str, Any] = {}
-    if image_url and download_images:
-        try:
-            asset = download_image(image_url, SOURCE_CODE, BRAND_NAMES.get(node.arib, node.arib), assembly_node_id)
-        except Exception as exc:
-            asset = {"download_error": str(exc)}
 
-    diagram_id = writer.ensure_diagram(
-        assembly_id,
-        source_node_id=assembly_node_id,
-        original_url=image_url,
-        local_path=asset.get("local_path"),
-        source_image_id=(image_url or "").rstrip("/").split("/")[-2] if image_url else None,
-        width=asset.get("width"),
-        height=asset.get("height"),
-        checksum_sha256=asset.get("checksum_sha256"),
-    )
+    with writer.batch_conn():
+        brand_id, _model_id, variant_id, _year = _ensure_catalog_context(node)
+        assembly_title = node.title
+        source_url = _source_url_for(node.arib, node.slug)
+        assembly_node_id = writer.ensure_source_node(
+            source_code=SOURCE_CODE,
+            node_type="assembly",
+            title=assembly_title,
+            external_id=external_id,
+            parent_id=node.parent_id,
+            source_url=source_url,
+            arib=canonical_assembly_arib(node.arib) or node.arib,
+            aria=node.aria,
+            slug=node.slug,
+        )
+        assembly_id = writer.ensure_assembly(variant_id, assembly_title, assembly_node_id)
+        writer.link_source_node(assembly_node_id, "assembly", assembly_id)
 
-    parts_by_ref: dict[str, int] = {}
-    parts = 0
-    for row in soup.select("tr.ariPartInfo"):
-        ref = _clean_text(row.select_one(".ariPLTag").get_text(" ") if row.select_one(".ariPLTag") else "")
-        number = _clean_text(row.select_one(".ariPLSku").get_text(" ") if row.select_one(".ariPLSku") else "")
-        name = _clean_text(row.select_one(".ariPLDesc").get_text(" ") if row.select_one(".ariPLDesc") else "")
-        price_text = _clean_text(row.select_one(".ariPLPrice").get_text(" ") if row.select_one(".ariPLPrice") else "")
-        currency, price = _currency_and_price(price_text)
-        quantity = _parse_quantity(row)
-        if not number:
-            continue
-        part_id = writer.ensure_part(BRAND_NAMES.get(node.arib, node.arib), number, name, brand_id)
-        assembly_part_id = writer.add_assembly_part(
-            assembly_id=assembly_id,
-            part_id=part_id,
-            ref=ref,
-            quantity=quantity,
-            row_kind="original",
+        if image_url and download_images:
+            try:
+                asset = download_image(
+                    image_url, SOURCE_CODE, BRAND_NAMES.get(node.arib, node.arib), assembly_node_id
+                )
+            except Exception as exc:
+                asset = {"download_error": str(exc)}
+
+        diagram_id = writer.ensure_diagram(
+            assembly_id,
             source_node_id=assembly_node_id,
-            source_row_id=f"{node.arib}:{node.aria or node.slug}:ref:{ref}",
-            raw_payload={"price_text": price_text, "quantity": quantity, "html": str(row)},
+            original_url=image_url,
+            local_path=asset.get("local_path"),
+            source_image_id=(image_url or "").rstrip("/").split("/")[-2] if image_url else None,
+            width=asset.get("width"),
+            height=asset.get("height"),
+            checksum_sha256=asset.get("checksum_sha256"),
         )
-        if price is not None:
-            writer.add_source_price_snapshot(
-                source_code=SOURCE_CODE,
-                part_id=part_id,
-                assembly_part_id=assembly_part_id,
-                source_price_id=f"{node.arib}:{node.aria or node.slug}:ref:{ref}:{currency or ''}",
-                price=str(price),
-                currency=currency,
-                min_qty=quantity,
-                raw_payload={"ref": ref, "part_number": number, "price_text": price_text, "quantity": quantity},
-            )
-        parts_by_ref[ref] = assembly_part_id
-        parts += 1
 
-    writer.clear_diagram_hotspots(diagram_id)
-    hotspots = 0
-    for hotspot in soup.select(".ariHotSpot"):
-        ref = hotspot.get("tag")
-        raw_coords = hotspot.get("coords")
-        x, y, width, height = _parse_hotspot_coords(raw_coords)
-        writer.add_hotspot(
-            diagram_id=diagram_id,
-            assembly_part_id=parts_by_ref.get(ref or ""),
-            shape="rect",
-            raw_coords=raw_coords,
-            x=x,
-            y=y,
-            width=width,
-            height=height,
-            ref=ref,
-            raw_payload={"attrs": dict(hotspot.attrs)},
-        )
-        hotspots += 1
+        parts_by_ref: dict[str, int] = {}
+        parts = 0
+        for row in soup.select("tr.ariPartInfo"):
+            ref = _clean_text(row.select_one(".ariPLTag").get_text(" ") if row.select_one(".ariPLTag") else "")
+            number = _clean_text(row.select_one(".ariPLSku").get_text(" ") if row.select_one(".ariPLSku") else "")
+            name = _clean_text(row.select_one(".ariPLDesc").get_text(" ") if row.select_one(".ariPLDesc") else "")
+            price_text = _clean_text(row.select_one(".ariPLPrice").get_text(" ") if row.select_one(".ariPLPrice") else "")
+            currency, price = _currency_and_price(price_text)
+            quantity = _parse_quantity(row)
+            if not number:
+                continue
+            part_id = writer.ensure_part(BRAND_NAMES.get(node.arib, node.arib), number, name, brand_id)
+            assembly_part_id = writer.add_assembly_part(
+                assembly_id=assembly_id,
+                part_id=part_id,
+                ref=ref,
+                quantity=quantity,
+                row_kind="original",
+                source_node_id=assembly_node_id,
+                source_row_id=f"{node.arib}:{node.aria or node.slug}:ref:{ref}",
+                raw_payload={"price_text": price_text, "quantity": quantity, "html": str(row)},
+            )
+            if price is not None:
+                writer.add_source_price_snapshot(
+                    source_code=SOURCE_CODE,
+                    part_id=part_id,
+                    assembly_part_id=assembly_part_id,
+                    source_price_id=f"{node.arib}:{node.aria or node.slug}:ref:{ref}:{currency or ''}",
+                    price=str(price),
+                    currency=currency,
+                    min_qty=quantity,
+                    raw_payload={"ref": ref, "part_number": number, "price_text": price_text, "quantity": quantity},
+                )
+            parts_by_ref[ref] = assembly_part_id
+            parts += 1
+
+        writer.clear_diagram_hotspots(diagram_id)
+        hotspots = 0
+        for hotspot in soup.select(".ariHotSpot"):
+            ref = hotspot.get("tag")
+            raw_coords = hotspot.get("coords")
+            x, y, width, height = _parse_hotspot_coords(raw_coords)
+            writer.add_hotspot(
+                diagram_id=diagram_id,
+                assembly_part_id=parts_by_ref.get(ref or ""),
+                shape="rect",
+                raw_coords=raw_coords,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                ref=ref,
+                raw_payload={"attrs": dict(hotspot.attrs)},
+            )
+            hotspots += 1
 
     progress.advance(f"assembly {node.arib} / {' / '.join(node.path)} parts={parts} hotspots={hotspots}")
     return {"assemblies": 1, "diagrams": 1, "parts": parts, "hotspots": hotspots, "skipped": 0, "errors": 0}
+
+
+def import_assembly_image(
+    client: httpx.Client,
+    node: AriNode,
+    progress: ProgressReporter,
+    *,
+    assembly_id: int | None = None,
+    force: bool = False,
+) -> dict[str, int]:
+    """Download diagram PNG for an assembly that already exists in PostgreSQL."""
+    if not node.slug:
+        return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 1}
+
+    external_id = assembly_external_id(arib=node.arib, aria=node.aria, slug=node.slug, path=node.path)
+    resolved_assembly_id = assembly_id
+    source_node_id: int | None = None
+    if resolved_assembly_id:
+        image_status = writer.assembly_diagram_image_status(resolved_assembly_id)
+        source_node_id = image_status.get("source_node_id")
+        if not force and image_status.get("has_local_file"):
+            progress.advance(
+                f"skip image exists {node.arib} / {' / '.join(node.path)} "
+                f"path={image_status.get('local_path')}"
+            )
+            return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 1, "errors": 0}
+    else:
+        status = writer.assembly_import_status(
+            SOURCE_CODE,
+            external_id,
+            arib=node.arib,
+            aria=node.aria,
+            slug=node.slug,
+        )
+        resolved_assembly_id = int(status["assembly_id"] or 0) or None
+        if not resolved_assembly_id:
+            progress.advance(f"ERROR image assembly not found {node.arib} / {' / '.join(node.path)}")
+            return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 1}
+        image_status = writer.assembly_diagram_image_status(resolved_assembly_id)
+        source_node_id = image_status.get("source_node_id")
+        if not force and image_status.get("has_local_file"):
+            progress.advance(
+                f"skip image exists {node.arib} / {' / '.join(node.path)} "
+                f"path={image_status.get('local_path')}"
+            )
+            return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 1, "errors": 0}
+
+    payload = _jsonp_get(client, GET_DETAILS_URL, {"ariq": _details_slug(node.slug)})
+    html = payload.get("html") or ""
+    soup = BeautifulSoup(html, "lxml")
+    image = soup.select_one("#ariparts_image")
+    image_url = image.get("src") if image else None
+    if image_url:
+        image_url = urljoin(STREAM_ENDPOINT, image_url)
+        if not image_url.rstrip("/").endswith("/Max"):
+            image_url = image_url.rstrip("/") + "/Max"
+
+    if not image_url:
+        progress.advance(f"ERROR image no URL {node.arib} / {' / '.join(node.path)}")
+        return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 1}
+
+    if not source_node_id:
+        progress.advance(f"ERROR image no source_node {node.arib} / {' / '.join(node.path)}")
+        return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 1}
+
+    asset: dict[str, Any] = {}
+    try:
+        asset = download_image(
+            image_url, SOURCE_CODE, BRAND_NAMES.get(node.arib, node.arib), int(source_node_id)
+        )
+    except Exception as exc:
+        progress.advance(f"ERROR image download {node.arib} / {' / '.join(node.path)}: {exc}")
+        return {"assemblies": 0, "diagrams": 0, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 1}
+
+    with writer.batch_conn():
+        writer.ensure_diagram(
+            int(resolved_assembly_id),
+            source_node_id=int(source_node_id),
+            original_url=image_url,
+            local_path=asset.get("local_path"),
+            source_image_id=(image_url or "").rstrip("/").split("/")[-2] if image_url else None,
+            width=asset.get("width"),
+            height=asset.get("height"),
+            checksum_sha256=asset.get("checksum_sha256"),
+        )
+
+    progress.advance(f"image {node.arib} / {' / '.join(node.path)} -> {asset.get('local_path')}")
+    return {"assemblies": 0, "diagrams": 1, "parts": 0, "hotspots": 0, "skipped": 0, "errors": 0}
 
 
 def _is_year_title(title: str) -> bool:
@@ -506,7 +623,7 @@ def repair_variants(
     *,
     variant_ids: list[int],
     download_images: bool = True,
-    force: bool = True,
+    force: bool = False,
     max_assemblies: int | None = None,
 ) -> dict[str, int]:
     from app.importers.catalog_fix import variant_repair_roots

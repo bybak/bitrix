@@ -3,6 +3,8 @@
 import re
 from typing import Any
 
+from app.normalization import normalize_text
+
 DEFAULT_BRANDS = ["HUM", "KTM", "LNX", "BRP"]
 DEPRECATED_ARIB_CODES = frozenset({"BRP_SEA", "BRP_SKI"})
 HIDDEN_CANONICAL_BRANDS = frozenset({"brp", "brp_sea", "brp_ski"})
@@ -47,6 +49,15 @@ BRP_PRODUCT_LINE_RULES: list[tuple[re.Pattern[str], str, str]] = [
 ]
 
 SNOWMOBILE_BRAND_CODES = frozenset({"LNX", "BRP_SKI"})
+
+# Remotors mis-tags (e.g. Husqvarna NORDEN 901 EXPEDITION → snowmobile via "Expedition" heuristic).
+EXCLUDED_CATALOG_BRAND_TYPES: frozenset[tuple[str, str]] = frozenset({("husqvarna", "snowmobile")})
+
+
+def is_excluded_catalog_brand_type(brand_normalized: str | None, vehicle_type: str | None) -> bool:
+    if not brand_normalized or not vehicle_type:
+        return False
+    return (normalize_text(brand_normalized), normalize_text(vehicle_type)) in EXCLUDED_CATALOG_BRAND_TYPES
 
 
 def _clean_text(value: str | None) -> str:
@@ -189,12 +200,113 @@ def _brand_to_arib(normalized_brand: str) -> str:
     return mapping.get(normalized_brand, "")
 
 
+def normalize_assembly_slug(slug: str | None) -> str | None:
+    """Collapse API slug encoding variants that refer to the same assembly node."""
+    if not slug:
+        return None
+    from urllib.parse import unquote
+
+    normalized = unquote(slug)
+    normalized = re.sub(r"__(?=-)", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized)
+    return normalized
+
+
+def canonical_assembly_arib(arib: str | None) -> str | None:
+    """Map legacy BRP sub-codes to the unified crawl/compare code."""
+    if not arib:
+        return None
+    code = arib.strip().upper()
+    if code in DEPRECATED_ARIB_CODES:
+        return "BRP"
+    return code
+
+
 def assembly_external_id(*, arib: str, aria: str | None, slug: str | None, path: list[str] | None = None) -> str:
-    if slug:
-        return f"{arib}:{slug}"
+    """Canonical assembly key used by crawler, audit, and import skip checks."""
+    canon_arib = canonical_assembly_arib(arib) or arib
+    if canon_arib and aria:
+        return f"{canon_arib}:{aria}"
+    normalized_slug = normalize_assembly_slug(slug)
+    if canon_arib and normalized_slug:
+        return f"{canon_arib}:{normalized_slug}"
     if path:
-        return f"{arib}:{aria or 'no-aria'}:{'/'.join(path)}"
-    return f"{arib}:{aria or 'no-aria'}"
+        return f"{canon_arib}:{aria or 'no-aria'}:{'/'.join(path)}"
+    return f"{canon_arib}:{aria or 'no-aria'}"
+
+
+def assembly_compare_key(
+    *,
+    arib: str | None,
+    aria: str | None = None,
+    slug: str | None = None,
+    path: list[str] | None = None,
+    external_id: str | None = None,
+) -> str | None:
+    """Stable key for local DB vs Remotors API diff (prefers arib:aria, then normalized slug)."""
+    canon_arib = canonical_assembly_arib(arib)
+    aria_value = (aria or "").strip() or None
+
+    if canon_arib and aria_value:
+        return f"{canon_arib}:{aria_value}"
+    normalized_slug = normalize_assembly_slug(slug)
+    if canon_arib and normalized_slug:
+        return f"{canon_arib}:{normalized_slug}"
+    if external_id and ":" in external_id:
+        ext_arib, ext_rest = external_id.split(":", 1)
+        canon_ext = canonical_assembly_arib(ext_arib) or ext_arib
+        if ext_rest and not ext_rest.startswith("/"):
+            return f"{canon_ext}:{ext_rest}"
+        if canon_arib:
+            normalized_ext = normalize_assembly_slug(ext_rest)
+            if normalized_ext:
+                return f"{canon_arib}:{normalized_ext}"
+    elif external_id:
+        return external_id
+    if canon_arib and path:
+        return assembly_external_id(arib=canon_arib, aria=aria_value, slug=slug, path=path)
+    return None
+
+
+def assembly_match_token(
+    *,
+    arib: str | None = None,
+    aria: str | None = None,
+    slug: str | None = None,
+    path: list[str] | None = None,
+    compare_key: str | None = None,
+) -> str | None:
+    """Brand-agnostic match token for snapshot vs local diff.
+
+    Remotors reuses the same aria across variants and crawls may store a mismatched
+    arib prefix (e.g. KTM:aria on a Husqvarna variant). Prefer aria, then slug.
+    """
+    aria_value = (aria or "").strip() or None
+    if aria_value:
+        return f"aria:{aria_value}"
+    key = compare_key or assembly_compare_key(arib=arib, aria=aria, slug=slug, path=path)
+    if not key or ":" not in key:
+        return key
+    _arib, rest = key.split(":", 1)
+    if rest.startswith("/"):
+        normalized = normalize_assembly_slug(rest) or rest
+        return f"slug:{normalized}"
+    normalized = normalize_assembly_slug(rest) or rest
+    return f"slug:{normalized}"
+
+
+def best_assembly_compare_key(candidates: list[str | None]) -> str | None:
+    """Pick the strongest compare key when several source-node aliases exist."""
+
+    def _rank(key: str) -> tuple[int, int]:
+        _arib, rest = key.split(":", 1)
+        prefers_aria = bool(rest) and not rest.startswith("/")
+        return (0 if prefers_aria else 1, len(key))
+
+    keys = [key for key in candidates if key]
+    if not keys:
+        return None
+    return min(keys, key=_rank)
 
 
 def filter_brand_codes(codes: list[str], *, explicit: bool) -> list[str]:
@@ -202,6 +314,36 @@ def filter_brand_codes(codes: list[str], *, explicit: bool) -> list[str]:
     if explicit:
         return normalized
     return [code for code in normalized if code not in DEPRECATED_ARIB_CODES]
+
+
+def snapshot_model_key(*, vehicle_type: str, model_name: str | None) -> str:
+    """Model key compatible with Remotors snapshot catalog_models."""
+    from app.importers.remotors_snapshot import key_to_str
+
+    return key_to_str((vehicle_type, normalize_text(model_name or "")))
+
+
+def snapshot_variant_key(
+    *,
+    vehicle_type: str,
+    market_name: str | None,
+    source_designation: str | None,
+    year_from: int | None,
+    variant_section: str | None,
+) -> str:
+    """Variant key compatible with Remotors snapshot catalog_variants."""
+    from app.importers.remotors_snapshot import key_to_str
+
+    model_name = normalize_text(market_name or source_designation or "")
+    return key_to_str(
+        (
+            vehicle_type,
+            model_name,
+            year_from,
+            normalize_text(source_designation or ""),
+            normalize_text(variant_section or ""),
+        )
+    )
 
 
 def variant_section_label(section: str | None) -> str | None:

@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS oem_model_families (
   id BIGSERIAL PRIMARY KEY,
   vehicle_type_id BIGINT NOT NULL REFERENCES oem_vehicle_types(id),
   brand_id BIGINT NOT NULL REFERENCES oem_brands(id),
-  name VARCHAR(255) NOT NULL,
-  normalized_name VARCHAR(255) NOT NULL,
+  name TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (vehicle_type_id, brand_id, normalized_name)
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS oem_model_aliases (
   id BIGSERIAL PRIMARY KEY,
   model_family_id BIGINT NOT NULL REFERENCES oem_model_families(id),
   source_id BIGINT REFERENCES oem_sources(id),
-  alias VARCHAR(255) NOT NULL,
-  normalized_alias VARCHAR(255) NOT NULL,
+  alias TEXT NOT NULL,
+  normalized_alias TEXT NOT NULL,
   confidence NUMERIC(5,4) NOT NULL DEFAULT 1,
   is_reviewed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -73,8 +73,8 @@ CREATE TABLE IF NOT EXISTS oem_vehicle_variants (
   color_code VARCHAR(64),
   color_name VARCHAR(255),
   engine_cc INTEGER,
-  market_name VARCHAR(255),
-  source_designation VARCHAR(255),
+  market_name TEXT,
+  source_designation TEXT,
   variant_section VARCHAR(64),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -273,12 +273,18 @@ CREATE INDEX IF NOT EXISTS ix_oem_source_nodes_url_path ON oem_source_nodes(sour
 CREATE INDEX IF NOT EXISTS ix_oem_source_nodes_ari ON oem_source_nodes(source_id, arib, aria);
 CREATE INDEX IF NOT EXISTS ix_oem_vehicle_variants_model_year ON oem_vehicle_variants(model_family_id, year_from, year_to);
 CREATE INDEX IF NOT EXISTS ix_oem_assemblies_variant ON oem_assemblies(vehicle_variant_id);
+CREATE INDEX IF NOT EXISTS ix_oem_assemblies_source_node ON oem_assemblies(source_node_id);
 CREATE INDEX IF NOT EXISTS ix_oem_diagrams_assembly ON oem_diagrams(assembly_id);
+CREATE INDEX IF NOT EXISTS ix_oem_diagrams_source_node ON oem_diagrams(source_node_id);
 CREATE INDEX IF NOT EXISTS ix_oem_assembly_parts_assembly_ref ON oem_assembly_parts(assembly_id, ref);
+CREATE INDEX IF NOT EXISTS ix_oem_assembly_parts_source_node ON oem_assembly_parts(source_node_id);
 CREATE INDEX IF NOT EXISTS ix_oem_assembly_parts_items_list ON oem_assembly_parts(source_items_list_id);
 CREATE INDEX IF NOT EXISTS ix_oem_hotspots_diagram ON oem_diagram_hotspots(diagram_id);
+CREATE INDEX IF NOT EXISTS ix_oem_hotspots_assembly_part ON oem_diagram_hotspots(assembly_part_id);
 CREATE INDEX IF NOT EXISTS ix_oem_hotspots_items_list ON oem_diagram_hotspots(source_items_list_id);
 CREATE INDEX IF NOT EXISTS ix_oem_parts_normalized ON oem_parts(normalized_part_number);
+CREATE INDEX IF NOT EXISTS ix_oem_price_snapshots_assembly_part ON oem_source_price_snapshots(assembly_part_id);
+CREATE INDEX IF NOT EXISTS ix_oem_raw_snapshots_source_node ON oem_raw_snapshots(source_node_id);
 
 INSERT INTO oem_vehicle_types (code, name, sort_order) VALUES
   ('motorcycle', 'Motorcycle', 100),

@@ -10,8 +10,8 @@ from app.config import get_settings
 pool = ConnectionPool(
     conninfo=get_settings().database_dsn,
     kwargs={"row_factory": dict_row},
-    min_size=1,
-    max_size=10,
+    min_size=2,
+    max_size=20,
     open=False,
 )
 
