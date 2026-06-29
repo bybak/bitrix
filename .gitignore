@@ -47,4 +47,8 @@ storage/oem-diagrams/*
 storage/remotors-snapshot-*.db
 storage/remotors-snapshot-*.db-shm
 storage/remotors-snapshot-*.db-wal
+storage/remotors-details-crawl.db
+storage/remotors-details-crawl.db-shm
+storage/remotors-details-crawl.db-wal
+storage/remotors-html/
 storage/remotors_crawl.log

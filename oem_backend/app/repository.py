@@ -1,9 +1,6 @@
 from typing import Any
 
 from app.db import get_conn
-from app.importers.remotors_catalog import HIDDEN_CANONICAL_BRANDS
-
-_HIDDEN_BRANDS_SQL = tuple(sorted(HIDDEN_CANONICAL_BRANDS))
 
 
 def fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -20,127 +17,116 @@ def fetch_one(query: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None
             return cur.fetchone()
 
 
-def list_vehicle_types() -> list[dict[str, Any]]:
+def list_roots() -> list[dict[str, Any]]:
     return fetch_all(
         """
-        SELECT id, code, name, sort_order
-        FROM oem_vehicle_types
+        SELECT id, arib_code, name, sort_order
+        FROM oem_catalog_roots
         ORDER BY sort_order, name
         """
     )
 
 
-def list_brands(vehicle_type: str | None = None) -> list[dict[str, Any]]:
-    hidden = list(_HIDDEN_BRANDS_SQL)
-    if vehicle_type:
+def list_nav_children(root: str, parent_id: int | None = None) -> list[dict[str, Any]]:
+    if parent_id is None:
         return fetch_all(
             """
-            SELECT b.id, b.name, COUNT(DISTINCT mf.id) AS model_count
-            FROM oem_brands b
-            JOIN oem_model_families mf ON mf.brand_id = b.id
-            JOIN oem_vehicle_types vt ON vt.id = mf.vehicle_type_id
-            WHERE vt.code = %s
-              AND b.normalized_name <> ALL(%s)
-            GROUP BY b.id, b.name
-            ORDER BY b.name
+            SELECT
+              n.id,
+              n.root_arib,
+              n.parent_id,
+              n.aria,
+              n.slug,
+              n.rel,
+              n.title,
+              n.path_json,
+              n.depth,
+              (
+                SELECT COUNT(*) FROM oem_nav_nodes c WHERE c.parent_id = n.id
+              ) AS child_count,
+              (
+                SELECT COUNT(*) FROM oem_variants v
+                WHERE v.root_arib = n.root_arib AND v.path_json = n.path_json
+              ) AS variant_count
+            FROM oem_nav_nodes n
+            WHERE n.root_arib = %s AND n.parent_id IS NULL
+            ORDER BY n.title
             """,
-            (vehicle_type, hidden),
+            (root.upper(),),
         )
     return fetch_all(
         """
-        SELECT b.id, b.name, COUNT(DISTINCT mf.id) AS model_count
-        FROM oem_brands b
-        LEFT JOIN oem_model_families mf ON mf.brand_id = b.id
-        WHERE b.normalized_name <> ALL(%s)
-        GROUP BY b.id, b.name
-        ORDER BY b.name
+        SELECT
+          n.id,
+          n.root_arib,
+          n.parent_id,
+          n.aria,
+          n.slug,
+          n.rel,
+          n.title,
+          n.path_json,
+          n.depth,
+          (
+            SELECT COUNT(*) FROM oem_nav_nodes c WHERE c.parent_id = n.id
+          ) AS child_count,
+          (
+            SELECT COUNT(*) FROM oem_variants v
+            WHERE v.root_arib = n.root_arib AND v.path_json = n.path_json
+          ) AS variant_count
+        FROM oem_nav_nodes n
+        WHERE n.root_arib = %s AND n.parent_id = %s
+        ORDER BY n.title
         """,
-        (hidden,),
+        (root.upper(), parent_id),
     )
 
 
-def list_years(vehicle_type: str, brand_id: int) -> list[dict[str, Any]]:
+def list_variants_for_nav(nav_node_id: int) -> list[dict[str, Any]]:
     return fetch_all(
         """
         SELECT
-          vv.year_from AS year,
-          COUNT(DISTINCT mf.id) AS model_count,
-          COUNT(DISTINCT vv.id) AS variant_count
-        FROM oem_vehicle_variants vv
-        JOIN oem_model_families mf ON mf.id = vv.model_family_id
-        JOIN oem_vehicle_types vt ON vt.id = mf.vehicle_type_id
-        WHERE vt.code = %s
-          AND mf.brand_id = %s
-          AND vv.year_from IS NOT NULL
-        GROUP BY vv.year_from
-        ORDER BY vv.year_from DESC
+          v.id,
+          v.root_arib,
+          v.variant_key,
+          v.model_name,
+          v.source_designation,
+          v.year_from,
+          v.variant_section,
+          v.browse_line,
+          v.path_json,
+          v.assembly_count
+        FROM oem_variants v
+        JOIN oem_nav_nodes n ON n.id = %s
+        WHERE v.root_arib = n.root_arib AND v.path_json = n.path_json
+        ORDER BY v.year_from DESC NULLS LAST, v.source_designation, v.variant_section
         """,
-        (vehicle_type, brand_id),
+        (nav_node_id,),
     )
 
 
-def list_models(vehicle_type: str, brand_id: int, year: int | None = None, q: str | None = None) -> list[dict[str, Any]]:
-    params: list[Any] = [vehicle_type, brand_id]
-    where = ["vt.code = %s", "mf.brand_id = %s"]
-    if year:
-        where.append("EXISTS (SELECT 1 FROM oem_vehicle_variants vv_year WHERE vv_year.model_family_id = mf.id AND vv_year.year_from <= %s AND (vv_year.year_to IS NULL OR vv_year.year_to >= %s))")
-        params.extend([year, year])
+def list_variants_by_root(root: str, q: str | None = None) -> list[dict[str, Any]]:
+    params: list[Any] = [root.upper()]
+    where = ["v.root_arib = %s"]
     if q:
-        where.append("(mf.name ILIKE %s OR EXISTS (SELECT 1 FROM oem_model_aliases ma WHERE ma.model_family_id = mf.id AND ma.alias ILIKE %s))")
+        where.append("(v.model_name ILIKE %s OR v.source_designation ILIKE %s)")
         params.extend([f"%{q}%", f"%{q}%"])
     return fetch_all(
         f"""
         SELECT
-          mf.id,
-          mf.brand_id,
-          vt.code AS vehicle_type,
-          mf.name,
-          COALESCE(array_agg(DISTINCT ma.alias) FILTER (WHERE ma.alias IS NOT NULL), '{{}}') AS aliases,
-          COALESCE(array_agg(DISTINCT vv.year_from) FILTER (WHERE vv.year_from IS NOT NULL), '{{}}') AS years,
-          COUNT(DISTINCT vv.id) AS variant_count
-        FROM oem_model_families mf
-        JOIN oem_vehicle_types vt ON vt.id = mf.vehicle_type_id
-        LEFT JOIN oem_model_aliases ma ON ma.model_family_id = mf.id
-        LEFT JOIN oem_vehicle_variants vv ON vv.model_family_id = mf.id
-          AND (%s::int IS NULL OR (vv.year_from <= %s AND (vv.year_to IS NULL OR vv.year_to >= %s)))
+          v.id,
+          v.root_arib,
+          v.variant_key,
+          v.model_name,
+          v.source_designation,
+          v.year_from,
+          v.variant_section,
+          v.browse_line,
+          v.path_json,
+          v.assembly_count
+        FROM oem_variants v
         WHERE {" AND ".join(where)}
-        GROUP BY mf.id, mf.brand_id, vt.code, mf.name
-        ORDER BY mf.name
-        """,
-        (year, year, year, *params),
-    )
-
-
-def list_variants(model_id: int, year: int | None = None, region: str | None = None) -> list[dict[str, Any]]:
-    params: list[Any] = [model_id]
-    where = ["vv.model_family_id = %s"]
-    if year:
-        where.append("(vv.year_from IS NULL OR vv.year_from <= %s) AND (vv.year_to IS NULL OR vv.year_to >= %s)")
-        params.extend([year, year])
-    if region:
-        where.append("vv.region ILIKE %s")
-        params.append(f"%{region}%")
-    return fetch_all(
-        f"""
-        SELECT
-          vv.*,
-          COALESCE(
-            json_agg(
-              DISTINCT jsonb_build_object(
-                'source', s.code,
-                'source_node_id', sn.id,
-                'url', sn.source_url
-              )
-            ) FILTER (WHERE sn.id IS NOT NULL),
-            '[]'
-          ) AS sources
-        FROM oem_vehicle_variants vv
-        LEFT JOIN oem_source_node_links snl ON snl.entity_type = 'vehicle_variant' AND snl.entity_id = vv.id
-        LEFT JOIN oem_source_nodes sn ON sn.id = snl.source_node_id
-        LEFT JOIN oem_sources s ON s.id = sn.source_id
-        WHERE {" AND ".join(where)}
-        GROUP BY vv.id
-        ORDER BY vv.year_from DESC NULLS LAST, vv.market_name, vv.source_designation
+        ORDER BY v.model_name, v.year_from DESC NULLS LAST, v.source_designation
+        LIMIT 200
         """,
         tuple(params),
     )
@@ -148,7 +134,7 @@ def list_variants(model_id: int, year: int | None = None, region: str | None = N
 
 def list_assemblies(variant_id: int, q: str | None = None) -> list[dict[str, Any]]:
     params: list[Any] = [variant_id]
-    where = ["a.vehicle_variant_id = %s"]
+    where = ["a.variant_id = %s"]
     if q:
         where.append("a.title ILIKE %s")
         params.append(f"%{q}%")
@@ -156,26 +142,21 @@ def list_assemblies(variant_id: int, q: str | None = None) -> list[dict[str, Any
         f"""
         SELECT
           a.id,
-          a.vehicle_variant_id,
+          a.variant_id,
+          a.root_arib,
+          a.assembly_key,
           a.title,
-          a.normalized_title,
-          COUNT(DISTINCT d.id) AS diagram_count,
+          a.slug,
           COUNT(DISTINCT ap.id) AS part_count,
-          MIN(d.public_url) AS public_url,
-          MIN(d.local_path) AS local_path,
-          MIN(d.original_url) AS original_url,
-          MIN(d.width) AS image_width,
-          MIN(d.height) AS image_height,
-          s.code AS source_code,
-          sn.id AS source_node_id,
-          sn.source_url
+          MAX(d.public_url) AS public_url,
+          MAX(d.local_path) AS local_path,
+          MAX(dp.parse_status) AS parse_status
         FROM oem_assemblies a
-        LEFT JOIN oem_diagrams d ON d.assembly_id = a.id
         LEFT JOIN oem_assembly_parts ap ON ap.assembly_id = a.id
-        LEFT JOIN oem_source_nodes sn ON sn.id = a.source_node_id
-        LEFT JOIN oem_sources s ON s.id = sn.source_id
+        LEFT JOIN oem_diagrams d ON d.assembly_id = a.id
+        LEFT JOIN oem_details_pages dp ON dp.assembly_id = a.id
         WHERE {" AND ".join(where)}
-        GROUP BY a.id, s.code, sn.id, sn.source_url
+        GROUP BY a.id
         ORDER BY a.sort_order, a.title
         """,
         tuple(params),
@@ -185,10 +166,8 @@ def list_assemblies(variant_id: int, q: str | None = None) -> list[dict[str, Any
 def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
     assembly = fetch_one(
         """
-        SELECT a.id, a.title, a.vehicle_variant_id, sn.source_url, s.code AS source_code, sn.id AS source_node_id
+        SELECT a.id, a.title, a.variant_id, a.root_arib, a.assembly_key, a.slug
         FROM oem_assemblies a
-        LEFT JOIN oem_source_nodes sn ON sn.id = a.source_node_id
-        LEFT JOIN oem_sources s ON s.id = sn.source_id
         WHERE a.id = %s
         """,
         (assembly_id,),
@@ -197,11 +176,9 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
         return None
     diagram = fetch_one(
         """
-        SELECT id, public_url, local_path, original_url, width, height
-        , mime_type
+        SELECT id, public_url, local_path, original_url, width, height, mime_type
         FROM oem_diagrams
         WHERE assembly_id = %s
-        ORDER BY sort_order, id
         LIMIT 1
         """,
         (assembly_id,),
@@ -217,8 +194,7 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
           h.y,
           h.width,
           h.height,
-          COALESCE(h.ref, ap.ref) AS ref,
-          h.source_items_list_id
+          COALESCE(h.ref, ap.ref) AS ref
         FROM oem_diagram_hotspots h
         LEFT JOIN oem_assembly_parts ap ON ap.id = h.assembly_part_id
         WHERE h.diagram_id = %s
@@ -236,17 +212,9 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
           p.id AS part_id,
           p.name,
           p.part_number,
-          p.normalized_part_number,
-          p.manufacturer,
-          obl.bitrix_product_id,
-          obl.product_url,
-          po.price,
-          po.currency,
-          po.availability
+          p.normalized_part_number
         FROM oem_assembly_parts ap
         JOIN oem_parts p ON p.id = ap.part_id
-        LEFT JOIN oem_part_bitrix_links obl ON obl.part_id = p.id AND obl.is_active
-        LEFT JOIN oem_part_offers po ON po.part_id = p.id
         WHERE ap.assembly_id = %s
         ORDER BY NULLIF(regexp_replace(ap.ref, '\\D', '', 'g'), '')::int NULLS LAST, ap.ref, ap.id
         """,
@@ -257,38 +225,34 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
         "diagram": diagram,
         "hotspots": hotspots,
         "parts": parts,
-        "source": {
-            "code": assembly.get("source_code"),
-            "url": assembly.get("source_url"),
-            "source_node_id": assembly.get("source_node_id"),
-        },
     }
 
 
-def search_parts(q: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+def search_parts(q: str, root: str | None = None, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
     normalized = "".join(ch for ch in q.upper() if ch.isalnum())
+    params: list[Any] = [f"%{normalized}%", f"%{q}%", f"%{q}%"]
+    where = [
+        "(p.normalized_part_number ILIKE %s OR p.part_number ILIKE %s OR p.name ILIKE %s)",
+    ]
+    if root:
+        where.append("p.root_arib = %s")
+        params.append(root.upper())
+    params.extend([limit, offset])
     return fetch_all(
-        """
+        f"""
         SELECT
           p.id,
+          p.root_arib,
           p.part_number,
           p.normalized_part_number,
           p.name,
-          p.manufacturer,
-          COUNT(DISTINCT ap.id) AS used_in_count,
-          MAX(obl.bitrix_product_id) AS bitrix_product_id,
-          MAX(obl.product_url) AS product_url,
-          MAX(po.price) AS price,
-          MAX(po.currency) AS currency,
-          MAX(po.availability) AS availability
+          COUNT(DISTINCT ap.id) AS used_in_count
         FROM oem_parts p
         LEFT JOIN oem_assembly_parts ap ON ap.part_id = p.id
-        LEFT JOIN oem_part_bitrix_links obl ON obl.part_id = p.id AND obl.is_active
-        LEFT JOIN oem_part_offers po ON po.part_id = p.id
-        WHERE p.normalized_part_number ILIKE %s OR p.part_number ILIKE %s OR p.name ILIKE %s
+        WHERE {" AND ".join(where)}
         GROUP BY p.id
         ORDER BY p.part_number
         LIMIT %s OFFSET %s
         """,
-        (f"%{normalized}%", f"%{q}%", f"%{q}%", limit, offset),
+        tuple(params),
     )

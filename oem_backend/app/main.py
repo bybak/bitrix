@@ -16,13 +16,13 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="OEM Schemas Catalog API",
-    version="0.1.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
 
 def ok(data: Any, **meta: Any) -> dict[str, Any]:
-    return {"data": data, "meta": {"api_version": "v1", **meta}}
+    return {"data": data, "meta": {"api_version": "v3", **meta}}
 
 
 @app.get("/health")
@@ -30,41 +30,30 @@ def health() -> dict[str, Any]:
     return ok({"status": "ok"})
 
 
-@app.get("/api/oem/vehicle-types")
-def vehicle_types() -> dict[str, Any]:
-    return ok(repository.list_vehicle_types())
+@app.get("/api/oem/roots")
+def roots() -> dict[str, Any]:
+    return ok(repository.list_roots())
 
 
-@app.get("/api/oem/brands")
-def brands(vehicle_type: str | None = None) -> dict[str, Any]:
-    return ok(repository.list_brands(vehicle_type=vehicle_type))
-
-
-@app.get("/api/oem/years")
-def years(
-    vehicle_type: str = Query(...),
-    brand_id: int = Query(...),
+@app.get("/api/oem/nav")
+def nav(
+    root: str = Query(...),
+    parent_id: int | None = None,
 ) -> dict[str, Any]:
-    return ok(repository.list_years(vehicle_type=vehicle_type, brand_id=brand_id))
-
-
-@app.get("/api/oem/models")
-def models(
-    vehicle_type: str = Query(...),
-    brand_id: int = Query(...),
-    year: int | None = None,
-    q: str | None = None,
-) -> dict[str, Any]:
-    return ok(repository.list_models(vehicle_type=vehicle_type, brand_id=brand_id, year=year, q=q))
+    return ok(repository.list_nav_children(root=root, parent_id=parent_id))
 
 
 @app.get("/api/oem/variants")
 def variants(
-    model_id: int = Query(...),
-    year: int | None = None,
-    region: str | None = None,
+    nav_node_id: int | None = None,
+    root: str | None = None,
+    q: str | None = None,
 ) -> dict[str, Any]:
-    return ok(repository.list_variants(model_id=model_id, year=year, region=region))
+    if nav_node_id is not None:
+        return ok(repository.list_variants_for_nav(nav_node_id))
+    if root:
+        return ok(repository.list_variants_by_root(root=root, q=q))
+    raise HTTPException(status_code=400, detail="nav_node_id or root is required")
 
 
 @app.get("/api/oem/assemblies")
@@ -83,7 +72,8 @@ def diagram(assembly_id: int) -> dict[str, Any]:
 @app.get("/api/oem/parts/search")
 def part_search(
     q: str = Query(..., min_length=2),
+    root: str | None = None,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
-    return ok(repository.search_parts(q=q, limit=limit, offset=offset))
+    return ok(repository.search_parts(q=q, root=root, limit=limit, offset=offset))

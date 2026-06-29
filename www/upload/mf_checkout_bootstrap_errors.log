@@ -1,0 +1,23 @@
+2026-06-27T04:19:18+03:00 [company_address_flags] Mysql query error: (2006) MySQL server has gone away in /var/www/html/bitrix/modules/main/lib/db/mysqlcommonconnection.php:417
+#0 /var/www/html/bitrix/modules/main/lib/db/mysqliconnection.php(149): Bitrix\Main\DB\MysqlCommonConnection->createQueryException(2006, '(2006) MySQL se...', '\n\t\t\t\tSELECT FRO...')
+#1 /var/www/html/bitrix/modules/main/lib/db/connection.php(324): Bitrix\Main\DB\MysqliConnection->queryInternal('\n\t\t\t\tSELECT FRO...', Array, NULL)
+#2 /var/www/html/bitrix/modules/main/lib/eventmanager.php(248): Bitrix\Main\DB\Connection->query('\n\t\t\t\tSELECT FRO...')
+#3 /var/www/html/bitrix/modules/main/lib/eventmanager.php(337): Bitrix\Main\EventManager->loadEventHandlers()
+#4 /var/www/html/bitrix/modules/main/lib/eventmanager.php(372): Bitrix\Main\EventManager->findEventHandlers('main', 'onUserTypeEntit...', NULL)
+#5 /var/www/html/bitrix/modules/main/lib/event.php(142): Bitrix\Main\EventManager->send(Object(Bitrix\Main\Event))
+#6 /var/www/html/bitrix/modules/main/classes/general/usertypemanager.php(393): Bitrix\Main\Event->send()
+#7 /var/www/html/bitrix/modules/main/lib/orm/entity.php(323): CUserTypeManager->getEntityList()
+#8 /var/www/html/bitrix/modules/main/lib/orm/entity.php(130): Bitrix\Main\ORM\Entity->postInitialize()
+#9 /var/www/html/bitrix/modules/main/lib/orm/entity.php(108): Bitrix\Main\ORM\Entity::getInstanceDirect('\\Bitrix\\Sale\\In...')
+#10 /var/www/html/bitrix/modules/main/lib/orm/data/datamanager.php(71): Bitrix\Main\ORM\Entity::getInstance('\\Bitrix\\Sale\\In...')
+#11 /var/www/html/bitrix/modules/main/lib/orm/data/datamanager.php(552): Bitrix\Main\ORM\Data\DataManager::getEntity()
+#12 /var/www/html/bitrix/modules/main/lib/orm/data/datamanager.php(433): Bitrix\Main\ORM\Data\DataManager::query()
+#13 /var/www/html/local/php_interface/include/mf_checkout.php(67): Bitrix\Main\ORM\Data\DataManager::getList(Array)
+#14 /var/www/html/local/php_interface/include/mf_checkout.php(1344): mf_checkout_person_type_map()
+#15 /var/www/html/local/php_interface/include/mf_checkout.php(3665): mf_checkout_fix_company_address_flags()
+#16 /var/www/html/local/php_interface/init.php(3521): mf_checkout_bootstrap()
+#17 /var/www/html/bitrix/modules/main/include.php(139): include_once('/var/www/html/l...')
+#18 /var/www/html/bitrix/modules/main/include/prolog_before.php(19): require_once('/var/www/html/b...')
+#19 /var/www/html/bitrix/modules/main/tools/cron_events.php(11): require('/var/www/html/b...')
+#20 {main}
+

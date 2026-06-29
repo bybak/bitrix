@@ -40,27 +40,23 @@
 	window.Vue.createApp({
 		data: function () {
 			return {
-				step: 'vehicle',
+				step: 'root',
 				bootLoading: true,
 				loading: false,
 				error: '',
-				vehicleTypes: [],
-				brands: [],
-				years: [],
-				models: [],
+				catalogRoots: [],
+				navNodes: [],
 				variants: [],
 				assemblies: [],
 				diagramPayload: null,
 				selected: {
-					vehicleType: null,
-					brand: null,
-					year: null,
-					model: null,
+					root: null,
+					navStack: [],
+					navNode: null,
 					variant: null,
 					assembly: null
 				},
 				filters: {
-					model: '',
 					assembly: ''
 				},
 				activeAssemblyPartId: null,
@@ -72,19 +68,13 @@
 		},
 		computed: {
 			breadcrumbs: function () {
-				var items = [];
-				if (this.selected.vehicleType) {
-					items.push({ step: 'vehicle', label: this.selected.vehicleType.name });
+				var items = [{ step: 'root', label: 'Каталог' }];
+				if (this.selected.root) {
+					items.push({ step: 'browse', index: -1, label: this.selected.root.name });
 				}
-				if (this.selected.brand) {
-					items.push({ step: 'brand', label: this.selected.brand.name });
-				}
-				if (this.selected.year) {
-					items.push({ step: 'year', label: String(this.selected.year.year) });
-				}
-				if (this.selected.model) {
-					items.push({ step: 'model', label: this.selected.model.name });
-				}
+				this.selected.navStack.forEach(function (node, index) {
+					items.push({ step: 'browse', index: index, label: node.title });
+				});
 				if (this.selected.variant) {
 					items.push({ step: 'variant', label: this.variantTitle(this.selected.variant) });
 				}
@@ -108,12 +98,17 @@
 				return {
 					aspectRatio: size.width + ' / ' + size.height
 				};
+			},
+			currentParentId: function () {
+				if (this.selected.navStack.length) {
+					return this.selected.navStack[this.selected.navStack.length - 1].id;
+				}
+				return null;
 			}
 		},
 		created: function () {
-			this.debouncedLoadModels = debounce(this.loadModels.bind(this), 250);
 			this.debouncedLoadAssemblies = debounce(this.loadAssemblies.bind(this), 250);
-			this.loadVehicleTypes();
+			this.loadRoots();
 		},
 		methods: {
 			setLoading: function (value) {
@@ -133,55 +128,27 @@
 					self.bootLoading = false;
 				});
 			},
-			loadVehicleTypes: function () {
+			loadRoots: function () {
 				var self = this;
-				return this.run(apiGet('/vehicle-types')).then(function (items) {
-					self.vehicleTypes = items;
+				return this.run(apiGet('/roots')).then(function (items) {
+					self.catalogRoots = items;
 				});
 			},
-			loadBrands: function () {
-				var self = this;
-				return this.run(apiGet('/brands', {
-					vehicle_type: this.selected.vehicleType && this.selected.vehicleType.code
-				})).then(function (items) {
-					self.brands = items;
-				});
-			},
-			loadYears: function () {
-				if (!this.selected.vehicleType || !this.selected.brand) {
+			loadNav: function () {
+				if (!this.selected.root) {
 					return Promise.resolve();
 				}
 				var self = this;
-				return this.run(apiGet('/years', {
-					vehicle_type: this.selected.vehicleType.code,
-					brand_id: this.selected.brand.id
+				return this.run(apiGet('/nav', {
+					root: this.selected.root.arib_code,
+					parent_id: this.currentParentId
 				})).then(function (items) {
-					self.years = items;
+					self.navNodes = items;
 				});
 			},
-			loadModels: function () {
-				if (!this.selected.vehicleType || !this.selected.brand || !this.selected.year) {
-					return Promise.resolve();
-				}
+			loadVariantsForNav: function (navNodeId) {
 				var self = this;
-				return this.run(apiGet('/models', {
-					vehicle_type: this.selected.vehicleType.code,
-					brand_id: this.selected.brand.id,
-					year: this.selected.year.year,
-					q: this.filters.model
-				})).then(function (items) {
-					self.models = items;
-				});
-			},
-			loadVariants: function () {
-				if (!this.selected.model) {
-					return Promise.resolve();
-				}
-				var self = this;
-				return this.run(apiGet('/variants', {
-					model_id: this.selected.model.id,
-					year: this.selected.year && this.selected.year.year
-				})).then(function (items) {
+				return this.run(apiGet('/variants', { nav_node_id: navNodeId })).then(function (items) {
 					self.variants = items;
 				});
 			},
@@ -208,59 +175,42 @@
 					self.diagramNatural = { width: 0, height: 0 };
 				});
 			},
-			selectVehicleType: function (item) {
-				this.selected.vehicleType = item;
-				this.selected.brand = null;
-				this.selected.year = null;
-				this.selected.model = null;
+			selectRoot: function (item) {
+				this.selected.root = item;
+				this.selected.navStack = [];
+				this.selected.navNode = null;
 				this.selected.variant = null;
 				this.selected.assembly = null;
-				this.brands = [];
-				this.years = [];
-				this.models = [];
 				this.variants = [];
 				this.assemblies = [];
 				this.diagramPayload = null;
-				this.step = 'brand';
-				this.loadBrands();
+				this.step = 'browse';
+				this.loadNav();
 			},
-			selectBrand: function (brand) {
-				this.selected.brand = brand;
-				this.selected.year = null;
-				this.selected.model = null;
-				this.selected.variant = null;
-				this.selected.assembly = null;
-				this.filters.model = '';
-				this.years = [];
-				this.models = [];
-				this.variants = [];
-				this.assemblies = [];
-				this.diagramPayload = null;
-				this.step = 'year';
-				this.loadYears();
-			},
-			selectYear: function (year) {
-				this.selected.year = year;
-				this.selected.model = null;
-				this.selected.variant = null;
-				this.selected.assembly = null;
-				this.filters.model = '';
-				this.models = [];
-				this.variants = [];
-				this.assemblies = [];
-				this.diagramPayload = null;
-				this.step = 'model';
-				this.loadModels();
-			},
-			selectModel: function (model) {
-				this.selected.model = model;
+			selectNavNode: function (node) {
+				var self = this;
+				this.selected.navStack.push(node);
+				this.selected.navNode = node;
 				this.selected.variant = null;
 				this.selected.assembly = null;
 				this.variants = [];
 				this.assemblies = [];
 				this.diagramPayload = null;
-				this.step = 'variant';
-				this.loadVariants();
+
+				if (Number(node.child_count) > 0) {
+					this.step = 'browse';
+					return this.loadNav();
+				}
+				if (Number(node.variant_count) > 0) {
+					this.step = 'variant';
+					return this.loadVariantsForNav(node.id).then(function () {
+						if (self.variants.length === 1) {
+							self.selectVariant(self.variants[0]);
+						}
+					});
+				}
+				this.step = 'browse';
+				return this.loadNav();
 			},
 			selectVariant: function (variant) {
 				this.selected.variant = variant;
@@ -276,102 +226,57 @@
 				this.step = 'diagram';
 				this.loadDiagram();
 			},
-			goToStep: function (step) {
-				if (step === 'vehicle') {
-					this.selected.vehicleType = null;
-					this.selected.brand = null;
-					this.selected.year = null;
-					this.selected.model = null;
+			goToCrumb: function (crumb) {
+				if (crumb.step === 'root') {
+					this.selected.root = null;
+					this.selected.navStack = [];
+					this.selected.navNode = null;
 					this.selected.variant = null;
 					this.selected.assembly = null;
-					this.brands = [];
-					this.years = [];
-					this.models = [];
+					this.navNodes = [];
 					this.variants = [];
 					this.assemblies = [];
 					this.diagramPayload = null;
-					this.filters.model = '';
-					this.filters.assembly = '';
+					this.step = 'root';
+					return;
 				}
-				if (step === 'brand') {
-					this.selected.brand = null;
-					this.selected.year = null;
-					this.selected.model = null;
-					this.selected.variant = null;
-					this.selected.assembly = null;
-					this.years = [];
-					this.models = [];
-					this.variants = [];
-					this.assemblies = [];
-					this.diagramPayload = null;
-					this.filters.model = '';
-					this.filters.assembly = '';
-					if (this.selected.vehicleType) {
-						this.loadBrands();
+				if (crumb.step === 'browse') {
+					if (crumb.index < 0) {
+						this.selected.navStack = [];
+					} else {
+						this.selected.navStack = this.selected.navStack.slice(0, crumb.index + 1);
 					}
-				}
-				if (step === 'year') {
-					this.selected.year = null;
-					this.selected.model = null;
-					this.selected.variant = null;
-					this.selected.assembly = null;
-					this.models = [];
-					this.variants = [];
-					this.assemblies = [];
-					this.diagramPayload = null;
-					this.filters.model = '';
-					this.filters.assembly = '';
-					if (this.selected.vehicleType && this.selected.brand) {
-						this.loadYears();
-					}
-				}
-				if (step === 'model') {
-					this.selected.model = null;
+					this.selected.navNode = this.selected.navStack[this.selected.navStack.length - 1] || null;
 					this.selected.variant = null;
 					this.selected.assembly = null;
 					this.variants = [];
 					this.assemblies = [];
 					this.diagramPayload = null;
-					this.filters.model = '';
-					this.filters.assembly = '';
-					if (this.selected.vehicleType && this.selected.brand && this.selected.year) {
-						this.loadModels();
-					}
+					this.step = 'browse';
+					this.loadNav();
+					return;
 				}
-				if (step === 'variant') {
-					this.selected.variant = null;
-					this.selected.assembly = null;
-					this.assemblies = [];
-					this.diagramPayload = null;
-					this.filters.assembly = '';
-					if (this.selected.model) {
-						this.loadVariants();
-					}
-				}
-				if (step === 'assembly') {
+				if (crumb.step === 'variant') {
 					this.selected.assembly = null;
 					this.diagramPayload = null;
-					if (this.selected.variant) {
-						this.loadAssemblies();
-					}
+					this.step = 'assembly';
+					this.loadAssemblies();
+					return;
 				}
-				this.step = step;
+				if (crumb.step === 'assembly') {
+					this.step = 'diagram';
+					this.loadDiagram();
+				}
 			},
 			reloadCurrentStep: function () {
-				if (this.step === 'vehicle') {
-					return this.loadVehicleTypes();
+				if (this.step === 'root') {
+					return this.loadRoots();
 				}
-				if (this.step === 'brand') {
-					return this.loadBrands();
+				if (this.step === 'browse') {
+					return this.loadNav();
 				}
-				if (this.step === 'year') {
-					return this.loadYears();
-				}
-				if (this.step === 'model') {
-					return this.loadModels();
-				}
-				if (this.step === 'variant') {
-					return this.loadVariants();
+				if (this.step === 'variant' && this.selected.navNode) {
+					return this.loadVariantsForNav(this.selected.navNode.id);
 				}
 				if (this.step === 'assembly') {
 					return this.loadAssemblies();
@@ -380,48 +285,36 @@
 					return this.loadDiagram();
 				}
 			},
-			vehicleTypeLabel: function (code) {
-				var labels = {
-					motorcycle: 'Мотоциклы',
-					atv: 'Квадроциклы',
-					ssv: 'Side-by-side',
-					snowmobile: 'Снегоходы',
-					jetski: 'Гидроциклы',
-					outboard: 'Лодочные моторы'
-				};
-				return labels[code] || code;
+			navSubtitle: function (node) {
+				var parts = [];
+				if (Number(node.child_count) > 0) {
+					parts.push(node.child_count + ' папок');
+				}
+				if (Number(node.variant_count) > 0) {
+					parts.push(node.variant_count + ' вариантов');
+				}
+				return parts.join(' · ') || 'Открыть';
 			},
 			variantTitle: function (variant) {
 				var parts = [];
 				if (variant.year_from) {
-					parts.push(variant.year_from === variant.year_to || !variant.year_to ? variant.year_from : variant.year_from + '-' + variant.year_to);
+					parts.push(String(variant.year_from));
 				}
-				if (variant.market_name) {
-					parts.push(variant.market_name);
+				if (variant.source_designation) {
+					parts.push(variant.source_designation);
+				} else if (variant.model_name) {
+					parts.push(variant.model_name);
 				}
-				if (variant.model_code) {
-					parts.push(variant.model_code);
+				if (variant.variant_section) {
+					parts.push(variant.variant_section);
 				}
-				if (variant.color_code) {
-					parts.push(variant.color_code);
-				}
-				return parts.join(' · ') || variant.source_designation || ('Вариант #' + variant.id);
+				return parts.join(' · ') || ('Вариант #' + variant.id);
 			},
 			variantSubtitle: function (variant) {
 				if (!variant) {
 					return '';
 				}
-				var section = String(variant.variant_section || '').toLowerCase();
-				if (section === 'chassis') {
-					return 'Шасси';
-				}
-				if (section === 'engine') {
-					return 'Двигатель';
-				}
-				if (variant.source_designation) {
-					return String(variant.source_designation);
-				}
-				return '';
+				return (variant.assembly_count || 0) + ' узлов';
 			},
 			assetUrl: function (path) {
 				if (!path) {

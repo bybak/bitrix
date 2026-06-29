@@ -129,6 +129,12 @@ services:
     depends_on:
       oem_db:
         condition: service_healthy
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    extra_hosts:
+      - "partstream.arinet.com:67.208.136.218"
+      - "cdn.datamanager.arinet.com:13.33.235.124"
     networks:
       - bitrix
 
@@ -136,6 +142,7 @@ services:
     image: postgres:16-alpine
     container_name: oem_db
     restart: unless-stopped
+    shm_size: "512mb"
     environment:
       POSTGRES_DB: oem_catalog
       POSTGRES_USER: oem_user

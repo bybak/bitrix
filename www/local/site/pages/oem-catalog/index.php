@@ -3,7 +3,7 @@ define('HIDE_SIDEBAR', true);
 require($_SERVER['DOCUMENT_ROOT'].'/bitrix/header.php');
 $APPLICATION->SetTitle('Каталог схем запчастей');
 $APPLICATION->SetPageProperty('title', 'Каталог схем запчастей Motor Force');
-$APPLICATION->SetPageProperty('description', 'OEM каталог схем запчастей для мототехники: выбор типа техники, бренда, года, модели, узла и деталей по схеме.');
+$APPLICATION->SetPageProperty('description', 'OEM каталог схем запчастей: Husqvarna, KTM, Lynx, BRP — навигация по дереву как на Remotors.');
 ?>
 
 <div class="mf-oem-page" id="mfOemCatalog" data-api-base="/api/oem" data-assets-base="/oem-assets">
@@ -17,43 +17,29 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 
 	<div class="mf-oem-app" v-cloak>
 		<div class="mf-oem-sidebar">
-			<div class="mf-oem-step" :class="{ '-active': step === 'vehicle', '-done': selected.vehicleType }">
+			<div class="mf-oem-step" :class="{ '-active': step === 'root', '-done': selected.root }">
 				<span>1</span>
 				<div>
-					<strong>Тип техники</strong>
-					<small>{{ selected.vehicleType ? selected.vehicleType.name : 'Не выбран' }}</small>
+					<strong>Бренд</strong>
+					<small>{{ selected.root ? selected.root.name : 'Не выбран' }}</small>
 				</div>
 			</div>
-			<div class="mf-oem-step" :class="{ '-active': step === 'brand', '-done': selected.brand }">
+			<div class="mf-oem-step" :class="{ '-active': step === 'browse', '-done': selected.navStack.length }">
 				<span>2</span>
 				<div>
-					<strong>Бренд</strong>
-					<small>{{ selected.brand ? selected.brand.name : 'Не выбран' }}</small>
+					<strong>Каталог</strong>
+					<small>{{ selected.navNode ? selected.navNode.title : 'Папки' }}</small>
 				</div>
 			</div>
-			<div class="mf-oem-step" :class="{ '-active': step === 'year', '-done': selected.year }">
+			<div class="mf-oem-step" :class="{ '-active': step === 'variant' || step === 'assembly', '-done': selected.variant }">
 				<span>3</span>
 				<div>
-					<strong>Год</strong>
-					<small>{{ selected.year ? selected.year.year : 'Не выбран' }}</small>
+					<strong>Модификация</strong>
+					<small>{{ selected.variant ? variantTitle(selected.variant) : 'Не выбрана' }}</small>
 				</div>
 			</div>
-			<div class="mf-oem-step" :class="{ '-active': step === 'model', '-done': selected.model }">
+			<div class="mf-oem-step" :class="{ '-active': step === 'assembly' || step === 'diagram', '-done': selected.assembly }">
 				<span>4</span>
-				<div>
-					<strong>Модель</strong>
-					<small>{{ selected.model ? selected.model.name : 'Не выбрана' }}</small>
-				</div>
-			</div>
-			<div class="mf-oem-step" :class="{ '-active': step === 'variant', '-done': selected.variant }">
-				<span>5</span>
-				<div>
-					<strong>Вариант</strong>
-					<small>{{ selected.variant ? variantTitle(selected.variant) : 'Не выбран' }}</small>
-				</div>
-			</div>
-			<div class="mf-oem-step" :class="{ '-active': step === 'assembly', '-done': selected.assembly }">
-				<span>6</span>
 				<div>
 					<strong>Узел</strong>
 					<small>{{ selected.assembly ? selected.assembly.title : 'Не выбран' }}</small>
@@ -63,79 +49,49 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 
 		<div class="mf-oem-content">
 			<div class="mf-oem-breadcrumbs" v-if="breadcrumbs.length">
-				<button type="button" v-for="crumb in breadcrumbs" :key="crumb.step" @click="goToStep(crumb.step)">
+				<button type="button" v-for="(crumb, idx) in breadcrumbs" :key="idx" @click="goToCrumb(crumb)">
 					{{ crumb.label }}
 				</button>
 			</div>
 
-			<section v-if="step === 'vehicle'" class="mf-oem-panel">
-				<div class="mf-oem-panel-head">
-					<h2>Выберите тип техники</h2>
-					<p>Начните с выбора категории техники, затем перейдите к бренду, году, модели и схеме узла.</p>
-				</div>
-				<div class="mf-oem-grid">
-					<button class="mf-oem-card" type="button" v-for="item in vehicleTypes" :key="item.id" @click="selectVehicleType(item)">
-						<strong>{{ item.name }}</strong>
-						<span>{{ vehicleTypeLabel(item.code) }}</span>
-					</button>
-				</div>
-			</section>
-
-			<section v-if="step === 'brand'" class="mf-oem-panel">
+			<section v-if="step === 'root'" class="mf-oem-panel">
 				<div class="mf-oem-panel-head">
 					<h2>Выберите бренд</h2>
-					<button type="button" @click="goToStep('vehicle')">Назад</button>
+					<p>Каталог повторяет структуру Remotors: Husqvarna, KTM, Lynx, BRP.</p>
 				</div>
 				<div class="mf-oem-grid">
-					<button class="mf-oem-card" type="button" v-for="brand in brands" :key="brand.id" @click="selectBrand(brand)">
-						<strong>{{ brand.name }}</strong>
-						<span>{{ brand.model_count }} моделей</span>
+					<button class="mf-oem-card" type="button" v-for="item in catalogRoots" :key="item.id" @click="selectRoot(item)">
+						<strong>{{ item.name }}</strong>
+						<span>{{ item.arib_code }}</span>
 					</button>
 				</div>
-				<div class="mf-oem-empty" v-if="!loading && !brands.length">Для выбранного типа техники пока нет импортированных брендов.</div>
 			</section>
 
-			<section v-if="step === 'year'" class="mf-oem-panel">
+			<section v-if="step === 'browse'" class="mf-oem-panel">
 				<div class="mf-oem-panel-head">
 					<div>
-						<h2>Выберите год</h2>
-						<p>{{ selected.brand && selected.brand.name }}</p>
+						<h2>{{ selected.root && selected.root.name }}</h2>
+						<p v-if="selected.navStack.length">{{ selected.navStack.map(function(n){ return n.title; }).join(' / ') }}</p>
 					</div>
-					<button type="button" @click="goToStep('brand')">Назад</button>
+					<button type="button" v-if="selected.navStack.length" @click="goToCrumb({ step: 'browse', index: selected.navStack.length - 2 })">Назад</button>
+					<button type="button" v-else @click="goToCrumb({ step: 'root' })">К брендам</button>
 				</div>
-				<div class="mf-oem-grid">
-					<button class="mf-oem-card" type="button" v-for="year in years" :key="year.year" @click="selectYear(year)">
-						<strong>{{ year.year }}</strong>
-						<span>{{ year.model_count }} моделей</span>
-					</button>
-				</div>
-				<div class="mf-oem-empty" v-if="!loading && !years.length">Для выбранного бренда пока нет импортированных годов.</div>
-			</section>
-
-			<section v-if="step === 'model'" class="mf-oem-panel">
-				<div class="mf-oem-panel-head">
-					<div>
-						<h2>Выберите модель</h2>
-						<p>{{ selected.brand && selected.brand.name }} · {{ selected.year && selected.year.year }}</p>
-					</div>
-					<button type="button" @click="goToStep('year')">Назад</button>
-				</div>
-				<input class="mf-oem-search" type="search" v-model.trim="filters.model" @input="debouncedLoadModels" placeholder="Поиск модели">
 				<div class="mf-oem-list">
-					<button class="mf-oem-list-item" type="button" v-for="model in models" :key="model.id" @click="selectModel(model)">
-						<strong>{{ model.name }}</strong>
-						<span>{{ model.variant_count }} вариантов</span>
+					<button class="mf-oem-list-item" type="button" v-for="node in navNodes" :key="node.id" @click="selectNavNode(node)">
+						<strong>{{ node.title }}</strong>
+						<span>{{ navSubtitle(node) }}</span>
 					</button>
 				</div>
+				<div class="mf-oem-empty" v-if="!loading && !navNodes.length">В этой папке пока нет подразделов.</div>
 			</section>
 
 			<section v-if="step === 'variant'" class="mf-oem-panel">
 				<div class="mf-oem-panel-head">
 					<div>
-						<h2>Выберите вариант</h2>
-						<p>{{ selected.year && selected.year.year }} · {{ selected.model && selected.model.name }}</p>
+						<h2>Выберите модификацию</h2>
+						<p>{{ selected.navNode && selected.navNode.title }}</p>
 					</div>
-					<button type="button" @click="goToStep('model')">Назад</button>
+					<button type="button" @click="goToCrumb({ step: 'browse', index: selected.navStack.length - 1 })">Назад</button>
 				</div>
 				<div class="mf-oem-list">
 					<button class="mf-oem-list-item" type="button" v-for="variant in variants" :key="variant.id" @click="selectVariant(variant)">
@@ -151,7 +107,7 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 						<h2>Выберите узел</h2>
 						<p>{{ selected.variant && variantTitle(selected.variant) }}</p>
 					</div>
-					<button type="button" @click="goToStep('variant')">Назад</button>
+					<button type="button" @click="goToCrumb({ step: 'variant' })">Назад</button>
 				</div>
 				<input class="mf-oem-search" type="search" v-model.trim="filters.assembly" @input="debouncedLoadAssemblies" placeholder="Поиск узла">
 				<div class="mf-oem-assembly-grid">
@@ -174,7 +130,7 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 						<h2>{{ selected.assembly && selected.assembly.title }}</h2>
 						<p>{{ selected.variant && variantTitle(selected.variant) }}</p>
 					</div>
-					<button type="button" @click="goToStep('assembly')">К узлам</button>
+					<button type="button" @click="goToCrumb({ step: 'assembly' })">К узлам</button>
 				</div>
 
 				<div class="mf-oem-diagram-layout" v-if="diagramPayload">
@@ -189,7 +145,7 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 									:class="{ '-active': activeAssemblyPartId === hotspot.assembly_part_id }"
 									type="button"
 									:style="hotspotStyle(hotspot)"
-									:title="hotspot.ref || hotspot.source_items_list_id"
+									:title="hotspot.ref"
 									@click="focusPart(hotspot.assembly_part_id)"
 								>
 									{{ hotspot.ref || '' }}
@@ -209,9 +165,8 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 								<strong>{{ part.name || 'Без названия' }}</strong>
 								<span>{{ part.part_number }}</span>
 							</div>
-							<div class="mf-oem-part-meta" v-if="part.quantity || part.product_url">
+							<div class="mf-oem-part-meta" v-if="part.quantity">
 								<span>Кол-во: {{ formatQuantity(part.quantity) }}</span>
-								<a v-if="part.product_url" :href="part.product_url">Товар</a>
 							</div>
 						</div>
 					</div>

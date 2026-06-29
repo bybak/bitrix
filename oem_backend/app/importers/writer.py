@@ -5,13 +5,55 @@ from contextlib import contextmanager
 from typing import Any, Iterator
 
 from app.db import get_conn
-from app.importers.remotors_catalog import assembly_compare_key, canonical_assembly_arib
 from app.normalization import normalize_part_number, normalize_text
 
 _local = threading.local()
 _source_ids: dict[str, int] = {}
 _vehicle_type_ids: dict[str, int] = {}
 _lookup_lock = threading.Lock()
+
+
+def _normalize_assembly_slug(slug: str | None) -> str | None:
+    if not slug:
+        return None
+    value = slug.strip().rstrip("/")
+    if value.endswith("/y"):
+        value = value[:-2]
+    return value or None
+
+
+def canonical_assembly_arib(arib: str | None) -> str | None:
+    if not arib:
+        return None
+    code = arib.strip().upper()
+    if code in {"BRP_SEA", "BRP_SKI"}:
+        return "BRP"
+    return code
+
+
+def assembly_compare_key(
+    *,
+    arib: str | None,
+    aria: str | None = None,
+    slug: str | None = None,
+    path: list[str] | None = None,
+    external_id: str | None = None,
+) -> str | None:
+    canon_arib = canonical_assembly_arib(arib)
+    aria_value = (aria or "").strip() or None
+    if canon_arib and aria_value:
+        return f"{canon_arib}:{aria_value}"
+    normalized_slug = _normalize_assembly_slug(slug)
+    if canon_arib and normalized_slug:
+        return f"{canon_arib}:{normalized_slug}"
+    if external_id and ":" in external_id:
+        ext_arib, ext_rest = external_id.split(":", 1)
+        canon_ext = canonical_assembly_arib(ext_arib) or ext_arib
+        if ext_rest and not ext_rest.startswith("/"):
+            return f"{canon_ext}:{ext_rest}"
+    if canon_arib and path:
+        return f"{canon_arib}:{aria_value or 'no-aria'}:{'/'.join(path)}"
+    return external_id
 
 
 def _active_conn():
