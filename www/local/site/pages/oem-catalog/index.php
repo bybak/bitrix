@@ -57,7 +57,6 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 			<section v-if="step === 'root'" class="mf-oem-panel">
 				<div class="mf-oem-panel-head">
 					<h2>Выберите бренд</h2>
-					<p>Каталог повторяет структуру Remotors: Husqvarna, KTM, Lynx, BRP.</p>
 				</div>
 				<div class="mf-oem-grid">
 					<button class="mf-oem-card" type="button" v-for="item in catalogRoots" :key="item.id" @click="selectRoot(item)">
