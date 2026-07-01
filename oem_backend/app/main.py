@@ -56,6 +56,14 @@ def variants(
     raise HTTPException(status_code=400, detail="nav_node_id or root is required")
 
 
+@app.get("/api/oem/variants/{variant_id}")
+def variant_by_id(variant_id: int) -> dict[str, Any]:
+    payload = repository.get_variant(variant_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Variant not found")
+    return ok(payload)
+
+
 @app.get("/api/oem/assemblies")
 def assemblies(variant_id: int = Query(...), q: str | None = None) -> dict[str, Any]:
     return ok(repository.list_assemblies(variant_id=variant_id, q=q))
@@ -77,3 +85,11 @@ def part_search(
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     return ok(repository.search_parts(q=q, root=root, limit=limit, offset=offset))
+
+
+@app.get("/api/oem/parts/usages")
+def part_usages(
+    q: str = Query(..., min_length=2),
+    limit: int = Query(1000, ge=1, le=2000),
+) -> dict[str, Any]:
+    return ok(repository.search_part_usages(q=q, limit=limit))

@@ -204,6 +204,8 @@ if (function_exists('mf_seo_apply_default_meta'))
 	{
 		$css = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-oem-catalog.css");
 		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($css).'" />'."\n";
+		$searchCss = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-search.css");
+		echo '<link rel="stylesheet" href="'.htmlspecialcharsbx($searchCss).'" />'."\n";
 		echo '<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js" defer></script>'."\n";
 		$js = $mfAssetVer(SITE_TEMPLATE_PATH."/mf-oem-catalog.js");
 		echo '<script src="'.htmlspecialcharsbx($js).'" defer></script>'."\n";

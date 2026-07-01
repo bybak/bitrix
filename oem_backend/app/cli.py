@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from app.db import close_pool, open_pool
+from app.remotors_v3.backfill_diagram_coords import backfill_diagram_coords
 from app.remotors_v3.constants import ROOT_ARIB_CODES
 from app.remotors_v3.details_crawl import crawl_details, seed_crawl_items
 from app.remotors_v3.details_parse import parse_details
@@ -69,6 +70,15 @@ def main() -> None:
         help="Parallel parse batches per worker (default 1; try 2-4)",
     )
 
+    coords_cmd = subparsers.add_parser(
+        "backfill-diagram-coords",
+        help="Read saved Remotors HTML origWidth and store diagram coordinate space",
+    )
+    coords_cmd.add_argument("--limit", type=int, default=None)
+    coords_cmd.add_argument("--force", action="store_true")
+    coords_cmd.add_argument("--worker-id", type=int, default=0, help="Worker index 0..workers-1")
+    coords_cmd.add_argument("--workers", type=int, default=1, help="Split diagrams by assembly_id %% workers")
+
     verify = subparsers.add_parser("verify-remotors-v3", help="Verify snapshot vs PostgreSQL counts")
     verify.add_argument("--snapshot", default="storage/remotors-snapshot-v3.db")
 
@@ -119,6 +129,14 @@ def main() -> None:
                 worker_id=args.worker_id,
                 workers=args.workers,
                 concurrency=args.concurrency,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif args.command == "backfill-diagram-coords":
+            result = backfill_diagram_coords(
+                limit=args.limit,
+                force=args.force,
+                worker_id=args.worker_id,
+                workers=args.workers,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "verify-remotors-v3":

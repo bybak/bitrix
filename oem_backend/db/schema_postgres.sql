@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS oem_diagrams (
   public_url TEXT,
   width INTEGER,
   height INTEGER,
+  coord_width NUMERIC(12,4),
+  coord_height NUMERIC(12,4),
   mime_type VARCHAR(128),
   checksum_sha256 CHAR(64),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
