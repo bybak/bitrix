@@ -2206,25 +2206,68 @@ if (!function_exists('mf_catalog_warm_products'))
 		}
 		if ($clusterIds !== [])
 		{
-			$rs = \CCatalogStoreProduct::GetList(
-				['STORE_ID' => 'ASC'],
-				['PRODUCT_ID' => $clusterIds],
-				false,
-				false,
-				['PRODUCT_ID', 'STORE_ID', 'AMOUNT']
-			);
-			while ($r = $rs->Fetch())
+			$chunkSize = 500;
+			$useD7 = class_exists(\Bitrix\Catalog\StoreProductTable::class);
+			for ($offset = 0, $cnt = count($clusterIds); $offset < $cnt; $offset += $chunkSize)
 			{
-				$cid = (int)($r['PRODUCT_ID'] ?? 0);
-				$sid = (int)($r['STORE_ID'] ?? 0);
-				if ($cid <= 0 || $sid <= 0)
+				$chunk = array_slice($clusterIds, $offset, $chunkSize);
+				if ($chunk === [])
 				{
 					continue;
 				}
-				$amt = (float)($r['AMOUNT'] ?? 0);
-				foreach (array_keys($clusterToProducts[$cid] ?? []) as $pid)
+
+				if ($useD7)
 				{
-					$amountsByProduct[$pid][$sid] = ($amountsByProduct[$pid][$sid] ?? 0.0) + $amt;
+					$rs = \Bitrix\Catalog\StoreProductTable::getList([
+						'filter' => ['@PRODUCT_ID' => $chunk],
+						'select' => ['PRODUCT_ID', 'STORE_ID', 'AMOUNT'],
+						'order' => ['STORE_ID' => 'ASC'],
+					]);
+					while ($r = $rs->fetch())
+					{
+						$cid = (int)($r['PRODUCT_ID'] ?? 0);
+						$sid = (int)($r['STORE_ID'] ?? 0);
+						if ($cid <= 0 || $sid <= 0)
+						{
+							continue;
+						}
+						$amt = (float)($r['AMOUNT'] ?? 0);
+						foreach (array_keys($clusterToProducts[$cid] ?? []) as $pid)
+						{
+							$amountsByProduct[$pid][$sid] = ($amountsByProduct[$pid][$sid] ?? 0.0) + $amt;
+						}
+					}
+					continue;
+				}
+
+				// Старый CCatalogStoreProduct::GetList с массивом PRODUCT_ID генерирует гигантский OR — только по одному id.
+				foreach ($chunk as $cid)
+				{
+					$cid = (int)$cid;
+					if ($cid <= 0)
+					{
+						continue;
+					}
+					$rs = \CCatalogStoreProduct::GetList(
+						['STORE_ID' => 'ASC'],
+						['PRODUCT_ID' => $cid],
+						false,
+						false,
+						['PRODUCT_ID', 'STORE_ID', 'AMOUNT']
+					);
+					while ($r = $rs->Fetch())
+					{
+						$sid = (int)($r['STORE_ID'] ?? 0);
+						if ($sid <= 0)
+						{
+							continue;
+						}
+						$amt = (float)($r['AMOUNT'] ?? 0);
+						foreach (array_keys($clusterToProducts[$cid] ?? []) as $pid)
+						{
+							$amountsByProduct[$pid][$sid] = ($amountsByProduct[$pid][$sid] ?? 0.0) + $amt;
+						}
+					}
 				}
 			}
 		}
