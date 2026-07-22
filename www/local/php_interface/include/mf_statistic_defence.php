@@ -15,6 +15,10 @@ if (!function_exists('mf_statistic_crawler_needles'))
 			'GPTBot',
 			'Googlebot',
 			'YandexBot',
+			'YandexImages',
+			'YandexMobileBot',
+			'YandexAccessibilityBot',
+			'YandexRenderResourcesBot',
 			'bingbot',
 			'Applebot',
 			'facebookexternalhit',
@@ -66,6 +70,81 @@ if (!function_exists('mf_statistic_apply_crawler_activity_skip'))
 		{
 			define('STATISTIC_SKIP_ACTIVITY_CHECK', true);
 		}
+	}
+}
+
+if (!function_exists('mf_statistic_disable_keep_statistics'))
+{
+	/** Не писать в b_stat_page / b_stat_hit на этом запросе. */
+	function mf_statistic_disable_keep_statistics(): void
+	{
+		if (!defined('NO_KEEP_STATISTIC'))
+		{
+			define('NO_KEEP_STATISTIC', true);
+		}
+		if (!defined('STOP_STATISTICS'))
+		{
+			define('STOP_STATISTICS', true);
+		}
+		if (!defined('NO_AGENT_STATISTIC'))
+		{
+			define('NO_AGENT_STATISTIC', true);
+		}
+		mf_statistic_apply_crawler_activity_skip();
+	}
+}
+
+if (!function_exists('mf_statistic_request_path'))
+{
+	function mf_statistic_request_path(): string
+	{
+		$uri = (string)($_SERVER['REQUEST_URI'] ?? '/');
+		$path = (string)(parse_url($uri, PHP_URL_PATH) ?? '/');
+		if ($path === '')
+		{
+			return '/';
+		}
+
+		return $path;
+	}
+}
+
+if (!function_exists('mf_statistic_should_skip_keep_statistics'))
+{
+	/**
+	 * Карточки каталога и краулеры — не собирать статистику Bitrix (b_stat_page).
+	 * Иначе боты по /products/* создают сотни тысяч строк/день и убивают MySQL.
+	 */
+	function mf_statistic_should_skip_keep_statistics(): bool
+	{
+		$userAgent = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+		if ($userAgent !== '' && mf_statistic_user_agent_is_crawler($userAgent))
+		{
+			return true;
+		}
+
+		$path = mf_statistic_request_path();
+		if ($path === '/products' || str_starts_with($path, '/products/'))
+		{
+			return true;
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('mf_statistic_apply_request_skip'))
+{
+	function mf_statistic_apply_request_skip(): void
+	{
+		if (!mf_statistic_should_skip_keep_statistics())
+		{
+			mf_statistic_apply_crawler_activity_skip();
+
+			return;
+		}
+
+		mf_statistic_disable_keep_statistics();
 	}
 }
 

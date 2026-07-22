@@ -12,7 +12,11 @@ $mfStatisticDefence = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_in
 if (is_file($mfStatisticDefence))
 {
 	require_once $mfStatisticDefence;
-	if (function_exists('mf_statistic_apply_crawler_activity_skip'))
+	if (function_exists('mf_statistic_apply_request_skip'))
+	{
+		mf_statistic_apply_request_skip();
+	}
+	elseif (function_exists('mf_statistic_apply_crawler_activity_skip'))
 	{
 		mf_statistic_apply_crawler_activity_skip();
 	}
