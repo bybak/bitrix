@@ -1118,11 +1118,16 @@
 						});
 					})
 					.then(function (payload) {
+						var products = (payload.products || []).map(function (product) {
+							return Object.assign({}, product, {
+								analogs: Array.isArray(product.analogs) ? product.analogs : []
+							});
+						});
 						self.partOffersByPartId = Object.assign({}, self.partOffersByPartId, {
 							[id]: {
 								loading: false,
 								error: '',
-								products: payload.products || [],
+								products: products,
 								emptyMessage: payload.empty_message || '',
 								loaded: true
 							}

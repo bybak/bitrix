@@ -861,6 +861,26 @@
 	min-width: 640px;
 }
 
+.mf-oem-part-offers__analogs {
+	border-top: 1px solid rgba(17, 24, 39, .08);
+	margin-top: 14px;
+	padding-top: 12px;
+}
+
+.mf-oem-part-offers__analogs-title {
+	color: var(--mf-oem-ink);
+	font-size: .8125rem;
+	font-weight: 800;
+	letter-spacing: .01em;
+	margin-bottom: 10px;
+}
+
+.mf-oem-part-offers__analog + .mf-oem-part-offers__analog {
+	border-top: 1px dashed rgba(17, 24, 39, .08);
+	margin-top: 12px;
+	padding-top: 12px;
+}
+
 .mf-oem-ref {
 	align-items: center;
 	background: var(--mf-oem-yellow);

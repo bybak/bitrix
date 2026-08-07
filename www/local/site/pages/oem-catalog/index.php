@@ -386,6 +386,28 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 										</a>
 									</div>
 									<div class="mf-oem-part-offers__table" v-html="product.html"></div>
+									<div
+										class="mf-oem-part-offers__analogs"
+										v-if="product.analogs && product.analogs.length"
+									>
+										<div class="mf-oem-part-offers__analogs-title">Аналоги того же бренда</div>
+										<div
+											class="mf-oem-part-offers__analog"
+											v-for="analog in product.analogs"
+											:key="analog.id"
+										>
+											<div class="mf-oem-part-offers__head">
+												<div class="mf-oem-part-offers__title">
+													<strong>{{ analog.name }}</strong>
+													<span v-if="analog.brand">{{ analog.brand }}</span>
+												</div>
+												<a class="mf-oem-part-offers__link" :href="analog.url" target="_blank" rel="noopener">
+													Открыть товар
+												</a>
+											</div>
+											<div class="mf-oem-part-offers__table" v-html="analog.html"></div>
+										</div>
+									</div>
 								</div>
 							</div>
 						</div>
