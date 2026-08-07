@@ -80,3 +80,36 @@ storage/remotors-details-crawl.db    # crawl/parse checkpoints
 storage/remotors-html/{root}/        # archived GetDetails HTML
 storage/oem-diagrams/remotors/{root}/ # diagram PNGs
 ```
+
+## Yamaha USA (PartStream → YMH-US)
+
+USA catalog uses ARI PartStream demo (not yamaha-motor.com):
+
+| UI nav (under США) | Brand | Portal |
+|--------------------|-------|--------|
+| Yamaha PowerSport | `YAM` | streamsdemo Power |
+| Yamaha Marine | `YAMMR` | streamsdemo Marine |
+
+Single registry root: **YMH-US** («США»). JP (`YMH-JP`) / EU (`YMH-EU`) pipelines are unchanged.
+
+```bash
+chmod +x scripts/oem-yamaha-ps-pipeline.sh
+
+# Wipe only YMH-US (PG + local assets); then full pipeline
+bash scripts/oem-yamaha-ps-pipeline.sh wipe
+bash scripts/oem-yamaha-ps-pipeline.sh snapshot --brand all
+# or per brand: --brand YAM then snapshot-resume --brand YAMMR
+bash scripts/oem-yamaha-ps-pipeline.sh import
+bash scripts/oem-yamaha-ps-pipeline.sh crawl-html
+bash scripts/oem-yamaha-ps-pipeline.sh crawl-images
+bash scripts/oem-yamaha-ps-pipeline.sh parse
+```
+
+Activate USA in registry (once, after smoke):
+
+```bash
+docker compose exec -T oem_backend python -m app.cli migrate-registry
+# includes migrations_registry/003_yamaha_us_active.sql → YMH-US is_active=TRUE
+```
+
+Deprecated: `scripts/oem-yamaha-us-pipeline.sh` and `*-yamaha-us*` CLI (yamaha-motor.com) redirect / point to PartStream.

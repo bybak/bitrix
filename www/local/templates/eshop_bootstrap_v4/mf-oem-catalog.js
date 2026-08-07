@@ -46,6 +46,7 @@
 			return Number.isFinite(value) && value > 0;
 		});
 		return {
+			brand: (params.get('brand') || '').trim(),
 			root: (params.get('root') || '').trim(),
 			nav: navIds,
 			variant: Number(params.get('variant')) || 0,
@@ -59,6 +60,9 @@
 		var params = new URLSearchParams();
 		if (state.q) {
 			params.set('q', state.q);
+		}
+		if (state.brand) {
+			params.set('brand', state.brand);
 		}
 		if (state.root) {
 			params.set('root', state.root);
@@ -86,16 +90,19 @@
 	window.Vue.createApp({
 		data: function () {
 			return {
-				step: 'root',
+				step: 'brand',
 				bootLoading: true,
 				loading: false,
 				error: '',
-				catalogRoots: [],
+				brands: [],
+				brandRoots: [],
+				allRoots: [],
 				navNodes: [],
 				variants: [],
 				assemblies: [],
 				diagramPayload: null,
 				selected: {
+					brand: null,
 					root: null,
 					navStack: [],
 					navNode: null,
@@ -136,9 +143,25 @@
 			};
 		},
 		computed: {
+			brandNeedsRegionStep: function () {
+				if (!this.selected.brand) {
+					return false;
+				}
+				var count = Number(this.selected.brand.roots_count || 0);
+				if (count > 1) {
+					return true;
+				}
+				return this.brandRoots.length > 1;
+			},
 			breadcrumbs: function () {
-				var items = [{ step: 'root', label: 'Каталог' }];
-				if (this.selected.root) {
+				var items = [{ step: 'brand', label: 'Каталог' }];
+				if (this.selected.brand) {
+					items.push({
+						step: this.brandNeedsRegionStep ? 'region' : 'browse',
+						label: this.selected.brand.name
+					});
+				}
+				if (this.selected.root && this.brandNeedsRegionStep) {
 					items.push({ step: 'browse', index: -1, label: this.selected.root.name });
 				}
 				this.selected.navStack.forEach(function (node, index) {
@@ -154,13 +177,7 @@
 			},
 			diagramImageUrl: function () {
 				var diagram = this.diagramPayload && this.diagramPayload.diagram;
-				if (!diagram) {
-					return '';
-				}
-				if (diagram.local_path) {
-					return this.assetUrl(diagram.local_path);
-				}
-				return diagram.public_url || diagram.original_url || '';
+				return this.resolveAssetUrl(diagram);
 			},
 			diagramImageReady: function () {
 				return this.diagramNatural.width > 0 && this.diagramNatural.height > 0;
@@ -223,6 +240,15 @@
 					return this.selected.navStack[this.selected.navStack.length - 1].id;
 				}
 				return null;
+			},
+			catalogBrowseTitle: function () {
+				if (!this.selected.brand) {
+					return '';
+				}
+				if (this.brandNeedsRegionStep && this.selected.root) {
+					return this.selected.brand.name + ' · ' + this.selected.root.name;
+				}
+				return this.selected.brand.name;
 			}
 		},
 		created: function () {
@@ -242,7 +268,9 @@
 			};
 			window.addEventListener('popstate', this.onPopStateHandler);
 			this.bindPartOffersUiHandlers();
-			this.loadRoots().then(function () {
+			this.loadBrands().then(function () {
+				return self.loadAllRoots();
+			}).then(function () {
 				return self.restoreFromUrl();
 			}).catch(function (error) {
 				self.error = error.message || String(error);
@@ -274,17 +302,45 @@
 					self.bootLoading = false;
 				});
 			},
-			loadRoots: function () {
+			loadBrands: function () {
 				var self = this;
-				this.setLoading(true);
-				return apiGet('/roots').then(function (items) {
-					self.catalogRoots = items;
-				}).catch(function (error) {
-					self.error = error.message || String(error);
-					throw error;
-				}).finally(function () {
-					self.loading = false;
+				return apiGet('/brands').then(function (items) {
+					self.brands = items;
 				});
+			},
+			loadAllRoots: function () {
+				var self = this;
+				return apiGet('/roots').then(function (items) {
+					self.allRoots = items;
+				});
+			},
+			loadBrandRoots: function (brandCode) {
+				var self = this;
+				return apiGet('/roots', { brand: brandCode }).then(function (items) {
+					self.brandRoots = items;
+					return items;
+				});
+			},
+			findBrandByCode: function (brandCode) {
+				var code = String(brandCode || '').toLowerCase();
+				for (var i = 0; i < this.brands.length; i += 1) {
+					if (this.brands[i].code === code) {
+						return this.brands[i];
+					}
+				}
+				return null;
+			},
+			resolveBrandForRoot: function (rootItem) {
+				if (!rootItem) {
+					return null;
+				}
+				if (rootItem.brand_code) {
+					return this.findBrandByCode(rootItem.brand_code);
+				}
+				return null;
+			},
+			loadRoots: function () {
+				return this.loadAllRoots();
 			},
 			loadNav: function () {
 				if (!this.selected.root) {
@@ -300,30 +356,39 @@
 			},
 			loadVariantsForNav: function (navNodeId) {
 				var self = this;
-				return this.run(apiGet('/variants', { nav_node_id: navNodeId })).then(function (items) {
+				if (!this.selected.root) {
+					return Promise.resolve();
+				}
+				return this.run(apiGet('/variants', {
+					nav_node_id: navNodeId,
+					root: this.selected.root.arib_code
+				})).then(function (items) {
 					self.variants = items;
 				});
 			},
 			loadAssemblies: function () {
-				if (!this.selected.variant) {
+				if (!this.selected.variant || !this.selected.root) {
 					return Promise.resolve();
 				}
 				var self = this;
 				return this.run(apiGet('/assemblies', {
 					variant_id: this.selected.variant.id,
+					root: this.selected.root.arib_code,
 					q: this.filters.assembly
 				})).then(function (items) {
 					self.assemblies = items;
 				});
 			},
 			loadDiagram: function () {
-				if (!this.selected.assembly) {
+				if (!this.selected.assembly || !this.selected.root) {
 					return Promise.resolve();
 				}
 				var self = this;
 				var pendingPart = this.pendingUrlPartId;
 				this.setLoading(true);
-				return apiGet('/diagrams/' + this.selected.assembly.id).then(function (payload) {
+				return apiGet('/diagrams/' + this.selected.assembly.id, {
+					root: this.selected.root.arib_code
+				}).then(function (payload) {
 					self.teardownDiagramObserver();
 					self.diagramPayload = payload;
 					self.activeAssemblyPartId = null;
@@ -354,7 +419,8 @@
 					return id > 0;
 				});
 				return {
-					q: this.step === 'root' && (this.filters.partNumber || '').trim() ? this.filters.partNumber.trim() : '',
+					q: this.step === 'brand' && (this.filters.partNumber || '').trim() ? this.filters.partNumber.trim() : '',
+					brand: this.selected.brand ? this.selected.brand.code : '',
 					root: this.selected.root ? this.selected.root.arib_code : '',
 					nav: navIds,
 					variant: this.selected.variant ? Number(this.selected.variant.id) : 0,
@@ -379,9 +445,9 @@
 			},
 			findRootByArib: function (aribCode) {
 				var code = String(aribCode || '').toUpperCase();
-				for (var i = 0; i < this.catalogRoots.length; i += 1) {
-					if (this.catalogRoots[i].arib_code === code) {
-						return this.catalogRoots[i];
+				for (var i = 0; i < this.allRoots.length; i += 1) {
+					if (this.allRoots[i].arib_code === code) {
+						return this.allRoots[i];
 					}
 				}
 				return null;
@@ -419,6 +485,16 @@
 				var self = this;
 				var url = readUrlState();
 				if (!url.root && !url.q && !url.assembly && !url.variant) {
+					if (url.brand) {
+						var brandOnly = self.findBrandByCode(url.brand);
+						if (brandOnly) {
+							return self.selectBrand(brandOnly).then(function () {
+								self.syncUrlFromState(true);
+							}).finally(function () {
+								self.urlSyncSuspended = false;
+							});
+						}
+					}
 					self.syncUrlFromState(true);
 					return Promise.resolve();
 				}
@@ -427,7 +503,7 @@
 				self.error = '';
 
 				if (url.q) {
-					self.step = 'root';
+					self.step = 'brand';
 					self.filters.partNumber = url.q;
 					return self.searchPartUsages().then(function () {
 						self.syncUrlFromState(true);
@@ -448,9 +524,15 @@
 				var self = this;
 				var rootItem = self.findRootByArib(url.root);
 				if (!rootItem) {
-					return Promise.reject(new Error('Бренд "' + url.root + '" не найден'));
+					return Promise.reject(new Error('Каталог "' + url.root + '" не найден'));
 				}
 
+				var brandItem = self.findBrandByCode(url.brand) || self.resolveBrandForRoot(rootItem);
+				if (!brandItem) {
+					return Promise.reject(new Error('Бренд для каталога "' + url.root + '" не найден'));
+				}
+
+				self.selected.brand = brandItem;
 				self.selected.root = rootItem;
 				self.selected.navStack = [];
 				self.selected.navNode = null;
@@ -461,24 +543,26 @@
 				self.diagramPayload = null;
 				self.activeAssemblyPartId = null;
 
-				if (url.assembly) {
-					return self.restoreDiagramFromUrl(url, rootItem);
-				}
+				return self.loadBrandRoots(brandItem.code).then(function () {
+					if (url.assembly) {
+						return self.restoreDiagramFromUrl(url, rootItem);
+					}
 
-				return self.restoreNavPath(url.nav).then(function () {
-					if (url.variant) {
-						return apiGet('/variants/' + url.variant).then(function (variant) {
-							self.selected.variant = variant;
-							self.step = 'assembly';
-							return self.loadAssemblies();
-						});
-					}
-					if (self.selected.navNode && Number(self.selected.navNode.variant_count) > 0) {
-						self.step = 'variant';
-						return self.loadVariantsForNav(self.selected.navNode.id);
-					}
-					self.step = 'browse';
-					return self.loadNav();
+					return self.restoreNavPath(url.nav).then(function () {
+						if (url.variant) {
+							return apiGet('/variants/' + url.variant, { root: rootItem.arib_code }).then(function (variant) {
+								self.selected.variant = variant;
+								self.step = 'assembly';
+								return self.loadAssemblies();
+							});
+						}
+						if (self.selected.navNode && Number(self.selected.navNode.variant_count) > 0) {
+							self.step = 'variant';
+							return self.loadVariantsForNav(self.selected.navNode.id);
+						}
+						self.step = 'browse';
+						return self.loadNav();
+					});
 				});
 			},
 			restoreDiagramFromUrl: function (url, rootItem) {
@@ -486,7 +570,7 @@
 				var variantId = url.variant;
 				var pendingPart = url.part || null;
 
-				return apiGet('/diagrams/' + url.assembly).then(function (payload) {
+				return apiGet('/diagrams/' + url.assembly, { root: rootItem.arib_code }).then(function (payload) {
 					if (!payload || !payload.assembly) {
 						throw new Error('Узел #' + url.assembly + ' не найден');
 					}
@@ -497,7 +581,7 @@
 					if (!variantId) {
 						variantId = Number(assembly.variant_id);
 					}
-					return apiGet('/variants/' + variantId).then(function (variant) {
+					return apiGet('/variants/' + variantId, { root: rootItem.arib_code }).then(function (variant) {
 						var navChain = url.nav && url.nav.length
 							? self.restoreNavPath(url.nav)
 							: Promise.resolve();
@@ -625,20 +709,24 @@
 				return many;
 			},
 			openPartUsage: function (brandGroup, variant, assembly) {
-				var root = null;
-				for (var i = 0; i < this.catalogRoots.length; i += 1) {
-					if (this.catalogRoots[i].arib_code === brandGroup.root_arib) {
-						root = this.catalogRoots[i];
-						break;
-					}
-				}
+				var self = this;
+				var root = this.findRootByArib(brandGroup.root_arib);
 				if (!root) {
 					root = {
 						arib_code: brandGroup.root_arib,
-						name: brandGroup.root_name
+						name: brandGroup.root_name,
+						brand_code: brandGroup.brand_code || '',
+						brand_name: brandGroup.brand_name || brandGroup.root_name
 					};
 				}
+				var brand = this.findBrandByCode(root.brand_code || brandGroup.brand_code) || {
+					code: root.brand_code || '',
+					name: root.brand_name || brandGroup.brand_name || brandGroup.root_name,
+					roots_count: 1
+				};
+				this.selected.brand = brand;
 				this.selected.root = root;
+				this.brandRoots = [root];
 				this.selected.navStack = [];
 				this.selected.navNode = null;
 				this.selected.variant = variant;
@@ -661,9 +749,35 @@
 				}
 				return 'поз. ' + assembly.refs.join(', ');
 			},
-			selectRoot: function (item) {
+			selectBrand: function (brand) {
+				var self = this;
+				this.selected.brand = brand;
+				this.selected.root = null;
+				this.selected.navStack = [];
+				this.selected.navNode = null;
+				this.selected.variant = null;
+				this.selected.assembly = null;
+				this.variants = [];
+				this.assemblies = [];
+				this.diagramPayload = null;
+				this.activeAssemblyPartId = null;
+				this.partUsages = null;
+				this.partUsageExpanded = {};
+				return this.run(this.loadBrandRoots(brand.code).then(function (roots) {
+					if (roots.length === 1) {
+						return self.selectRoot(roots[0], { skipUrl: false });
+					}
+					self.step = 'region';
+					self.debouncedSyncUrlFromState();
+				}));
+			},
+			selectRoot: function (item, options) {
+				options = options || {};
 				var self = this;
 				this.selected.root = item;
+				if (!this.selected.brand) {
+					this.selected.brand = this.resolveBrandForRoot(item);
+				}
 				this.selected.navStack = [];
 				this.selected.navNode = null;
 				this.selected.variant = null;
@@ -673,8 +787,10 @@
 				this.diagramPayload = null;
 				this.activeAssemblyPartId = null;
 				this.step = 'browse';
-				this.loadNav().then(function () {
-					self.debouncedSyncUrlFromState();
+				return this.loadNav().then(function () {
+					if (!options.skipUrl) {
+						self.debouncedSyncUrlFromState();
+					}
 				});
 			},
 			selectNavNode: function (node) {
@@ -733,7 +849,24 @@
 			},
 			goToCrumb: function (crumb) {
 				var self = this;
-				if (crumb.step === 'root') {
+				if (crumb.step === 'brand') {
+					this.selected.brand = null;
+					this.selected.root = null;
+					this.selected.navStack = [];
+					this.selected.navNode = null;
+					this.selected.variant = null;
+					this.selected.assembly = null;
+					this.activeAssemblyPartId = null;
+					this.brandRoots = [];
+					this.navNodes = [];
+					this.variants = [];
+					this.assemblies = [];
+					this.diagramPayload = null;
+					this.step = 'brand';
+					this.debouncedSyncUrlFromState();
+					return;
+				}
+				if (crumb.step === 'region') {
 					this.selected.root = null;
 					this.selected.navStack = [];
 					this.selected.navNode = null;
@@ -744,7 +877,7 @@
 					this.variants = [];
 					this.assemblies = [];
 					this.diagramPayload = null;
-					this.step = 'root';
+					this.step = 'region';
 					this.debouncedSyncUrlFromState();
 					return;
 				}
@@ -807,8 +940,11 @@
 				}
 			},
 			reloadCurrentStep: function () {
-				if (this.step === 'root') {
-					return this.loadRoots();
+				if (this.step === 'brand') {
+					return this.loadBrands();
+				}
+				if (this.step === 'region' && this.selected.brand) {
+					return this.loadBrandRoots(this.selected.brand.code);
 				}
 				if (this.step === 'browse') {
 					return this.loadNav();
@@ -825,26 +961,42 @@
 			},
 			navSubtitle: function (node) {
 				var parts = [];
+				if (node.rel === 'product') {
+					parts.push('Тип техники');
+				} else if (node.rel === 'displacement') {
+					parts.push('Кубатура');
+				} else if (node.rel === 'model') {
+					parts.push('Модель');
+				} else if (node.rel === 'year') {
+					parts.push('Год');
+				}
 				if (Number(node.child_count) > 0) {
 					parts.push(node.child_count + ' папок');
 				}
 				if (Number(node.variant_count) > 0) {
-					parts.push(node.variant_count + ' вариантов');
+					parts.push(node.variant_count + ' модиф.');
 				}
 				return parts.join(' · ') || 'Открыть';
 			},
 			variantTitle: function (variant) {
+				if (!variant) {
+					return '';
+				}
+				if (variant.model_name) {
+					return String(variant.model_name);
+				}
 				var parts = [];
+				if (variant.source_designation) {
+					parts.push(String(variant.source_designation));
+				}
 				if (variant.year_from) {
 					parts.push(String(variant.year_from));
 				}
-				if (variant.source_designation) {
-					parts.push(variant.source_designation);
-				} else if (variant.model_name) {
-					parts.push(variant.model_name);
+				if (variant.color_name) {
+					parts.push(String(variant.color_name));
 				}
 				if (variant.variant_section) {
-					parts.push(variant.variant_section);
+					parts.push(String(variant.variant_section));
 				}
 				return parts.join(' · ') || ('Вариант #' + variant.id);
 			},
@@ -852,7 +1004,15 @@
 				if (!variant) {
 					return '';
 				}
-				return (variant.assembly_count || 0) + ' узлов';
+				var parts = [];
+				if (variant.model_code) {
+					parts.push(String(variant.model_code));
+				}
+				if (variant.color_name && variant.model_name && String(variant.model_name).indexOf(String(variant.color_name)) === -1) {
+					parts.push(String(variant.color_name));
+				}
+				parts.push((variant.assembly_count || 0) + ' узлов');
+				return parts.join(' · ');
 			},
 			assetUrl: function (path) {
 				if (!path) {
@@ -860,14 +1020,34 @@
 				}
 				return assetsBase.replace(/\/$/, '') + '/' + String(path).replace(/^\//, '');
 			},
-			assemblyImageUrl: function (assembly) {
-				if (!assembly) {
+			resolveAssetUrl: function (item) {
+				if (!item) {
 					return '';
 				}
-				if (assembly.local_path) {
-					return this.assetUrl(assembly.local_path);
+				var publicUrl = item.public_url || item.original_url || '';
+				if (publicUrl) {
+					if (publicUrl.indexOf('//') === 0) {
+						return 'https:' + publicUrl;
+					}
+					if (/^https?:\/\//i.test(publicUrl)) {
+						return publicUrl;
+					}
+					return publicUrl;
 				}
-				return assembly.public_url || assembly.original_url || '';
+				return '';
+			},
+			variantThumbnailUrl: function (variant) {
+				if (!variant || !variant.thumbnail_url) {
+					return '';
+				}
+				var url = String(variant.thumbnail_url);
+				if (url.indexOf('//') === 0) {
+					return 'https:' + url;
+				}
+				return url;
+			},
+			assemblyImageUrl: function (assembly) {
+				return this.resolveAssetUrl(assembly);
 			},
 			formatQuantity: function (quantity) {
 				var value = Number(quantity);
@@ -918,8 +1098,10 @@
 					}
 				});
 				var brand = '';
-				if (this.selected.root) {
-					brand = this.selected.root.name || this.selected.root.arib_code || '';
+				if (this.selected.brand) {
+					brand = this.selected.brand.name || this.selected.brand.code || '';
+				} else if (this.selected.root) {
+					brand = this.selected.root.brand_name || this.selected.root.name || this.selected.root.arib_code || '';
 				}
 				var url = new URL('/ajax/mf_oem_part_offers.php', window.location.origin);
 				url.searchParams.set('partNumber', part.part_number || '');

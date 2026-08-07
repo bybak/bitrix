@@ -3,18 +3,32 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
-from app.db import get_conn
+from app.db import get_conn, get_registry_conn, get_yamaha_conn
 
-MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "db" / "migrations"
+DbTarget = Literal["remotors", "yamaha", "registry"]
+
+MIGRATIONS_DIRS: dict[DbTarget, Path] = {
+    "remotors": Path(__file__).resolve().parent.parent / "db" / "migrations",
+    "yamaha": Path(__file__).resolve().parent.parent / "db" / "migrations_yamaha",
+    "registry": Path(__file__).resolve().parent.parent / "db" / "migrations_registry",
+}
 
 
-def apply_migrations() -> list[str]:
+def apply_migrations(*, target: DbTarget = "remotors") -> list[str]:
     applied: list[str] = []
-    if not MIGRATIONS_DIR.is_dir():
+    migrations_dir = MIGRATIONS_DIRS[target]
+    if not migrations_dir.is_dir():
         return applied
 
-    with get_conn() as conn:
+    if target == "yamaha":
+        conn_ctx = get_yamaha_conn
+    elif target == "registry":
+        conn_ctx = get_registry_conn
+    else:
+        conn_ctx = get_conn
+    with conn_ctx() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -27,7 +41,7 @@ def apply_migrations() -> list[str]:
             cur.execute("SELECT name FROM oem_schema_migrations")
             done = {row["name"] for row in cur.fetchall()}
 
-            for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            for path in sorted(migrations_dir.glob("*.sql")):
                 if path.name in done:
                     continue
                 sql = path.read_text(encoding="utf-8")

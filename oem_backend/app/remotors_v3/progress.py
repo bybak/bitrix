@@ -36,12 +36,13 @@ class ProgressReporter:
     def __post_init__(self) -> None:
         if int(self.total) <= 0:
             self.indeterminate = True
-            self.total = 1
+            self.total = 0
         else:
+            self.indeterminate = False
             self.total = max(int(self.total), 1)
         self.done = 0
         self.stage = ""
-        self.stage_total = 1
+        self.stage_total = 0
         self.stage_done = 0
         self._emit("started", force=True)
 
@@ -54,18 +55,34 @@ class ProgressReporter:
 
     def _set_stage_unlocked(self, stage: str, total: int) -> None:
         self.stage = stage
-        self.stage_total = max(int(total), 1)
+        self.stage_total = max(int(total), 0)
         self.stage_done = 0
         self._emit("stage started", force=True)
 
     def add_total(self, amount: int) -> None:
+        amount = int(amount)
+        if amount <= 0:
+            return
         if self._lock:
             with self._lock:
-                self.total = max(1, self.total + int(amount))
-                self._emit(f"discovered {amount} more items")
+                self._add_total_unlocked(amount)
         else:
-            self.total = max(1, self.total + int(amount))
-            self._emit(f"discovered {amount} more items")
+            self._add_total_unlocked(amount)
+
+    def _add_total_unlocked(self, amount: int) -> None:
+        self.total = max(0, self.total + amount)
+        if self.indeterminate and amount > 0:
+            self.indeterminate = False
+
+    def add_stage_total(self, amount: int) -> None:
+        amount = int(amount)
+        if amount <= 0:
+            return
+        if self._lock:
+            with self._lock:
+                self.stage_total = max(0, self.stage_total + amount)
+        else:
+            self.stage_total = max(0, self.stage_total + amount)
 
     def advance(self, message: str = "", step: int = 1) -> None:
         if self._lock:
@@ -79,8 +96,12 @@ class ProgressReporter:
             self.done += step
             self.stage_done += step
         else:
-            self.done = min(self.total, self.done + step)
-            self.stage_done = min(self.stage_total, self.stage_done + step)
+            if self.total <= 0:
+                self.done += step
+                self.stage_done += step
+            else:
+                self.done = min(self.total, self.done + step)
+                self.stage_done = min(self.stage_total, self.stage_done + step) if self.stage_total > 0 else self.stage_done
         force = bool(message.startswith("ERROR")) or message.endswith("stage started")
         self._emit(message or "progress", force=force)
 
@@ -117,9 +138,9 @@ class ProgressReporter:
                 flush=True,
             )
             return
-        overall_percent = self.done / self.total * 100
-        stage_percent = self.stage_done / self.stage_total * 100
-        remaining = (self.total - self.done) / rate if rate > 0 else 0
+        overall_percent = (self.done / self.total * 100) if self.total > 0 else 0.0
+        stage_percent = (self.stage_done / self.stage_total * 100) if self.stage_total > 0 else 0.0
+        remaining = (self.total - self.done) / rate if rate > 0 and self.total > self.done else 0
         print(
             (
                 f"[{self.label}] {message} | "

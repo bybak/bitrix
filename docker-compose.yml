@@ -117,6 +117,8 @@ services:
     restart: unless-stopped
     environment:
       OEM_DATABASE_DSN: postgresql://oem_user:oem_password@oem_db:5432/oem_catalog
+      OEM_YAMAHA_DATABASE_DSN: postgresql://yamaha_user:yamaha_password@yamaha_db:5432/yamaha_catalog
+      OEM_REGISTRY_DATABASE_DSN: postgresql://oem_registry_user:oem_registry_password@oem_registry_db:5432/oem_registry
       OEM_ASSET_ROOT: /app/storage/oem-diagrams
       OEM_PUBLIC_ASSET_BASE_URL: /oem-assets
       OEM_HTTP_TIMEOUT: "20"
@@ -129,12 +131,16 @@ services:
     depends_on:
       oem_db:
         condition: service_healthy
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+      yamaha_db:
+        condition: service_healthy
+      oem_registry_db:
+        condition: service_healthy
     extra_hosts:
       - "partstream.arinet.com:67.208.136.218"
       - "cdn.datamanager.arinet.com:13.33.235.124"
+      - "parts.yamaha-motor.co.jp:45.60.14.31"
+      # ypec-sss (иллюстрации) — через обычный DNS/CloudFront, не фиксируем один IP:
+      # один edge под 12 потоков × 10ч даёт timeout / connection refused.
     networks:
       - bitrix
 
@@ -152,6 +158,46 @@ services:
       - ./oem_backend/db/schema_postgres.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U oem_user -d oem_catalog"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - bitrix
+
+  yamaha_db:
+    image: postgres:16-alpine
+    container_name: yamaha_db
+    restart: unless-stopped
+    shm_size: "512mb"
+    command: ["postgres", "-c", "max_connections=300"]
+    environment:
+      POSTGRES_DB: yamaha_catalog
+      POSTGRES_USER: yamaha_user
+      POSTGRES_PASSWORD: yamaha_password
+    volumes:
+      - yamaha_pg_data:/var/lib/postgresql/data
+      - ./oem_backend/db/schema_postgres_yamaha.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yamaha_user -d yamaha_catalog"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - bitrix
+
+  oem_registry_db:
+    image: postgres:16-alpine
+    container_name: oem_registry_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oem_registry
+      POSTGRES_USER: oem_registry_user
+      POSTGRES_PASSWORD: oem_registry_password
+    volumes:
+      - oem_registry_pg_data:/var/lib/postgresql/data
+      - ./oem_backend/db/schema_postgres_registry.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oem_registry_user -d oem_registry"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -209,5 +255,9 @@ volumes:
   redis_data:
     driver: local
   oem_pg_data:
+    driver: local
+  yamaha_pg_data:
+    driver: local
+  oem_registry_pg_data:
     driver: local
 

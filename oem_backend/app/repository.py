@@ -1,10 +1,92 @@
+import json
 import struct
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
-from app.db import get_conn
 from app.normalization import normalize_part_number
+from app.registry import repository as registry_repo
+from app.registry.catalog_router import (
+    get_catalog_conn,
+    get_catalog_conn_for_root,
+    list_catalog_db_codes,
+    resolve_root_arib_for_assembly,
+    resolve_root_arib_for_nav_node,
+    resolve_root_arib_for_variant,
+)
+
+
+def _variant_select_fields(*, alias: str = "v") -> str:
+    a = alias
+    return f"""
+          {a}.id,
+          {a}.root_arib,
+          {a}.variant_key,
+          {a}.model_name,
+          {a}.source_designation,
+          {a}.year_from,
+          {a}.variant_section,
+          {a}.browse_line,
+          {a}.path_json,
+          {a}.assembly_count,
+          {a}.source_payload->'model_variant'->>'modelTypeCode' AS model_type_code,
+          {a}.source_payload->'model_variant'->>'productNo' AS product_no,
+          {a}.source_payload->'model_variant'->>'colorType' AS color_code,
+          {a}.source_payload->'model_variant'->>'colorName' AS color_name,
+          {a}.source_payload->'model_variant'->>'prodPictureFileURL' AS thumbnail_url
+    """
+
+
+def _normalize_external_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    value = str(url).strip()
+    if not value:
+        return None
+    if value.startswith("//"):
+        return f"https:{value}"
+    return value
+
+
+def _format_variant_row(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    model_type_code = payload.get("model_type_code")
+    product_no = payload.get("product_no")
+    color_code = payload.get("color_code")
+    color_name = payload.get("color_name")
+    path_json = payload.get("path_json") or []
+
+    if not model_type_code or not product_no or not color_code:
+        try:
+            key_parts = json.loads(str(payload.get("variant_key") or "[]"))
+        except json.JSONDecodeError:
+            key_parts = []
+        if len(key_parts) >= 9:
+            model_type_code = model_type_code or str(key_parts[6] or "").strip() or None
+            product_no = product_no or str(key_parts[7] or "").strip() or None
+            color_code = color_code or str(key_parts[8] or "").strip() or None
+
+    if not color_name and isinstance(path_json, list) and len(path_json) >= 5:
+        color_name = str(path_json[-1] or "").strip() or None
+
+    model_code_parts = [part for part in (model_type_code, product_no) if part]
+    model_code = "-".join(model_code_parts)
+    if model_code and color_code:
+        model_code = f"{model_code}-{color_code}"
+
+    payload["model_type_code"] = model_type_code
+    payload["product_no"] = product_no
+    payload["color_code"] = color_code
+    payload["color_name"] = color_name
+    payload["model_code"] = model_code or None
+    payload["thumbnail_url"] = _normalize_external_url(payload.get("thumbnail_url"))
+    return payload
+
+
+def _format_variant_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_format_variant_row(row) for row in rows]
 
 
 def png_dimensions(path: Path) -> tuple[int, int] | None:
@@ -20,34 +102,140 @@ def png_dimensions(path: Path) -> tuple[int, int] | None:
     return int(width), int(height)
 
 
-def fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    with get_conn() as conn:
+@contextmanager
+def _catalog_conn(
+    *,
+    root_arib: str | None = None,
+    db_code: str | None = None,
+    variant_id: int | None = None,
+    assembly_id: int | None = None,
+    nav_node_id: int | None = None,
+) -> Iterator:
+    if root_arib:
+        with get_catalog_conn_for_root(root_arib=root_arib) as conn:
+            yield conn
+        return
+    if db_code:
+        with get_catalog_conn(db_code=db_code) as conn:
+            yield conn
+        return
+    resolved: str | None = None
+    if variant_id is not None:
+        resolved = resolve_root_arib_for_variant(variant_id)
+    elif assembly_id is not None:
+        resolved = resolve_root_arib_for_assembly(assembly_id)
+    elif nav_node_id is not None:
+        resolved = resolve_root_arib_for_nav_node(nav_node_id)
+    if resolved:
+        with get_catalog_conn_for_root(root_arib=resolved) as conn:
+            yield conn
+        return
+    raise ValueError("catalog routing context is required")
+
+
+def fetch_all(
+    query: str,
+    params: tuple[Any, ...] = (),
+    *,
+    root_arib: str | None = None,
+    db_code: str | None = None,
+    variant_id: int | None = None,
+    assembly_id: int | None = None,
+    nav_node_id: int | None = None,
+) -> list[dict[str, Any]]:
+    with _catalog_conn(
+        root_arib=root_arib,
+        db_code=db_code,
+        variant_id=variant_id,
+        assembly_id=assembly_id,
+        nav_node_id=nav_node_id,
+    ) as conn:
         with conn.cursor() as cur:
             cur.execute(query, params)
             return list(cur.fetchall())
 
 
-def fetch_one(query: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
-    with get_conn() as conn:
+def fetch_one(
+    query: str,
+    params: tuple[Any, ...] = (),
+    *,
+    root_arib: str | None = None,
+    db_code: str | None = None,
+    variant_id: int | None = None,
+    assembly_id: int | None = None,
+    nav_node_id: int | None = None,
+) -> dict[str, Any] | None:
+    with _catalog_conn(
+        root_arib=root_arib,
+        db_code=db_code,
+        variant_id=variant_id,
+        assembly_id=assembly_id,
+        nav_node_id=nav_node_id,
+    ) as conn:
         with conn.cursor() as cur:
             cur.execute(query, params)
             return cur.fetchone()
 
 
-def list_roots() -> list[dict[str, Any]]:
-    return fetch_all(
-        """
-        SELECT id, arib_code, name, sort_order
-        FROM oem_catalog_roots
-        ORDER BY sort_order, name
-        """
-    )
+def fetch_all_catalogs(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for db_code in list_catalog_db_codes():
+        with get_catalog_conn(db_code=db_code) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                rows.extend(cur.fetchall())
+    return rows
+
+
+def list_brands() -> list[dict[str, Any]]:
+    return registry_repo.list_brands()
+
+
+def _root_payload(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "arib_code": row["root_arib"],
+        "name": row["name"],
+        "sort_order": row["sort_order"],
+        "brand_code": row["brand_code"],
+        "brand_name": row["brand_name"],
+        "catalog_db_code": row["catalog_db_code"],
+    }
+
+
+def list_roots(*, brand_code: str | None = None) -> list[dict[str, Any]]:
+    rows = registry_repo.list_brand_roots(brand_code=brand_code)
+    return [_root_payload(row) for row in rows]
+
+
+def get_root(*, root_arib: str) -> dict[str, Any] | None:
+    code = root_arib.strip().upper()
+    for row in registry_repo.list_brand_roots():
+        if row["root_arib"].upper() == code:
+            return _root_payload(row)
+    return None
+
+
+def _nav_variant_count_sql(nav_alias: str = "n") -> str:
+    return f"""
+              (
+                SELECT COUNT(*) FROM oem_variants v
+                WHERE v.root_arib = {nav_alias}.root_arib
+                  AND (
+                    v.path_json = {nav_alias}.path_json
+                    OR (
+                      v.path_json @> {nav_alias}.path_json
+                      AND jsonb_array_length(v.path_json) = jsonb_array_length({nav_alias}.path_json) + 1
+                    )
+                  )
+              ) AS variant_count
+    """
 
 
 def list_nav_children(root: str, parent_id: int | None = None) -> list[dict[str, Any]]:
+    variant_count_sql = _nav_variant_count_sql("n")
     if parent_id is None:
         return fetch_all(
-            """
+            f"""
             SELECT
               n.id,
               n.root_arib,
@@ -61,18 +249,16 @@ def list_nav_children(root: str, parent_id: int | None = None) -> list[dict[str,
               (
                 SELECT COUNT(*) FROM oem_nav_nodes c WHERE c.parent_id = n.id
               ) AS child_count,
-              (
-                SELECT COUNT(*) FROM oem_variants v
-                WHERE v.root_arib = n.root_arib AND v.path_json = n.path_json
-              ) AS variant_count
+              {variant_count_sql}
             FROM oem_nav_nodes n
-            WHERE n.root_arib = %s AND n.parent_id IS NULL
-            ORDER BY n.title
+            WHERE n.root_arib = %s AND n.parent_id IS NULL AND n.rel <> 'region'
+            ORDER BY n.sort_order, n.title
             """,
             (root.upper(),),
+            root_arib=root,
         )
     return fetch_all(
-        """
+        f"""
         SELECT
           n.id,
           n.root_arib,
@@ -86,39 +272,37 @@ def list_nav_children(root: str, parent_id: int | None = None) -> list[dict[str,
           (
             SELECT COUNT(*) FROM oem_nav_nodes c WHERE c.parent_id = n.id
           ) AS child_count,
-          (
-            SELECT COUNT(*) FROM oem_variants v
-            WHERE v.root_arib = n.root_arib AND v.path_json = n.path_json
-          ) AS variant_count
+          {variant_count_sql}
         FROM oem_nav_nodes n
         WHERE n.root_arib = %s AND n.parent_id = %s
-        ORDER BY n.title
+        ORDER BY n.sort_order, n.title
         """,
         (root.upper(), parent_id),
+        root_arib=root,
     )
 
 
-def list_variants_for_nav(nav_node_id: int) -> list[dict[str, Any]]:
-    return fetch_all(
-        """
+def list_variants_for_nav(nav_node_id: int, *, root_arib: str) -> list[dict[str, Any]]:
+    rows = fetch_all(
+        f"""
         SELECT
-          v.id,
-          v.root_arib,
-          v.variant_key,
-          v.model_name,
-          v.source_designation,
-          v.year_from,
-          v.variant_section,
-          v.browse_line,
-          v.path_json,
-          v.assembly_count
+          {_variant_select_fields(alias="v")}
         FROM oem_variants v
         JOIN oem_nav_nodes n ON n.id = %s
-        WHERE v.root_arib = n.root_arib AND v.path_json = n.path_json
-        ORDER BY v.year_from DESC NULLS LAST, v.source_designation, v.variant_section
+        WHERE v.root_arib = n.root_arib
+          AND (
+            v.path_json = n.path_json
+            OR (
+              v.path_json @> n.path_json
+              AND jsonb_array_length(v.path_json) = jsonb_array_length(n.path_json) + 1
+            )
+          )
+        ORDER BY v.model_name, v.year_from DESC NULLS LAST, v.source_designation, v.variant_section
         """,
         (nav_node_id,),
+        root_arib=root_arib,
     )
+    return _format_variant_rows(rows)
 
 
 def list_variants_by_root(root: str, q: str | None = None) -> list[dict[str, Any]]:
@@ -127,29 +311,22 @@ def list_variants_by_root(root: str, q: str | None = None) -> list[dict[str, Any
     if q:
         where.append("(v.model_name ILIKE %s OR v.source_designation ILIKE %s)")
         params.extend([f"%{q}%", f"%{q}%"])
-    return fetch_all(
+    rows = fetch_all(
         f"""
         SELECT
-          v.id,
-          v.root_arib,
-          v.variant_key,
-          v.model_name,
-          v.source_designation,
-          v.year_from,
-          v.variant_section,
-          v.browse_line,
-          v.path_json,
-          v.assembly_count
+          {_variant_select_fields(alias="v")}
         FROM oem_variants v
         WHERE {" AND ".join(where)}
         ORDER BY v.model_name, v.year_from DESC NULLS LAST, v.source_designation
         LIMIT 200
         """,
         tuple(params),
+        root_arib=root,
     )
+    return _format_variant_rows(rows)
 
 
-def list_assemblies(variant_id: int, q: str | None = None) -> list[dict[str, Any]]:
+def list_assemblies(variant_id: int, *, root_arib: str, q: str | None = None) -> list[dict[str, Any]]:
     params: list[Any] = [variant_id]
     where = ["a.variant_id = %s"]
     if q:
@@ -177,31 +354,25 @@ def list_assemblies(variant_id: int, q: str | None = None) -> list[dict[str, Any
         ORDER BY a.sort_order, a.title
         """,
         tuple(params),
+        root_arib=root_arib,
     )
 
 
-def get_variant(variant_id: int) -> dict[str, Any] | None:
-    return fetch_one(
-        """
+def get_variant(variant_id: int, *, root_arib: str) -> dict[str, Any] | None:
+    row = fetch_one(
+        f"""
         SELECT
-          v.id,
-          v.root_arib,
-          v.variant_key,
-          v.model_name,
-          v.source_designation,
-          v.year_from,
-          v.variant_section,
-          v.browse_line,
-          v.path_json,
-          v.assembly_count
+          {_variant_select_fields(alias="v")}
         FROM oem_variants v
         WHERE v.id = %s
         """,
         (variant_id,),
+        root_arib=root_arib,
     )
+    return _format_variant_row(row) if row else None
 
 
-def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
+def get_diagram_payload(assembly_id: int, *, root_arib: str) -> dict[str, Any] | None:
     assembly = fetch_one(
         """
         SELECT a.id, a.title, a.variant_id, a.root_arib, a.assembly_key, a.slug
@@ -209,9 +380,11 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
         WHERE a.id = %s
         """,
         (assembly_id,),
+        root_arib=root_arib,
     )
     if not assembly:
         return None
+    root_arib = str(assembly["root_arib"])
     diagram = fetch_one(
         """
         SELECT id, public_url, local_path, original_url, width, height, coord_width, coord_height, mime_type
@@ -220,6 +393,7 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
         LIMIT 1
         """,
         (assembly_id,),
+        root_arib=root_arib,
     )
     hotspots = fetch_all(
         """
@@ -239,6 +413,7 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
         ORDER BY h.id
         """,
         (diagram["id"],) if diagram else (-1,),
+        root_arib=root_arib,
     )
     parts = fetch_all(
         """
@@ -257,8 +432,8 @@ def get_diagram_payload(assembly_id: int) -> dict[str, Any] | None:
         ORDER BY NULLIF(regexp_replace(ap.ref, '\\D', '', 'g'), '')::int NULLS LAST, ap.ref, ap.id
         """,
         (assembly_id,),
+        root_arib=root_arib,
     )
-    image_size = None
     if diagram and diagram.get("local_path"):
         image_path = Path(get_settings().asset_root) / str(diagram["local_path"])
         image_size = png_dimensions(image_path)
@@ -290,8 +465,7 @@ def search_parts(q: str, root: str | None = None, limit: int = 50, offset: int =
         where.append("p.root_arib = %s")
         params.append(root.upper())
     params.extend([limit, offset])
-    return fetch_all(
-        f"""
+    query = f"""
         SELECT
           p.id,
           p.root_arib,
@@ -305,9 +479,12 @@ def search_parts(q: str, root: str | None = None, limit: int = 50, offset: int =
         GROUP BY p.id
         ORDER BY p.part_number
         LIMIT %s OFFSET %s
-        """,
-        tuple(params),
-    )
+        """
+    if root:
+        return fetch_all(query, tuple(params), root_arib=root)
+    rows = fetch_all_catalogs(query, tuple(params))
+    rows.sort(key=lambda row: (row.get("part_number") or "").casefold())
+    return rows[offset : offset + limit]
 
 
 def _family_label(*, browse_line: str | None, path_json: Any) -> str:
@@ -336,7 +513,8 @@ def search_part_usages(q: str, *, limit: int = 1000) -> dict[str, Any]:
             "groups": [],
         }
 
-    count_row = fetch_one(
+    count_params = (normalized, f"{normalized}%", f"%{q.strip()}%")
+    count_rows = fetch_all_catalogs(
         """
         SELECT COUNT(DISTINCT a.id) AS total_count
         FROM oem_parts p
@@ -346,11 +524,11 @@ def search_part_usages(q: str, *, limit: int = 1000) -> dict[str, Any]:
            OR p.normalized_part_number LIKE %s
            OR p.part_number ILIKE %s
         """,
-        (normalized, f"{normalized}%", f"%{q.strip()}%"),
+        count_params,
     )
-    total_count = int((count_row or {}).get("total_count") or 0)
+    total_count = sum(int((row or {}).get("total_count") or 0) for row in count_rows)
 
-    rows = fetch_all(
+    rows = fetch_all_catalogs(
         """
         SELECT
           r.arib_code AS root_arib,
@@ -392,18 +570,47 @@ def search_part_usages(q: str, *, limit: int = 1000) -> dict[str, Any]:
         """,
         (normalized, f"{normalized}%", f"%{q.strip()}%", limit + 1),
     )
+    rows.sort(
+        key=lambda row: (
+            row.get("root_sort_order") or 0,
+            (row.get("root_name") or "").casefold(),
+            (row.get("browse_line") or "").casefold(),
+            str(row.get("path_json") or ""),
+            (row.get("model_name") or "").casefold(),
+            row.get("year_from") is None,
+            -(row.get("year_from") or 0),
+            (row.get("source_designation") or "").casefold(),
+            (row.get("assembly_title") or "").casefold(),
+            (row.get("ref") or "").casefold(),
+        )
+    )
     truncated = len(rows) > limit
     if truncated:
         rows = rows[:limit]
 
+    root_registry = {row["arib_code"]: row for row in list_roots()}
+    brand_root_counts: dict[str, int] = {}
+    for reg in root_registry.values():
+        code = str(reg["brand_code"])
+        brand_root_counts[code] = brand_root_counts.get(code, 0) + 1
+
     brands: dict[str, dict[str, Any]] = {}
     for row in rows:
         root_key = row["root_arib"]
+        reg = root_registry.get(root_key)
+        brand_code = str(reg["brand_code"]) if reg else root_key
+        if reg and brand_root_counts.get(str(reg["brand_code"]), 0) > 1:
+            root_name = f"{reg['brand_name']} · {reg['name']}"
+        else:
+            root_name = str(reg["brand_name"] if reg else row["root_name"])
         brand = brands.get(root_key)
         if brand is None:
             brand = {
                 "root_arib": row["root_arib"],
-                "root_name": row["root_name"],
+                "root_name": root_name,
+                "brand_code": brand_code,
+                "brand_name": str(reg["brand_name"]) if reg else root_name,
+                "region_name": str(reg["name"]) if reg and brand_root_counts.get(str(reg["brand_code"]), 0) > 1 else None,
                 "families": {},
             }
             brands[root_key] = brand

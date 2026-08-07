@@ -52,3 +52,4 @@ storage/remotors-details-crawl.db-shm
 storage/remotors-details-crawl.db-wal
 storage/remotors-html/
 storage/remotors_crawl.log
+storage/*

@@ -3,7 +3,7 @@ define('HIDE_SIDEBAR', true);
 require($_SERVER['DOCUMENT_ROOT'].'/bitrix/header.php');
 $APPLICATION->SetTitle('Каталог схем запчастей');
 $APPLICATION->SetPageProperty('title', 'Каталог схем запчастей Motor Force');
-$APPLICATION->SetPageProperty('description', 'OEM каталог схем запчастей: Husqvarna, KTM, Lynx, BRP — навигация по дереву как на Remotors.');
+$APPLICATION->SetPageProperty('description', 'OEM каталог схем запчастей: Husqvarna, KTM, Lynx, BRP, Yamaha — навигация по дереву каталога.');
 ?>
 
 <div class="mf-oem-page" id="mfOemCatalog" data-api-base="/api/oem" data-assets-base="/oem-assets">
@@ -17,29 +17,36 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 
 	<div class="mf-oem-app" v-cloak>
 		<div class="mf-oem-sidebar">
-			<div class="mf-oem-step" :class="{ '-active': step === 'root', '-done': selected.root }">
+			<div class="mf-oem-step" :class="{ '-active': step === 'brand', '-done': selected.brand }">
 				<span>1</span>
 				<div>
 					<strong>Бренд</strong>
+					<small>{{ selected.brand ? selected.brand.name : 'Не выбран' }}</small>
+				</div>
+			</div>
+			<div class="mf-oem-step" :class="{ '-active': step === 'region', '-done': selected.root && brandNeedsRegionStep }" v-if="brandNeedsRegionStep || step === 'region'">
+				<span>2</span>
+				<div>
+					<strong>Регион</strong>
 					<small>{{ selected.root ? selected.root.name : 'Не выбран' }}</small>
 				</div>
 			</div>
 			<div class="mf-oem-step" :class="{ '-active': step === 'browse', '-done': selected.navStack.length }">
-				<span>2</span>
+				<span>{{ brandNeedsRegionStep ? 3 : 2 }}</span>
 				<div>
 					<strong>Каталог</strong>
 					<small>{{ selected.navNode ? selected.navNode.title : 'Папки' }}</small>
 				</div>
 			</div>
 			<div class="mf-oem-step" :class="{ '-active': step === 'variant' || step === 'assembly', '-done': selected.variant }">
-				<span>3</span>
+				<span>{{ brandNeedsRegionStep ? 4 : 3 }}</span>
 				<div>
 					<strong>Модификация</strong>
 					<small>{{ selected.variant ? variantTitle(selected.variant) : 'Не выбрана' }}</small>
 				</div>
 			</div>
 			<div class="mf-oem-step" :class="{ '-active': step === 'assembly' || step === 'diagram', '-done': selected.assembly }">
-				<span>4</span>
+				<span>{{ brandNeedsRegionStep ? 5 : 4 }}</span>
 				<div>
 					<strong>Узел</strong>
 					<small>{{ selected.assembly ? selected.assembly.title : 'Не выбран' }}</small>
@@ -54,7 +61,7 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 				</button>
 			</div>
 
-			<section v-if="step === 'root'" class="mf-oem-panel">
+			<section v-if="step === 'brand'" class="mf-oem-panel">
 				<div class="mf-oem-panel-head">
 					<h2>Каталог схем</h2>
 				</div>
@@ -165,22 +172,40 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 						<h2>Выберите бренд</h2>
 					</div>
 					<div class="mf-oem-grid">
-						<button class="mf-oem-card" type="button" v-for="item in catalogRoots" :key="item.id" @click="selectRoot(item)">
+						<button class="mf-oem-card" type="button" v-for="item in brands" :key="item.code" @click="selectBrand(item)">
 							<strong>{{ item.name }}</strong>
-							<span>{{ item.arib_code }}</span>
+							<span v-if="item.roots_count > 1">{{ item.roots_count }} региона</span>
+							<span v-else>OEM каталог</span>
 						</button>
 					</div>
 				</template>
 			</section>
 
+			<section v-if="step === 'region'" class="mf-oem-panel">
+				<div class="mf-oem-panel-head">
+					<div>
+						<h2>{{ selected.brand && selected.brand.name }}</h2>
+						<p>Выберите регион каталога</p>
+					</div>
+					<button type="button" @click="goToCrumb({ step: 'brand' })">К брендам</button>
+				</div>
+				<div class="mf-oem-grid">
+					<button class="mf-oem-card" type="button" v-for="item in brandRoots" :key="item.arib_code" @click="selectRoot(item)">
+						<strong>{{ item.name }}</strong>
+						<span>{{ item.arib_code }}</span>
+					</button>
+				</div>
+			</section>
+
 			<section v-if="step === 'browse'" class="mf-oem-panel">
 				<div class="mf-oem-panel-head">
 					<div>
-						<h2>{{ selected.root && selected.root.name }}</h2>
+						<h2>{{ catalogBrowseTitle }}</h2>
 						<p v-if="selected.navStack.length">{{ selected.navStack.map(function(n){ return n.title; }).join(' / ') }}</p>
 					</div>
 					<button type="button" v-if="selected.navStack.length" @click="goToCrumb({ step: 'browse', index: selected.navStack.length - 2 })">Назад</button>
-					<button type="button" v-else @click="goToCrumb({ step: 'root' })">К брендам</button>
+					<button type="button" v-else-if="brandNeedsRegionStep" @click="goToCrumb({ step: 'region' })">К регионам</button>
+					<button type="button" v-else @click="goToCrumb({ step: 'brand' })">К брендам</button>
 				</div>
 				<div class="mf-oem-list">
 					<button class="mf-oem-list-item" type="button" v-for="node in navNodes" :key="node.id" @click="selectNavNode(node)">
@@ -199,10 +224,16 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 					</div>
 					<button type="button" @click="goToCrumb({ step: 'browse', index: selected.navStack.length - 1 })">Назад</button>
 				</div>
-				<div class="mf-oem-list">
-					<button class="mf-oem-list-item" type="button" v-for="variant in variants" :key="variant.id" @click="selectVariant(variant)">
-						<strong>{{ variantTitle(variant) }}</strong>
-						<span>{{ variantSubtitle(variant) }}</span>
+				<div class="mf-oem-variant-grid">
+					<button class="mf-oem-variant-card" type="button" v-for="variant in variants" :key="variant.id" @click="selectVariant(variant)">
+						<span class="mf-oem-variant-media">
+							<img v-if="variantThumbnailUrl(variant)" :src="variantThumbnailUrl(variant)" :alt="variantTitle(variant)">
+							<span v-else class="mf-oem-variant-placeholder">{{ variant.source_designation || 'Мод.' }}</span>
+						</span>
+						<span class="mf-oem-variant-body">
+							<strong>{{ variantTitle(variant) }}</strong>
+							<small>{{ variantSubtitle(variant) }}</small>
+						</span>
 					</button>
 				</div>
 			</section>
