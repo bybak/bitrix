@@ -118,6 +118,7 @@ services:
     environment:
       OEM_DATABASE_DSN: postgresql://oem_user:oem_password@oem_db:5432/oem_catalog
       OEM_YAMAHA_DATABASE_DSN: postgresql://yamaha_user:yamaha_password@yamaha_db:5432/yamaha_catalog
+      OEM_ARCTIC_DATABASE_DSN: postgresql://arctic_user:arctic_password@arctic_db:5432/arctic_catalog
       OEM_REGISTRY_DATABASE_DSN: postgresql://oem_registry_user:oem_registry_password@oem_registry_db:5432/oem_registry
       OEM_ASSET_ROOT: /app/storage/oem-diagrams
       OEM_PUBLIC_ASSET_BASE_URL: /oem-assets
@@ -132,6 +133,8 @@ services:
       oem_db:
         condition: service_healthy
       yamaha_db:
+        condition: service_healthy
+      arctic_db:
         condition: service_healthy
       oem_registry_db:
         condition: service_healthy
@@ -179,6 +182,27 @@ services:
       - ./oem_backend/db/schema_postgres_yamaha.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U yamaha_user -d yamaha_catalog"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - bitrix
+
+  arctic_db:
+    image: postgres:16-alpine
+    container_name: arctic_db
+    restart: unless-stopped
+    shm_size: "512mb"
+    command: ["postgres", "-c", "max_connections=300"]
+    environment:
+      POSTGRES_DB: arctic_catalog
+      POSTGRES_USER: arctic_user
+      POSTGRES_PASSWORD: arctic_password
+    volumes:
+      - arctic_pg_data:/var/lib/postgresql/data
+      - ./oem_backend/db/schema_postgres_arctic.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arctic_user -d arctic_catalog"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -257,6 +281,8 @@ volumes:
   oem_pg_data:
     driver: local
   yamaha_pg_data:
+    driver: local
+  arctic_pg_data:
     driver: local
   oem_registry_pg_data:
     driver: local

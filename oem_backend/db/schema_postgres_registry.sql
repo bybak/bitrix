@@ -47,6 +47,12 @@ INSERT INTO oem_catalog_databases (code, name, connection_dsn, parser_type) VALU
     'Yamaha YPEC',
     'postgresql://yamaha_user:yamaha_password@yamaha_db:5432/yamaha_catalog',
     'yamaha_ypec'
+  ),
+  (
+    'arctic',
+    'Arctic Cat PartStream',
+    'postgresql://arctic_user:arctic_password@arctic_db:5432/arctic_catalog',
+    'ari_partstream'
   )
 ON CONFLICT (code) DO UPDATE SET
   name = EXCLUDED.name,
@@ -60,7 +66,8 @@ INSERT INTO oem_brands (code, name, catalog_db_code, sort_order) VALUES
   ('ktm', 'KTM', 'remotors', 200),
   ('lynx', 'Lynx', 'remotors', 300),
   ('brp', 'BRP', 'remotors', 400),
-  ('yamaha', 'Yamaha', 'yamaha', 500)
+  ('yamaha', 'Yamaha', 'yamaha', 500),
+  ('arctic_cat', 'Arctic Cat', 'arctic', 600)
 ON CONFLICT (code) DO UPDATE SET
   name = EXCLUDED.name,
   catalog_db_code = EXCLUDED.catalog_db_code,
@@ -76,7 +83,8 @@ INSERT INTO oem_brand_roots (brand_code, root_arib, name, sort_order, is_active)
   ('brp', 'BRP', 'BRP', 400, TRUE),
   ('yamaha', 'YMH-EU', 'Европа', 510, TRUE),
   ('yamaha', 'YMH-JP', 'Япония', 520, TRUE),
-  ('yamaha', 'YMH-US', 'США', 530, FALSE)
+  ('yamaha', 'YMH-US', 'США', 530, FALSE),
+  ('arctic_cat', 'ARC', 'Arctic Cat', 600, TRUE)
 ON CONFLICT (brand_code, root_arib) DO UPDATE SET
   name = EXCLUDED.name,
   sort_order = EXCLUDED.sort_order,

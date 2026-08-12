@@ -5,6 +5,7 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 from app.remotors_v3.client import clean_text
+from app.remotors_v3.coord_space import read_orig_width_from_html
 
 
 def parse_hotspot_coords(raw: str | None) -> tuple[float, float, float, float]:
@@ -64,4 +65,11 @@ def parse_details_html(html: str) -> dict[str, Any]:
 
     image = soup.select_one("#ariparts_image")
     image_url = image.get("src") if image else None
-    return {"parts": parts, "hotspots": hotspots, "image_url": image_url}
+    # Hotspot coords are in PartStream origWidth space (often larger than Max PNG).
+    orig_width = read_orig_width_from_html(html)
+    return {
+        "parts": parts,
+        "hotspots": hotspots,
+        "image_url": image_url,
+        "orig_width": orig_width,
+    }

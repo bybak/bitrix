@@ -178,20 +178,27 @@ def _compress_png_lossy(
         if dst.exists() and dst.stat().st_size == 0:
             dst.unlink(missing_ok=True)
 
-    # Fallback: Pillow adaptive palette (slower than pngquant — avoid if possible).
+    # Fallback: Pillow palette quantize.
+    # RGBA only supports FASTOCTREE / LIBIMAGEQUANT (MEDIANCUT raises ValueError).
     try:
         with Image.open(src) as img:
             img.load()
             img = ImageOps.exif_transpose(img)
-            if img.mode not in {"RGB", "RGBA"}:
+            if img.mode in {"LA", "PA"}:
+                img = img.convert("RGBA")
+            elif img.mode not in {"RGB", "RGBA", "P"}:
                 img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
-            has_alpha = "A" in img.getbands()
-            dither = Image.Dither.NONE if colors <= 16 else Image.Dither.FLOYDSTEINBERG
-            quantized = img.convert("RGBA" if has_alpha else "RGB").quantize(
-                colors=colors,
-                method=Image.Quantize.MEDIANCUT,
-                dither=dither,
+            has_alpha = img.mode == "RGBA" or (
+                img.mode == "P" and "transparency" in img.info
             )
+            dither = Image.Dither.NONE if colors <= 16 else Image.Dither.FLOYDSTEINBERG
+            if has_alpha:
+                base = img.convert("RGBA")
+                method = Image.Quantize.FASTOCTREE
+            else:
+                base = img.convert("RGB")
+                method = Image.Quantize.MEDIANCUT
+            quantized = base.quantize(colors=colors, method=method, dither=dither)
             dst.parent.mkdir(parents=True, exist_ok=True)
             quantized.save(dst, format="PNG", optimize=True, compress_level=6)
             return dst.is_file() and dst.stat().st_size > 0

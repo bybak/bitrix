@@ -61,17 +61,23 @@ def load_routing_snapshot() -> dict[str, Any]:
                   br.root_arib,
                   br.name,
                   br.sort_order,
+                  br.is_active,
                   b.catalog_db_code
                 FROM oem_brand_roots br
                 JOIN oem_brands b ON b.code = br.brand_code
-                WHERE br.is_active = TRUE AND b.is_active = TRUE
+                WHERE b.is_active = TRUE
                 ORDER BY b.sort_order, br.sort_order, br.name
                 """
             )
-            roots = [dict(row) for row in cur.fetchall()]
+            all_roots = [dict(row) for row in cur.fetchall()]
+            # UI / brand browse: only active roots.
+            roots = [row for row in all_roots if row.get("is_active")]
 
     db_by_code = {row["code"]: CatalogDatabase(**row) for row in databases}
-    root_to_db: dict[str, str] = {row["root_arib"].upper(): row["catalog_db_code"] for row in roots}
+    # Routing includes inactive roots so imports (e.g. ARC_CDN) still resolve to a DB.
+    root_to_db: dict[str, str] = {
+        str(row["root_arib"]).upper(): row["catalog_db_code"] for row in all_roots
+    }
     brand_to_db: dict[str, str] = {row["code"]: row["catalog_db_code"] for row in brands}
 
     return {

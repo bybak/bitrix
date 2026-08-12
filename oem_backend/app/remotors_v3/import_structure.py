@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from app.db import get_conn
+from app.registry.catalog_router import catalog_db_code_for_root, get_catalog_conn
 from app.remotors_v3.constants import BULK_BATCH_SIZE
 from app.remotors_v3.progress import ProgressReporter
 from app.remotors_v3.snapshot import open_snapshot
@@ -28,15 +28,29 @@ def import_structure(*, snapshot_path: str, resume: bool = True) -> dict[str, An
         ).fetchall()
         variant_rows = snap.execute("SELECT * FROM catalog_variants ORDER BY variant_key").fetchall()
         assembly_rows = snap.execute("SELECT * FROM catalog_assemblies ORDER BY variant_key, assembly_key").fetchall()
+        root_rows = snap.execute(
+            "SELECT DISTINCT root_arib FROM api_nodes ORDER BY root_arib"
+        ).fetchall()
     finally:
         snap.close()
 
+    roots = [str(row["root_arib"]).upper() for row in root_rows if row["root_arib"]]
+    if not roots:
+        raise SystemExit(f"snapshot has no roots: {snapshot_path}")
+    db_codes = {catalog_db_code_for_root(root) for root in roots}
+    if len(db_codes) != 1:
+        raise SystemExit(
+            f"snapshot roots map to multiple catalog DBs {sorted(db_codes)}: {roots}. "
+            "Import one root/snapshot at a time."
+        )
+    db_code = next(iter(db_codes))
+
     progress = ProgressReporter(
         total=max(len(nav_rows) + len(variant_rows) + len(assembly_rows), 1),
-        label="import-structure",
+        label=f"import-structure[{db_code}]",
     )
 
-    with get_conn() as conn:
+    with get_catalog_conn(db_code=db_code) as conn:
         with conn.cursor() as cur:
             if not resume:
                 cur.execute(
@@ -178,6 +192,8 @@ def import_structure(*, snapshot_path: str, resume: bool = True) -> dict[str, An
 
     progress.finish("import complete")
     return {
+        "db_code": db_code,
+        "roots": roots,
         "variants": variants_count,
         "assemblies": assemblies_count,
         "nav_nodes": nav_count,

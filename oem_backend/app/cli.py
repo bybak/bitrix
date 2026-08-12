@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.db import close_pool, open_pool, open_registry_pool, open_yamaha_pool
 from app.db_migrate import apply_migrations
+from app.registry.catalog_router import close_catalog_pools, open_catalog_pools
 from app.remotors_v3.backfill_diagram_coords import backfill_diagram_coords
 from app.remotors_v3.constants import ROOT_ARIB_CODES
 from app.remotors_v3.details_crawl import crawl_details, seed_crawl_items
@@ -77,17 +78,24 @@ def main() -> None:
     snapshot.add_argument("--roots", default=",".join(ROOT_ARIB_CODES), help="Comma-separated root ARI codes")
     snapshot.add_argument("--resume", action="store_true")
     snapshot.add_argument("--limit-assemblies", type=int, default=None)
+    snapshot.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Parallel GetAssembly workers (default 1; try 8-16 for ARC/ARC_CDN)",
+    )
 
     imp = subparsers.add_parser("import-remotors-structure", help="Bulk import snapshot structure into PostgreSQL")
     imp.add_argument("--snapshot", default="storage/remotors-snapshot-v3.db")
     imp.add_argument("--no-resume", action="store_true")
 
     seed = subparsers.add_parser("seed-remotors-crawl", help="Seed crawl sidecar from PostgreSQL assemblies")
-    seed.add_argument("--sidecar", default="storage/remotors-details-crawl.db")
+    seed.add_argument("--sidecar", default=None, help="Default: storage/{remotors|arctic}-details-crawl.db")
+    seed.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
 
     crawl = subparsers.add_parser("crawl-remotors-details", help="Crawl GetDetails HTML or diagram images")
     crawl.add_argument("--phase", choices=["html", "images"], required=True)
-    crawl.add_argument("--sidecar", default="storage/remotors-details-crawl.db")
+    crawl.add_argument("--sidecar", default=None, help="Default: storage/{remotors|arctic}-details-crawl.db")
     crawl.add_argument("--limit", type=int, default=None)
     crawl.add_argument("--force", action="store_true")
     crawl.add_argument("--worker-id", type=int, default=0, help="Worker index 0..workers-1 for parallel crawl")
@@ -98,9 +106,10 @@ def main() -> None:
         default=1,
         help="Parallel HTTP requests per worker (default 1; try 4-8 for faster html crawl)",
     )
+    crawl.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
 
     parse_cmd = subparsers.add_parser("parse-remotors-details", help="Offline parse saved HTML into PostgreSQL")
-    parse_cmd.add_argument("--sidecar", default="storage/remotors-details-crawl.db")
+    parse_cmd.add_argument("--sidecar", default=None, help="Legacy; progress is in PostgreSQL")
     parse_cmd.add_argument("--limit", type=int, default=None)
     parse_cmd.add_argument("--force", action="store_true")
     parse_cmd.add_argument("--worker-id", type=int, default=0, help="Worker index 0..workers-1 for parallel parse")
@@ -108,18 +117,20 @@ def main() -> None:
     parse_cmd.add_argument(
         "--concurrency",
         type=int,
-        default=1,
-        help="Parallel parse batches per worker (default 1; try 2-4)",
+        default=8,
+        help="Parallel parse jobs (default 8; capped at 24). Bottleneck is PG writes, not HTML I/O.",
     )
+    parse_cmd.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
 
     coords_cmd = subparsers.add_parser(
         "backfill-diagram-coords",
-        help="Read saved Remotors HTML origWidth and store diagram coordinate space",
+        help="Read saved HTML origWidth and store diagram coordinate space (hotspot scaling)",
     )
     coords_cmd.add_argument("--limit", type=int, default=None)
     coords_cmd.add_argument("--force", action="store_true")
     coords_cmd.add_argument("--worker-id", type=int, default=0, help="Worker index 0..workers-1")
     coords_cmd.add_argument("--workers", type=int, default=1, help="Split diagrams by assembly_id %% workers")
+    coords_cmd.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
 
     verify = subparsers.add_parser("verify-remotors-v3", help="Verify snapshot vs PostgreSQL counts")
     verify.add_argument("--snapshot", default="storage/remotors-snapshot-v3.db")
@@ -587,6 +598,9 @@ def main() -> None:
         open_yamaha_pool(min_size=1, max_size=1)
     elif args.command == "migrate-registry":
         open_registry_pool(min_size=1, max_size=1)
+    elif args.command == "import-remotors-structure":
+        open_registry_pool(min_size=1, max_size=2)
+        open_catalog_pools(min_size=1, max_size=4)
     else:
         open_pool()
     try:
@@ -599,6 +613,7 @@ def main() -> None:
                 arib_codes=roots,
                 resume=args.resume,
                 limit_assemblies=args.limit_assemblies,
+                concurrency=args.concurrency,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "import-remotors-structure":
@@ -607,28 +622,50 @@ def main() -> None:
             result = import_structure(snapshot_path=args.snapshot, resume=not args.no_resume)
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "seed-remotors-crawl":
-            count = seed_crawl_items(sidecar_path=args.sidecar)
-            print(json.dumps({"seeded": count, "sidecar": args.sidecar}, ensure_ascii=False, indent=2))
+            from app.remotors_v3.catalog_context import default_sidecar_path, set_catalog_db
+
+            set_catalog_db(args.db_code)
+            sidecar = args.sidecar or default_sidecar_path()
+            count = seed_crawl_items(sidecar_path=sidecar, db_code=args.db_code)
+            print(
+                json.dumps(
+                    {"seeded": count, "sidecar": sidecar, "db_code": args.db_code},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         elif args.command == "crawl-remotors-details":
+            from app.remotors_v3.catalog_context import default_sidecar_path, set_catalog_db
+
+            set_catalog_db(args.db_code)
+            sidecar = args.sidecar or default_sidecar_path()
             result = crawl_details(
                 phase=args.phase,
-                sidecar_path=args.sidecar,
+                sidecar_path=sidecar,
                 limit=args.limit,
                 force=args.force,
                 worker_id=args.worker_id,
                 workers=args.workers,
                 concurrency=args.concurrency,
+                db_code=args.db_code,
             )
+            result = {**result, "db_code": args.db_code, "sidecar": sidecar}
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "parse-remotors-details":
+            from app.remotors_v3.catalog_context import default_sidecar_path, set_catalog_db
+
+            set_catalog_db(args.db_code)
+            sidecar = args.sidecar or default_sidecar_path()
             result = parse_details(
-                sidecar_path=args.sidecar,
+                sidecar_path=sidecar,
                 limit=args.limit,
                 force=args.force,
                 worker_id=args.worker_id,
                 workers=args.workers,
                 concurrency=args.concurrency,
+                db_code=args.db_code,
             )
+            result = {**result, "db_code": args.db_code}
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "backfill-diagram-coords":
             result = backfill_diagram_coords(
@@ -636,7 +673,9 @@ def main() -> None:
                 force=args.force,
                 worker_id=args.worker_id,
                 workers=args.workers,
+                db_code=args.db_code,
             )
+            result = {**result, "db_code": args.db_code}
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "verify-remotors-v3":
             result = verify_v3(snapshot_path=args.snapshot)
@@ -885,6 +924,7 @@ def main() -> None:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
     finally:
+        close_catalog_pools()
         close_pool()
 
 

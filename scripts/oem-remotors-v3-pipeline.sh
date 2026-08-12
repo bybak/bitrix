@@ -11,6 +11,8 @@ SIDECAR="${SIDECAR:-storage/remotors-details-crawl.db}"
 PHASE="${1:-all}"
 LIMIT_ASSEMBLIES="${LIMIT_ASSEMBLIES:-}"
 LIMIT="${LIMIT:-}"
+SNAPSHOT_CONCURRENCY="${SNAPSHOT_CONCURRENCY:-1}"
+ROOTS="${ROOTS:-}"
 
 snapshot_limit_args=()
 crawl_limit_args=()
@@ -27,7 +29,14 @@ run_cli() {
 
 run_snapshot() {
   local resume="${1:-}"
-  local -a cmd=(snapshot-remotors-v3 --snapshot "${SNAPSHOT}")
+  local -a cmd=(
+    snapshot-remotors-v3
+    --snapshot "${SNAPSHOT}"
+    --concurrency "${SNAPSHOT_CONCURRENCY}"
+  )
+  if [[ -n "${ROOTS}" ]]; then
+    cmd+=(--roots "${ROOTS}")
+  fi
   if [[ "${resume}" == "resume" ]]; then
     cmd+=(--resume)
   fi

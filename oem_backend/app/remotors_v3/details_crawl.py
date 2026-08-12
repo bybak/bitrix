@@ -15,8 +15,22 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.config import get_settings
-from app.remotors_v3.client import extract_diagram_url, fetch_details_html, is_retryable_http_error, make_client
+from app.remotors_v3.catalog_context import (
+    catalog_dsn,
+    default_sidecar_path,
+    diagram_storage_root_name,
+    html_storage_root_name,
+    set_catalog_db,
+)
+from app.remotors_v3.client import (
+    extract_diagram_url,
+    fetch_details_html,
+    is_placeholder_diagram_url,
+    is_retryable_http_error,
+    make_client,
+)
 from app.remotors_v3.constants import BULK_BATCH_SIZE, PROGRESS_INTERVAL_SEC
+from app.remotors_v3.image_compress import compress_image_bytes
 from app.remotors_v3.progress import ProgressReporter
 
 
@@ -34,7 +48,7 @@ def _thread_http_client() -> Any:
 @contextmanager
 def _pg_crawl_conn() -> Iterator[psycopg.Connection]:
     """One short-lived PG connection per operation (safe for many parallel workers)."""
-    conn = psycopg.connect(get_settings().database_dsn, row_factory=dict_row, autocommit=False)
+    conn = psycopg.connect(catalog_dsn(), row_factory=dict_row, autocommit=False)
     try:
         with conn.cursor() as cur:
             cur.execute("SET max_parallel_workers_per_gather TO 0")
@@ -48,7 +62,7 @@ def _pg_crawl_conn() -> Iterator[psycopg.Connection]:
 
 
 def _sidecar_path(sidecar: str | None) -> Path:
-    return Path(sidecar or "storage/remotors-details-crawl.db")
+    return Path(sidecar or default_sidecar_path())
 
 
 def _connect_sidecar(path: Path) -> sqlite3.Connection:
@@ -79,9 +93,17 @@ def _reset_stale_running(phase: str) -> int:
 
 
 def _claim_batch_pg(*, phase: str, force: bool, batch_size: int = 1) -> list[dict[str, Any]]:
+    """Claim next crawl rows.
+
+    Never claim status=ok (infinite re-download loop with --force).
+    Never claim status=error by default — permanent failures (no image / NoImage.gif)
+    would otherwise starve pending rows because claim is ORDER BY assembly id.
+    --force requeues errors once at crawl start; process_row force re-downloads files.
+    """
     batch_size = max(1, int(batch_size))
+    _ = force
+    statuses = ("pending", "running")
     if phase == "html":
-        statuses = ("pending", "error", "running", "ok") if force else ("pending", "running")
         select_sql = """
             SELECT
               dp.id AS details_page_id,
@@ -106,7 +128,6 @@ def _claim_batch_pg(*, phase: str, force: bool, batch_size: int = 1) -> list[dic
         running_value = "running"
         status_col = "html_status"
     else:
-        statuses = ("pending", "error", "running", "ok") if force else ("pending", "running")
         select_sql = """
             SELECT
               dp.id AS details_page_id,
@@ -150,8 +171,9 @@ def _claim_batch_pg(*, phase: str, force: bool, batch_size: int = 1) -> list[dic
         return [dict(row) for row in rows]
 
 
-def seed_crawl_items(*, sidecar_path: str) -> int:
+def seed_crawl_items(*, sidecar_path: str, db_code: str = "remotors") -> int:
     """Rebuild sidecar snapshot from PostgreSQL (single-process export, not used during crawl)."""
+    set_catalog_db(db_code)
     path = _sidecar_path(sidecar_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
@@ -265,12 +287,23 @@ def seed_crawl_items(*, sidecar_path: str) -> int:
 
 def _html_storage_path(root_arib: str, assembly_id: int) -> Path:
     settings = get_settings()
-    return Path(settings.asset_root).parent / "remotors-html" / root_arib / f"{assembly_id}.html"
+    return (
+        Path(settings.asset_root).parent
+        / html_storage_root_name()
+        / root_arib
+        / f"{assembly_id}.html"
+    )
 
 
 def _image_storage_path(root_arib: str, assembly_id: int, ext: str = ".png") -> Path:
     settings = get_settings()
-    return Path(settings.asset_root) / "remotors" / root_arib / str(assembly_id) / f"diagram{ext}"
+    return (
+        Path(settings.asset_root)
+        / diagram_storage_root_name()
+        / root_arib
+        / str(assembly_id)
+        / f"diagram{ext}"
+    )
 
 
 def _mark_html_ok(assembly_id: int, html_path: str, html_hash: str, image_url: str | None) -> None:
@@ -325,7 +358,14 @@ def _reset_html_pending(assembly_id: int, error: str) -> None:
         conn.commit()
 
 
-def _mark_image_ok(assembly_id: int, rel_path: str, original_url: str, content: bytes) -> None:
+def _mark_image_ok(
+    assembly_id: int,
+    rel_path: str,
+    original_url: str,
+    content: bytes,
+    *,
+    mime_type: str = "image/png",
+) -> None:
     checksum = hashlib.sha256(content).hexdigest()
     public_url = f"{get_settings().public_asset_base_url.rstrip('/')}/{rel_path}"
     with _pg_crawl_conn() as conn:
@@ -342,7 +382,7 @@ def _mark_image_ok(assembly_id: int, rel_path: str, original_url: str, content: 
                   mime_type = EXCLUDED.mime_type,
                   updated_at = now()
                 """,
-                (assembly_id, original_url, rel_path, public_url, checksum, "image/png"),
+                (assembly_id, original_url, rel_path, public_url, checksum, mime_type),
             )
             cur.execute(
                 """
@@ -372,6 +412,40 @@ def _mark_image_error(assembly_id: int, error: str) -> None:
                 (error[:2000], assembly_id),
             )
         conn.commit()
+
+
+def _mark_image_skipped(assembly_id: int, reason: str, *, image_url: str | None = None) -> None:
+    """No real diagram (missing URL / PartStream NoImage.*) — done, do not retry."""
+    with _pg_crawl_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE oem_details_pages SET
+                  image_url = COALESCE(%s, image_url),
+                  image_path = NULL,
+                  image_status = 'ok',
+                  error_message = %s,
+                  updated_at = now()
+                WHERE assembly_id = %s
+                """,
+                (image_url, reason[:2000], assembly_id),
+            )
+        conn.commit()
+
+
+def _reset_errors_to_pending(phase: str) -> int:
+    col = "html_status" if phase == "html" else "image_status"
+    with _pg_crawl_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE oem_details_pages
+                SET {col} = 'pending', updated_at = now()
+                WHERE {col} = 'error'
+                """
+            )
+            reset = cur.rowcount
+    return int(reset or 0)
 
 
 def _reset_image_pending(assembly_id: int, error: str) -> None:
@@ -411,7 +485,8 @@ def _process_html_row(row: dict[str, Any], *, force: bool, progress: ProgressRep
         html_path.parent.mkdir(parents=True, exist_ok=True)
         html_path.write_text(html, encoding="utf-8")
         html_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
-        _mark_html_ok(assembly_id, str(html_path), html_hash, None)
+        image_url = extract_diagram_url(html)
+        _mark_html_ok(assembly_id, str(html_path), html_hash, image_url)
         with stats_lock:
             stats["ok"] += 1
         progress.advance(f"html ok assembly={assembly_id}")
@@ -429,41 +504,64 @@ def _process_html_row(row: dict[str, Any], *, force: bool, progress: ProgressRep
 def _process_image_row(row: dict[str, Any], *, force: bool, progress: ProgressReporter, stats: dict[str, int], stats_lock: threading.Lock) -> None:
     assembly_id = int(row["assembly_id"])
     root_arib = row["root_arib"]
-    if (
-        not force
-        and row["image_status"] == "ok"
-        and row["image_path"]
-        and (Path(get_settings().asset_root) / row["image_path"]).is_file()
-    ):
-        with stats_lock:
-            stats["skipped"] += 1
-        progress.advance(f"skip image exists assembly={assembly_id}")
-        return
+    if not force and row["image_status"] == "ok":
+        # Real file on disk, or intentional skip (no diagram / NoImage placeholder).
+        if row["image_path"] and (Path(get_settings().asset_root) / row["image_path"]).is_file():
+            with stats_lock:
+                stats["skipped"] += 1
+            progress.advance(f"skip image exists assembly={assembly_id}")
+            return
+        if not row["image_path"]:
+            with stats_lock:
+                stats["skipped"] += 1
+            progress.advance(f"skip no-image assembly={assembly_id}")
+            return
     image_url = row.get("image_url")
     html_path = row.get("html_path")
     if not image_url and html_path and Path(html_path).is_file():
         image_url = extract_diagram_url(Path(html_path).read_text(encoding="utf-8"))
     if not image_url:
+        _mark_image_skipped(assembly_id, "no image url")
         with stats_lock:
-            stats["errors"] += 1
-        _mark_image_error(assembly_id, "no image url")
-        progress.advance(f"ERROR no image url assembly={assembly_id}")
+            stats["skipped"] += 1
+        progress.advance(f"skip no image url assembly={assembly_id}")
+        return
+    if is_placeholder_diagram_url(image_url):
+        _mark_image_skipped(assembly_id, "no-image placeholder", image_url=image_url)
+        with stats_lock:
+            stats["skipped"] += 1
+        progress.advance(f"skip no-image placeholder assembly={assembly_id}")
         return
     try:
         client = _thread_http_client()
         response = client.get(image_url, headers={"User-Agent": "MotorForceOEMBot/0.1"})
         response.raise_for_status()
+        final_url = str(response.url) if response.url else image_url
+        if is_placeholder_diagram_url(final_url):
+            _mark_image_skipped(assembly_id, "no-image placeholder", image_url=final_url)
+            with stats_lock:
+                stats["skipped"] += 1
+            progress.advance(f"skip no-image placeholder assembly={assembly_id}")
+            return
         content = response.content
         ext = ".png" if "png" in (response.headers.get("content-type") or "") else ".jpg"
         image_path = _image_storage_path(root_arib, assembly_id, ext)
-        image_path.parent.mkdir(parents=True, exist_ok=True)
-        image_path.write_bytes(content)
+        # Compress in-place path: original is never written to disk.
+        compressed = compress_image_bytes(content, image_path, ext=ext)
         rel_path = str(image_path.relative_to(Path(get_settings().asset_root)))
-        _mark_image_ok(assembly_id, rel_path, image_url, content)
+        mime_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+        _mark_image_ok(assembly_id, rel_path, image_url, compressed, mime_type=mime_type)
         with stats_lock:
             stats["ok"] += 1
         progress.advance(f"image ok assembly={assembly_id}")
     except Exception as exc:
+        # 404 on NoImage.gif/Max (and similar) is not a real failure — do not retry.
+        if is_placeholder_diagram_url(image_url) or "noimage" in str(exc).lower():
+            _mark_image_skipped(assembly_id, "no-image placeholder", image_url=image_url)
+            with stats_lock:
+                stats["skipped"] += 1
+            progress.advance(f"skip no-image placeholder assembly={assembly_id}")
+            return
         if is_retryable_http_error(exc):
             _reset_image_pending(assembly_id, str(exc))
             progress.advance(f"RETRY image assembly={assembly_id}: {exc}")
@@ -483,6 +581,7 @@ def crawl_details(
     worker_id: int = 0,
     workers: int = 1,
     concurrency: int = 1,
+    db_code: str = "remotors",
 ) -> dict[str, Any]:
     if phase not in {"html", "images"}:
         raise ValueError("phase must be html or images")
@@ -491,12 +590,17 @@ def crawl_details(
     if worker_id < 0 or worker_id >= workers:
         raise ValueError(f"worker_id must be 0..{workers - 1}")
     concurrency = max(1, int(concurrency))
+    set_catalog_db(db_code)
 
     _ensure_pg_crawl_schema()
     if worker_id == 0:
         reset = _reset_stale_running(phase)
         if reset:
             print(f"[crawl-{phase}] reset stale running={reset}", flush=True)
+        if force:
+            requeued = _reset_errors_to_pending(phase)
+            if requeued:
+                print(f"[crawl-{phase}] --force requeued errors→pending={requeued}", flush=True)
     elif workers > 1:
         time.sleep(worker_id * 2)
 

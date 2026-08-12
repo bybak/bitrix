@@ -13,11 +13,26 @@ from bs4 import BeautifulSoup
 
 from app.config import get_settings
 
-APP_KEY = "Ja5mWoFztyQhVLuUin3C"
-BASE_PAGE_URL = "https://remotors.fi/eng/partfinder"
+# Defaults match Remotors.fi; override via OEM_PARTSTREAM_* for other catalogs (e.g. ARC).
+DEFAULT_APP_KEY = "Ja5mWoFztyQhVLuUin3C"
+DEFAULT_BASE_PAGE_URL = "https://remotors.fi/eng/partfinder"
+DEFAULT_ARIL = "en-EU"
 STREAM_ENDPOINT = "https://partstream.arinet.com"
 GET_ASSEMBLY_URL = f"{STREAM_ENDPOINT}/Parts/GetAssembly"
 GET_DETAILS_URL = f"{STREAM_ENDPOINT}/Parts/GetDetails"
+
+
+def _partstream_creds() -> tuple[str, str, str]:
+    settings = get_settings()
+    appkey = (settings.partstream_appkey or DEFAULT_APP_KEY).strip() or DEFAULT_APP_KEY
+    ariv = (settings.partstream_ariv or DEFAULT_BASE_PAGE_URL).strip() or DEFAULT_BASE_PAGE_URL
+    aril = (settings.partstream_aril or DEFAULT_ARIL).strip() or DEFAULT_ARIL
+    return appkey, ariv, aril
+
+
+# Back-compat aliases used by source_url_for / importers.
+APP_KEY = DEFAULT_APP_KEY
+BASE_PAGE_URL = DEFAULT_BASE_PAGE_URL
 
 RETRYABLE_HTTP_ERRORS = (
     httpx.ConnectError,
@@ -76,11 +91,12 @@ def make_client() -> httpx.Client:
 
 
 def jsonp_get(client: httpx.Client, url: str, params: dict[str, Any], *, retries: int = 6) -> dict[str, Any]:
+    appkey, ariv, aril = _partstream_creds()
     payload = {
         **params,
-        "arik": APP_KEY,
-        "aril": "en-EU",
-        "ariv": BASE_PAGE_URL,
+        "arik": appkey,
+        "aril": aril,
+        "ariv": ariv,
         "cb": "callback",
     }
     for attempt in range(1, retries + 1):
@@ -116,7 +132,16 @@ def fetch_details_html(client: httpx.Client, slug: str) -> str:
 
 
 def source_url_for(root_arib: str, slug: str | None) -> str:
-    return f"{BASE_PAGE_URL}?aribrand={quote(root_arib)}#{slug or ''}"
+    _, ariv, _ = _partstream_creds()
+    return f"{ariv}?aribrand={quote(root_arib)}#{slug or ''}"
+
+
+def is_placeholder_diagram_url(url: str | None) -> bool:
+    """PartStream placeholder when a diagram has no real illustration (e.g. NoImage.gif/Max)."""
+    if not url:
+        return False
+    lowered = url.lower()
+    return "noimage" in lowered or "/content/images/noimage" in lowered
 
 
 def extract_diagram_url(html: str) -> str | None:
@@ -127,7 +152,12 @@ def extract_diagram_url(html: str) -> str | None:
     image_url = image.get("src")
     if not image_url:
         return None
-    image_url = urljoin(STREAM_ENDPOINT, image_url)
-    if not image_url.rstrip("/").endswith("/Max"):
+    image_url = urljoin(STREAM_ENDPOINT + "/", image_url)
+    if image_url.startswith("//"):
+        image_url = "https:" + image_url
+    # Placeholder — keep as-is; do not append /Max (that 404s).
+    if is_placeholder_diagram_url(image_url):
+        return image_url
+    if "partstream.arinet.com" in image_url and not image_url.rstrip("/").endswith("/Max"):
         image_url = image_url.rstrip("/") + "/Max"
     return image_url
