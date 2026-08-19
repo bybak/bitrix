@@ -58,67 +58,188 @@ if (!function_exists('mf_oem_is_yamaha_lookup'))
 	}
 }
 
+if (!function_exists('mf_oem_yamaha_catalog_prop_meta'))
+{
+	/**
+	 * @return array{version:int, props: array<string, int>}
+	 */
+	function mf_oem_yamaha_catalog_prop_meta(int $iblockId): array
+	{
+		static $mem = [];
+		if (isset($mem[$iblockId]))
+		{
+			return $mem[$iblockId];
+		}
+
+		$searchLib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_catalog_search_lib.php';
+		if (is_file($searchLib))
+		{
+			require_once $searchLib;
+		}
+
+		$version = 1;
+		$props = [];
+		if (function_exists('mf_catalog_search_meta'))
+		{
+			$meta = mf_catalog_search_meta($iblockId);
+			$version = (int)($meta['version'] ?? 1);
+			$props = (array)($meta['props'] ?? []);
+		}
+
+		if (class_exists(\CIBlockProperty::class) && empty($props['MF_IS_REDIRECT']))
+		{
+			$p = \CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => 'MF_IS_REDIRECT'])->Fetch();
+			if (is_array($p))
+			{
+				$pid = (int)($p['ID'] ?? 0);
+				if ($pid > 0)
+				{
+					$props['MF_IS_REDIRECT'] = $pid;
+				}
+			}
+		}
+
+		return $mem[$iblockId] = ['version' => $version, 'props' => $props];
+	}
+}
+
 if (!function_exists('mf_oem_find_yamaha_catalog_product_ids'))
 {
 	/**
-	 * Yamaha: точное совпадение MF_ARTICLE_NORM и более длинные артикулы,
-	 * в которые короткий номер входит целиком (9581206014 ⊂ 958120601400).
+	 * Yamaha: точное совпадение и более длинные артикулы, которые начинаются
+	 * с короткого номера (9581206014 → 958120601400). Прямой SQL, без GetList LIKE %…%.
 	 *
 	 * @return list<int>
 	 */
 	function mf_oem_find_yamaha_catalog_product_ids(int $iblockId, string $articleNorm): array
 	{
-		$ids = [];
-		$collect = static function (array $filter, int $limit) use ($articleNorm, &$ids): void {
-			$rs = \CIBlockElement::GetList(
-				['ID' => 'ASC'],
-				$filter,
-				false,
-				['nTopCount' => $limit],
-				['ID', 'PROPERTY_MF_ARTICLE_NORM', 'PROPERTY_MF_BRAND', 'PROPERTY_MF_BRAND_NORM']
-			);
-			while ($row = $rs->Fetch())
-			{
-				$pid = (int)($row['ID'] ?? 0);
-				if ($pid <= 0 || isset($ids[$pid]))
-				{
-					continue;
-				}
-				$brand = trim((string)($row['PROPERTY_MF_BRAND_VALUE'] ?? ''));
-				$brandNorm = trim((string)($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
-				if (!mf_oem_is_yamaha_brand($brand) && !mf_oem_is_yamaha_brand($brandNorm))
-				{
-					continue;
-				}
-				$foundNorm = mf_oem_normalize_part_number((string)($row['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''));
-				if ($foundNorm === '')
-				{
-					continue;
-				}
-				$isExact = ($foundNorm === $articleNorm);
-				$isContainedLonger = (strlen($foundNorm) > strlen($articleNorm)
-					&& strpos($foundNorm, $articleNorm) !== false);
-				if (!$isExact && !$isContainedLonger)
-				{
-					continue;
-				}
-				$ids[$pid] = true;
-			}
-		};
-
-		$baseFilter = [
-			'IBLOCK_ID' => $iblockId,
-			'ACTIVE' => 'Y',
-			'!PROPERTY_MF_IS_REDIRECT' => 'Y',
-		];
-		$collect($baseFilter + ['=PROPERTY_MF_ARTICLE_NORM' => $articleNorm], 24);
-		// Короткий префикс даст слишком много ложных вхождений.
-		if (strlen($articleNorm) >= 6)
+		$articleNorm = trim($articleNorm);
+		if ($articleNorm === '' || !class_exists(\Bitrix\Main\Application::class))
 		{
-			$collect($baseFilter + ['%PROPERTY_MF_ARTICLE_NORM' => $articleNorm], 64);
+			return [];
 		}
 
-		return array_map('intval', array_keys($ids));
+		$meta = mf_oem_yamaha_catalog_prop_meta($iblockId);
+		$props = (array)($meta['props'] ?? []);
+		$normPid = (int)($props['MF_ARTICLE_NORM'] ?? 0);
+		$brandNormPid = (int)($props['MF_BRAND_NORM'] ?? 0);
+		$brandPid = (int)($props['MF_BRAND'] ?? 0);
+		$redirPid = (int)($props['MF_IS_REDIRECT'] ?? 0);
+		if ($normPid <= 0)
+		{
+			return [];
+		}
+
+		$helper = \Bitrix\Main\Application::getConnection()->getSqlHelper();
+		$needle = $helper->forSql($articleNorm);
+		$limit = 32;
+		$brandConds = [];
+		$redirSql = '';
+		$version = (int)($meta['version'] ?? 1);
+
+		if ($version === 2)
+		{
+			if ($brandNormPid > 0)
+			{
+				$brandConds[] = "s.PROPERTY_{$brandNormPid} LIKE 'YAMAHA%'";
+			}
+			if ($brandPid > 0)
+			{
+				$brandConds[] = "UPPER(s.PROPERTY_{$brandPid}) LIKE 'YAMAHA%'";
+			}
+			$brandSql = $brandConds !== []
+				? 'AND (' . implode(' OR ', $brandConds) . ')'
+				: '';
+			if ($redirPid > 0)
+			{
+				$redirSql = "AND (s.PROPERTY_{$redirPid} IS NULL OR s.PROPERTY_{$redirPid} <> 'Y')";
+			}
+
+			$sql = "
+				SELECT s.IBLOCK_ELEMENT_ID AS ID
+				FROM b_iblock_element_prop_s{$iblockId} s
+				INNER JOIN b_iblock_element e ON e.ID = s.IBLOCK_ELEMENT_ID
+				WHERE e.IBLOCK_ID = {$iblockId}
+					AND e.ACTIVE = 'Y'
+					AND s.PROPERTY_{$normPid} LIKE '{$needle}%'
+					{$brandSql}
+					{$redirSql}
+				ORDER BY CHAR_LENGTH(s.PROPERTY_{$normPid}) ASC, s.IBLOCK_ELEMENT_ID ASC
+				LIMIT {$limit}";
+		}
+		else
+		{
+			$brandJoin = '';
+			if ($brandNormPid > 0)
+			{
+				$brandJoin = "
+				INNER JOIN b_iblock_element_property bn
+					ON bn.IBLOCK_ELEMENT_ID = e.ID
+					AND bn.IBLOCK_PROPERTY_ID = {$brandNormPid}
+					AND bn.VALUE LIKE 'YAMAHA%'";
+			}
+			elseif ($brandPid > 0)
+			{
+				$brandJoin = "
+				INNER JOIN b_iblock_element_property bn
+					ON bn.IBLOCK_ELEMENT_ID = e.ID
+					AND bn.IBLOCK_PROPERTY_ID = {$brandPid}
+					AND UPPER(bn.VALUE) LIKE 'YAMAHA%'";
+			}
+			if ($redirPid > 0)
+			{
+				$redirSql = "
+				AND NOT EXISTS (
+					SELECT 1 FROM b_iblock_element_property rd
+					WHERE rd.IBLOCK_ELEMENT_ID = e.ID
+						AND rd.IBLOCK_PROPERTY_ID = {$redirPid}
+						AND rd.VALUE = 'Y'
+				)";
+			}
+
+			$sql = "
+				SELECT DISTINCT e.ID
+				FROM b_iblock_element e
+				INNER JOIN b_iblock_element_property an
+					ON an.IBLOCK_ELEMENT_ID = e.ID
+					AND an.IBLOCK_PROPERTY_ID = {$normPid}
+					AND an.VALUE LIKE '{$needle}%'
+				{$brandJoin}
+				WHERE e.IBLOCK_ID = {$iblockId}
+					AND e.ACTIVE = 'Y'
+					{$redirSql}
+				ORDER BY CHAR_LENGTH(an.VALUE) ASC, e.ID ASC
+				LIMIT {$limit}";
+		}
+
+		$ids = [];
+		if (function_exists('mf_catalog_search_sql_ids'))
+		{
+			$ids = mf_catalog_search_sql_ids($sql);
+		}
+		else
+		{
+			try
+			{
+				$res = \Bitrix\Main\Application::getConnection()->query($sql);
+				while ($row = $res->fetch())
+				{
+					$id = (int)($row['ID'] ?? 0);
+					if ($id > 0)
+					{
+						$ids[] = $id;
+					}
+				}
+			}
+			catch (\Throwable $e)
+			{
+				$ids = [];
+			}
+		}
+
+		return array_values(array_unique(array_filter(array_map('intval', $ids), static function (int $id): bool {
+			return $id > 0;
+		})));
 	}
 }
 
