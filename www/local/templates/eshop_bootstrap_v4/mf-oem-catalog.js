@@ -1108,6 +1108,9 @@
 				if (brand) {
 					url.searchParams.set('brand', brand);
 				}
+				if (this.selected.root && this.selected.root.arib_code) {
+					url.searchParams.set('root', this.selected.root.arib_code);
+				}
 				fetch(url.toString(), { credentials: 'same-origin' })
 					.then(function (response) {
 						return response.json().then(function (payload) {

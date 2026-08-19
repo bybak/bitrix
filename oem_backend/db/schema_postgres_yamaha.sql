@@ -84,10 +84,28 @@ CREATE TABLE IF NOT EXISTS oem_parts (
   part_number VARCHAR(255) NOT NULL,
   normalized_part_number VARCHAR(255) NOT NULL,
   name TEXT,
+  -- Price enrichment (additive; does not replace part_number/name)
+  full_part_number VARCHAR(255),
+  name_ru TEXT,
+  weight_kg NUMERIC(12, 4),
+  price_jpy NUMERIC(12, 2),
+  price_rub NUMERIC(12, 2),
+  impex_status VARCHAR(32),
+  impex_checked_at TIMESTAMPTZ,
+  impex_payload JSONB,
+  megazip_status VARCHAR(32),
+  megazip_checked_at TIMESTAMPTZ,
+  megazip_payload JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (root_arib, normalized_part_number)
 );
+
+CREATE INDEX IF NOT EXISTS ix_oem_parts_impex_status
+  ON oem_parts (root_arib, impex_status);
+
+CREATE INDEX IF NOT EXISTS ix_oem_parts_megazip_status
+  ON oem_parts (root_arib, megazip_status);
 
 CREATE TABLE IF NOT EXISTS oem_diagrams (
   id BIGSERIAL PRIMARY KEY,

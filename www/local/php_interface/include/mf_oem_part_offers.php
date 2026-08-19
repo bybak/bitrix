@@ -34,12 +34,100 @@ if (!function_exists('mf_oem_normalize_brand'))
 	}
 }
 
+if (!function_exists('mf_oem_is_yamaha_brand'))
+{
+	function mf_oem_is_yamaha_brand(string $value): bool
+	{
+		$norm = mf_oem_normalize_brand($value);
+
+		return $norm !== '' && str_starts_with($norm, 'YAMAHA');
+	}
+}
+
+if (!function_exists('mf_oem_is_yamaha_lookup'))
+{
+	function mf_oem_is_yamaha_lookup(string $brandHint, string $rootHint = ''): bool
+	{
+		if (mf_oem_is_yamaha_brand($brandHint))
+		{
+			return true;
+		}
+		$root = strtoupper(trim($rootHint));
+
+		return $root !== '' && str_starts_with($root, 'YMH');
+	}
+}
+
+if (!function_exists('mf_oem_find_yamaha_catalog_product_ids'))
+{
+	/**
+	 * Yamaha: точное совпадение MF_ARTICLE_NORM и более длинные артикулы,
+	 * в которые короткий номер входит целиком (9581206014 ⊂ 958120601400).
+	 *
+	 * @return list<int>
+	 */
+	function mf_oem_find_yamaha_catalog_product_ids(int $iblockId, string $articleNorm): array
+	{
+		$ids = [];
+		$collect = static function (array $filter, int $limit) use ($articleNorm, &$ids): void {
+			$rs = \CIBlockElement::GetList(
+				['ID' => 'ASC'],
+				$filter,
+				false,
+				['nTopCount' => $limit],
+				['ID', 'PROPERTY_MF_ARTICLE_NORM', 'PROPERTY_MF_BRAND', 'PROPERTY_MF_BRAND_NORM']
+			);
+			while ($row = $rs->Fetch())
+			{
+				$pid = (int)($row['ID'] ?? 0);
+				if ($pid <= 0 || isset($ids[$pid]))
+				{
+					continue;
+				}
+				$brand = trim((string)($row['PROPERTY_MF_BRAND_VALUE'] ?? ''));
+				$brandNorm = trim((string)($row['PROPERTY_MF_BRAND_NORM_VALUE'] ?? ''));
+				if (!mf_oem_is_yamaha_brand($brand) && !mf_oem_is_yamaha_brand($brandNorm))
+				{
+					continue;
+				}
+				$foundNorm = mf_oem_normalize_part_number((string)($row['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''));
+				if ($foundNorm === '')
+				{
+					continue;
+				}
+				$isExact = ($foundNorm === $articleNorm);
+				$isContainedLonger = (strlen($foundNorm) > strlen($articleNorm)
+					&& strpos($foundNorm, $articleNorm) !== false);
+				if (!$isExact && !$isContainedLonger)
+				{
+					continue;
+				}
+				$ids[$pid] = true;
+			}
+		};
+
+		$baseFilter = [
+			'IBLOCK_ID' => $iblockId,
+			'ACTIVE' => 'Y',
+			'!PROPERTY_MF_IS_REDIRECT' => 'Y',
+		];
+		$collect($baseFilter + ['=PROPERTY_MF_ARTICLE_NORM' => $articleNorm], 24);
+		// Короткий префикс даст слишком много ложных вхождений.
+		if (strlen($articleNorm) >= 6)
+		{
+			$collect($baseFilter + ['%PROPERTY_MF_ARTICLE_NORM' => $articleNorm], 64);
+		}
+
+		return array_map('intval', array_keys($ids));
+	}
+}
+
 if (!function_exists('mf_oem_find_catalog_products'))
 {
 	/**
 	 * @return array<int, array{id:int,name:string,brand:string,code:string,url:string}>
 	 */
-	function mf_oem_find_catalog_products(string $partNumber, string $brandHint = ''): array
+	function mf_oem_find_catalog_products(string $partNumber, string $brandHint = '', string $rootHint = ''): array
 	{
 		$articleNorm = mf_oem_normalize_part_number($partNumber);
 		if ($articleNorm === '' || !class_exists(\CIBlockElement::class))
@@ -49,43 +137,52 @@ if (!function_exists('mf_oem_find_catalog_products'))
 
 		$iblockId = 4;
 		$brandHint = trim($brandHint);
+		$rootHint = trim($rootHint);
 		$brandNorm = '';
 		if ($brandHint !== '')
 		{
 			$brandNorm = mf_oem_normalize_brand($brandHint);
 		}
 
+		$yamahaLookup = mf_oem_is_yamaha_lookup($brandHint, $rootHint);
 		$productIds = [];
-		if (function_exists('mf_ep_find_product'))
+		if ($yamahaLookup)
 		{
-			$matched = mf_ep_find_product($iblockId, $articleNorm, $brandHint, $brandNorm);
-			if ($matched)
-			{
-				$productIds[] = (int)$matched;
-			}
+			$productIds = mf_oem_find_yamaha_catalog_product_ids($iblockId, $articleNorm);
 		}
-
-		if ($productIds === [])
+		else
 		{
-			$filter = [
-				'IBLOCK_ID' => $iblockId,
-				'=PROPERTY_MF_ARTICLE_NORM' => $articleNorm,
-				'ACTIVE' => 'Y',
-				'!PROPERTY_MF_IS_REDIRECT' => 'Y',
-			];
-			$rs = \CIBlockElement::GetList(
-				['ID' => 'ASC'],
-				$filter,
-				false,
-				['nTopCount' => 8],
-				['ID']
-			);
-			while ($row = $rs->Fetch())
+			if (function_exists('mf_ep_find_product'))
 			{
-				$pid = (int)($row['ID'] ?? 0);
-				if ($pid > 0)
+				$matched = mf_ep_find_product($iblockId, $articleNorm, $brandHint, $brandNorm);
+				if ($matched)
 				{
-					$productIds[] = $pid;
+					$productIds[] = (int)$matched;
+				}
+			}
+
+			if ($productIds === [])
+			{
+				$filter = [
+					'IBLOCK_ID' => $iblockId,
+					'=PROPERTY_MF_ARTICLE_NORM' => $articleNorm,
+					'ACTIVE' => 'Y',
+					'!PROPERTY_MF_IS_REDIRECT' => 'Y',
+				];
+				$rs = \CIBlockElement::GetList(
+					['ID' => 'ASC'],
+					$filter,
+					false,
+					['nTopCount' => 8],
+					['ID']
+				);
+				while ($row = $rs->Fetch())
+				{
+					$pid = (int)($row['ID'] ?? 0);
+					if ($pid > 0)
+					{
+						$productIds[] = $pid;
+					}
 				}
 			}
 		}
@@ -99,12 +196,18 @@ if (!function_exists('mf_oem_find_catalog_products'))
 		}
 
 		$out = [];
+		$articleById = [];
+		$select = ['ID', 'NAME', 'CODE', 'PROPERTY_MF_BRAND'];
+		if ($yamahaLookup)
+		{
+			$select[] = 'PROPERTY_MF_ARTICLE_NORM';
+		}
 		$rs = \CIBlockElement::GetList(
 			['ID' => 'ASC'],
 			['IBLOCK_ID' => $iblockId, 'ID' => $productIds, 'ACTIVE' => 'Y'],
 			false,
 			false,
-			['ID', 'NAME', 'CODE', 'PROPERTY_MF_BRAND']
+			$select
 		);
 		while ($row = $rs->Fetch())
 		{
@@ -124,6 +227,31 @@ if (!function_exists('mf_oem_find_catalog_products'))
 				'code' => $code,
 				'url' => $url,
 			];
+			if ($yamahaLookup)
+			{
+				$articleById[$pid] = mf_oem_normalize_part_number((string)($row['PROPERTY_MF_ARTICLE_NORM_VALUE'] ?? ''));
+			}
+		}
+
+		if ($yamahaLookup && count($out) > 1)
+		{
+			usort($out, static function (array $a, array $b) use ($articleNorm, $articleById): int {
+				$aNorm = (string)($articleById[(int)$a['id']] ?? '');
+				$bNorm = (string)($articleById[(int)$b['id']] ?? '');
+				$aExact = ($aNorm === $articleNorm) ? 0 : 1;
+				$bExact = ($bNorm === $articleNorm) ? 0 : 1;
+				if ($aExact !== $bExact)
+				{
+					return $aExact <=> $bExact;
+				}
+				$lenCmp = strlen($aNorm) <=> strlen($bNorm);
+				if ($lenCmp !== 0)
+				{
+					return $lenCmp;
+				}
+
+				return ((int)$a['id']) <=> ((int)$b['id']);
+			});
 		}
 
 		return $out;
@@ -308,7 +436,7 @@ if (!function_exists('mf_oem_part_offers_payload'))
 	/**
 	 * @return array{ok:bool,part_number:string,products:array<int,array>,empty_message:string,error?:string}
 	 */
-	function mf_oem_part_offers_payload(string $partNumber, string $brandHint = ''): array
+	function mf_oem_part_offers_payload(string $partNumber, string $brandHint = '', string $rootHint = ''): array
 	{
 		$partNumber = trim($partNumber);
 		if ($partNumber === '')
@@ -334,7 +462,7 @@ if (!function_exists('mf_oem_part_offers_payload'))
 			require_once $cardLib;
 		}
 
-		$products = mf_oem_find_catalog_products($partNumber, $brandHint);
+		$products = mf_oem_find_catalog_products($partNumber, $brandHint, $rootHint);
 		if ($products === [])
 		{
 			return [

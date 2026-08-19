@@ -21,6 +21,7 @@ try
 {
 	$partNumber = trim((string)($_REQUEST['partNumber'] ?? $_REQUEST['part_number'] ?? ''));
 	$brandHint = trim((string)($_REQUEST['brand'] ?? ''));
+	$rootHint = trim((string)($_REQUEST['root'] ?? $_REQUEST['root_arib'] ?? ''));
 
 	$lib = (string)($_SERVER['DOCUMENT_ROOT'] ?? '') . '/local/php_interface/include/mf_oem_part_offers.php';
 	if (!is_file($lib))
@@ -29,7 +30,7 @@ try
 	}
 	require_once $lib;
 
-	$result = mf_oem_part_offers_payload($partNumber, $brandHint);
+	$result = mf_oem_part_offers_payload($partNumber, $brandHint, $rootHint);
 	if (empty($result['ok']))
 	{
 		http_response_code(400);
