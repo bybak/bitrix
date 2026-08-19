@@ -305,7 +305,7 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 										v-for="hotspot in diagramPayload.hotspots"
 										:key="hotspot.id"
 										class="mf-oem-hotspot"
-										:class="{ '-active': activeAssemblyPartId === hotspot.assembly_part_id }"
+										:class="{ '-active': isDiagramPartActive(hotspot.assembly_part_id) }"
 										type="button"
 										:style="hotspotStyle(hotspot)"
 										:data-ref="hotspot.ref || null"
@@ -330,7 +330,7 @@ $APPLICATION->SetPageProperty('description', 'OEM каталог схем зап
 						>
 							<div
 								class="mf-oem-part-row"
-								:class="{ '-active': activeAssemblyPartId === part.assembly_part_id }"
+								:class="{ '-active': isDiagramPartActive(part.assembly_part_id) }"
 								:data-part-id="part.assembly_part_id"
 								role="button"
 								tabindex="0"

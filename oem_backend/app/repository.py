@@ -231,10 +231,50 @@ def _nav_variant_count_sql(nav_alias: str = "n") -> str:
     """
 
 
+def _is_year_nav_title(title: str | None) -> bool:
+    value = (title or "").strip()
+    return len(value) == 4 and value.isdigit() and value[:2] in {"19", "20"}
+
+
+def _sort_nav_children(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    years = [row for row in rows if _is_year_nav_title(str(row.get("title") or ""))]
+    if len(years) < 2:
+        return rows
+    rest = [row for row in rows if not _is_year_nav_title(str(row.get("title") or ""))]
+    years.sort(key=lambda row: int(str(row.get("title") or "").strip()), reverse=True)
+    return years + rest
+
+
 def list_nav_children(root: str, parent_id: int | None = None) -> list[dict[str, Any]]:
     variant_count_sql = _nav_variant_count_sql("n")
     if parent_id is None:
-        return fetch_all(
+        return _sort_nav_children(
+            fetch_all(
+                f"""
+                SELECT
+                  n.id,
+                  n.root_arib,
+                  n.parent_id,
+                  n.aria,
+                  n.slug,
+                  n.rel,
+                  n.title,
+                  n.path_json,
+                  n.depth,
+                  (
+                    SELECT COUNT(*) FROM oem_nav_nodes c WHERE c.parent_id = n.id
+                  ) AS child_count,
+                  {variant_count_sql}
+                FROM oem_nav_nodes n
+                WHERE n.root_arib = %s AND n.parent_id IS NULL AND n.rel <> 'region'
+                ORDER BY n.sort_order, n.title
+                """,
+                (root.upper(),),
+                root_arib=root,
+            )
+        )
+    return _sort_nav_children(
+        fetch_all(
             f"""
             SELECT
               n.id,
@@ -251,34 +291,12 @@ def list_nav_children(root: str, parent_id: int | None = None) -> list[dict[str,
               ) AS child_count,
               {variant_count_sql}
             FROM oem_nav_nodes n
-            WHERE n.root_arib = %s AND n.parent_id IS NULL AND n.rel <> 'region'
+            WHERE n.root_arib = %s AND n.parent_id = %s
             ORDER BY n.sort_order, n.title
             """,
-            (root.upper(),),
+            (root.upper(), parent_id),
             root_arib=root,
         )
-    return fetch_all(
-        f"""
-        SELECT
-          n.id,
-          n.root_arib,
-          n.parent_id,
-          n.aria,
-          n.slug,
-          n.rel,
-          n.title,
-          n.path_json,
-          n.depth,
-          (
-            SELECT COUNT(*) FROM oem_nav_nodes c WHERE c.parent_id = n.id
-          ) AS child_count,
-          {variant_count_sql}
-        FROM oem_nav_nodes n
-        WHERE n.root_arib = %s AND n.parent_id = %s
-        ORDER BY n.sort_order, n.title
-        """,
-        (root.upper(), parent_id),
-        root_arib=root,
     )
 
 

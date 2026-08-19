@@ -351,7 +351,7 @@
 					root: this.selected.root.arib_code,
 					parent_id: this.currentParentId
 				})).then(function (items) {
-					self.navNodes = items;
+					self.navNodes = self.sortYearNavNodes(items || []);
 				});
 			},
 			loadVariantsForNav: function (navNodeId) {
@@ -959,6 +959,44 @@
 					return this.loadDiagram();
 				}
 			},
+			navYearValue: function (node) {
+				var title = String((node && node.title) || '').trim();
+				if (/^(19|20)\d{2}$/.test(title)) {
+					return Number(title);
+				}
+				return 0;
+			},
+			isYearNavNode: function (node) {
+				if (!node) {
+					return false;
+				}
+				if (String(node.rel || '').toLowerCase() === 'year') {
+					return true;
+				}
+				return this.navYearValue(node) > 0;
+			},
+			sortYearNavNodes: function (items) {
+				if (!items || !items.length) {
+					return items || [];
+				}
+				var self = this;
+				var years = [];
+				var rest = [];
+				for (var i = 0; i < items.length; i += 1) {
+					if (self.isYearNavNode(items[i]) && self.navYearValue(items[i]) > 0) {
+						years.push(items[i]);
+					} else {
+						rest.push(items[i]);
+					}
+				}
+				if (years.length < 2) {
+					return items;
+				}
+				years.sort(function (a, b) {
+					return self.navYearValue(b) - self.navYearValue(a);
+				});
+				return years.concat(rest);
+			},
 			navSubtitle: function (node) {
 				var parts = [];
 				if (node.rel === 'product') {
@@ -1253,6 +1291,12 @@
 					height: img.clientHeight
 				};
 				this.clampDiagramPan();
+			},
+			isDiagramPartActive: function (assemblyPartId) {
+				if (this.activeAssemblyPartId == null || assemblyPartId == null || assemblyPartId === '') {
+					return false;
+				}
+				return Number(this.activeAssemblyPartId) === Number(assemblyPartId);
 			},
 			focusPart: function (assemblyPartId, options) {
 				if (!assemblyPartId) {
