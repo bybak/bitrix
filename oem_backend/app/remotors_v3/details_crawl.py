@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import os
+import signal
 import sqlite3
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+import httpx
 import psycopg
 from psycopg.rows import dict_row
 
@@ -30,11 +35,43 @@ from app.remotors_v3.client import (
     make_client,
 )
 from app.remotors_v3.constants import BULK_BATCH_SIZE, PROGRESS_INTERVAL_SEC
-from app.remotors_v3.image_compress import compress_image_bytes
+from app.remotors_v3.image_compress import compress_image_file
 from app.remotors_v3.progress import ProgressReporter
 
 
 _thread_local = threading.local()
+
+# Docker Desktop now has ~48GiB. Cap is a safety net, not a throttle.
+# Locks MUST live in container /tmp (flock on ./storage is tiny on Docker Desktop).
+_IMAGE_SLOT_COUNT = 48
+_IMAGE_MAX_BYTES = 20 * 1024 * 1024
+_IMAGE_PNGQUANT_SPEED = 11
+
+
+@contextmanager
+def _image_work_slot() -> Iterator[None]:
+    slot_dir = Path("/tmp/oem-image-crawl-slots")
+    slot_dir.mkdir(parents=True, exist_ok=True)
+    fd: int | None = None
+    while fd is None:
+        for index in range(_IMAGE_SLOT_COUNT):
+            candidate = os.open(slot_dir / f"{index}.lock", os.O_CREAT | os.O_RDWR, 0o644)
+            try:
+                fcntl.flock(candidate, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fd = candidate
+                break
+            except BlockingIOError:
+                os.close(candidate)
+        if fd is None:
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
 
 
 def _thread_http_client() -> Any:
@@ -102,7 +139,7 @@ def _claim_batch_pg(*, phase: str, force: bool, batch_size: int = 1) -> list[dic
     """
     batch_size = max(1, int(batch_size))
     _ = force
-    statuses = ("pending", "running")
+    statuses = ("pending",)
     if phase == "html":
         select_sql = """
             SELECT
@@ -533,43 +570,67 @@ def _process_image_row(row: dict[str, Any], *, force: bool, progress: ProgressRe
         progress.advance(f"skip no-image placeholder assembly={assembly_id}")
         return
     try:
-        client = _thread_http_client()
-        response = client.get(image_url, headers={"User-Agent": "MotorForceOEMBot/0.1"})
-        response.raise_for_status()
-        final_url = str(response.url) if response.url else image_url
-        if is_placeholder_diagram_url(final_url):
-            _mark_image_skipped(assembly_id, "no-image placeholder", image_url=final_url)
-            with stats_lock:
-                stats["skipped"] += 1
-            progress.advance(f"skip no-image placeholder assembly={assembly_id}")
-            return
-        content = response.content
-        ext = ".png" if "png" in (response.headers.get("content-type") or "") else ".jpg"
-        image_path = _image_storage_path(root_arib, assembly_id, ext)
-        # Compress in-place path: original is never written to disk.
-        compressed = compress_image_bytes(content, image_path, ext=ext)
-        rel_path = str(image_path.relative_to(Path(get_settings().asset_root)))
-        mime_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
-        _mark_image_ok(assembly_id, rel_path, image_url, compressed, mime_type=mime_type)
+        with _image_work_slot():
+            client = _thread_http_client()
+            with tempfile.TemporaryDirectory(prefix="oem-dl-") as tmpdir:
+                raw_path = Path(tmpdir) / "src.bin"
+                with client.stream("GET", image_url, headers={"User-Agent": "MotorForceOEMBot/0.1"}) as response:
+                    response.raise_for_status()
+                    final_url = str(response.url) if response.url else image_url
+                    if is_placeholder_diagram_url(final_url):
+                        _mark_image_skipped(assembly_id, "no-image placeholder", image_url=final_url)
+                        with stats_lock:
+                            stats["skipped"] += 1
+                        progress.advance(f"skip no-image placeholder assembly={assembly_id}")
+                        return
+                    written = 0
+                    ctype = (response.headers.get("content-type") or "").lower()
+                    with raw_path.open("wb") as fh:
+                        for chunk in response.iter_bytes(64 * 1024):
+                            written += len(chunk)
+                            if written > _IMAGE_MAX_BYTES:
+                                raise RuntimeError(f"image too large ({written} bytes)")
+                            fh.write(chunk)
+                if written <= 0:
+                    raise RuntimeError("empty image body")
+                ext = ".png" if "png" in ctype or not ctype else ".jpg"
+                image_path = _image_storage_path(root_arib, assembly_id, ext)
+                compressed = compress_image_file(
+                    raw_path,
+                    image_path,
+                    ext=ext,
+                    pngquant_speed=_IMAGE_PNGQUANT_SPEED,
+                )
+            rel_path = str(image_path.relative_to(Path(get_settings().asset_root)))
+            mime_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+            _mark_image_ok(assembly_id, rel_path, image_url, compressed, mime_type=mime_type)
         with stats_lock:
             stats["ok"] += 1
-        progress.advance(f"image ok assembly={assembly_id}")
+            progress.advance(f"image ok assembly={assembly_id}")
     except Exception as exc:
+        err = " ".join(str(exc).split())
+        status = getattr(getattr(exc, "response", None), "status_code", None)
         # 404 on NoImage.gif/Max (and similar) is not a real failure — do not retry.
-        if is_placeholder_diagram_url(image_url) or "noimage" in str(exc).lower():
+        if is_placeholder_diagram_url(image_url) or "noimage" in err.lower():
             _mark_image_skipped(assembly_id, "no-image placeholder", image_url=image_url)
             with stats_lock:
                 stats["skipped"] += 1
             progress.advance(f"skip no-image placeholder assembly={assembly_id}")
             return
+        if isinstance(exc, httpx.HTTPStatusError) and status in {400, 403, 404}:
+            _mark_image_skipped(assembly_id, f"cdn http {status}", image_url=image_url)
+            with stats_lock:
+                stats["skipped"] += 1
+            progress.advance(f"skip cdn http {status} assembly={assembly_id}")
+            return
         if is_retryable_http_error(exc):
-            _reset_image_pending(assembly_id, str(exc))
-            progress.advance(f"RETRY image assembly={assembly_id}: {exc}")
+            _reset_image_pending(assembly_id, err)
+            progress.advance(f"RETRY image assembly={assembly_id}: {err}")
         else:
             with stats_lock:
                 stats["errors"] += 1
-            _mark_image_error(assembly_id, str(exc))
-            progress.advance(f"ERROR image assembly={assembly_id}: {exc}")
+            _mark_image_error(assembly_id, err)
+            progress.advance(f"ERROR image assembly={assembly_id}: {err}")
 
 
 def crawl_details(
@@ -591,6 +652,10 @@ def crawl_details(
         raise ValueError(f"worker_id must be 0..{workers - 1}")
     concurrency = max(1, int(concurrency))
     set_catalog_db(db_code)
+    try:
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    except (ValueError, OSError):
+        pass
 
     _ensure_pg_crawl_schema()
     if worker_id == 0:
@@ -607,34 +672,49 @@ def crawl_details(
     worker_label = f"crawl-{phase}" if workers == 1 else f"crawl-{phase}-w{worker_id}/{workers}"
     if concurrency > 1:
         worker_label = f"{worker_label}x{concurrency}"
-    progress = ProgressReporter(total=0, label=worker_label)
+    log_path = Path(get_settings().asset_root).parent / f"{db_code}-crawl-{phase}-w{worker_id}.log"
+    progress = ProgressReporter(total=0, label=worker_label, log_path=log_path)
     progress.enable_thread_safe()
+    print(f"[crawl-{phase}] log={log_path}", flush=True)
     stats = {"ok": 0, "errors": 0, "skipped": 0}
     stats_lock = threading.Lock()
-    last_tick = time.monotonic()
     processed = 0
     process_row = _process_html_row if phase == "html" else _process_image_row
+    stop_hb = threading.Event()
 
-    with ThreadPoolExecutor(max_workers=concurrency) as executor:
-        while True:
-            if limit and processed >= limit:
-                break
-            batch_size = concurrency if not limit else min(concurrency, limit - processed)
-            rows = _claim_batch_pg(phase=phase, force=force, batch_size=batch_size)
-            if not rows:
-                break
-            processed += len(rows)
-            futures = [
-                executor.submit(process_row, row, force=force, progress=progress, stats=stats, stats_lock=stats_lock)
-                for row in rows
-            ]
-            for future in futures:
-                future.result()
+    def _heartbeat() -> None:
+        while not stop_hb.wait(PROGRESS_INTERVAL_SEC):
+            with stats_lock:
+                progress.tick(
+                    f"alive ok={stats['ok']} errors={stats['errors']} skipped={stats['skipped']}",
+                    force=True,
+                )
 
-            if time.monotonic() - last_tick >= PROGRESS_INTERVAL_SEC:
-                with stats_lock:
-                    progress.tick(f"ok={stats['ok']} errors={stats['errors']}")
-                last_tick = time.monotonic()
+    hb = threading.Thread(target=_heartbeat, name=f"{worker_label}-hb", daemon=True)
+    hb.start()
+
+    try:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            while True:
+                if limit and processed >= limit:
+                    break
+                batch_size = concurrency if not limit else min(concurrency, limit - processed)
+                rows = _claim_batch_pg(phase=phase, force=force, batch_size=batch_size)
+                if not rows:
+                    break
+                processed += len(rows)
+                futures = [
+                    executor.submit(process_row, row, force=force, progress=progress, stats=stats, stats_lock=stats_lock)
+                    for row in rows
+                ]
+                for future in futures:
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        err = " ".join(str(exc).split())
+                        print(f"[{worker_label}] task failed: {err}", flush=True)
+    finally:
+        stop_hb.set()
 
     progress.finish(f"crawl-{phase} stats={stats}")
     return stats

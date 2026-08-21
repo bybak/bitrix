@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_dsn: str = "postgresql://oem_user:oem_password@localhost:5432/oem_catalog"
     yamaha_database_dsn: str = "postgresql://yamaha_user:yamaha_password@localhost:5432/yamaha_catalog"
     arctic_database_dsn: str = "postgresql://arctic_user:arctic_password@localhost:5432/arctic_catalog"
+    polaris_database_dsn: str = "postgresql://polaris_user:polaris_password@localhost:5432/polaris_catalog"
     registry_database_dsn: str = (
         "postgresql://oem_registry_user:oem_registry_password@localhost:5432/oem_registry"
     )

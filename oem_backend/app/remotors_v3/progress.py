@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TextIO
 
 from app.remotors_v3.constants import PROGRESS_INTERVAL_SEC
@@ -23,6 +24,7 @@ class ProgressReporter:
     total: int
     label: str = "remotors-v3"
     stream: TextIO = sys.stdout
+    log_path: Path | None = None
     min_interval_sec: float = PROGRESS_INTERVAL_SEC
     started_at: float = field(default_factory=time.monotonic)
     indeterminate: bool = field(default=False, init=False)
@@ -116,8 +118,8 @@ class ProgressReporter:
             self.stage_done = self.stage_total
             self._emit(message, force=True)
 
-    def tick(self, message: str = "heartbeat") -> None:
-        self._emit(message, force=False)
+    def tick(self, message: str = "heartbeat", *, force: bool = False) -> None:
+        self._emit(message, force=force)
 
     def _emit(self, message: str, *, force: bool = False) -> None:
         now = time.monotonic()
@@ -127,27 +129,30 @@ class ProgressReporter:
         elapsed = now - self.started_at
         rate = self.done / elapsed if elapsed > 0 else 0
         if self.indeterminate:
-            print(
-                (
-                    f"[{self.label}] {message} | "
-                    f"done={self.done} | "
-                    f"rate={rate:.2f}/s | "
-                    f"elapsed={format_duration(elapsed)}"
-                ),
-                file=self.stream,
-                flush=True,
+            line = (
+                f"[{self.label}] {message} | "
+                f"done={self.done} | "
+                f"rate={rate:.2f}/s | "
+                f"elapsed={format_duration(elapsed)}"
             )
-            return
-        overall_percent = (self.done / self.total * 100) if self.total > 0 else 0.0
-        stage_percent = (self.stage_done / self.stage_total * 100) if self.stage_total > 0 else 0.0
-        remaining = (self.total - self.done) / rate if rate > 0 and self.total > self.done else 0
-        print(
-            (
+        else:
+            overall_percent = (self.done / self.total * 100) if self.total > 0 else 0.0
+            stage_percent = (self.stage_done / self.stage_total * 100) if self.stage_total > 0 else 0.0
+            remaining = (self.total - self.done) / rate if rate > 0 and self.total > self.done else 0
+            line = (
                 f"[{self.label}] {message} | "
                 f"stage={self.stage or '-'} {self.stage_done}/{self.stage_total} ({stage_percent:5.1f}%) | "
                 f"overall={self.done}/{self.total} ({overall_percent:5.1f}%) | "
                 f"elapsed={format_duration(elapsed)} eta={format_duration(remaining)}"
-            ),
-            file=self.stream,
-            flush=True,
-        )
+            )
+        if self.log_path:
+            try:
+                self.log_path.parent.mkdir(parents=True, exist_ok=True)
+                with self.log_path.open("a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+            except OSError:
+                pass
+        try:
+            print(line, file=self.stream, flush=True)
+        except BrokenPipeError:
+            pass

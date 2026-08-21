@@ -14,7 +14,7 @@ from app.config import get_settings
 _LOCK = threading.Lock()
 _CATALOG_DB = "remotors"
 
-SUPPORTED = ("remotors", "arctic")
+SUPPORTED = ("remotors", "arctic", "polaris")
 
 
 def set_catalog_db(db_code: str) -> None:
@@ -36,20 +36,33 @@ def catalog_dsn() -> str:
     code = get_catalog_db()
     if code == "arctic":
         return settings.arctic_database_dsn
+    if code == "polaris":
+        return settings.polaris_database_dsn
     return settings.database_dsn
 
 
 def html_storage_root_name() -> str:
-    return "arctic-html" if get_catalog_db() == "arctic" else "remotors-html"
+    code = get_catalog_db()
+    if code == "arctic":
+        return "arctic-html"
+    if code == "polaris":
+        return "polaris-html"
+    return "remotors-html"
 
 
 def diagram_storage_root_name() -> str:
-    return "arctic" if get_catalog_db() == "arctic" else "remotors"
+    code = get_catalog_db()
+    if code == "arctic":
+        return "arctic"
+    if code == "polaris":
+        return "polaris"
+    return "remotors"
 
 
 def default_sidecar_path() -> str:
-    return (
-        "storage/arctic-details-crawl.db"
-        if get_catalog_db() == "arctic"
-        else "storage/remotors-details-crawl.db"
-    )
+    code = get_catalog_db()
+    if code == "arctic":
+        return "storage/arctic-details-crawl.db"
+    if code == "polaris":
+        return "storage/polaris-details-crawl.db"
+    return "storage/remotors-details-crawl.db"

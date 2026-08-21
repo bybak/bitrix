@@ -6,9 +6,11 @@ Original bytes are never kept on disk — only the compressed file is written.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -207,14 +209,64 @@ def compress_image_bytes(
         compressed = out.read_bytes()
         if not compressed:
             raise RuntimeError("compressed image is empty")
-        # Create leaf dir only after successful compress (avoid empty assembly folders on failure).
         dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
-        if tmp_dest.exists():
-            tmp_dest.unlink(missing_ok=True)
+        tmp_dest = dest.parent / f".{dest.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
         tmp_dest.write_bytes(compressed)
-        tmp_dest.replace(dest)
+        try:
+            os.replace(tmp_dest, dest)
+        except FileNotFoundError:
+            dest.write_bytes(compressed)
+            tmp_dest.unlink(missing_ok=True)
         return compressed
+
+
+def compress_image_file(
+    src: Path,
+    dest: Path,
+    *,
+    ext: str,
+    jpeg_quality: int = DEFAULT_JPEG_QUALITY,
+    png_quality: int = DEFAULT_PNG_QUALITY,
+    png_colors: int = DEFAULT_PNG_COLORS,
+    pngquant_speed: int = DEFAULT_PNGQUANT_SPEED,
+) -> bytes:
+    """Compress an on-disk download. PNG uses pngquant only (no Pillow) to avoid OOM."""
+    suffix = (ext or dest.suffix or ".png").lower()
+    if not suffix.startswith("."):
+        suffix = f".{suffix}"
+    if suffix == ".jpeg":
+        suffix = ".jpg"
+    dest = dest.with_suffix(suffix)
+    out = src.with_name(f"out{suffix}")
+    if suffix == ".png":
+        ok = _compress_png_lossy(
+            src,
+            out,
+            quality=png_quality,
+            colors_override=png_colors,
+            pngquant_speed=pngquant_speed,
+        )
+        if not ok or not out.is_file() or out.stat().st_size <= 0:
+            raise RuntimeError("PNG compress failed (pngquant)")
+    elif suffix in {".jpg", ".jpeg"}:
+        with Image.open(src) as img:
+            img.load()
+            img = ImageOps.exif_transpose(img)
+            _save_jpeg(img, out, quality=jpeg_quality)
+    else:
+        raise RuntimeError(f"unsupported image type {suffix}")
+    compressed = out.read_bytes()
+    if not compressed:
+        raise RuntimeError("compressed image is empty")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dest = dest.parent / f".{dest.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+    tmp_dest.write_bytes(compressed)
+    try:
+        os.replace(tmp_dest, dest)
+    except FileNotFoundError:
+        dest.write_bytes(compressed)
+        tmp_dest.unlink(missing_ok=True)
+    return compressed
 
 
 __all__ = [
@@ -222,4 +274,5 @@ __all__ = [
     "DEFAULT_PNG_COLORS",
     "DEFAULT_PNG_QUALITY",
     "compress_image_bytes",
+    "compress_image_file",
 ]

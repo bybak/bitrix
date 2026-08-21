@@ -58,6 +58,7 @@ def _default_dsn_for_code(db_code: str) -> str:
         "remotors": settings.database_dsn,
         "yamaha": settings.yamaha_database_dsn,
         "arctic": settings.arctic_database_dsn,
+        "polaris": settings.polaris_database_dsn,
     }
     if db_code not in defaults:
         raise KeyError(f"no default DSN for catalog database: {db_code}")

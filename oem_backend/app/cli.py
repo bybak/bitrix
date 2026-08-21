@@ -90,12 +90,12 @@ def main() -> None:
     imp.add_argument("--no-resume", action="store_true")
 
     seed = subparsers.add_parser("seed-remotors-crawl", help="Seed crawl sidecar from PostgreSQL assemblies")
-    seed.add_argument("--sidecar", default=None, help="Default: storage/{remotors|arctic}-details-crawl.db")
-    seed.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
+    seed.add_argument("--sidecar", default=None, help="Default: storage/{remotors|arctic|polaris}-details-crawl.db")
+    seed.add_argument("--db-code", choices=["remotors", "arctic", "polaris"], default="remotors")
 
     crawl = subparsers.add_parser("crawl-remotors-details", help="Crawl GetDetails HTML or diagram images")
     crawl.add_argument("--phase", choices=["html", "images"], required=True)
-    crawl.add_argument("--sidecar", default=None, help="Default: storage/{remotors|arctic}-details-crawl.db")
+    crawl.add_argument("--sidecar", default=None, help="Default: storage/{remotors|arctic|polaris}-details-crawl.db")
     crawl.add_argument("--limit", type=int, default=None)
     crawl.add_argument("--force", action="store_true")
     crawl.add_argument("--worker-id", type=int, default=0, help="Worker index 0..workers-1 for parallel crawl")
@@ -106,7 +106,7 @@ def main() -> None:
         default=1,
         help="Parallel HTTP requests per worker (default 1; try 4-8 for faster html crawl)",
     )
-    crawl.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
+    crawl.add_argument("--db-code", choices=["remotors", "arctic", "polaris"], default="remotors")
 
     parse_cmd = subparsers.add_parser("parse-remotors-details", help="Offline parse saved HTML into PostgreSQL")
     parse_cmd.add_argument("--sidecar", default=None, help="Legacy; progress is in PostgreSQL")
@@ -120,7 +120,7 @@ def main() -> None:
         default=8,
         help="Parallel parse jobs (default 8; capped at 24). Bottleneck is PG writes, not HTML I/O.",
     )
-    parse_cmd.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
+    parse_cmd.add_argument("--db-code", choices=["remotors", "arctic", "polaris"], default="remotors")
 
     coords_cmd = subparsers.add_parser(
         "backfill-diagram-coords",
@@ -130,7 +130,7 @@ def main() -> None:
     coords_cmd.add_argument("--force", action="store_true")
     coords_cmd.add_argument("--worker-id", type=int, default=0, help="Worker index 0..workers-1")
     coords_cmd.add_argument("--workers", type=int, default=1, help="Split diagrams by assembly_id %% workers")
-    coords_cmd.add_argument("--db-code", choices=["remotors", "arctic"], default="remotors")
+    coords_cmd.add_argument("--db-code", choices=["remotors", "arctic", "polaris"], default="remotors")
 
     verify = subparsers.add_parser("verify-remotors-v3", help="Verify snapshot vs PostgreSQL counts")
     verify.add_argument("--snapshot", default="storage/remotors-snapshot-v3.db")

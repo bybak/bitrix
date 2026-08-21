@@ -119,6 +119,7 @@ services:
       OEM_DATABASE_DSN: postgresql://oem_user:oem_password@oem_db:5432/oem_catalog
       OEM_YAMAHA_DATABASE_DSN: postgresql://yamaha_user:yamaha_password@yamaha_db:5432/yamaha_catalog
       OEM_ARCTIC_DATABASE_DSN: postgresql://arctic_user:arctic_password@arctic_db:5432/arctic_catalog
+      OEM_POLARIS_DATABASE_DSN: postgresql://polaris_user:polaris_password@polaris_db:5432/polaris_catalog
       OEM_REGISTRY_DATABASE_DSN: postgresql://oem_registry_user:oem_registry_password@oem_registry_db:5432/oem_registry
       OEM_ASSET_ROOT: /app/storage/oem-diagrams
       OEM_PUBLIC_ASSET_BASE_URL: /oem-assets
@@ -136,14 +137,15 @@ services:
         condition: service_healthy
       arctic_db:
         condition: service_healthy
+      polaris_db:
+        condition: service_healthy
       oem_registry_db:
         condition: service_healthy
     extra_hosts:
       - "partstream.arinet.com:67.208.136.218"
-      - "cdn.datamanager.arinet.com:13.33.235.124"
       - "parts.yamaha-motor.co.jp:45.60.14.31"
-      # ypec-sss (иллюстрации) — через обычный DNS/CloudFront, не фиксируем один IP:
-      # один edge под 12 потоков × 10ч даёт timeout / connection refused.
+      # cdn.datamanager.arinet.com — не пинить CloudFront IP: мёртвый edge даёт 400 и обрывы.
+      # ypec-sss (иллюстрации) — через обычный DNS/CloudFront, не фиксируем один IP.
     networks:
       - bitrix
 
@@ -203,6 +205,27 @@ services:
       - ./oem_backend/db/schema_postgres_arctic.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U arctic_user -d arctic_catalog"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - bitrix
+
+  polaris_db:
+    image: postgres:16-alpine
+    container_name: polaris_db
+    restart: unless-stopped
+    shm_size: "512mb"
+    command: ["postgres", "-c", "max_connections=300"]
+    environment:
+      POSTGRES_DB: polaris_catalog
+      POSTGRES_USER: polaris_user
+      POSTGRES_PASSWORD: polaris_password
+    volumes:
+      - polaris_pg_data:/var/lib/postgresql/data
+      - ./oem_backend/db/schema_postgres_polaris.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polaris_user -d polaris_catalog"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -283,6 +306,8 @@ volumes:
   yamaha_pg_data:
     driver: local
   arctic_pg_data:
+    driver: local
+  polaris_pg_data:
     driver: local
   oem_registry_pg_data:
     driver: local
