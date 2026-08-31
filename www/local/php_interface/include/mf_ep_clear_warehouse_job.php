@@ -217,7 +217,7 @@ if (!function_exists('mf_ep_clear_job_plan'))
 			sort($productIds, SORT_NUMERIC);
 			if ($productIds === [])
 			{
-				$hint = 'Нет товаров, привязанных к этому прайсу: загрузите внешний CSV с этим кодом прайса или выполните полную очистку склада.';
+				$hint = 'Нет товаров, привязанных к этому прайсу — код прайса будет удалён из списка.';
 			}
 		}
 		else
@@ -458,8 +458,7 @@ if (!function_exists('mf_ep_clear_job_finalize'))
 		elseif ($mode === 'feed')
 		{
 			$feed = (string)($job['feed_code'] ?? '');
-			$affected = (int)($job['stats']['affected_products'] ?? 0);
-			if ($affected > 0 && $feed !== '' && function_exists('mf_esf_registry_remove_feed'))
+			if ($feed !== '' && function_exists('mf_esf_registry_remove_feed'))
 			{
 				mf_esf_registry_remove_feed($storeId, $feed);
 			}

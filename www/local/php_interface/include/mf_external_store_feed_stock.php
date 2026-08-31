@@ -317,12 +317,59 @@ if (!function_exists('mf_esf_delete_all_price_product_for_store'))
 	}
 }
 
-if (!function_exists('mf_esf_list_feed_codes_for_store'))
+if (!function_exists('mf_esf_feed_product_counts_for_store'))
 {
 	/**
-	 * @return list<string>
+	 * Число привязанных товаров по каждому коду прайса на складе.
+	 *
+	 * @return array<string, int>
 	 */
-	function mf_esf_list_feed_codes_for_store(int $storeId): array
+	function mf_esf_feed_product_counts_for_store(int $storeId): array
+	{
+		$storeId = (int)$storeId;
+		if ($storeId <= 0 || !mf_esf_ensure_price_product_table())
+		{
+			return [];
+		}
+		$conn = mf_esf_conn();
+		if (!$conn)
+		{
+			return [];
+		}
+		$counts = [];
+		try
+		{
+			$res = $conn->query(
+				'SELECT FEED_CODE, COUNT(*) AS CNT FROM mf_external_store_feed_price_product'
+				. ' WHERE STORE_ID = ' . $storeId
+				. ' GROUP BY FEED_CODE'
+			);
+			if ($res)
+			{
+				while ($r = $res->fetch())
+				{
+					$c = trim((string)($r['FEED_CODE'] ?? ''));
+					if ($c !== '')
+					{
+						$counts[$c] = (int)($r['CNT'] ?? 0);
+					}
+				}
+			}
+		}
+		catch (Throwable $e)
+		{
+		}
+
+		return $counts;
+	}
+}
+
+if (!function_exists('mf_esf_list_feeds_for_store'))
+{
+	/**
+	 * @return list<array{feed_code: string, product_count: int}>
+	 */
+	function mf_esf_list_feeds_for_store(int $storeId): array
 	{
 		$storeId = (int)$storeId;
 		if ($storeId <= 0)
@@ -336,6 +383,7 @@ if (!function_exists('mf_esf_list_feed_codes_for_store'))
 		}
 		mf_esf_ensure_registry_table();
 		mf_esf_ensure_price_product_table();
+		$counts = mf_esf_feed_product_counts_for_store($storeId);
 		$set = [];
 		try
 		{
@@ -357,28 +405,41 @@ if (!function_exists('mf_esf_list_feed_codes_for_store'))
 		catch (Throwable $e)
 		{
 		}
-		try
+		foreach (array_keys($counts) as $c)
 		{
-			$resP = $conn->query(
-				'SELECT DISTINCT FEED_CODE FROM mf_external_store_feed_price_product WHERE STORE_ID = ' . $storeId
-			);
-			if ($resP)
+			$set[$c] = true;
+		}
+		$codes = array_keys($set);
+		sort($codes, SORT_STRING);
+		$out = [];
+		foreach ($codes as $c)
+		{
+			$out[] = [
+				'feed_code' => $c,
+				'product_count' => (int)($counts[$c] ?? 0),
+			];
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('mf_esf_list_feed_codes_for_store'))
+{
+	/**
+	 * @return list<string>
+	 */
+	function mf_esf_list_feed_codes_for_store(int $storeId): array
+	{
+		$out = [];
+		foreach (mf_esf_list_feeds_for_store($storeId) as $row)
+		{
+			$c = trim((string)($row['feed_code'] ?? ''));
+			if ($c !== '')
 			{
-				while ($r = $resP->fetch())
-				{
-					$c = trim((string)($r['FEED_CODE'] ?? ''));
-					if ($c !== '')
-					{
-						$set[$c] = true;
-					}
-				}
+				$out[] = $c;
 			}
 		}
-		catch (Throwable $e)
-		{
-		}
-		$out = array_keys($set);
-		sort($out, SORT_STRING);
 
 		return $out;
 	}

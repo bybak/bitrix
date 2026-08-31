@@ -25,6 +25,64 @@ $langForm = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 $curPage = (string)$APPLICATION->GetCurPage();
 
 /**
+ * @param array{feed_code: string, product_count: int} $feedRow
+ */
+function mf_spm_format_feed_label(array $feedRow, bool $forSelect = false): string
+{
+	$code = trim((string)($feedRow['feed_code'] ?? ''));
+	$cnt = (int)($feedRow['product_count'] ?? 0);
+	if ($code === '')
+	{
+		return '—';
+	}
+	$n = number_format($cnt, 0, '', ' ');
+	if ($forSelect)
+	{
+		return $code . ' — ' . $n . ' ' . mf_spm_plural_products($cnt);
+	}
+
+	return $code . ' (' . $n . ' ' . mf_spm_plural_products($cnt) . ')';
+}
+
+function mf_spm_plural_products(int $n): string
+{
+	$n = abs($n) % 100;
+	$n1 = $n % 10;
+	if ($n > 10 && $n < 20)
+	{
+		return 'товаров';
+	}
+	if ($n1 > 1 && $n1 < 5)
+	{
+		return 'товара';
+	}
+	if ($n1 === 1)
+	{
+		return 'товар';
+	}
+
+	return 'товаров';
+}
+
+/**
+ * @param list<array{feed_code: string, product_count: int}> $feeds
+ */
+function mf_spm_render_feeds_list_html(array $feeds): string
+{
+	if ($feeds === [])
+	{
+		return '<span style="color:#888">Пока нет — загрузите внешний прайс CSV, указав код прайса в форме импорта.</span>';
+	}
+	$parts = [];
+	foreach ($feeds as $row)
+	{
+		$parts[] = htmlspecialcharsbx(mf_spm_format_feed_label($row));
+	}
+
+	return implode('<br>', $parts);
+}
+
+/**
  * @param array<string, mixed> $payload
  */
 function mf_spm_json(array $payload): void
@@ -102,6 +160,31 @@ $APPLICATION->SetTitle('Очистка внешних складов');
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 
 ?>
+<style>
+.adm-detail-content-wrap .js-mf-clear-warehouse-form {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	max-width: 480px;
+}
+.adm-detail-content-wrap .js-mf-clear-warehouse-form .js-mf-clear-feed {
+	min-width: 220px;
+	max-width: 100%;
+	flex: 1 1 220px;
+}
+.adm-detail-content-wrap .js-mf-clear-warehouse-form .js-mf-clear-submit {
+	flex-shrink: 0;
+	box-sizing: border-box;
+	cursor: pointer;
+}
+.adm-detail-content-wrap .js-mf-clear-warehouse-form .js-mf-clear-submit:active {
+	padding: 1px 13px 3px !important;
+	height: 29px !important;
+	margin: 2px !important;
+	transform: none !important;
+}
+</style>
 <div class="adm-detail-content-wrap" style="padding:12px;">
 	<div id="mf-clear-progress-global" style="display:none;max-width:960px;margin:0 0 16px;padding:14px;border:1px solid #dce1e5;background:#fafbfc;">
 		<div style="font-weight:600;margin-bottom:8px;">Очистка склада…</div>
@@ -119,8 +202,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 	}
 	?>
 	<p class="adm-info-message">
-		Остатки на внешнем складе хранятся в каталоге (<code>b_catalog_store_product</code>). Частичная очистка по коду прайса обнуляет остатки для товаров из этого прайса (если позиция не привязана к другим прайсам на том же складе) и снимает привязку строк загрузки.
-		Полная очистка удаляет все остатки по складу и все привязки прайсов. Код прайса задаётся при загрузке внешних цен. Операция <strong>необратима</strong>.
+		Остатки на внешнем складе хранятся в каталоге (<code>b_catalog_store_product</code>). 		Частичная очистка по коду прайса обнуляет остатки для товаров из этого прайса (если позиция не привязана к другим прайсам на том же складе), снимает привязку строк загрузки и убирает код прайса из списка.
+		Полная очистка удаляет все остатки по складу и все привязки прайсов. В списке показано число привязанных товаров по каждому коду. Код прайса задаётся при загрузке внешних цен. Операция <strong>необратима</strong>.
 		При большом числе позиций показывается прогресс и примерное время до завершения.
 	</p>
 	<?php
@@ -159,41 +242,41 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 				<?php
 				$eid = (int)($ex['ID'] ?? 0);
 				$etitle = trim((string)($ex['TITLE'] ?? ''));
-				$mfFeedCodes = [];
-				if (function_exists('mf_esf_list_feed_codes_for_store'))
+				$mfFeedRows = [];
+				if (function_exists('mf_esf_list_feeds_for_store'))
 				{
-					$mfFeedCodes = mf_esf_list_feed_codes_for_store($eid);
+					$mfFeedRows = mf_esf_list_feeds_for_store($eid);
 				}
 				?>
 				<tr>
 					<td><?= (int)$eid ?></td>
 					<td><?= htmlspecialcharsbx($etitle !== '' ? $etitle : '—') ?></td>
 					<td><code><?= htmlspecialcharsbx(trim((string)($ex['XML_ID'] ?? '')) !== '' ? trim((string)($ex['XML_ID'] ?? '')) : '—') ?></code></td>
-					<td style="max-width:280px;font-size:12px;line-height:1.4;color:#333;">
-						<?php if ($mfFeedCodes === []): ?>
-							<span style="color:#888">Пока нет — загрузите внешний прайс CSV, указав код прайса в форме импорта.</span>
-						<?php else: ?>
-							<?= htmlspecialcharsbx(implode(', ', $mfFeedCodes)) ?>
-						<?php endif; ?>
+					<td class="js-mf-clear-feeds-list" style="max-width:280px;font-size:12px;line-height:1.4;color:#333;">
+						<?= mf_spm_render_feeds_list_html($mfFeedRows) ?>
 					</td>
 					<td>
 						<form
 							method="post"
 							action="<?= htmlspecialcharsbx($curPage) ?>?lang=<?= htmlspecialcharsbx($langForm) ?>"
 							class="js-mf-clear-warehouse-form"
-							style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:480px;"
 							data-store-id="<?= (int)$eid ?>"
 						>
 							<?= bitrix_sessid_post() ?>
 							<input type="hidden" name="mf_clear_external_warehouse" value="Y" />
 							<input type="hidden" name="store_id" value="<?= (int)$eid ?>" />
-							<select name="feed_code" class="js-mf-clear-feed" style="min-width:220px;max-width:100%;">
+							<select name="feed_code" class="js-mf-clear-feed">
 								<option value="">Весь склад (все прайсы)</option>
-								<?php foreach ($mfFeedCodes as $fc): ?>
-									<option value="<?= htmlspecialcharsbx((string)$fc) ?>"><?= htmlspecialcharsbx((string)$fc) ?></option>
+								<?php foreach ($mfFeedRows as $feedRow): ?>
+									<?php $fc = trim((string)($feedRow['feed_code'] ?? '')); ?>
+									<?php if ($fc === '') { continue; } ?>
+									<option
+										value="<?= htmlspecialcharsbx($fc) ?>"
+										data-product-count="<?= (int)($feedRow['product_count'] ?? 0) ?>"
+									><?= htmlspecialcharsbx(mf_spm_format_feed_label($feedRow, true)) ?></option>
 								<?php endforeach; ?>
 							</select>
-							<button type="submit" class="adm-btn adm-btn-delete js-mf-clear-submit">Очистить</button>
+							<input type="submit" class="adm-btn adm-btn-delete js-mf-clear-submit" value="Очистить" />
 						</form>
 					</td>
 				</tr>
@@ -252,21 +335,78 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 		}).then(function (r) { return r.json(); });
 	}
 
-	function renderResultHtml(res) {
+	function pluralProducts(n) {
+		n = Math.abs(parseInt(n, 10) || 0) % 100;
+		var n1 = n % 10;
+		if (n > 10 && n < 20) return 'товаров';
+		if (n1 > 1 && n1 < 5) return 'товара';
+		if (n1 === 1) return 'товар';
+		return 'товаров';
+	}
+
+	function emptyFeedsListHtml() {
+		return '<span style="color:#888">Пока нет — загрузите внешний прайс CSV, указав код прайса в форме импорта.</span>';
+	}
+
+	function rebuildFeedsCellFromSelect(sel, feedsCell) {
+		if (!feedsCell || !sel) return;
+		var parts = [];
+		Array.prototype.forEach.call(sel.options, function (opt) {
+			if (!opt.value) return;
+			var cnt = parseInt(opt.getAttribute('data-product-count') || '0', 10);
+			parts.push(opt.value + ' (' + cnt + ' ' + pluralProducts(cnt) + ')');
+		});
+		feedsCell.innerHTML = parts.length ? parts.join('<br>') : emptyFeedsListHtml();
+	}
+
+	function updateFeedsListAfterClear(storeId, res, clearedFeedCode) {
+		if (!res || !res.ok) return;
+		document.querySelectorAll('.js-mf-clear-warehouse-form').forEach(function (form) {
+			if (parseInt(form.getAttribute('data-store-id') || '0', 10) !== storeId) return;
+			var sel = form.querySelector('.js-mf-clear-feed');
+			var feedsCell = form.closest('tr').querySelector('.js-mf-clear-feeds-list');
+			if (!sel) return;
+
+			if (res.mode === 'feed' && clearedFeedCode) {
+				Array.prototype.forEach.call(sel.options, function (opt) {
+					if (opt.value === clearedFeedCode) opt.remove();
+				});
+				rebuildFeedsCellFromSelect(sel, feedsCell);
+				return;
+			}
+
+			if (res.mode !== 'feed') {
+				Array.prototype.forEach.call(sel.options, function (opt) {
+					if (opt.value) opt.remove();
+				});
+				if (feedsCell) feedsCell.innerHTML = emptyFeedsListHtml();
+			}
+		});
+	}
+
+	function renderResultHtml(res, storeId, clearedFeedCode) {
 		if (!slot || !res) return;
 		var html = '';
 		if (res.ok) {
 			if (res.mode === 'feed') {
-				html = '<div class="adm-info-message" style="max-width:960px;">Готово. Прайс <strong>' + (res.feed_code || '') + '</strong>: затронуто позиций '
-					+ (res.affected_products || 0) + '; цен сброшено: ' + (res.products_price_cleared || 0)
-					+ '; пересчитано: ' + (res.products_recalc || 0) + '.</div>';
+				var affected = parseInt(res.affected_products || 0, 10);
+				if (affected > 0) {
+					html = '<div class="adm-info-message" style="max-width:960px;">Готово. Прайс <strong>' + (res.feed_code || '') + '</strong>: затронуто позиций '
+						+ affected + '; цен сброшено: ' + (res.products_price_cleared || 0)
+						+ '; пересчитано: ' + (res.products_recalc || 0) + '. Код прайса удалён из списка.</div>';
+				} else {
+					html = '<div class="adm-info-message" style="max-width:960px;">Готово. Прайс <strong>' + (res.feed_code || '')
+						+ '</strong> удалён из списка. Привязанных товаров не было.</div>';
+				}
 				if (res.hint) {
 					html += '<div class="adm-info-message" style="max-width:960px;margin-top:8px;">' + res.hint + '</div>';
 				}
 			} else {
 				html = '<div class="adm-info-message" style="max-width:960px;">Готово. Удалено записей об остатках: '
-					+ (res.deleted_store_rows || 0) + '. Обновлено позиций: ' + (res.products_recalc || 0) + '.</div>';
+					+ (res.deleted_store_rows || 0) + '. Обновлено позиций: ' + (res.products_recalc || 0)
+					+ '. Все коды прайсов удалены из списка.</div>';
 			}
+			updateFeedsListAfterClear(storeId, res, clearedFeedCode);
 		} else {
 			html = '<div class="adm-info-message-wrap adm-info-message-red" style="max-width:960px;"><div class="adm-info-message">'
 				+ (res.error || 'Ошибка') + '</div></div>';
@@ -286,7 +426,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 				}
 				if (start.done && start.result) {
 					showProgress({ pct: 100, note: 'Готово', done: true });
-					renderResultHtml(start.result);
+					renderResultHtml(start.result, storeId, feedCode);
 					return;
 				}
 				var token = start.token || '';
@@ -304,7 +444,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 							var p = st.progress || {};
 							showProgress(p);
 							if (st.done && st.result) {
-								renderResultHtml(st.result);
+								renderResultHtml(st.result, storeId, feedCode);
 								return;
 							}
 							return stepLoop();
@@ -313,7 +453,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 				return stepLoop();
 			})
 			.catch(function (err) {
-				renderResultHtml({ ok: false, error: err && err.message ? err.message : String(err) });
+				renderResultHtml({ ok: false, error: err && err.message ? err.message : String(err) }, storeId, feedCode);
 			})
 			.finally(function () {
 				hideProgress();
