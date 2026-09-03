@@ -31,16 +31,18 @@ if (!Loader::includeModule('iblock') || !Loader::includeModule('catalog'))
 
 $libEp = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_external_price_lib.php';
 $libW = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_weight_xlsx_import_lib.php';
-if (!is_file($libEp) || !is_file($libW))
+$libExport = $_SERVER['DOCUMENT_ROOT'] . '/local/php_interface/include/mf_weights_export_lib.php';
+if (!is_file($libEp) || !is_file($libW) || !is_file($libExport))
 {
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
-	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Не найдены библиотеки mf_external_price_lib / mf_weight_xlsx_import_lib.']);
+	\CAdminMessage::ShowMessage(['TYPE' => 'ERROR', 'MESSAGE' => 'Не найдены библиотеки mf_external_price_lib / mf_weight_xlsx_import_lib / mf_weights_export_lib.']);
 	require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/epilog_admin.php';
 
 	return;
 }
 require_once $libEp;
 require_once $libW;
+require_once $libExport;
 
 $brandDict = $_SERVER['DOCUMENT_ROOT'] . '/mf_brand_dict.php';
 if (is_file($brandDict))
@@ -57,89 +59,6 @@ function mf_wgw_esc(string $s): string
 		: htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-/**
- * Вес (г) в каталоге: первая позиция кластера.
- */
-function mf_wgw_element_weight_grams(int $elementId): int
-{
-	$ids = function_exists('mf_catalog_product_cluster_ids')
-		? mf_catalog_product_cluster_ids($elementId)
-		: [$elementId];
-	$ids = array_values(array_unique(array_filter(
-		$ids,
-		static fn($v) => (int)$v > 0
-	)));
-	if ($ids === [] || !class_exists(\CCatalogProduct::class))
-	{
-		return 0;
-	}
-	$row = \CCatalogProduct::GetByID((int)$ids[0]);
-
-	return isset($row['WEIGHT']) ? (int)$row['WEIGHT'] : 0;
-}
-
-/**
- * @return \Generator<int, array{0: string, 1: string, 2: string, 3: int}>
- */
-function mf_wgw_export_rows(int $iblockIblockId): \Generator
-{
-	$iblockIblockId = (int)$iblockIblockId;
-	$filter = [
-		'IBLOCK_ID' => $iblockIblockId,
-		'ACTIVE' => 'Y',
-		'!=PROPERTY_MF_IS_REDIRECT' => 'Y',
-	];
-	$rs = \CIBlockElement::GetList(
-		['ID' => 'ASC'],
-		$filter,
-		false,
-		false,
-		['ID', 'IBLOCK_ID', 'NAME']
-	);
-	while ($ob = $rs->GetNextElement())
-	{
-		$f = $ob->GetFields();
-		$p = $ob->GetProperties();
-		$id = (int)($f['ID'] ?? 0);
-		if ($id <= 0)
-		{
-			continue;
-		}
-		$brand = (string)($p['MF_BRAND']['VALUE'] ?? '');
-		if (is_array($p['MF_BRAND']['VALUE'] ?? null) && $brand === '')
-		{
-			$v = reset($p['MF_BRAND']['VALUE']);
-			$brand = $v === false ? '' : (string)$v;
-		}
-		$brand = trim($brand);
-		if ($brand === '' && !empty($p['MF_BRAND_NORM']['VALUE']))
-		{
-			$bn = $p['MF_BRAND_NORM']['VALUE'];
-			$brand = trim(is_array($bn) ? (string)reset($bn) : (string)$bn);
-		}
-		$article = (string)($p['CML2_ARTICLE']['VALUE'] ?? '');
-		if (is_array($p['CML2_ARTICLE']['VALUE'] ?? null) && $article === '')
-		{
-			$v = reset($p['CML2_ARTICLE']['VALUE']);
-			$article = $v === false ? '' : (string)$v;
-		}
-		$article = trim($article);
-		if ($article === '' && !empty($p['MF_ARTICLE_NORM']['VALUE']))
-		{
-			$an = $p['MF_ARTICLE_NORM']['VALUE'];
-			$article = trim(is_array($an) ? (string)reset($an) : (string)$an);
-		}
-		if ($brand === '' || $article === '')
-		{
-			continue;
-		}
-		$w = mf_wgw_element_weight_grams($id);
-		$name = trim((string)($f['NAME'] ?? ''));
-
-		yield [$brand, $article, $name, $w];
-	}
-}
-
 // ——— Export ———
 if (
 	$_SERVER['REQUEST_METHOD'] === 'POST'
@@ -151,6 +70,7 @@ if (
 		ob_end_clean();
 	}
 	@set_time_limit(0);
+	@ignore_user_abort(true);
 	$fname = 'weights_' . date('Y-m-d_His');
 	header('Content-Type: text/csv; charset=utf-8');
 	header('Content-Disposition: attachment; filename="' . $fname . '.csv"');
@@ -159,9 +79,13 @@ if (
 	$out = fopen('php://output', 'wb');
 	$headers = ['бренд', 'артикул', 'наименование', 'вес(гр)'];
 	fputcsv($out, $headers, ';');
-	foreach (mf_wgw_export_rows($iblockId) as $r)
+	foreach (mf_wgw_export_rows_batched($iblockId) as $r)
 	{
 		fputcsv($out, $r, ';');
+		if (function_exists('connection_aborted') && connection_aborted())
+		{
+			break;
+		}
 	}
 	fclose($out);
 	exit;
@@ -226,6 +150,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 
 $langUi = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
 $actionPage = (string)$APPLICATION->GetCurPage();
+$exportBatchSize = function_exists('mf_wgw_export_batch_size') ? mf_wgw_export_batch_size() : 50000;
 
 if ($importResult === 'ok' && is_array($importStats))
 {
@@ -265,6 +190,13 @@ elseif ($importResult === 'error:exception' && $importException !== '')
 	<code>mf_import_weight_xlsx.php</code> / <code>mf_wxi_import_csv_file</code> (<code>mf_ep_set_weight_for_catalog_cluster</code>).
 	Редиректы (MF_IS_REDIRECT) в полную выгрузку не попадают.
 </p>
+
+<div class="adm-info-message-wrap adm-info-message-yellow" style="max-width:720px">
+	<div class="adm-info-message">
+		<strong>Полная выгрузка</strong> идёт SQL-батчами по <strong><?= (int)$exportBatchSize ?></strong> позиций (без обхода каталога через API Bitrix построчно).
+		На большом каталоге (~1,8&nbsp;млн активных позиций) операция всё равно нагружает MySQL — лучше запускать в нерабочее время и не параллельно с импортом внешних прайсов.
+	</div>
+</div>
 
 <div class="adm-info-message" style="max-width:640px">
 	<strong>Формат одной строки (пример):</strong>
